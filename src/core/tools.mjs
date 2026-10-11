@@ -68,14 +68,14 @@ async function brief(ctx, agent) {
   const [who, now, log, recap, follows, shifts] = await Promise.all([
     s.getWho("agent", a),
     s.getNow("agent", a),
-    s.readLog("agent", a, { reverse: true, limit: 20 }),
+    s.readLog("agent", a, { reverse: true, limit: 200 }),
     s.getRecap(a),
     s.follows(a),
     s.recentShifts(a, 5),
   ]);
   const accepted = new Set(log.filter((e) => e.kind === "accepted" && e.origin).map((e) => e.origin));
   const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !accepted.has(e.trail));
-  return { agent: a, space: s.space, who, now, recap, follows, log: log, handoffs_to_me: waiting, recent_shifts: shifts };
+  return { agent: a, space: s.space, who, now, recap, follows, log: log.slice(0, 20), handoffs_to_me: waiting, recent_shifts: shifts };
 }
 
 export const TOOLS = [
@@ -131,7 +131,7 @@ export const TOOLS = [
     description:
       "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, decided, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from).",
     params: params({
-      to: { type: "string", desc: "Where to write: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)" },
+      where: { type: "string", desc: "Which log: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)" },
       summary: { type: "string", desc: "One line, plain language" },
       kind: { type: "string", desc: `Entry type. One of: ${KIND_WORDS.join(", ")}. Default memo.`, optional: true },
       trail: { type: "string", desc: "Trail id shared by every entry about this piece of work (auto if omitted)", optional: true },
@@ -139,8 +139,8 @@ export const TOOLS = [
       payload: { type: "object", desc: "Optional structured details", optional: true },
     }),
     annotations: WRITE,
-    async run({ to, summary, kind, trail, origin, payload }, ctx) {
-      const { ns, id } = parseRef(to);
+    async run({ where, summary, kind, trail, origin, payload }, ctx) {
+      const { ns, id } = parseRef(where);
       const entry = await write(ctx, ns, id, { kind, summary, trail, origin, payload });
       // An accepted handoff also lands on your own log, so your Brief stops
       // listing it as waiting.
@@ -148,7 +148,7 @@ export const TOOLS = [
       if (entry.kind === "accepted" && !mine) {
         await write(ctx, "agent", me(ctx), { kind, summary, trail: entry.trail, origin, payload, ts: entry.ts });
       }
-      return { ok: true, to: `${ns}:${id}`, entry };
+      return { ok: true, where: `${ns}:${id}`, entry };
     },
   },
   {
@@ -159,14 +159,14 @@ export const TOOLS = [
     params: params({
       to: { type: "string", desc: "Agent receiving the work, e.g. 'atlas'" },
       summary: { type: "string", desc: "What is being handed over and what 'done' looks like" },
-      job: { type: "string", desc: "Job or channel the work lives in, e.g. 'job:issue-14'", optional: true },
+      where: { type: "string", desc: "Job or channel the work lives in, e.g. 'job:issue-14'", optional: true },
       trail: { type: "string", desc: "Trail id (auto if omitted)", optional: true },
       origin: { type: "string", desc: "Trail id this handoff follows from", optional: true },
     }),
     annotations: WRITE,
-    async run({ to, summary, job, trail, origin }, ctx) {
+    async run({ to, summary, where: whereRef, trail, origin }, ctx) {
       const receiver = agentId(to);
-      const where = job ? parseRef(job, "job") : null;
+      const where = whereRef ? parseRef(whereRef, "job") : null;
       const t = clock(ctx);
       const tr = trail || makeTrail("handoff", where ? where.id : receiver, t);
       const extra = { to: agentRef(receiver), ...(where ? { job: `${where.ns}:${where.id}` } : {}) };
@@ -326,10 +326,14 @@ export const TOOLS = [
       title: { type: "string", desc: "What the job is, in plain words" },
       owner: { type: "string", desc: "Agent who owns it (default: you)", optional: true },
       details: { type: "object", desc: "Anything else: due date, links, acceptance", optional: true },
+      reopen: { type: "boolean", desc: "Reset a job that already exists (default false: refuse)", optional: true },
     }),
     annotations: WRITE,
-    async run({ job, title, owner, details }, ctx) {
+    async run({ job, title, owner, details, reopen }, ctx) {
       const { id } = parseRef(`job:${String(job).replace(/^(job|work):/, "")}`);
+      if (!reopen && (await ctx.store.getWho("job", id))) {
+        throw new Error(`job '${id}' already exists; use logmem_update / logmem_stage, or pass reopen=true`);
+      }
       const own = agentRef(owner || me(ctx));
       const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details };
       await ctx.store.setWho("job", id, who);

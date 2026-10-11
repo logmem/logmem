@@ -25,9 +25,9 @@ test("stdio clean room: a fresh MCP client runs logmem start quill, notes, hands
     const sc = async (name, args) => (await client.callTool({ name, arguments: args })).structuredContent;
     const start = await sc("logmem_start", { agent: "quill" });
     assert.equal(start.started.agent, "quill");
-    const note = await sc("logmem_note", { to: "channel:field-notes", summary: "outline approved", kind: "decided" });
+    const note = await sc("logmem_note", { where: "channel:field-notes", summary: "outline approved", kind: "decided" });
     assert.equal(note.entry.byline, "quill (via cleanroom-agent)");
-    const ho = await sc("logmem_handoff", { to: "atlas", job: "job:issue-14", summary: "review the draft" });
+    const ho = await sc("logmem_handoff", { to: "atlas", where: "job:issue-14", summary: "review the draft" });
     assert.ok(ho.trail);
     await sc("logmem_recap", { notes: "Handed issue 14 to atlas." });
 
@@ -83,7 +83,7 @@ test("http dispatch: surface rides in the session id across stateless calls", as
   const r1 = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_start", arguments: { agent: "quill" } } }, { lmFactory, toolDefs: () => [] });
   assert.equal(r1.result.structuredContent.started.surface, "perplexity");
   // new instance (next serverless invocation), same session id -> same shift, no auto-start
-  const r2 = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { to: "ops", summary: "x" } } }, { lmFactory, toolDefs: () => [] });
+  const r2 = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { where: "ops", summary: "x" } } }, { lmFactory, toolDefs: () => [] });
   assert.equal(r2.result.structuredContent.shift_events, undefined);
   assert.equal(r2.result.structuredContent.entry.byline, "quill (via perplexity)");
 });

@@ -17,7 +17,7 @@ function clock(start = 1791712800000) {
 
 test("first call of a session auto-Starts a shift", async () => {
   const lm = createLogmem({ redis: createMemoryRedis(), space: "acme", surface: "codex", sessionId: "s1", defaultAgent: "relay" });
-  const r = await call(lm, "logmem_note", { to: "channel:ops", summary: "hello" });
+  const r = await call(lm, "logmem_note", { where: "channel:ops", summary: "hello" });
   assert.equal(r.ok, true);
   assert.equal(r.shift_events[0].type, "auto-start");
   assert.equal(r.entry.by, "agent:relay");
@@ -31,7 +31,7 @@ test("30 min idle -> auto Recap of the old shift, then a fresh auto Start", asyn
   const redis = createMemoryRedis();
   const lm = createLogmem({ redis, space: "acme", surface: "claude-code", sessionId: "s2", now });
   await call(lm, "logmem_start", { agent: "quill" });
-  await call(lm, "logmem_note", { to: "channel:ops", summary: "draft started", kind: "progress" });
+  await call(lm, "logmem_note", { where: "channel:ops", summary: "draft started", kind: "progress" });
   now.advance(31 * 60 * 1000);
   const r = await call(lm, "logmem_view", { ref: "channel:ops" });
   assert.deepEqual(r.shift_events.map((e) => e.type), ["auto-recap", "auto-start"]);
@@ -55,7 +55,7 @@ test("stdio sweep writes the idle Recap without another call", async () => {
 test("persona switch: logmem start <agent> recaps the previous agent first", async () => {
   const lm = createLogmem({ redis: createMemoryRedis(), space: "acme", surface: "claude-code", sessionId: "s4" });
   await call(lm, "logmem_start", { agent: "atlas" });
-  await call(lm, "logmem_note", { to: "channel:ops", summary: "planned week" });
+  await call(lm, "logmem_note", { where: "channel:ops", summary: "planned week" });
   const r = await call(lm, "logmem_start", { agent: "quill" });
   assert.equal(r.switch[0].type, "switch-recap");
   assert.equal(r.switch[0].agent, "atlas");
@@ -63,7 +63,7 @@ test("persona switch: logmem start <agent> recaps the previous agent first", asy
   assert.equal(r.brief.agent, "quill");
   const atlas = await lm.store.getRecap("atlas");
   assert.equal(atlas.reason, "switch to quill");
-  const note = await call(lm, "logmem_note", { to: "channel:ops", summary: "now quill" });
+  const note = await call(lm, "logmem_note", { where: "channel:ops", summary: "now quill" });
   assert.equal(note.entry.byline, "quill (via claude-code)");
   const same = await call(lm, "logmem_start", { agent: "quill" });
   assert.equal(same.switch[0].type, "already-started");
@@ -77,17 +77,17 @@ test("clean room: start, note, assign, handoff, accept, ask, decide, stage, reca
   await call(a, "logmem_start", { agent: "atlas" });
   const job = await call(a, "logmem_assign", { job: "issue-14", title: "Launch newsletter issue 14" });
   assert.equal(job.entry.kind, "assigned");
-  const ho = await call(a, "logmem_handoff", { to: "quill", job: "job:issue-14", summary: "Draft issue 14", origin: job.entry.trail });
+  const ho = await call(a, "logmem_handoff", { to: "quill", where: "job:issue-14", summary: "Draft issue 14", origin: job.entry.trail });
 
   const start = await call(q, "logmem_start", { agent: "quill" });
   assert.equal(start.brief.handoffs_to_me.length, 1);
   assert.equal(start.brief.follows["job:issue-14"].role, "owner");
-  await call(q, "logmem_note", { to: "job:issue-14", kind: "accepted", summary: "quill picked up issue 14", origin: ho.trail });
+  await call(q, "logmem_note", { where: "job:issue-14", kind: "accepted", summary: "quill picked up issue 14", origin: ho.trail });
   assert.equal((await call(q, "logmem_brief", {})).handoffs_to_me.length, 0, "accepted clears the waiting handoff");
   await call(q, "logmem_update", { job: "issue-14", summary: "Draft done" });
   const ask = await call(q, "logmem_ask", { question: "Send to 2,184 subscribers?", action: "POST /v1/campaigns/iss-14/send", reversible: false, where: "job:issue-14" });
   assert.match(ask.instruction, /Do not perform/);
-  await call(a, "logmem_note", { to: "job:issue-14", kind: "decided", summary: "Approved", origin: ask.trail });
+  await call(a, "logmem_note", { where: "job:issue-14", kind: "decided", summary: "Approved", origin: ask.trail });
   await call(q, "logmem_stage", { job: "issue-14", stage: "done", note: "scheduled Tue 9am" });
   const recap = await call(q, "logmem_recap", { notes: "Issue 14 scheduled.", next: ["subject-line test for 15"] });
   assert.equal(recap.recap.mode, "manual");
@@ -121,7 +121,7 @@ test("two spaces on one Redis never see each other", async () => {
   const one = createLogmem({ redis, space: "one", sessionId: "x" });
   const two = createLogmem({ redis, space: "two", sessionId: "x" });
   await call(one, "logmem_start", { agent: "quill" });
-  await call(one, "logmem_note", { to: "channel:secret", summary: "space one only" });
+  await call(one, "logmem_note", { where: "channel:secret", summary: "space one only" });
   await call(one, "logmem_assign", { job: "j1", title: "one's job" });
   await call(two, "logmem_start", { agent: "quill" });
   assert.equal((await call(two, "logmem_view", { ref: "channel:secret" })).log.length, 0);
@@ -166,9 +166,42 @@ test("auto Recap counts the shift's own entries", async () => {
   const lm = createLogmem({ redis: createMemoryRedis(), space: "acme", sessionId: "s5", now });
   await call(lm, "logmem_start", { agent: "quill" });
   now.advance(1000);
-  await call(lm, "logmem_note", { to: "agent:quill", summary: "one", kind: "progress" });
+  await call(lm, "logmem_note", { where: "agent:quill", summary: "one", kind: "progress" });
   now.advance(31 * 60 * 1000);
   await lm.shifts.sweep();
   const r = await lm.store.getRecap("quill");
   assert.match(r.summary, /1 progress/);
+});
+
+test("review fix: compat reads skip legacy twins of migrated entries", async () => {
+  const redis = createMemoryRedis();
+  const ev = { ts: 1791700000000, source: "agent:a", kind: "coord-note", correlationId: "t1", summary: "once" };
+  await redis("ZADD", "acmi:madez:thread:c:timeline", ev.ts, JSON.stringify(ev));
+  const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "m" });
+  await lm.store.append("channel", "c", { ts: ev.ts, kind: "memo", by: "agent:a", trail: "t1", summary: "once" }); // the migrated copy
+  assert.equal((await lm.store.readLog("channel", "c")).length, 1);
+});
+
+test("review fix: logmem_assign refuses to reset an existing job", async () => {
+  const lm = createLogmem({ redis: createMemoryRedis(), space: "acme", sessionId: "a" });
+  await call(lm, "logmem_start", { agent: "atlas" });
+  await call(lm, "logmem_assign", { job: "j", title: "first" });
+  await call(lm, "logmem_stage", { job: "j", stage: "active" });
+  const again = await call(lm, "logmem_assign", { job: "j", title: "second" });
+  assert.equal(again.ok, false);
+  assert.equal((await call(lm, "logmem_open", { job: "j" })).now.stage, "active");
+  assert.equal((await call(lm, "logmem_assign", { job: "j", title: "second", reopen: true })).ok, true);
+});
+
+test("review fix: a handoff older than 20 entries still shows in the Brief", async () => {
+  const redis = createMemoryRedis();
+  const a = createLogmem({ redis, space: "acme", sessionId: "a" });
+  const q = createLogmem({ redis, space: "acme", sessionId: "q" });
+  await call(a, "logmem_start", { agent: "atlas" });
+  await call(a, "logmem_handoff", { to: "quill", summary: "old work" });
+  await call(q, "logmem_start", { agent: "quill" });
+  for (let i = 0; i < 30; i++) await call(q, "logmem_note", { where: "agent:quill", summary: `busy ${i}` });
+  const b = await call(q, "logmem_brief", {});
+  assert.equal(b.handoffs_to_me.length, 1);
+  assert.equal(b.log.length, 20);
 });
