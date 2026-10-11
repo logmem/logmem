@@ -1,25 +1,26 @@
-// OAuth storage on Upstash Redis (deploy-owner instance).
+// OAuth storage on the deploy-owner Redis (LOGMEM_DEPLOY_REST_URL/_TOKEN,
+// falling back to UPSTASH_REDIS_REST_URL/_TOKEN).
 //
-// Keys (all under acmi:oauth: prefix, isolated from main ACMI bus):
-//   acmi:oauth:client:<client_id>   — registered DCR client (no TTL)
-//   acmi:oauth:code:<code>          — pending auth code (TTL 600s)
-//   acmi:oauth:token:<access_token> — minted access token (TTL by exp)
-//   acmi:oauth:refresh:<refresh>    — refresh token (TTL 30d)
+// Keys (all under lm:oauth:, outside every space):
+//   lm:oauth:client:<client_id>   — registered DCR client (no TTL)
+//   lm:oauth:code:<code>          — pending auth code (TTL 600s)
+//   lm:oauth:token:<access_token> — minted access token (TTL by exp)
+//   lm:oauth:refresh:<refresh>    — refresh token (TTL 30d)
 //
-// Token contents bind a tenant: { upstash_url, upstash_token } let the MCP
-// route restore per-user Upstash creds without re-prompting.
+// Token contents bind a backend AND a space: the MCP route restores the
+// user's Redis creds and pins the connection to that one space.
 //
 // v0 stores creds plaintext (Upstash-hosted server, single-tenant trust). v1
 // will wrap with AES-GCM via OAUTH_KEK env var.
 
 import { randomBytes, createHash } from "node:crypto";
-import { restEndpoint } from "../../_lib/redis.mjs";
+import { restEndpoint } from "../../../src/lib/redis-rest.mjs";
 
 const KEY = {
-  client: (id) => `acmi:oauth:client:${id}`,
-  code: (c) => `acmi:oauth:code:${c}`,
-  token: (t) => `acmi:oauth:token:${t}`,
-  refresh: (r) => `acmi:oauth:refresh:${r}`,
+  client: (id) => `lm:oauth:client:${id}`,
+  code: (c) => `lm:oauth:code:${c}`,
+  token: (t) => `lm:oauth:token:${t}`,
+  refresh: (r) => `lm:oauth:refresh:${r}`,
 };
 
 const TTL = {
@@ -29,9 +30,9 @@ const TTL = {
 };
 
 function deployRedis() {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) throw new Error("deploy missing UPSTASH_REDIS_REST_URL/_TOKEN");
+  const url = process.env.LOGMEM_DEPLOY_REST_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.LOGMEM_DEPLOY_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error("deploy missing LOGMEM_DEPLOY_REST_URL/_TOKEN");
   return async (...cmd) => {
     const res = await fetch(restEndpoint(url), {
       method: "POST",
@@ -104,7 +105,7 @@ export async function consumeAuthCode(code) {
 
 // ───── Access + refresh tokens ─────
 
-export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub }) {
+export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space }) {
   const r = deployRedis();
   const access = randomToken(32);
   const refresh = randomToken(32);
@@ -113,8 +114,8 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   // `backend` is the generic credential blob ({kind:'upstash',url,token} or
   // {kind:'redis',uri}); upstash_url/_token stay populated for the upstash
   // kind so tokens minted here remain readable by pre-refactor code.
-  const accessRecord = { client_id, scope, sub, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access };
-  const refreshRecord = { client_id, scope, sub, upstash_url, upstash_token, backend, issued_at };
+  const accessRecord = { client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access };
+  const refreshRecord = { client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at };
 
   await r("SET", KEY.token(access), JSON.stringify(accessRecord), "EX", String(TTL.access));
   await r("SET", KEY.refresh(refresh), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));

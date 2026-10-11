@@ -9,7 +9,8 @@
 // PKCE is REQUIRED. We accept S256 only (per MCP spec). plain is rejected.
 
 import { getClient, saveAuthCode } from "./_lib/storage.mjs";
-import { restEndpoint } from "../_lib/redis.mjs";
+import { restEndpoint } from "../../src/lib/redis-rest.mjs";
+import { validateKeySegments } from "../../src/lib/helpers.mjs";
 
 export const config = { runtime: "nodejs" };
 
@@ -24,7 +25,7 @@ function renderConsent({ params, error }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize ACMI MCP</title>
+<title>Connect LogMem</title>
 <style>
 :root{--bg:#faf8f3;--ink:#1a1a1a;--accent:#c8553d;--mut:#666;--card:#fff;--bord:#e5e1d6}
 *{box-sizing:border-box}
@@ -50,14 +51,18 @@ button:hover{background:var(--accent)}
 </head>
 <body>
 <form class="card" method="POST" action="/api/oauth/authorize" autocomplete="off">
-  <h1>Authorize ACMI MCP</h1>
-  <div class="sub">Connect your ACMI workspace to this app.</div>
+  <h1>Connect LogMem</h1>
+  <div class="sub">Give this app access to one LogMem space.</div>
   ${errorBlock}
   <div class="client">
     <b>${htmlEscape(params.client_name || params.client_id)}</b> wants access<br>
     <span class="scope">scope: ${htmlEscape(params.scope || "mcp")}</span>
     <span class="scope">redirect: ${htmlEscape(new URL(params.redirect_uri).host)}</span>
   </div>
+
+  <label for="space">Space</label>
+  <input type="text" id="space" name="space" placeholder="your-space" value="${htmlEscape(params.space || "")}">
+  <div class="hint">This connection can only read and write this space.</div>
 
   <label>Redis backend</label>
   <div class="backends">
@@ -67,11 +72,11 @@ button:hover{background:var(--accent)}
 
   <div id="fields-upstash">
     <label for="upstash_url">HTTP Redis REST URL</label>
-    <input type="text" id="upstash_url" name="upstash_url" placeholder="https://acmi-redis-u70402.vm.elestio.app/bridge/exec" value="${htmlEscape(params.upstash_url_prefill || "")}">
+    <input type="text" id="upstash_url" name="upstash_url" placeholder="https://your-redis-rest-host/exec" value="${htmlEscape(params.upstash_url_prefill || "")}">
     <div class="hint">Polar exec: no trailing slash. Upstash Cloud REST URLs still work. Native :26379 does not.</div>
 
     <label for="upstash_token">HTTP Redis REST token</label>
-    <input type="password" id="upstash_token" name="upstash_token" placeholder="vm-local-bridge or Upstash REST token">
+    <input type="password" id="upstash_token" name="upstash_token" placeholder="REST token">
   </div>
 
   <div id="fields-redis" style="display:none">
@@ -98,7 +103,7 @@ button:hover{background:var(--accent)}
   <button type="submit" name="action" value="approve">Authorize</button>
   <button type="submit" name="action" value="deny" class="deny">Deny</button>
 
-  <div class="foot">Your Redis credentials are stored encrypted-at-rest, scoped to this access token, and revoked when the token expires. Rotate your Redis password or Upstash token any time to revoke out-of-band.</div>
+  <div class="foot">Your Redis credentials are stored on this server, bound to this access token (v0: not yet encrypted at rest), and dropped when the token expires. Rotate your Redis password or Upstash token any time to revoke out-of-band.</div>
 </form>
 </body>
 </html>`;
@@ -165,6 +170,15 @@ export default async function handler(req, res) {
       return redirectError(res, body.redirect_uri, "access_denied", "user denied consent", body.state);
     }
 
+    const space = String(body.space || "").trim().toLowerCase();
+    try {
+      validateKeySegments(space);
+      if (!/^[a-z0-9][a-z0-9_-]*$/.test(space)) throw new Error("letters, numbers, - and _ only");
+    } catch (e) {
+      const params = { ...body, client_name: v.client.client_name };
+      return res.status(400).setHeader("Content-Type", "text/html; charset=utf-8").end(renderConsent({ params, error: `Space: ${e.message}` }));
+    }
+
     const backendKind = body.backend === "redis" ? "redis" : "upstash";
     const fail = (error, extra = {}) => {
       const params = { ...body, client_name: v.client.client_name, ...extra };
@@ -190,7 +204,7 @@ export default async function handler(req, res) {
       }
       // Probe before issuing code so user gets immediate feedback.
       try {
-        const { probeNativeRedis } = await import("../_lib/redis-native.mjs");
+        const { probeNativeRedis } = await import("../../src/lib/redis-native.mjs");
         await probeNativeRedis(redis_uri);
       } catch (e) {
         return fail(`Could not connect to Redis: ${e.message}`);
@@ -239,6 +253,7 @@ export default async function handler(req, res) {
       upstash_token,
       backend,
       sub,
+      space,
     });
 
     const u = new URL(body.redirect_uri);
