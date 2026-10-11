@@ -129,9 +129,9 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "to": {
+          "where": {
             "type": "string",
-            "description": "Where to write: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)"
+            "description": "Which log: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)"
           },
           "summary": {
             "type": "string",
@@ -157,7 +157,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "to",
+          "where",
           "summary"
         ]
       },
@@ -194,7 +194,7 @@
             "type": "string",
             "description": "What is being handed over and what 'done' looks like"
           },
-          "job": {
+          "where": {
             "type": "string",
             "description": "Job or channel the work lives in, e.g. 'job:issue-14'"
           },
@@ -565,6 +565,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "Anything else: due date, links, acceptance"
+          },
+          "reopen": {
+            "type": "boolean",
+            "description": "Reset a job that already exists (default false: refuse)"
           }
         },
         "additionalProperties": false,

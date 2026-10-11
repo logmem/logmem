@@ -32,7 +32,7 @@ and the JSON disagree, the JSON is what the server actually does, and the differ
 | `trail` | id shared by every entry about one piece of work | string; auto `<kind><Id>-<ms>` if omitted |
 | `origin` | trail of the entry this one follows from | string |
 
-**Change from the v0 build:** `logmem_note.to` → `where`, and `logmem_handoff.job` → `where`. Now `to` always means an agent.
+**Changed from the first v0 build** (now implemented in #1): `logmem_note.to` → `where` and `logmem_handoff.job` → `where`. `to` always means an agent. `logmem_assign` gained `reopen` (it refuses an existing job without it).
 
 ## 3. Tools
 
@@ -52,7 +52,7 @@ R = read only, W = writes. ACMI column = the tool it stands in for under compat 
 | `logmem_roster` | Roster | R | — | `of` ∈ agent·channel·job | `acmi_list` |
 | `logmem_feed` | Feed | R | `refs[]` | `since` (`30m`/`24h`/`7d`), `limit` (50) | `acmi_cat` |
 | `logmem_follow` | Follow | W | `action` ∈ follow·unfollow·list | `ref`, `role`, `agent` | `acmi_active` |
-| `logmem_assign` | Assign | W | `job`, `title` | `owner`, `details{}` | `acmi_work_create` |
+| `logmem_assign` | Assign | W | `job`, `title` | `owner`, `details{}`, `reopen` | `acmi_work_create` |
 | `logmem_update` | Update | W | `job`, `summary` | `kind` (progress), `trail`, `origin` | `acmi_work_event` |
 | `logmem_stage` | Stage | W | `job`, `stage` ∈ open·active·blocked·done | `note` | `acmi_work_signal` |
 | `logmem_open` | Open | R | `job` | `limit` (50) | `acmi_work_get` |
