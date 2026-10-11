@@ -44,7 +44,7 @@ This is sub-project 1 of 4. Hosted access, the data migration and the public lau
 | `scripts/bridge-probe.mjs` | Exercise every Redis command LogMem uses on `lm:probe:*` keys, then delete them. Exit non-zero on any refusal | backend |
 | `scripts/dogfood-check.mjs` | Daily audit: parity, agents, handoffs/accepts, unanswered handoffs over 24h (writes `stuck`), degraded sessions. Writes one `checkup` entry to `job:logmem-dogfood` and `docs/dogfood/scorecard.json` | store |
 | `.github/workflows/dogfood-check.yml` | Run the check daily at 13:00 UTC and on manual dispatch; commit `scorecard.json` to the dedicated branch `dogfood/scorecard` (never `main`). The bridge creds live in repo secrets `LOGMEM_REST_URL` / `LOGMEM_REST_TOKEN` | check |
-| `api/scorecard.mjs` + `public/scorecard.html` | Read-only page: 7-day pass/fail strip, parity per day, open handoffs, deliverable status. It reads the `checkup` entries live from `lm:madez:job:logmem-dogfood:log` using read-only preview env creds (the same bridge vars). Served on the preview branch alias behind Vercel SSO. `scorecard.json` in git is the tamper-evident copy | store |
+| `api/scorecard.mjs` + `public/scorecard.html` | Read-only page: 7-day pass/fail strip, parity per day, open handoffs, deliverable status. It reads the `checkup` entries live from `lm:madez:job:logmem-dogfood:log`. The preview env holds the read-write bridge creds (Mikey approved 2026-10-11; the Polar bridge has a single token). The endpoint wraps them in the dry-run read-command allowlist, so the page can't write. The creds are set for **preview only**, never production. Served on the preview branch alias behind Vercel SSO. `scorecard.json` in git is the tamper-evident copy | store |
 | `scripts/fieldnotes-day.mjs` | The Action Map day (quill / atlas / relay / tally), scripted against the server API | server |
 
 `scorecard.json` shape:
@@ -82,6 +82,15 @@ This is sub-project 1 of 4. Hosted access, the data migration and the public lau
 - **Integration** (local Redis :6399): the Field Notes day with the mirror on → every step in both prefixes, 0 mismatches; the probe passes
 - **Live:** probe on the Polar bridge (`lm:probe:*`, deleted after) → Phase 1 run → Phase 2 day-1 handoff claude-code → grok-local, with the ACMI twin and Brief verified
 - **Gate evidence:** 7 `checkup` entries, 7 `scorecard.json` commits, 7 Actions run logs, the `logmem-v0-ship` log, grok-local's review on #1/#2
+
+## Credentials
+
+| Where | What | Scope |
+|---|---|---|
+| GitHub Actions secrets | `LOGMEM_REST_URL`, `LOGMEM_REST_TOKEN` | the daily check (writes `checkup` entries) |
+| Vercel env, **preview only** | `LOGMEM_REST_URL`, `LOGMEM_REST_TOKEN` | read-write, approved by Mikey 2026-10-11; `/api/scorecard` is read-only in code |
+| Vercel env, production | none | `logmem.vercel.app` stays credential-free |
+| Mac stdio agents | `LOGMEM_REST_URL`, `LOGMEM_REST_TOKEN` (or `LOGMEM_REDIS_URI`) in each MCP config | read-write |
 
 ## Gates kept
 
