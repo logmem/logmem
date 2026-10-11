@@ -46,4 +46,10 @@ env = { LOGMEM_SPACE = "madez", LOGMEM_ACMI_COMPAT = "1", LOGMEM_MIRROR_ACMI = "
 5. Irreversible step (merge, publish, deploy to prod, `--apply`)? Use `logmem_ask` and wait for Mikey.
 6. End of session: `logmem_recap`.
 
-The daily check runs at 13:00 UTC. The scorecard is at `/scorecard.html` on the `feat/dogfood-phase0` preview (Vercel login).
+## Daily check — BLOCKED
+
+**BLOCKED until `.github/workflows/dogfood-check.yml` is on the default branch `main`.** GitHub runs `schedule` and `workflow_dispatch` only from `main`. That file is not on `main`. As of 2026-10-11 the Actions run list for this repo is empty, so no daily run is firing.
+
+Supervised dogfood is a hand run of `scripts/dogfood-check.mjs` (with the bridge env from the table above). Read the checkup entry on `job:logmem-dogfood`. The Phase 2 seven-day clock stays blocked until the workflow is on `main`. That merge is a separate Mikey decision.
+
+The scorecard page is at `/scorecard.html` on the `feat/dogfood-phase0` preview (Vercel login).

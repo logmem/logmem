@@ -4,13 +4,15 @@ name: dogfood-check
 # Runs the check against the live bridge, writes the checkup entry, and commits
 # scorecard.json to the dogfood/scorecard branch. Never touches main.
 
+# schedule and workflow_dispatch run only from the default branch (main).
+# Until this file is on main the cron does not fire.
 on:
   schedule:
     - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
       space:
-        description: "space to check"
+        description: "space to check; must match ^[a-z0-9_-]{1,60}$"
         default: "madez"
 
 permissions:
@@ -27,6 +29,14 @@ jobs:
       matrix:
         space: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.space)) || fromJSON('["madez","fieldnotes"]') }}
     steps:
+      - name: Validate space
+        env:
+          SPACE: ${{ matrix.space }}
+        run: |
+          if [[ ! "$SPACE" =~ ^[a-z0-9_-]{1,60}$ ]]; then
+            echo "space must match ^[a-z0-9_-]{1,60}$" >&2
+            exit 1
+          fi
       - name: Code (LogMem dogfood branch)
         uses: actions/checkout@v4
         with:
@@ -47,14 +57,26 @@ jobs:
         env:
           LOGMEM_REST_URL: ${{ secrets.LOGMEM_REST_URL }}
           LOGMEM_REST_TOKEN: ${{ secrets.LOGMEM_REST_TOKEN }}
-        run: node scripts/dogfood-check.mjs --space "${{ matrix.space }}" --mirror-spaces madez --scorecard "../card/scorecard-${{ matrix.space }}.json" > "../check-${{ matrix.space }}.json"
+          SPACE: ${{ matrix.space }}
+        run: |
+          if [[ ! "$SPACE" =~ ^[a-z0-9_-]{1,60}$ ]]; then
+            echo "space must match ^[a-z0-9_-]{1,60}$" >&2
+            exit 1
+          fi
+          node scripts/dogfood-check.mjs --space "$SPACE" --mirror-spaces madez --scorecard "../card/scorecard-${SPACE}.json" > "../check-${SPACE}.json"
       - name: Commit scorecard
         working-directory: card
+        env:
+          SPACE: ${{ matrix.space }}
         run: |
+          if [[ ! "$SPACE" =~ ^[a-z0-9_-]{1,60}$ ]]; then
+            echo "space must match ^[a-z0-9_-]{1,60}$" >&2
+            exit 1
+          fi
           git config user.name "logmem-check"
           git config user.email "logmem-check@users.noreply.github.com"
-          git add "scorecard-${{ matrix.space }}.json"
-          git diff --cached --quiet || git commit -m "scorecard(${{ matrix.space }}): $(date -u +%F)"
+          git add "scorecard-${SPACE}.json"
+          git diff --cached --quiet || git commit -m "scorecard(${SPACE}): $(date -u +%F)"
           for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 3; done
       - uses: actions/upload-artifact@v4
         with:

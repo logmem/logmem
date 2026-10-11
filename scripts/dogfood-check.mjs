@@ -153,11 +153,24 @@ export function updateScorecard(card, { day, deliverable }, generatedAt = new Da
   return { generated_at: generatedAt, space: day.space, days: days.slice(-30), deliverable };
 }
 
-/** The 7-day bar: 7 consecutive passing days ending at the newest, plus the deliverable done. */
-export function gate(card) {
-  const last7 = (card.days || []).slice(-7);
-  const consecutive = last7.length === 7 && last7.every((d, i) => i === 0 || Date.parse(d.date) - Date.parse(last7[i - 1].date) === DAY_MS);
-  return { days_passing: last7.filter((d) => d.pass).length, consecutive, deliverable_done: card.deliverable?.stage === "done", pass: consecutive && last7.every((d) => d.pass) && card.deliverable?.stage === "done" };
+// Daily cron is 13:00 UTC (.github/workflows/dogfood-check.yml). Before that
+// hour, yesterday is still a fresh newest day: today's run has not fired.
+const CRON_HOUR_UTC = 13;
+
+/** The 7-day bar. The newest stored day must be today (UTC), or yesterday when
+ *  the cron has not fired yet. Any missing calendar day in that window is a
+ *  hole and fails the gate. Seven passing days plus the deliverable done. */
+export function gate(card, now = Date.now()) {
+  const days = card.days || [];
+  const last7 = days.slice(-7);
+  const newest = days.length ? days[days.length - 1].date : null;
+  const at = new Date(now);
+  const today = at.toISOString().slice(0, 10);
+  const yesterday = new Date(at.getTime() - DAY_MS).toISOString().slice(0, 10);
+  const fresh = newest === today || (at.getUTCHours() < CRON_HOUR_UTC && newest === yesterday);
+  const consecutive = fresh && last7.length === 7 && last7.every((d, i) => i === 0 || Date.parse(d.date) - Date.parse(last7[i - 1].date) === DAY_MS);
+  const deliverable_done = card.deliverable?.stage === "done";
+  return { days_passing: last7.filter((d) => d.pass).length, consecutive, deliverable_done, pass: consecutive && last7.every((d) => d.pass) && deliverable_done };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -183,4 +196,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     writeFileSync(path, `${JSON.stringify(card, null, 2)}\n`);
   }
   console.log(JSON.stringify(res, null, 2));
+  // exitCode, not process.exit: stdout is the checkup JSON and must flush.
+  if (!res.day.pass) process.exitCode = 1;
 }

@@ -86,7 +86,41 @@ test("sandbox space: no parity check, scorecard upsert + 7-day gate", async () =
   for (let i = 0; i < 7; i++) card = updateScorecard(card, { day: { ...res.day, date: new Date(base + i * DAY_MS).toISOString().slice(0, 10), pass: true }, deliverable: { stage: "active" } });
   card = updateScorecard(card, { day: { ...res.day, date: "2026-10-19", pass: true }, deliverable: { stage: "done" } });
   assert.equal(card.days.length, 7, "same date upserts");
-  assert.deepEqual(gate(card), { days_passing: 7, consecutive: true, deliverable_done: true, pass: true });
+  const onLastDay = Date.parse("2026-10-19T13:00:00Z");
+  assert.deepEqual(gate(card, onLastDay), { days_passing: 7, consecutive: true, deliverable_done: true, pass: true });
   card.days[3].pass = false;
-  assert.equal(gate(card).pass, false);
+  assert.equal(gate(card, onLastDay).pass, false);
+});
+
+test("a Sept 1–7 passing streak evaluated on 2026-10-11 does not pass", () => {
+  const start = Date.parse("2026-09-01T00:00:00Z");
+  const days = Array.from({ length: 7 }, (_, i) => ({
+    date: new Date(start + i * DAY_MS).toISOString().slice(0, 10),
+    pass: true,
+  }));
+  const card = { days, deliverable: { stage: "done" } };
+  const result = gate(card, Date.parse("2026-10-11T13:00:00Z"));
+  assert.equal(result.deliverable_done, true);
+  assert.equal(result.pass, false);
+});
+
+test("newest day must be today once the 13:00 UTC cron has fired", () => {
+  const start = Date.parse("2026-10-04T00:00:00Z");
+  const days = Array.from({ length: 7 }, (_, i) => ({
+    date: new Date(start + i * DAY_MS).toISOString().slice(0, 10),
+    pass: true,
+  }));
+  const card = { days, deliverable: { stage: "done" } };
+  assert.equal(days.at(-1).date, "2026-10-10");
+  assert.equal(gate(card, Date.parse("2026-10-11T12:59:00Z")).pass, true, "before 13:00 UTC, yesterday is still fresh");
+  assert.equal(gate(card, Date.parse("2026-10-11T13:00:00Z")).pass, false, "at 13:00 UTC, a missing today fails");
+});
+
+test("a hole in the fresh seven-day window fails the gate", () => {
+  const dates = ["2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11", "2026-10-13"];
+  const card = {
+    days: dates.map((date) => ({ date, pass: true })),
+    deliverable: { stage: "done" },
+  };
+  assert.equal(gate(card, Date.parse("2026-10-13T13:00:00Z")).pass, false);
 });
