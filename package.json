@@ -6,12 +6,19 @@
   "type": "module",
   "license": "UNLICENSED",
   "main": "src/server.mjs",
-  "bin": { "logmem-mcp": "src/stdio/index.mjs" },
-  "engines": { "node": ">=20" },
+  "bin": {
+    "logmem-mcp": "src/stdio/index.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/stdio/index.mjs",
     "test": "node --test test/*.test.mjs",
-    "conformance": "node scripts/conformance.mjs"
+    "conformance": "node scripts/conformance.mjs",
+    "spec": "node scripts/gen-spec.mjs",
+    "spec:check": "node scripts/gen-spec.mjs --check",
+    "migrate:dry-run": "node scripts/migrate-dry-run.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
