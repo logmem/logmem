@@ -1,0 +1,1100 @@
+{
+  "server": {
+    "name": "logmem",
+    "version": "0.1.0"
+  },
+  "status": "draft",
+  "logmem_tools": [
+    {
+      "name": "logmem_start",
+      "title": "Start",
+      "description": "Become an agent and begin a shift. Use this when someone says \"logmem start <agent>\". If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Agent to become, e.g. 'quill' or 'agent:quill'"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model id running this shift (optional)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "agent"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Start",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_spawn"
+    },
+    {
+      "name": "logmem_brief",
+      "title": "Brief",
+      "description": "Catch up before doing anything: reads an agent's Who, Now, recent Log, last Recap, what it follows and any handoffs waiting for it. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Agent to brief (default: you)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Brief",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_bootstrap"
+    },
+    {
+      "name": "logmem_recap",
+      "title": "Recap",
+      "description": "Leave notes for the next shift and end this one. Say what got done and what comes next. Tomorrow's Brief starts here. (LogMem also writes an automatic Recap after 30 minutes idle.)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "description": "What happened this shift, in a sentence or two"
+          },
+          "next": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the next shift should do first"
+          },
+          "end": {
+            "type": "boolean",
+            "description": "End the shift after recapping (default true)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "notes"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Recap",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_rollup_set"
+    },
+    {
+      "name": "logmem_note",
+      "title": "Note",
+      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, decided, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Where to write: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)"
+          },
+          "summary": {
+            "type": "string",
+            "description": "One line, plain language"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Entry type. One of: started, ping, recap, joined, setup, handoff, accepted, assigned, progress, done, shared, research, checkup, feedback, approval, decided, pivot, stuck, alert, memo, huddle, problem, fix. Default memo."
+          },
+          "trail": {
+            "type": "string",
+            "description": "Trail id shared by every entry about this piece of work (auto if omitted)"
+          },
+          "origin": {
+            "type": "string",
+            "description": "Trail id of the entry this one follows from"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Optional structured details"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "to",
+          "summary"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Note",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_event"
+    },
+    {
+      "name": "logmem_handoff",
+      "title": "Handoff",
+      "description": "Pass work to another agent. Writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver confirms with logmem_note kind 'accepted' and origin set to this handoff's trail.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Agent receiving the work, e.g. 'atlas'"
+          },
+          "summary": {
+            "type": "string",
+            "description": "What is being handed over and what 'done' looks like"
+          },
+          "job": {
+            "type": "string",
+            "description": "Job or channel the work lives in, e.g. 'job:issue-14'"
+          },
+          "trail": {
+            "type": "string",
+            "description": "Trail id (auto if omitted)"
+          },
+          "origin": {
+            "type": "string",
+            "description": "Trail id this handoff follows from"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "to",
+          "summary"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Handoff",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": null
+    },
+    {
+      "name": "logmem_ask",
+      "title": "Ask",
+      "description": "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. Do not do the action until a 'decided' entry with origin = this trail says yes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Plain question, e.g. 'Send issue 14 to 2,184 subscribers Tue 9am?'"
+          },
+          "action": {
+            "type": "string",
+            "description": "The exact action you will take if approved (command, request, recipients)"
+          },
+          "reversible": {
+            "type": "boolean",
+            "description": "Can this be undone afterwards?"
+          },
+          "where": {
+            "type": "string",
+            "description": "Job or channel this belongs to (default: your agent log)"
+          },
+          "origin": {
+            "type": "string",
+            "description": "Trail id this request follows from"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "action",
+          "reversible"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Ask",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": null
+    },
+    {
+      "name": "logmem_status",
+      "title": "Status",
+      "description": "Update what an agent is doing right now (its Now). Merges the fields you pass; other fields stay.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "now": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Fields to set, e.g. {\"doing\": \"drafting issue 14\", \"blocked\": false}"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Agent (default: you)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "now"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Status",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_signal"
+    },
+    {
+      "name": "logmem_bio",
+      "title": "Bio",
+      "description": "Update who an agent is (its Who): name, role, owner, model. Merges by default; pass replace=true to overwrite.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "who": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Profile fields, e.g. {\"role\": \"newsletter writer\"}"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Agent (default: you)"
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Overwrite instead of merge"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "who"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Bio",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_profile"
+    },
+    {
+      "name": "logmem_view",
+      "title": "View",
+      "description": "Read one agent, channel or job: its Who, Now and recent Log. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "'agent:<id>', 'channel:<id>' or 'job:<id>'"
+          },
+          "limit": {
+            "type": "number",
+            "description": "How many recent entries (default 10)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ref"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "View",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_get"
+    },
+    {
+      "name": "logmem_roster",
+      "title": "Roster",
+      "description": "List everyone (or every channel or job) in this space. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "of": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "channel",
+              "job"
+            ],
+            "description": "What to list (default agent)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Roster",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_list"
+    },
+    {
+      "name": "logmem_feed",
+      "title": "Feed",
+      "description": "Merge several logs into one timeline, newest first. Good for 'what happened today'. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Logs to merge, e.g. ['channel:field-notes', 'job:issue-14', 'agent:quill']"
+          },
+          "since": {
+            "type": "string",
+            "description": "Window like '30m', '24h', '7d' (default all)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max entries (default 50)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "refs"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Feed",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_cat"
+    },
+    {
+      "name": "logmem_follow",
+      "title": "Follow",
+      "description": "Join or leave a channel or job so it shows up in your Brief, or list what you follow.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "follow",
+              "unfollow",
+              "list"
+            ],
+            "description": "What to do"
+          },
+          "ref": {
+            "type": "string",
+            "description": "'channel:<id>' or 'job:<id>' (needed for follow/unfollow)"
+          },
+          "role": {
+            "type": "string",
+            "description": "Your role there, e.g. 'owner', 'reviewer' (default participant)"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Agent (default: you)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Follow",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_active"
+    },
+    {
+      "name": "logmem_assign",
+      "title": "Assign",
+      "description": "Open a new job: a piece of work with a title, an owner, a stage and its own log.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "string",
+            "description": "Job id, short and stable, e.g. 'issue-14'"
+          },
+          "title": {
+            "type": "string",
+            "description": "What the job is, in plain words"
+          },
+          "owner": {
+            "type": "string",
+            "description": "Agent who owns it (default: you)"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Anything else: due date, links, acceptance"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "job",
+          "title"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Assign",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_work_create"
+    },
+    {
+      "name": "logmem_update",
+      "title": "Update",
+      "description": "Add progress to a job's log. Default kind is progress.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "string",
+            "description": "Job id"
+          },
+          "summary": {
+            "type": "string",
+            "description": "What moved, in one line"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Entry type (default progress)"
+          },
+          "trail": {
+            "type": "string",
+            "description": "Trail id (auto if omitted)"
+          },
+          "origin": {
+            "type": "string",
+            "description": "Trail id this follows from"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "job",
+          "summary"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Update",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_work_event"
+    },
+    {
+      "name": "logmem_stage",
+      "title": "Stage",
+      "description": "Move a job to open, active, blocked or done. Blocked writes a Stuck entry; done writes a Done entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "string",
+            "description": "Job id"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "open",
+              "active",
+              "blocked",
+              "done"
+            ],
+            "description": "New stage"
+          },
+          "note": {
+            "type": "string",
+            "description": "Why (required in spirit for blocked: what broke, what it blocks)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "job",
+          "stage"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Stage",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_work_signal"
+    },
+    {
+      "name": "logmem_open",
+      "title": "Open",
+      "description": "Read one job in full: Who, Now, the last 50 log entries and the shifts that touched it. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "string",
+            "description": "Job id"
+          },
+          "limit": {
+            "type": "number",
+            "description": "How many entries (default 50)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "job"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Open",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_work_get"
+    },
+    {
+      "name": "logmem_jobs",
+      "title": "Jobs",
+      "description": "List every job in this space, optionally only those at one stage. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "open",
+              "active",
+              "blocked",
+              "done"
+            ],
+            "description": "Only jobs at this stage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Jobs",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_work_list"
+    },
+    {
+      "name": "logmem_recall",
+      "title": "Recall",
+      "description": "Search memory for something you didn't write. Finds entries by meaning when a semantic index is attached, otherwise by words. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What you're looking for, in plain words"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default 5)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "query"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Recall",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_search_semantic"
+    },
+    {
+      "name": "logmem_remove",
+      "title": "Remove",
+      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Full key, e.g. 'lm:<space>:channel:x:log'"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "true to actually remove (default false = preview)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "key"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Remove",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_delete"
+    },
+    {
+      "name": "logmem_spaces",
+      "title": "Spaces",
+      "description": "List the spaces this connection can use and which one is active. Each space is walled off from the others. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Spaces",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_tenant_list"
+    },
+    {
+      "name": "logmem_connection",
+      "title": "Connection",
+      "description": "Check the link to LogMem is up: backend, space, compatibility mode and the current shift. Read only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Connection",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": "acmi_mcp_status"
+    }
+  ],
+  "acmi_compat_tools": [
+    "acmi_profile",
+    "acmi_signal",
+    "acmi_event",
+    "acmi_get",
+    "acmi_list",
+    "acmi_work_create",
+    "acmi_work_event",
+    "acmi_work_signal",
+    "acmi_work_get",
+    "acmi_work_list",
+    "acmi_cat",
+    "acmi_spawn",
+    "acmi_bootstrap",
+    "acmi_active",
+    "acmi_rollup_set",
+    "acmi_delete",
+    "acmi_search_semantic",
+    "acmi_tenant_list",
+    "acmi_mcp_status"
+  ],
+  "kinds": {
+    "started": {
+      "acmi": "spawn",
+      "also": [
+        "session-start"
+      ],
+      "group": "system"
+    },
+    "ping": {
+      "acmi": "heartbeat",
+      "also": [],
+      "group": "system"
+    },
+    "recap": {
+      "acmi": "rollup",
+      "also": [
+        "pre-compact-snapshot"
+      ],
+      "group": "system"
+    },
+    "joined": {
+      "acmi": "onboarding-complete",
+      "also": [],
+      "group": "system"
+    },
+    "setup": {
+      "acmi": "install",
+      "also": [],
+      "group": "system"
+    },
+    "handoff": {
+      "acmi": "handoff",
+      "also": [
+        "task-delegation"
+      ],
+      "group": "handoff"
+    },
+    "accepted": {
+      "acmi": "handoff-ack",
+      "also": [],
+      "group": "handoff"
+    },
+    "assigned": {
+      "acmi": "work-created",
+      "also": [],
+      "group": "work"
+    },
+    "progress": {
+      "acmi": "work-update",
+      "also": [],
+      "group": "work"
+    },
+    "done": {
+      "acmi": "work-completed",
+      "also": [
+        "milestone-shipped"
+      ],
+      "group": "work"
+    },
+    "shared": {
+      "acmi": "artifact-published",
+      "also": [],
+      "group": "work"
+    },
+    "research": {
+      "acmi": "research-brief",
+      "also": [],
+      "group": "work"
+    },
+    "checkup": {
+      "acmi": "diagnostic-report",
+      "also": [
+        "audit-report"
+      ],
+      "group": "work"
+    },
+    "feedback": {
+      "acmi": "review-note",
+      "also": [],
+      "group": "work"
+    },
+    "approval": {
+      "acmi": "decision-request",
+      "also": [],
+      "group": "decision"
+    },
+    "decided": {
+      "acmi": "decision",
+      "also": [
+        "decision-ratified"
+      ],
+      "group": "decision"
+    },
+    "pivot": {
+      "acmi": "scope-decision",
+      "also": [],
+      "group": "decision"
+    },
+    "stuck": {
+      "acmi": "stalled-alert",
+      "also": [],
+      "group": "signal"
+    },
+    "alert": {
+      "acmi": "critical-finding",
+      "also": [],
+      "group": "signal"
+    },
+    "memo": {
+      "acmi": "coord-note",
+      "also": [],
+      "group": "signal"
+    },
+    "huddle": {
+      "acmi": "fleet-sync",
+      "also": [],
+      "group": "signal"
+    },
+    "problem": {
+      "acmi": "incident-update",
+      "also": [],
+      "group": "error"
+    },
+    "fix": {
+      "acmi": "correction",
+      "also": [
+        "alignment-fix"
+      ],
+      "group": "error"
+    }
+  },
+  "fields": {
+    "correlationId": "trail",
+    "parentCorrelationId": "origin",
+    "source": "by",
+    "tenant_id": "space",
+    "speaker_type": "speaker"
+  },
+  "namespaces": {
+    "thread": "channel",
+    "work": "job",
+    "agent": "agent"
+  },
+  "slots": {
+    "who": {
+      "type": "string",
+      "acmi": "profile"
+    },
+    "now": {
+      "type": "hash",
+      "acmi": "signals"
+    },
+    "log": {
+      "type": "zset",
+      "acmi": "timeline"
+    },
+    "recap": {
+      "type": "string",
+      "acmi": "rollup:latest"
+    },
+    "follows": {
+      "type": "hash",
+      "acmi": "active_context"
+    },
+    "shifts": {
+      "type": "zset",
+      "acmi": "spawns"
+    },
+    "sessions": {
+      "type": "set",
+      "acmi": "sessions"
+    }
+  }
+}

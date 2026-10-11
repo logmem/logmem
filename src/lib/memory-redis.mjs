@@ -70,6 +70,14 @@ export function createMemoryRedis() {
       return [...data.keys()].filter((k) => re.test(k)).sort();
     },
     EXPIRE: (k) => (data.has(k) ? 1 : 0),
+    TTL: (k) => (data.has(k) ? -1 : -2),
+    DBSIZE: () => data.size,
+    // Single-pass SCAN: returns everything matching with cursor "0".
+    SCAN: (_cursor, ...opts) => {
+      const i = opts.findIndex((o) => String(o).toUpperCase() === "MATCH");
+      const re = globToRegex(i >= 0 ? opts[i + 1] : "*");
+      return ["0", [...data.keys()].filter((k) => re.test(k)).sort()];
+    },
     SADD: (k, ...members) => {
       let e = get(k, "set");
       if (!e) {
