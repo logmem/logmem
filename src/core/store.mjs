@@ -178,8 +178,14 @@ export function createStore(redis, { space, compat = false } = {}) {
         // Legacy scores may be in s/us/ns, so scan the whole key and filter
         // after normalising (a score-range query would miss mixed units).
         const old = parseZ(await redis("ZRANGE", legacy(ns, id, "log"), 0, -1, "WITHSCORES"));
+        // After the migration copy, an entry exists in both places. The lm
+        // copy wins; the legacy twin (same ts + trail + summary) is skipped.
+        const sig = (e) => `${normTs(e.ts)}|${e.trail ?? ""}|${e.summary ?? ""}`;
+        const have = new Set(rows.map((r) => sig(asEntry(tryParse(r.member)) || {})));
         for (const r of old) {
           if ((sinceMs == null || r.score >= min) && (untilMs == null || r.score <= max)) {
+            const e = asEntry(tryParse(r.member));
+            if (e && typeof e === "object" && have.has(sig({ ...e, ts: e.ts ?? r.score }))) continue;
             rows.push({ ...r, legacy: true });
           }
         }
