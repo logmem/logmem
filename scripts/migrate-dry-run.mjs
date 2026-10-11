@@ -37,23 +37,8 @@ if (argv.includes("--apply")) {
 const SPACE = arg("space", process.env.LOGMEM_SPACE || "madez");
 const OUT = arg("out", null);
 
-// ─── read-only runner ───────────────────────────────────────────────
-const READ_ONLY = new Set(["PING", "DBSIZE", "SCAN", "TYPE", "GET", "HGETALL", "SMEMBERS", "LRANGE", "ZRANGE", "ZCARD", "EXISTS", "TTL"]);
-export function readOnly(redis) {
-  return async (cmd, ...args) => {
-    const c = String(cmd).toUpperCase();
-    if (!READ_ONLY.has(c)) throw new Error(`dry-run guard: ${c} is not a read command`);
-    // Reads are idempotent, so transient bridge drops are retried.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await redis(c, ...args);
-      } catch (e) {
-        if (attempt >= 4) throw e;
-        await new Promise((ok) => setTimeout(ok, 500 * 2 ** attempt));
-      }
-    }
-  };
-}
+import { readOnly } from "../src/lib/read-only.mjs";
+export { readOnly };
 
 // ─── key parsing ────────────────────────────────────────────────────
 const ACMI_SLOTS = Object.entries(SLOTS).map(([lm, d]) => ({ lm, acmi: d.acmi, type: d.type }));
