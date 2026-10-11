@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createLogmem, compatFromEnv, SERVER_INFO, INSTRUCTIONS } from "../server.mjs";
+import { createLogmem, compatFromEnv, mirrorConfigFromEnv, SERVER_INFO, INSTRUCTIONS } from "../server.mjs";
 import { backendFromEnv } from "../lib/backend.mjs";
 
 const log = (m) => console.error(`[logmem] ${m}`);
@@ -39,6 +39,7 @@ function instance() {
     surface: env.LOGMEM_SURFACE || client?.name || "stdio",
     sessionId,
     defaultAgent: env.LOGMEM_AGENT,
+    mirror: mirrorConfigFromEnv(env),
   });
   return lm;
 }
@@ -59,4 +60,4 @@ setInterval(() => {
 }, 60_000).unref();
 
 await mcp.connect(new StdioServerTransport());
-log(`ready: space=${space} backend=${backend.kind} compat=${compatFromEnv(env)}`);
+log(`ready: space=${space} backend=${backend.kind} compat=${compatFromEnv(env)} mirror=${JSON.stringify(mirrorConfigFromEnv(env))}`);

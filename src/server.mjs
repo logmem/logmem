@@ -9,6 +9,7 @@
 // are thin shells around this.
 
 import { createStore } from "./core/store.mjs";
+import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
 import { TOOLS, keywordRecall } from "./core/tools.mjs";
 import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
@@ -19,6 +20,7 @@ import { validateKeySegments } from "./lib/helpers.mjs";
 export const SERVER_INFO = { name: "logmem", version: "0.1.0" };
 export { INSTRUCTIONS };
 
+export { mirrorConfigFromEnv };
 export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());
 
 export function toResult(data) {
@@ -42,13 +44,16 @@ export function createLogmem({
   recall,
   idleMs,
   now,
+  mirror: mirrorCfg = { enabled: false, spaces: [] },
 } = {}) {
   if (!redis) throw new Error("createLogmem: redis runner required");
   validateKeySegments(space);
   const allowed = spaces && spaces.length ? spaces : [space];
   if (!allowed.includes(space)) throw new Error(`space '${space}' is not in the allowed list`);
 
-  const store = createStore(redis, { space, compat });
+  const mirrorOn = !!mirrorCfg.enabled && (mirrorCfg.spaces || []).includes(space);
+  const mirror = mirrorOn ? createMirror(redis, space, { now }) : null;
+  const store = createStore(redis, { space, compat, mirror });
   const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, idleMs, now });
   const ctx = {
     store,
@@ -73,8 +78,13 @@ export function createLogmem({
         ctx.shift = touched.shift;
         events = touched.events;
       }
+      store.mirrorEvents = [];
+      if (mirror) await mirror.drain().catch(() => {});
       const out = await tool.run(args || {}, ctx);
       if (events.length) out.shift_events = events;
+      if (mirror && store.mirrorEvents.length) {
+        out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
+      }
       return toResult(out);
     } catch (e) {
       return toResult({ ok: false, error: e.message, tool: name });
