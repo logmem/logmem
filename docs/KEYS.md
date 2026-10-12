@@ -4,7 +4,8 @@
 lm:{space}:{ns}:{id}:{slot}
 lm:{space}:{ns}:list          SET of ids
 lm:{space}:session:{sid}      shift bookkeeping (STRING JSON, 7-day TTL)
-lm:{space}:decision:{trail}   set-once claim for one ask's approve/reject (STRING JSON, SET NX, signed; protected)
+lm:{space}:ask:{trail}        ask registry: {hash, asker, where, ts} of the one canonical ask (STRING JSON, SET NX; protected)
+lm:{space}:decision:{trail}   set-once claim: the full signed decided entry that settled the ask (STRING JSON, SET NX; protected)
 lm:oauth:{client|code|token|refresh}:{x}   OAuth, outside every space
 ```
 
