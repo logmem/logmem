@@ -55,23 +55,108 @@ export function restEndpoint(url) {
   return stripped;
 }
 
+// ---- timeouts + retry -------------------------------------------------------
+//
+// Every REST call is bounded by LOGMEM_REDIS_TIMEOUT_MS (default 5000) per
+// attempt. Read-only commands get exactly one retry after 200-400 ms of jitter
+// when the failure is transient (timeout, network error, 429, 5xx). Writes are
+// never retried: a write that timed out may still have landed, and replaying
+// LPUSH/ZADD/INCR would duplicate it.
+//
+// Error messages name the command and the failure class only. They never carry
+// the endpoint URL or the token (both are secrets on this deployment).
+
+export const READ_COMMANDS = new Set([
+  "GET", "HGET", "HGETALL", "SMEMBERS", "LRANGE", "ZRANGE", "ZREVRANGE",
+  "ZRANGEBYSCORE", "ZCARD", "ZSCORE", "HMGET", "LLEN", "TYPE", "EXISTS", "SCAN",
+  "PING", "TTL", "DBSIZE",
+]);
+
+export const DEFAULT_REDIS_TIMEOUT_MS = 5000;
+
+export function redisTimeoutMs(env = process.env) {
+  const n = Number(env?.LOGMEM_REDIS_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_REDIS_TIMEOUT_MS;
+}
+
+export function isReadCommand(cmd) {
+  return READ_COMMANDS.has(String(cmd ?? "").toUpperCase());
+}
+
+/** Low-level socket error code (ECONNREFUSED, ENOTFOUND, ...) only; never the message, which can carry the host. */
+function causeCode(e) {
+  const code = e?.cause?.code ?? e?.code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{1,40}$/.test(code) ? code : null;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const jitter = () => 200 + Math.floor(Math.random() * 201);
+
+class RedisRestError extends Error {
+  constructor(message, { transient = false } = {}) {
+    super(message);
+    this.name = "RedisRestError";
+    this.transient = transient;
+  }
+}
+
+async function restAttempt(endpoint, token, cmd, name, timeoutMs) {
+  let res;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(cmd),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
+    throw new RedisRestError(
+      timedOut
+        ? `Redis REST ${name}: timed out after ${timeoutMs}ms`
+        : `Redis REST ${name}: network error${causeCode(e) ? ` (${causeCode(e)})` : ""}`,
+      { transient: true },
+    );
+  }
+  if (!res.ok) {
+    throw new RedisRestError(`Redis REST ${name}: HTTP ${res.status}`, {
+      transient: res.status === 429 || res.status >= 500,
+    });
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
+    throw new RedisRestError(
+      timedOut ? `Redis REST ${name}: timed out after ${timeoutMs}ms` : `Redis REST ${name}: bad response body`,
+      { transient: timedOut },
+    );
+  }
+  if (data?.error) throw new RedisRestError(`Redis REST ${name}: ${data.error}`);
+  return data?.result;
+}
+
+/** One REST command with timeout, plus one jittered retry for transient read failures. */
+export async function restCommand(endpoint, token, cmd, { timeoutMs = redisTimeoutMs() } = {}) {
+  const name = String(cmd?.[0] ?? "?").toUpperCase();
+  try {
+    return await restAttempt(endpoint, token, cmd, name, timeoutMs);
+  } catch (e) {
+    if (!(e instanceof RedisRestError) || !e.transient || !READ_COMMANDS.has(name)) throw e;
+    await sleep(jitter());
+    return await restAttempt(endpoint, token, cmd, name, timeoutMs);
+  }
+}
+
 export async function redis(instance, ...cmd) {
   if (!instance.url || !instance.token) {
     throw new Error(`No credentials for instance "${instance.id}"`);
   }
-  const endpoint = restEndpoint(instance.url);
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${instance.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(cmd),
-  });
-  if (!res.ok) throw new Error(`Redis REST ${res.status}`);
-  const data = await res.json();
-  if (data.error) throw new Error(`Redis REST: ${data.error}`);
-  return data.result;
+  return restCommand(restEndpoint(instance.url), instance.token, cmd);
 }
 
 /**
@@ -95,18 +180,7 @@ export function createRedis({ url, token }) {
   }
   const endpoint = restEndpoint(url);
   return async function redisCall(...cmd) {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(cmd),
-    });
-    if (!res.ok) throw new Error(`Redis REST ${res.status}`);
-    const data = await res.json();
-    if (data.error) throw new Error(`Redis REST: ${data.error}`);
-    return data.result;
+    return restCommand(endpoint, token, cmd);
   };
 }
 
