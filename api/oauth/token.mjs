@@ -5,7 +5,7 @@
 // Per MCP spec: PKCE verification is mandatory; client_secret check only when
 // the registered client used token_endpoint_auth_method=client_secret_post.
 
-import { consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady } from "./_lib/storage.mjs";
+import { consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
 
 export const config = { runtime: "nodejs" };
 
@@ -81,6 +81,7 @@ export default async function handler(req, res) {
         backend: codeRecord.backend,
         space: codeRecord.space,
       });
+      await touchClient(client_id);
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));
       return;
@@ -96,9 +97,12 @@ export default async function handler(req, res) {
         return bad(res, 401, "invalid_client", "client_secret mismatch");
       }
 
-      const rec = await consumeRefresh(refresh_token);
-      if (!rec) return bad(res, 400, "invalid_grant", "refresh token invalid or already used");
-      if (rec.client_id !== client_id) return bad(res, 400, "invalid_grant", "refresh/client mismatch");
+      // client_id is checked inside consumeRefresh BEFORE the token is
+      // consumed, so a mismatched client cannot burn someone else's token.
+      const got = await consumeRefresh(refresh_token, client_id);
+      if (!got) return bad(res, 400, "invalid_grant", "refresh token invalid or already used");
+      if (got.mismatch) return bad(res, 400, "invalid_grant", "refresh/client mismatch");
+      const rec = got.rec;
 
       const tokens = await mintTokens({
         client_id,
@@ -109,6 +113,8 @@ export default async function handler(req, res) {
         backend: rec.backend,
         space: rec.space,
       });
+      if (!got.grace) await linkRefreshChildren(refresh_token, tokens);
+      await touchClient(client_id);
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));
       return;

@@ -4,7 +4,7 @@ import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 /**
  * memory-redis plus the few OAuth-only semantics it lacks, implemented
  * synchronously so they are atomic like real Redis: GETDEL, SET NX/EX, and
- * TTL tracking for SET EX / EXPIRE. `getdel:false` makes GETDEL throw like a
+ * TTL tracking for SET EX / EXPIRE / TTL. `getdel:false` makes GETDEL throw like a
  * runner that does not support it, exercising the SET NX lock fallback.
  */
 export function oauthRedis({ getdel = true } = {}) {
@@ -30,6 +30,11 @@ export function oauthRedis({ getdel = true } = {}) {
       if (ex >= 0) ttls.set(k, Number(opts[ex + 1]));
       return "OK";
     }
+    if (C === "TTL") {
+      if (!data.has(args[0])) return -2;
+      return ttls.has(args[0]) ? ttls.get(args[0]) : -1;
+    }
+    if (C === "DEL") for (const k of args) ttls.delete(k);
     if (C === "EXPIRE") {
       if (!data.has(args[0])) return 0;
       ttls.set(args[0], Number(args[1]));
@@ -98,4 +103,17 @@ export function mockRes() {
 
 export function mockReq({ method = "GET", url = "/", body, headers = {} } = {}) {
   return { method, url, body, headers: { host: "logmem.test", ...headers } };
+}
+
+/**
+ * GET the consent page for `query` and return { cookie, csrf_token } so a
+ * test POST looks like it came from that page.
+ */
+export async function consentSession(authorizeHandler, query) {
+  const res = mockRes();
+  await authorizeHandler(mockReq({ url: "/api/oauth/authorize?" + new URLSearchParams(query) }), res);
+  if (res.statusCode !== 200) throw new Error(`consent GET failed: ${res.statusCode}`);
+  const cookie = String(res.getHeader("set-cookie")).split(";")[0];
+  const m = String(res.body).match(/name="csrf_token" value="([^"]+)"/);
+  return { cookie, csrf_token: m && m[1], res };
 }
