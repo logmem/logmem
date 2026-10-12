@@ -45,7 +45,7 @@ test("missing ACMI twin = mismatch = fail", async () => {
 test("ACMI-side handoff-ack counts as accepted (VM agents)", async () => {
   const redis = createMemoryRedis();
   const { a } = await team(redis, "madez");
-  const ho = await sc(a, "logmem_handoff", { to: "bentley", summary: "check prod" });
+  const ho = await sc(a, "logmem_handoff", { to: "bentley", summary: "check prod", create_agent: true });
   const ack = { ts: Date.now(), source: "agent:bentley", kind: "handoff-ack", correlationId: "b1", parentCorrelationId: ho.trail, summary: "ack" };
   await redis("ZADD", "acmi:madez:agent:bentley:timeline", ack.ts, JSON.stringify(ack));
   const { day } = await runCheck(redis, { space: "madez" });
@@ -55,7 +55,7 @@ test("ACMI-side handoff-ack counts as accepted (VM agents)", async () => {
 test("unanswered handoff > 24h writes one stuck entry (mirrored), not twice", async () => {
   const redis = createMemoryRedis();
   const { a } = await team(redis, "madez");
-  const ho = await sc(a, "logmem_handoff", { to: "bentley", summary: "old ask" });
+  const ho = await sc(a, "logmem_handoff", { to: "bentley", summary: "old ask", create_agent: true });
   const later = Date.now() + DAY_MS + 60_000;
   const r1 = await runCheck(redis, { space: "madez", now: later });
   assert.equal(r1.day.unanswered_24h, 1);

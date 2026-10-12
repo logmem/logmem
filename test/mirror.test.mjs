@@ -16,7 +16,7 @@ test("log writes get an ACMI twin: ACMI fields + kind, ms score, mirrored_from",
   const redis = createMemoryRedis();
   const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "m1", surface: "claude-code", mirror: ON });
   await sc(lm, "logmem_start", { agent: "claude-code" });
-  const r = await sc(lm, "logmem_handoff", { to: "bentley", where: "job:logmem-v0-ship", summary: "review spec" });
+  const r = await sc(lm, "logmem_handoff", { to: "bentley", where: "job:logmem-v0-ship", summary: "review spec", create_agent: true });
   assert.equal(r.mirror, "ok");
   const job = await redis("ZRANGE", "acmi:madez:work:logmem-v0-ship:timeline", 0, -1, "WITHSCORES");
   const twin = JSON.parse(job[0]);
@@ -45,7 +45,10 @@ test("now merges into ACMI signals (string or hash); who overwrites profile", as
   const lm = createLogmem({ redis, space: "madez", sessionId: "m3", mirror: ON });
   await sc(lm, "logmem_start", { agent: "a" });
   await sc(lm, "logmem_status", { agent: "a", now: { doing: "x" } });
-  await sc(lm, "logmem_status", { agent: "b", now: { doing: "y", n: { k: 1 } } });
+  // Agents only change their own Now, so b writes b's.
+  const lmB = createLogmem({ redis, space: "madez", sessionId: "m3b", mirror: ON });
+  await sc(lmB, "logmem_start", { agent: "b" });
+  await sc(lmB, "logmem_status", { now: { doing: "y", n: { k: 1 } } });
   const a = JSON.parse(await redis("GET", "acmi:madez:agent:a:signals"));
   assert.equal(a.acmi_only, true);
   assert.equal(a.doing, "x");

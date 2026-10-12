@@ -35,7 +35,8 @@ export function seen(ts, now = Date.now()) {
 
 const slim = (e, from) => ({
   ts: e.ts, kind: e.kind, group: groupOf(e.kind), by: e.by, via: e.via, summary: e.summary,
-  trail: e.trail, origin: e.origin, where: from, to: e.to, payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : undefined,
+  trail: e.trail, origin: e.origin, where: from, to: e.to,
+  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null } : undefined,
 });
 
 export async function allEntries(store, r, space, { limit = 200 } = {}) {
@@ -150,9 +151,13 @@ async function jobsView(store) {
   return jobs;
 }
 
-/** Waiting = approval entries with no decided entry whose origin is their trail. */
+/**
+ * Waiting = approval entries with no decided entry whose origin is their trail.
+ * Only a person's answer counts (by "human:*", written by /api/decide); a
+ * "decided" entry an agent wrote before agents were refused does not close an ask.
+ */
 export function decisionsFrom(entries) {
-  const decided = new Map(entries.filter((e) => e.kind === "decided" && e.origin).map((e) => [e.origin, e]));
+  const decided = new Map(entries.filter((e) => e.kind === "decided" && e.origin && /^human:/.test(String(e.by || ""))).map((e) => [e.origin, e]));
   const asks = entries.filter((e) => e.kind === "approval");
   return {
     waiting: asks.filter((a) => !decided.has(a.trail)),

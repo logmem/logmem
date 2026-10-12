@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createLogmem } from "../src/server.mjs";
+import { writeDecision } from "../src/core/tools.mjs";
 
 const call = async (lm, name, args) => {
   const r = await lm.callTool(name, args);
@@ -77,7 +78,7 @@ test("clean room: start, note, assign, handoff, accept, ask, decide, stage, reca
   await call(a, "logmem_start", { agent: "atlas" });
   const job = await call(a, "logmem_assign", { job: "issue-14", title: "Launch newsletter issue 14" });
   assert.equal(job.entry.kind, "assigned");
-  const ho = await call(a, "logmem_handoff", { to: "quill", where: "job:issue-14", summary: "Draft issue 14", origin: job.entry.trail });
+  const ho = await call(a, "logmem_handoff", { to: "quill", where: "job:issue-14", summary: "Draft issue 14", origin: job.entry.trail, create_agent: true });
 
   const start = await call(q, "logmem_start", { agent: "quill" });
   assert.equal(start.brief.handoffs_to_me.length, 1);
@@ -87,7 +88,7 @@ test("clean room: start, note, assign, handoff, accept, ask, decide, stage, reca
   await call(q, "logmem_update", { job: "issue-14", summary: "Draft done" });
   const ask = await call(q, "logmem_ask", { question: "Send to 2,184 subscribers?", action: "POST /v1/campaigns/iss-14/send", reversible: false, where: "job:issue-14" });
   assert.match(ask.instruction, /Do not perform/);
-  await call(a, "logmem_note", { where: "job:issue-14", kind: "decided", summary: "Approved", origin: ask.trail });
+  await writeDecision(a.store, ask.trail, { verdict: "approve", note: "Approved", by: "human:mikey" });
   await call(q, "logmem_stage", { job: "issue-14", stage: "done", note: "scheduled Tue 9am" });
   const recap = await call(q, "logmem_recap", { notes: "Issue 14 scheduled.", next: ["subject-line test for 15"] });
   assert.equal(recap.recap.mode, "manual");
@@ -138,7 +139,7 @@ test("two spaces on one Redis never see each other", async () => {
 test("compat mode: acmi_* tools write LogMem shape and read back ACMI shape", async () => {
   const redis = createMemoryRedis();
   const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "c" });
-  assert.equal(lm.tools.length, 40);
+  assert.equal(lm.tools.length, 41);
   await call(lm, "acmi_event", { namespace: "thread", id: "agent-coordination", source: "agent:codex", kind: "handoff-ack", summary: "ack", correlationId: "x-1", parentCorrelationId: "p-1" });
   const raw = await redis("ZRANGE", "lm:madez:channel:agent-coordination:log", 0, -1);
   const stored = JSON.parse(raw[0]);
@@ -158,7 +159,7 @@ test("compat mode: acmi_* tools write LogMem shape and read back ACMI shape", as
   assert.equal(del.key, "lm:madez:channel:agent-coordination:log");
   assert.equal(del.dry_run, true);
   const plain = createLogmem({ redis, space: "madez", sessionId: "d" });
-  assert.equal(plain.tools.length, 21, "compat off: logmem_* only");
+  assert.equal(plain.tools.length, 22, "compat off: logmem_* only");
 });
 
 test("auto Recap counts the shift's own entries", async () => {
@@ -198,7 +199,7 @@ test("review fix: a handoff older than 20 entries still shows in the Brief", asy
   const a = createLogmem({ redis, space: "acme", sessionId: "a" });
   const q = createLogmem({ redis, space: "acme", sessionId: "q" });
   await call(a, "logmem_start", { agent: "atlas" });
-  await call(a, "logmem_handoff", { to: "quill", summary: "old work" });
+  await call(a, "logmem_handoff", { to: "quill", summary: "old work", create_agent: true });
   await call(q, "logmem_start", { agent: "quill" });
   for (let i = 0; i < 30; i++) await call(q, "logmem_note", { where: "agent:quill", summary: `busy ${i}` });
   const b = await call(q, "logmem_brief", {});

@@ -50,8 +50,8 @@ test("seen buckets and waiting decisions", () => {
   assert.equal(seen(now - 60 * 60e3, now).state, "idle");
   assert.equal(seen(now - 5 * 3600e3, now).state, "offline");
   assert.equal(seen(null).state, "unknown");
-  const d = decisionsFrom([{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "decided", origin: "a" }]);
-  assert.deepEqual(d.waiting.map((x) => x.trail), ["b"]);
+  const d = decisionsFrom([{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "decided", origin: "a", by: "human:you" }, { kind: "decided", origin: "b", by: "agent:mallory" }]);
+  assert.deepEqual(d.waiting.map((x) => x.trail), ["b"], "an agent-written decided never closes an ask");
 });
 
 test("security: scorecard ignores forged checkups and coerces every field", async () => {

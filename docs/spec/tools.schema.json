@@ -47,7 +47,7 @@
     {
       "name": "logmem_brief",
       "title": "Brief",
-      "description": "Catch up before doing anything: reads an agent's Who, Now, recent Log, last Recap, what it follows and any handoffs waiting for it. Read only.",
+      "description": "Catch up before doing anything: reads an agent's Who, Now, recent Log, last Recap, what it follows, handoffs waiting for it, and its asks from the last 7 days (pending_asks still waiting on a person, answered_asks with the verdict). Read only.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -125,7 +125,7 @@
     {
       "name": "logmem_note",
       "title": "Note",
-      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, decided, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from).",
+      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kind 'decided' is refused: only a person answers an ask. Limits: summary 1000 characters, payload 16 KB.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -139,7 +139,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "Entry type. One of: started, ping, recap, joined, setup, handoff, accepted, assigned, progress, done, shared, research, checkup, feedback, approval, decided, pivot, stuck, alert, memo, huddle, problem, fix. Default memo."
+            "description": "Entry type. One of: started, ping, recap, joined, setup, handoff, accepted, assigned, progress, done, shared, research, checkup, feedback, approval, pivot, stuck, alert, memo, huddle, problem, fix. Default memo."
           },
           "trail": {
             "type": "string",
@@ -182,7 +182,7 @@
     {
       "name": "logmem_handoff",
       "title": "Handoff",
-      "description": "Pass work to another agent. Writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver confirms with logmem_note kind 'accepted' and origin set to this handoff's trail.",
+      "description": "Pass work to another agent. Writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -205,6 +205,10 @@
           "origin": {
             "type": "string",
             "description": "Trail id this handoff follows from"
+          },
+          "create_agent": {
+            "type": "boolean",
+            "description": "Hand off to an agent that is not in the roster yet (default false: refuse unknown agents)"
           }
         },
         "additionalProperties": false,
@@ -232,9 +236,52 @@
       "acmi_equivalent": null
     },
     {
+      "name": "logmem_accept",
+      "title": "Accept",
+      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "trail": {
+            "type": "string",
+            "description": "Trail of the handoff, from handoffs_to_me in your Brief"
+          },
+          "decline": {
+            "type": "boolean",
+            "description": "true to turn the work down (default false = accept)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, in one line (shown to the sender; recommended for a decline)"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "trail"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Accept",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "acmi_equivalent": null
+    },
+    {
       "name": "logmem_ask",
       "title": "Ask",
-      "description": "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. Do not do the action until a 'decided' entry with origin = this trail says yes.",
+      "description": "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. A person answers on the Decisions page; the answer shows in your Brief under answered_asks with verdict approve, reject or defer. Do the action only on approve.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -287,7 +334,7 @@
     {
       "name": "logmem_status",
       "title": "Status",
-      "description": "Update what an agent is doing right now (its Now). Merges the fields you pass; other fields stay.",
+      "description": "Update what you are doing right now (your Now). Merges the fields you pass; other fields stay. Only your own agent: other agents update theirs.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -298,7 +345,7 @@
           },
           "agent": {
             "type": "string",
-            "description": "Agent (default: you)"
+            "description": "Must be you if given (default: you)"
           }
         },
         "additionalProperties": false,
@@ -327,7 +374,7 @@
     {
       "name": "logmem_bio",
       "title": "Bio",
-      "description": "Update who an agent is (its Who): name, role, owner, model. Merges by default; pass replace=true to overwrite.",
+      "description": "Update who you are (your Who): name, role, owner, model. Merges by default; pass replace=true to overwrite. Only your own agent.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -338,7 +385,7 @@
           },
           "agent": {
             "type": "string",
-            "description": "Agent (default: you)"
+            "description": "Must be you if given (default: you)"
           },
           "replace": {
             "type": "boolean",
@@ -598,7 +645,7 @@
     {
       "name": "logmem_update",
       "title": "Update",
-      "description": "Add progress to a job's log. Default kind is progress.",
+      "description": "Add progress to a job's log. Default kind is progress. Kind 'decided' is refused: only a person answers an ask.",
       "inputSchema": {
         "type": "object",
         "properties": {

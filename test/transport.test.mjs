@@ -19,21 +19,27 @@ test("stdio clean room: a fresh MCP client runs logmem start quill, notes, hands
   try {
     assert.match(client.getInstructions() || "", /logmem start <agent>/);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    assert.equal(names.length, 21);
+    assert.equal(names.length, 22);
     assert.ok(names.every((n) => n.startsWith("logmem_")));
 
     const sc = async (name, args) => (await client.callTool({ name, arguments: args })).structuredContent;
     const start = await sc("logmem_start", { agent: "quill" });
     assert.equal(start.started.agent, "quill");
-    const note = await sc("logmem_note", { where: "channel:field-notes", summary: "outline approved", kind: "decided" });
+    // Agents can't write decided: only a person answers an ask (writeDecision / /api/decide).
+    const forged = await client.callTool({ name: "logmem_note", arguments: { where: "channel:field-notes", summary: "outline approved", kind: "decided" } });
+    assert.equal(forged.isError, true);
+    assert.match(forged.structuredContent.error, /written by a person/);
+    const note = await sc("logmem_note", { where: "channel:field-notes", summary: "outline ready for review", kind: "memo" });
     assert.equal(note.entry.byline, "quill (via cleanroom-agent)");
-    const ho = await sc("logmem_handoff", { to: "atlas", where: "job:issue-14", summary: "review the draft" });
+    const typo = await sc("logmem_handoff", { to: "atals", where: "job:issue-14", summary: "review the draft" });
+    assert.equal(typo.ok, false, "atlas is not in the roster yet");
+    const ho = await sc("logmem_handoff", { to: "atlas", where: "job:issue-14", summary: "review the draft", create_agent: true });
     assert.ok(ho.trail);
     await sc("logmem_recap", { notes: "Handed issue 14 to atlas." });
 
     const back = await sc("logmem_feed", { refs: ["channel:field-notes", "job:issue-14", "agent:quill"] });
     const kinds = back.entries.map((e) => e.kind);
-    for (const k of ["started", "decided", "handoff", "recap"]) assert.ok(kinds.includes(k), `${k} in ${kinds}`);
+    for (const k of ["started", "memo", "handoff", "recap"]) assert.ok(kinds.includes(k), `${k} in ${kinds}`);
     const atlas = await sc("logmem_start", { agent: "atlas" });
     assert.equal(atlas.brief.handoffs_to_me[0].trail, ho.trail);
     const conn = await sc("logmem_connection", {});

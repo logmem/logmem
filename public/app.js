@@ -1,4 +1,5 @@
 // app.js — the LogMem web app. Hash routes, live data from /api/view (read-only).
+// The one write: Approve / Reject / Defer on an ask, POSTed to /api/decide.
 // Every value from the server is escaped before it reaches the page.
 (function () {
   'use strict';
@@ -135,10 +136,10 @@
     decisions: function () {
       return api('decisions').then(function (d) {
         if (!ok(d)) return;
-        var hist = d.decided.map(function (x) { return '<tr><td style="font-size:14px">' + esc(x.ask.summary) + '</td><td style="font-size:13px">' + esc(agentName(x.ask.by)) + ' · ' + ago(x.ask.ts) + '</td><td style="font-size:13px">' + esc(x.answer.summary) + '<br><span class="subtle">' + esc(agentName(x.answer.by)) + ' · ' + ago(x.answer.ts) + '</span></td></tr>'; });
+        var hist = d.decided.map(function (x) { var v = (x.answer.payload || {}).verdict; return '<tr><td style="font-size:14px">' + esc(x.ask.summary) + '</td><td style="font-size:13px">' + esc(agentName(x.ask.by)) + ' · ' + ago(x.ask.ts) + '</td><td style="font-size:13px">' + (VERDICT[v] ? decision(VERDICT[v]) + ' ' : '') + esc(x.answer.summary) + '<br><span class="subtle">' + esc(agentName(x.answer.by)) + ' · ' + ago(x.answer.ts) + '</span></td></tr>'; });
         render('decisions', ['Decisions'], head('Decisions', 'When an agent calls logmem_ask it stops and waits here. Answers are written to the log as decided.') +
           (d.waiting.length ? d.waiting.map(askCard).join('') : emptyState('Nothing waiting on you.', 'Asks show here with the exact action and whether it can be undone.')) +
-          '<div class="lm-alert" style="background:var(--surface-sunken)">' + icon('info') + '<div style="font-size:13px">Answering from the web app is not built yet. An agent with you in the loop records your answer with logmem_note kind decided.</div></div>' +
+          '<div class="lm-alert" style="background:var(--surface-sunken)">' + icon('info') + '<div style="font-size:13px">Approve, Reject or Defer writes a decided entry signed by you to the ask’s log and the agent’s log, and the agent sees the verdict in its Brief. Agents cannot write decided themselves. An ask that can’t be undone needs you to type approve first.</div></div>' +
           '<h2 class="lm-title-2" style="margin:0;font-size:17px">Decided</h2>' + (hist.length ? table(['Asked', 'By', 'Answer'], hist) : emptyState('Nothing decided yet.', '')), d.waiting.length);
       });
     },
@@ -175,9 +176,76 @@
     }
   };
 
+  var VERDICT = { approve: 'approved', reject: 'rejected', defer: 'deferred' };
   function askCard(a) {
     var p = a.payload || {};
-    return '<section class="lm-approval" aria-label="Decision"><div class="lm-approval-head">' + icon('decisions') + '<strong>' + esc(agentName(a.by)) + ' asks: ' + esc(a.summary) + '</strong><span style="margin-left:auto">' + decision('pending') + '</span></div><div class="lm-approval-body"><div class="lm-eyebrow">Exact proposed action</div><pre class="lm-action">' + esc(p.action || '(not given)') + '</pre><dl class="lm-kv"><dt>Where</dt><dd>' + esc(a.where) + '</dd><dt>Asked</dt><dd>' + ago(a.ts) + ' via ' + esc(a.via || '') + '</dd><dt>Reversible</dt><dd>' + (p.reversible === false ? 'No' : p.reversible === true ? 'Yes' : 'Not stated') + '</dd><dt>trail</dt><dd class="mono">' + esc(a.trail) + '</dd></dl></div></section>';
+    var foot = '<div class="lm-approval-foot" data-ask="' + esc(a.trail) + '"' + (p.reversible === false ? ' data-irreversible="1"' : '') + '>' +
+      '<input class="lm-input" name="note" maxlength="1000" autocomplete="off" placeholder="Note for the agent (optional)" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">' +
+      '<button type="button" class="lm-btn lm-btn--primary" data-verdict="approve">Approve</button>' +
+      '<button type="button" class="lm-btn lm-btn--danger" data-verdict="reject">Reject</button>' +
+      '<button type="button" class="lm-btn lm-btn--secondary" data-verdict="defer">Defer</button>' +
+      '<span class="lm-decide-msg" role="status" style="flex-basis:100%;font-size:13px"></span></div>';
+    return '<section class="lm-approval" aria-label="Decision"><div class="lm-approval-head">' + icon('decisions') + '<strong>' + esc(agentName(a.by)) + ' asks: ' + esc(a.summary) + '</strong><span style="margin-left:auto">' + decision('pending') + '</span></div><div class="lm-approval-body"><div class="lm-eyebrow">Exact proposed action</div><pre class="lm-action">' + esc(p.action || '(not given)') + '</pre><dl class="lm-kv"><dt>Where</dt><dd>' + esc(a.where) + '</dd><dt>Asked</dt><dd>' + ago(a.ts) + ' via ' + esc(a.via || '') + '</dd><dt>Reversible</dt><dd>' + (p.reversible === false ? 'No' : p.reversible === true ? 'Yes' : 'Not stated') + '</dd><dt>trail</dt><dd class="mono">' + esc(a.trail) + '</dd></dl></div>' + foot + '</section>';
+  }
+
+  // ─── answering an ask (the web app's one write) ──────────────────
+  function onDecideClick(ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('[data-verdict]') : null;
+    if (!btn || btn.disabled) return;
+    var foot = btn.closest('[data-ask]');
+    if (!foot) return;
+    var trail = foot.getAttribute('data-ask');
+    var verdict = btn.getAttribute('data-verdict');
+    var noteEl = foot.querySelector('input[name="note"]');
+    var note = noteEl ? noteEl.value.trim().slice(0, 1000) : '';
+    var go = function () { sendDecision(foot, btn, trail, verdict, note); };
+    if (verdict === 'approve' && foot.getAttribute('data-irreversible') === '1') confirmIrreversible(foot, go);
+    else go();
+  }
+  // Irreversible asks: show the exact action again and require typing "approve".
+  function confirmIrreversible(foot, go) {
+    var card = foot.closest('.lm-approval');
+    var actionEl = card ? card.querySelector('.lm-action') : null;
+    var scrim = document.createElement('div');
+    scrim.className = 'lm-scrim';
+    scrim.style.cssText = 'position:fixed;inset:0;z-index:50';
+    scrim.innerHTML = '<div class="lm-dialog" role="dialog" aria-modal="true" aria-labelledby="lm-dlg-t"><div class="lm-dialog-head"><h2 class="lm-title-2" id="lm-dlg-t" style="margin:0;font-size:17px">This can’t be undone</h2><span style="font-size:13px" class="muted">If you approve, the agent does exactly this:</span></div>' +
+      '<div class="lm-dialog-body" style="display:flex;flex-direction:column;gap:12px"><pre class="lm-action"></pre><label class="lm-field"><span class="lm-label">Type approve to confirm</span><input class="lm-input" autocomplete="off" spellcheck="false" aria-describedby="lm-dlg-t"></label></div>' +
+      '<div class="lm-dialog-foot"><button type="button" class="lm-btn lm-btn--secondary" data-x="cancel">Cancel</button><button type="button" class="lm-btn lm-btn--primary" data-x="ok" disabled>Approve</button></div></div>';
+    scrim.querySelector('pre').textContent = actionEl ? actionEl.textContent : '';
+    var input = scrim.querySelector('input');
+    var okB = scrim.querySelector('[data-x="ok"]');
+    var typed = function () { return input.value.trim().toLowerCase() === 'approve'; };
+    var onKey = function (e) { if (e.key === 'Escape') close(); };
+    var close = function () { document.removeEventListener('keydown', onKey); if (scrim.parentNode) scrim.parentNode.removeChild(scrim); };
+    var confirm = function () { if (!typed()) return; close(); go(); };
+    input.oninput = function () { okB.disabled = !typed(); };
+    input.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); confirm(); } };
+    okB.onclick = confirm;
+    scrim.querySelector('[data-x="cancel"]').onclick = close;
+    scrim.onclick = function (e) { if (e.target === scrim) close(); };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(scrim);
+    input.focus();
+  }
+  function sendDecision(foot, btn, trail, verdict, note) {
+    var btns = foot.querySelectorAll('button');
+    var msg = foot.querySelector('.lm-decide-msg');
+    var busy = function (on) { for (var i = 0; i < btns.length; i++) btns[i].disabled = on; if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy'); };
+    var fail = function (text) { busy(false); if (msg) { msg.textContent = text; msg.style.color = 'var(--danger)'; } };
+    busy(true);
+    var body = { space: state.space, trail: trail, verdict: verdict };
+    if (note) body.note = note;
+    fetch('/api/decide', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': 'decide' }, body: JSON.stringify(body) })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (r.status === 201) return route_();
+          if (r.status === 401) return login(j.error);
+          if (r.status === 409) return fail('Already answered: ' + (j.error || 'someone decided this first') + '. Reload to see it.');
+          fail('Not recorded: ' + (j.error || ('status ' + r.status)) + '. Nothing was written.');
+        });
+      })
+      .catch(function (e) { fail('Couldn’t reach LogMem: ' + e.message + '. Nothing was written.'); });
   }
 
   // ─── plumbing ─────────────────────────────────────────────────────
@@ -201,7 +269,7 @@
   }
   function login(msg) {
     root.innerHTML = '<div class="wrap" style="max-width:420px;padding-top:96px;display:flex;flex-direction:column;gap:20px"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height:32px;width:auto;align-self:flex-start"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height:32px;width:auto;align-self:flex-start"><h1 class="lm-title-1" style="margin:0;font-size:22px">Sign in to LogMem.</h1>' +
-      '<form id="lf" class="lm-panel" style="padding:20px;display:flex;flex-direction:column;gap:12px"><div class="lm-field"><label class="lm-label" for="pw">Admin password</label><input class="lm-input" id="pw" name="pw" type="password" autocomplete="current-password" required></div><p id="lerr" role="alert" style="margin:0;font-size:13px;color:var(--danger)">' + esc(msg && msg !== 'sign in required' ? msg : '') + '</p><button class="lm-btn lm-btn--primary">Sign in</button></form><p class="subtle" style="font-size:13px;margin:0">The web app only reads. Agents write through MCP.</p></div>';
+      '<form id="lf" class="lm-panel" style="padding:20px;display:flex;flex-direction:column;gap:12px"><div class="lm-field"><label class="lm-label" for="pw">Admin password</label><input class="lm-input" id="pw" name="pw" type="password" autocomplete="current-password" required></div><p id="lerr" role="alert" style="margin:0;font-size:13px;color:var(--danger)">' + esc(msg && msg !== 'sign in required' ? msg : '') + '</p><button class="lm-btn lm-btn--primary">Sign in</button></form><p class="subtle" style="font-size:13px;margin:0">The web app reads, and records your answers to asks. Agents write through MCP.</p></div>';
     document.getElementById('lf').onsubmit = function (e) {
       e.preventDefault();
       fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: document.getElementById('pw').value }), credentials: 'same-origin' })
@@ -213,6 +281,7 @@
     var page = pages[parts[0]] || pages.overview;
     page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined).catch(function (e) { root.innerHTML = '<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">' + icon('alert') + '<div><strong>Couldn’t reach LogMem.</strong> ' + esc(e.message) + '</div></div></div>'; });
   }
+  root.addEventListener('click', onDecideClick);
   window.addEventListener('hashchange', route_);
   route_();
 })();
