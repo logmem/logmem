@@ -1,18 +1,21 @@
 # LogMem v1 core: design (Tier 1)
 
-Date: 2026-10-12 · Status: **DRAFT for owner review** · Covers GAPS.md D1–D5, U5, U6, U8 · Supersedes the
-"Entry shape" and "Key layout" parts of `docs/KEYS.md` and §3–§4 of `docs/spec/tools.md` once accepted.
-Docs only. Nothing here has been built, deployed or run against any Redis.
+Date: 2026-10-12 (rev 2, after independent critique: "approve with changes") · Status: **DRAFT for owner review**
+· Covers GAPS.md D1–D5, U5, U6, U8 · Once accepted, supersedes "Entry shape" and "Key layout" in `docs/KEYS.md`
+and §3–§4 of `docs/spec/tools.md`. Docs only: nothing here has been built, deployed or run against any Redis.
 
 ## 0. Decisions at a glance
 
 | # | Decision |
 |---|---|
-| D1 | Every entry gets a server-generated **ULID `id`**, a schema version **`v: 1`** and a **space-wide `seq`** (`INCR`). Bodies live once per space in `lm:{s}:entries` (HASH id → JSON); every log is a ZSET of **member = id, score = ts ms**. Content dedupe and `_o` go away. Retries dedupe on `id`; clients dedupe with `idempotency_key`. Entries are immutable; the only in-place change is a human **redaction** that leaves a tombstone |
-| D2 | Seven Lua scripts (`append`, `handoff`, `accept`, `ask`, `decide`, `shift`, `redact`) plus a read script (`page`) sharing one prelude. The runner gains `script()` (EVALSHA, NOSCRIPT → EVAL) and `pipeline()`. A capability probe picks **atomic** or **sequenced** mode; hosted requires atomic |
-| D3 | Contract **1.0**: cursors on every list read, `id` + `idempotency_key` on every write, `logmem_accept`, `logmem_pending`, human-only `logmem_decide` with `verdict`, `to` validated against the roster, coded errors, contract version in `initialize` |
-| D4 | Keys are `lm:{space}:…` (hash tag). No SCAN on any request path: an activity ZSET, a log index, open-item indexes and shift indexes replace it. Redis is the hot store; **Postgres** holds the registry, history, search and export (hosted, and BYO by opt-in). Isolation is enforced by the LogMem server, not by Redis, and this doc says so plainly |
-| D5 | Hot window **30 days** (free) / **90 days** (team, agency); older archived entries leave Redis. Mirror off target **2026-12-01**; compat reads removed **no earlier than 2027-01-15, no later than 2027-03-31**, only when the conditions in §6 hold |
+| D1 | Every entry gets a server-minted **ULID `id`**, schema version **`v: 1`** and a **space-wide `seq`**. Bodies are stored once, in **day buckets** `lm:{s}:e:{yyyymmdd}` (HASH id → JSON). Every log is a ZSET with **member = id, score = seq**. Content dedupe and `_o` go away. Retries dedupe on `id`; clients dedupe with `idempotency_key`. Entries are immutable; the only in-place change is a human **redaction** that leaves a tombstone |
+| D2 | Six workflow scripts (`append`, `handoff`, `accept`, `ask`, `decide`, `shift`), an admin `redact` script and a read-only `page_ids` script. **Every script runs all checks before its first write** and returns documented status codes. Where scripts are refused, **sequenced mode** uses single-command **claim keys** (`SET … NX`) written before any entry, so exactly one caller wins on any bridge. Hosted requires atomic |
+| D3 | Contract **1.0**: seq cursors on every list read (forward polling included), `idempotency_key` + `id`/`seq` on entry writes, `logmem_accept`, `logmem_pending`, human-only `logmem_decide` with `verdict`, `to` checked against the roster, coded errors, contract version in `initialize` |
+| D4 | Keys are `lm:{space}:…` (hash tag): one space lives in one slot, which caps a space at one shard. No SCAN or whole-bucket reads on any request path. v1.0 ships the **outbox hooks** (seq, activity, marks, redaction log). The first archive (v1.1) is **JSONL in object storage** for export and delete; Postgres history and search follow in v1.1. Isolation is enforced by the LogMem server, not by Redis |
+| D5 | Hot window 30 days (free) or 90 days (team, agency). Trimming = `UNLINK` of old day buckets (v1.1). Mirror off targeted for **2026-12-01**. Compat reads are removed **between 2027-01-15 and 2027-03-31**, and only when the §6 conditions hold |
+
+Prerequisites outside this design: **S2** (human-only `decided`) ships earlier as a v0.x hotfix in a separate
+PR (T0-b). **O1** (a required CI gate) must land before any v1 phase merges.
 
 ---
 
@@ -22,219 +25,311 @@ Docs only. Nothing here has been built, deployed or run against any Redis.
 
 ```jsonc
 {
-  "seq": 4182,                          // space-wide commit order, injected by the script
-  "v": 1,                               // entry schema version
-  "id": "01JA7Q8K3M5V2C9RZB6T4XWDHN",   // ULID; first 10 chars encode ts
-  "ts": 1791731538741,                  // ms; always equal to the ULID time
+  "seq": 4182,                          // space-wide order, spliced in by the script
+  "v": 1,
+  "id": "01JA7Q8K3M5V2C9RZB6T4XWDHN",   // ULID; first 10 chars = ts; also names the day bucket
+  "ts": 1791731538741,                  // ms, equal to the ULID time
   "kind": "handoff",
   "by": "agent:quill", "via": "codex", "byline": "quill (via codex)",
   "shift": "quillShift-1791731500000",
   "trail": "handoffIssue14-1791731538741",
   "origin": "assignedIssue14-1791731400000",
-  "logs": ["job:issue-14", "agent:atlas"],   // every log this entry is indexed in
-  "summary": "...",
-  "payload": {},                        // optional, ≤ 8 KB
-  "to": "agent:atlas"                   // kind-specific fields as in v0
+  "logs": ["job:issue-14", "agent:atlas"],
+  "summary": "...", "payload": {},      // summary ≤ 500 chars, entry ≤ 16 KB (S7)
+  "to": "agent:atlas"
 }
 ```
 
-- `id`: ULID generated in Node (monotonic within a process, ~30 lines, no dependency). The server, not the
-  client, mints it. `ts` comes from the same clock read, so `id` order equals `(ts, id)` order.
-- `seq`: one counter per space, `lm:{s}:seq`. An entry fanned out to three logs has **one** seq. It is the
-  outbox cursor (§4.4), the activity order and the gap detector (`seq` gaps mean a lost write).
-- `v`: readers treat a missing `v` as 0 (v0 `lm` or legacy ACMI) and upgrade on read.
-- Limits (S7): `summary` ≤ 500 chars, encoded entry ≤ 16 KB, refused with `too_large`.
-- Client-supplied `ts` is dropped from the v1 contract. Only the import/migration path may backdate, and it
-  mints the ULID from that `ts`.
+- `id`: a ULID minted in Node, monotonic within a process (about 30 lines, no dependency). Only the
+  import/migration path may backdate, and it mints the ULID from the historic `ts`. Client-supplied `ts` is
+  dropped from the contract.
+- `seq`: one counter per space, `lm:{s}:seq`. A fanned-out entry has **one** seq. Seq is the order of every
+  log and of `activity`, and it is the cursor (§1.3). In atomic mode, scripts call `INCR` only after their
+  checks pass, so rejected calls don't consume seqs. **A seq gap does not mean a lost write.** Gaps are normal
+  in sequenced mode (a crash between `INCR` and the body write) and must never be treated as data loss.
+- `v`: readers treat a missing `v` as 0 (v0 `lm`, or legacy ACMI) and upgrade it on read.
 
-**Rejected: a per-log sequence** (GAPS suggested it). A fanned-out entry would carry a different number in
-each log, so it can't serve as one identity or one outbox cursor. Per-log counts are `ZCARD`.
-**Rejected: Redis Streams.** You can't backdate IDs for migration, entries can't be replaced in place
-(redaction), `XRANGE` over many streams is no better than ZSETs, and the ACMI timeline is a ZSET already.
-**Rejected: client-generated ids.** They invite collisions and forged ordering. Clients get
-`idempotency_key` instead.
+**Rejected: a per-log sequence.** A fanned-out entry would have a different number in every log. Per-log
+counts are `ZCARD`. **Rejected: Redis Streams.** IDs can't be backdated, entries can't be replaced in place
+for redaction, and ACMI timelines are ZSETs. **Rejected: client ids.** They allow collisions and forged order;
+clients get `idempotency_key` instead.
 
 ### 1.2 Storage layout
 
-| Key | Type | Member / value | Score |
-|---|---|---|---|
-| `lm:{s}:entries` | HASH | `id` → entry JSON (with `seq`) | |
-| `lm:{s}:seq` | STRING | INCR counter | |
-| `lm:{s}:{ns}:{id}:log` | ZSET | entry `id` | `ts` ms |
-| `lm:{s}:activity` | ZSET | entry `id` | `seq` |
-| `lm:{s}:idem:{h}` | STRING | `"<id>|<req_hash>"`, `EX 86400` | |
+| Key | Type | Content |
+|---|---|---|
+| `lm:{s}:e:{yyyymmdd}` | HASH | `id` → entry JSON. The bucket is the UTC day of the ULID time |
+| `lm:{s}:seq` | STRING | entry counter |
+| `lm:{s}:{ns}:{id}:log` | ZSET | member `id`, score `seq` |
+| `lm:{s}:activity` | ZSET | member `id`, score `seq` (every entry in the space) |
+| `lm:{s}:days` | ZSET | member `yyyymmdd`, score = first seq of that day (used for retention) |
+| `lm:{s}:idem:{h}` | STRING | `"<id>|<req_hash>"`, `EX 86400` |
 
-There is one body per entry, however many logs it sits in. That fixes the "shown once" signature hack in
-`view.mjs` (`ts|trail|summary`) and makes redaction a single write.
+Bodies are stored once and bucketed by day. Readers find the bucket from the id alone, and retention drops
+whole buckets with `UNLINK` instead of `HDEL`ing ids one at a time. `HGETALL`/`HLEN`/`HSCAN` on `:e:` keys are
+banned from request paths (§4.1 grep test). Totals live in `lm:{s}:meta` (`entries_total`, via `HINCRBY` in
+the scripts).
 
-**Rejected: keep member = JSON.** Redaction and edits would mean ZREM + ZADD on every log holding a copy.
-Dedupe stays content-based (that is today's `ZRANGEBYSCORE ts ts` loop, a read-then-write race). Members are
-large, so `ZRANGE` pages are large.
-**Rejected: one STRING key per entry.** That's millions of keys, ~60 B overhead each, and it pushes
-operators back to SCAN. The HASH is in the space's slot and trims with `HDEL`.
+**Rejected: member = JSON (v0).** Redaction would touch every copy, dedupe is a read-then-write race, and
+pages are large. **Rejected: one unbucketed `entries` HASH.** It grows without bound and can only be trimmed id
+by id. **Rejected: one STRING key per entry.** That's millions of keys and pushes operators back to SCAN.
 
-### 1.3 Ordering and cursors
+### 1.3 Cursors
 
-A log orders by `(score = ts, member = id)`. Redis orders equal scores by member bytes, and the ULID random
-part breaks ties, so the ZSET order is the display order. No `_o` is needed.
+All cursors are seq-based: `base64url(JSON {"c":1,"seq":<n>,"d":"rev"|"fwd"})`, opaque and exclusive.
+Scores are integer seqs, so there are no ties and a page is a single exclusive range:
 
-Cursor = `base64url(JSON {"c":1,"ts":<ms>,"id":"<ulid>","d":"rev"|"fwd"})`, opaque to clients and exclusive.
-The `page` script (§2.2) reads `ZRANGE key <ts> -inf BYSCORE REV LIMIT 0 <n+t>`, where `t` = `ZCOUNT key ts ts`,
-drops members with `score == ts and member >= id`, then `HMGET`s the bodies. Multi-log reads (`feed`) merge by
-the same `(ts, id)` key, so one cursor works across logs. Cursors aren't signed: tampering only exposes your
-own space.
+- Reverse browsing (newest first): `ZRANGE key (<seq> -inf BYSCORE REV LIMIT 0 <n>`.
+- Forward, tail and poll (oldest first, "what's new since my cursor"):
+  `ZRANGE key (<seq> +inf BYSCORE LIMIT 0 <n>`.
+- `feed` merges logs by seq, which is a total order across the space, so one cursor covers every log.
+- `since` windows (`24h`) filter on `ts` while paging in reverse and stop at the first entry older than the
+  window. History is seq-ordered in `ts` order at migration (§1.6). After that, seq order and ts order agree to
+  within clock skew.
 
-**Rejected: score 0 + `BYLEX` on the ULID.** Cursors get simpler, but you lose `ZREMRANGEBYSCORE` retention,
-`ZCOUNT` windows, readable scores in `redis-cli`, and parity with the ACMI timeline that the mirror and compat
-read.
+**Why not (ts, id).** A poller holding a ts cursor misses entries that commit later with a slightly earlier
+`ts` (clock skew between serverless instances). Seq is assigned at commit, so forward cursors never skip an
+entry that was atomically committed. Using seq for every direction also removes tie handling, so (ts, id) is
+not used anywhere.
+
+Settle rule for forward readers in **sequenced** mode only: a gap at `seq = m+1` is held for up to **60 s**
+(measured from the `ts` of the first entry after the gap), then skipped. Forward results carry
+`next_cursor` at the last contiguous or settled seq. Atomic mode has no in-flight gaps, so the rule never
+fires there.
 
 ### 1.4 Dedupe and idempotency
 
-- **Transport retries** (REST fetch timed out after Redis applied it): the Node side minted `id` before the
-  call. A retry sends the same `id`, and the script returns the stored entry (`{0, id, body}`) when `HEXISTS entries id`. So
-  internal retries are exactly-once.
-- **Client retries**: optional `idempotency_key` (≤ 128 chars) on every write tool.
-  `h = sha256(tool ‖ agent ‖ key)[:32]`, and `req_hash = sha256(canonical args without the key)`. Same key,
-  same args → the original result with `deduped: true`. Same key, different args → `idempotency_conflict`.
-  The TTL is 24 h.
-- **Content dedupe is removed.** Two identical notes are two entries. That was already true whenever `ts`
-  differed by 1 ms, so nothing real relied on it.
+- **Transport retries**: Node mints `id` before the call, so a retry with the same `id` finds
+  `HEXISTS e:{day} id` and gets status `0 replay`, and nothing is written twice.
+- **Client retries**: optional `idempotency_key` (≤ 128 chars) on **tools that write entries**.
+  `h = sha256(tool ‖ agent ‖ key)[:32]` and `req_hash = sha256(canonical args minus key)`. Same key and same
+  args replay the original (`deduped: true`). Same key with different args returns `idempotency_conflict`.
+  The idem value holds only the `id`, and the caller reads the body afterwards, because a script can only
+  touch the bucket keys it was given.
+- `status`, `bio` and `follow` write no entry. They return no `id`/`seq` and take no `idempotency_key`; they
+  are idempotent overwrites already.
+- Content dedupe is removed.
 
 ### 1.5 Edits and redaction
 
-- Entries are **immutable**. A correction is a new entry: `kind: "fix"`, `amends: "<id>"`, `origin` = the
-  original's trail. Readers show `amended_by` when both are on the same page. There's no edit tool.
-- Derived state that v0 kept in entries moves to indexes: `approval.status: "waiting"` becomes membership of
-  `open:ask` (§5.2).
-- **Redaction (GDPR erasure of one entry)** is human-only, through `POST /api/spaces/{s}/entries/{id}/redact`
-  (admin auth now, approver/owner role after U7). The `redact` script replaces the body with a tombstone and
-  keeps the chain:
-  `{"seq","v","id","ts","kind","by","trail","origin","logs","redacted":{"at","by","reason_code"}}`. `summary`,
-  `payload`, `action` and kind-specific text are dropped. The tombstone keeps the original `seq`. The redaction itself takes a new
-  `seq` as its score in `lm:{s}:redactions`, so the outbox propagates it to Postgres and the archive (§6.2). The mirror replaces the
-  ACMI twin, which it finds exactly via `ZRANGEBYSCORE acmi…:timeline ts ts` + `lm_id`. A `fix` audit entry
-  records the redaction **without** the redacted text.
-- `logmem_remove` stops accepting `:log` keys in v1 (`invalid_argument`, pointing to redaction or retention),
-  because deleting a log ZSET would orphan bodies.
+- Entries are **immutable**. A correction is a new entry (`kind: "fix"`, `amends: "<id>"`). There's no edit
+  tool.
+- Derived state moves out of entries: approval `status` becomes membership of `open:ask` (§5.2).
+- **Redaction (GDPR erasure of one entry)** is human-only, through the admin endpoint
+  `POST /api/spaces/{s}/entries/{id}/redact`, which runs the `redact` script. The body is replaced in its
+  bucket by a tombstone that keeps the chain:
+  `{"seq","v","id","ts","kind","by","trail","origin","logs","redacted":{"at","by","reason_code"}}`.
+  `summary`, `payload`, `action` and other kind-specific text are dropped.
+  - The redaction is recorded in `lm:{s}:redactions` (score = its own counter `lm:{s}:rseq`), which the archive
+    drains through a separate mark (§4.4).
+  - The script writes an audit entry of the **dedicated kind `redacted`**, with `redacts: <id>`, to
+    `lm:{s}:space:audit:log`. It is not a `fix` and not an amendment, and it never contains the erased text.
+  - The mirror replaces the ACMI twin, found by `ZRANGEBYSCORE acmi…:timeline ts ts` + `lm_id`.
+- `logmem_remove` refuses `:log` and `:e:` keys in v1 (`invalid_argument`).
 
 ### 1.6 Migration from v0 (member-is-JSON + `_o`)
 
-The hash tag makes the v1 key space disjoint from v0 (`lm:{madez}:…` vs `lm:madez:…`), so v0 and v1 never mix
-in one ZSET.
+v1 keys (`lm:{madez}:…`) don't overlap v0 keys (`lm:madez:…`). `scripts/migrate-v0-v1.mjs` has three modes:
+`--dry-run` (read-only allowlist), `--apply` (HITL, needs the dry-run report hash) and `--verify`.
 
-`scripts/migrate-v0-v1.mjs` has three modes. `--dry-run` is read-only, using the existing allowlist.
-`--apply` is HITL. `--verify` checks the result.
+1. **Freeze.** Announce on `thread:agent-coordination`, stop the dogfood agents writing to `lm:madez` (three
+   Mac agents, a window of about 15 min) and record `t_freeze`. If a freeze isn't possible, run a **delta
+   pass** after the copy: re-read members with `ts ≥ t_copy_start`, copy whatever is new, and repeat until a
+   pass copies nothing.
+2. Read every v0 log from the `lm:madez:{ns}:list` sets (no SCAN). Parse, strip `_o`, sort by `(ts, _o)`.
+3. **Group fan-out copies only when byte-equal.** Group v0 members across logs when their `stableJson`,
+   minus the log-specific fields (`_o`), is byte-identical; that group becomes one entry with `logs: [...]`.
+   Members that look alike but differ in any byte stay separate entries and are listed in the report under
+   `ungrouped_lookalikes`.
+4. Mint ULIDs from `ts` (monotonic in `_o` order). Assign seq in global `(ts, _o)` order, across v0 **and** the
+   ACMI copy if both run in the same window. Write buckets, logs, activity, days, open indexes (§5.2) and shift
+   indexes (§5.1). Who/now/recap/follows/shifts/sessions are copied as-is.
+5. **Cross-source dedupe.** In the ACMI copy, skip legacy members with `mirrored_from: "lm"` whose original is
+   in v0 `lm`. v0 twins have no `lm_id`, so the match is `(ts, trail, summary, by)` and each skip is reported.
+6. **`--verify`, field by field.** For every v0 member, the v1 body minus `seq, v, id, logs` must equal the v0
+   member minus `_o` on every field, compared with `stableJson` per field. Any diff is reported with the field
+   name. It also checks that every v0 log has exactly the expected set of ids, that every id resolves to a
+   bucket, that `ZCARD`s agree, and that `entries_total` matches.
+7. **Rollback.** v0 keys stay untouched for 30 days. Rolling back to the v0 server **loses every write made to
+   v1 after cutover** unless `migrate-v1-v0 --since <cutover seq>` is run. That script is a reverse copy: v1
+   bodies become v0 members with fresh `_o` ordinals. It exists for the 7-day rollback window only. During
+   dogfood the ACMI mirror also still holds those writes.
 
-1. For each v0 log (from the `lm:madez:{ns}:list` sets, not SCAN), read the members, parse them, strip
-   `_o`, and sort by `(ts, _o)`.
-2. Group identical `(ts, trail, summary, by)` across logs into **one** entry with `logs: [...]`. That's the
-   v0 handoff/ask fan-out.
-3. Mint the ULID from `ts` (monotonic in `_o` order) and assign `seq` in global `(ts, _o)` order.
-4. Write the bodies, log ZSETs, activity, open indexes (§5.2) and shift indexes (§5.1). Who/now/recap/
-   follows/shifts/sessions are copied as-is.
-5. `--verify`: per log, `ZCARD v1 == distinct v0 members`; every id resolves; no `seq` gaps; no score outside
-   ms. The dry-run report hash must match the `--apply` confirmation (same pattern as `PLAN.md`).
-
-The ACMI `--apply` (PLAN.md step 2) targets the **v1** shape directly, with the same grouping and
-`acmi_kind` preserved. v0 `lm:madez:*` keys stay for 30 days, and removing them is a separate HITL task.
+The ACMI `--apply` (PLAN.md step 2) targets the v1 shape with the same rules. Old history imported **after**
+cutover would get new seqs and sort as new, so v1 does not support late history imports. Any key missed at
+cutover is reported and needs a deliberate decision.
 
 ---
 
 ## 2. D2: atomic write path
 
-### 2.1 Scripts
+### 2.1 Script rules
 
-Every script includes a shared prelude. All keys share the `{s}` slot, so the scripts are cluster-safe.
-`acmi:*` keys are in a different slot, which is one reason the mirror stays outside Lua (§2.4).
+1. **Checks first.** A Redis script is not all-or-nothing: an error after a write leaves that write applied.
+   So every script runs every check first (`TYPE` of each key it will write is the expected type or `none`,
+   then `SISMEMBER`/`ZSCORE`/`HEXISTS`/`EXISTS` and body checks) before its first write. The write phase uses
+   only commands that can't fail once the types are known.
+2. **Declared keys only.** Bucket keys are computed in JS from the ids and passed in `KEYS`. No script builds
+   a key name.
+3. **No cjson re-encode.** `seq` is spliced into the body string (`'{"seq":'..n..','..body:sub(2)`), because
+   cjson turns `[]` into `{}` and reformats numbers. `cjson.decode` is used only to *read* bodies in checks.
+4. **No `ZREMRANGEBYRANK`.** The fleet bridge blocks it. Caps use `ZPOPMIN key (ZCARD − cap)` where that is
+   allowed; otherwise they are read-side only (`REV LIMIT cap`). Capped sets are small and also covered by
+   retention.
+5. **Claims in both modes.** Scripts write the same claim keys as sequenced mode (§2.4), so a backend that
+   changes mode keeps one source of truth.
 
-Common KEYS **C** = `[entries, seq, activity, logs_index, idem, shift_idx]`.
-Common ARGV **A** = `[id, ts, body, req_hash ('' = no idempotency key), idem_ttl, shift_ttl]`.
-`body` is the entry JSON **without** `seq`, starting with `{"v":1,`.
+The shared prelude is two functions over **named** tables, not raw KEYS/ARGV:
 
 ```lua
--- prelude
-local function core(K, A, logKeys, refs)
-  if redis.call('HEXISTS', K[1], A[1]) == 1 then        -- transport retry
-    local e = redis.call('HGET', K[1], A[1]); return {0, A[1], e} end
-  if A[4] ~= '' then
-    local prev = redis.call('GET', K[5])
+-- k = {bucket, seq, activity, days, logs_index, meta, idem|false, shift_idx|false, logs={...}}
+-- a = {id, ts, day, body, req_hash, idem_ttl, shift_ttl, refs={...}}
+-- is_type(key, t): TYPE(key) is t or 'none'
+local function core_check(k, a)
+  if redis.call('HEXISTS', k.bucket, a.id) == 1 then return 0 end          -- replay
+  if k.idem then
+    local prev = redis.call('GET', k.idem)
     if prev then
       local pid, ph = string.match(prev, '([^|]+)|(.*)')
-      if ph ~= A[4] then return {-1, 'idempotency_conflict'} end
-      return {0, pid, redis.call('HGET', K[1], pid)}
+      if ph ~= a.req_hash then return -1 end                               -- idempotency_conflict
+      return 0, pid                                                        -- replay
     end
   end
-  local seq = redis.call('INCR', K[2])
-  local full = '{"seq":' .. seq .. ',' .. string.sub(A[3], 2)   -- no cjson round trip
-  redis.call('HSET', K[1], A[1], full)
-  redis.call('ZADD', K[3], seq, A[1])
-  for i, lk in ipairs(logKeys) do
-    redis.call('ZADD', lk, A[2], A[1])
-    redis.call('ZADD', K[4], A[2], refs[i])                -- log index: last activity
-  end
-  redis.call('ZADD', K[6], A[2], A[1]); redis.call('EXPIRE', K[6], A[6])
-  if A[4] ~= '' then redis.call('SET', K[5], A[1] .. '|' .. A[4], 'EX', A[5]) end
-  return {1, A[1], full}
+  for _, key in ipairs(k.logs) do if not is_type(key, 'zset') then return -2 end end
+  if not is_type(k.bucket, 'hash') then return -2 end
+  return nil                                                               -- clear to write
+end
+local function core_write(k, a)
+  local seq = redis.call('INCR', k.seq)
+  redis.call('HSET', k.bucket, a.id, '{"seq":' .. seq .. ',' .. string.sub(a.body, 2))
+  redis.call('ZADD', k.activity, seq, a.id)
+  redis.call('ZADD', k.days, 'NX', seq, a.day)
+  redis.call('HINCRBY', k.meta, 'entries_total', 1)
+  for i, lk in ipairs(k.logs) do
+    redis.call('ZADD', lk, seq, a.id); redis.call('ZADD', k.logs_index, a.ts, a.refs[i]) end
+  if k.shift_idx then redis.call('ZADD', k.shift_idx, seq, a.id); redis.call('EXPIRE', k.shift_idx, a.shift_ttl) end
+  if k.idem then redis.call('SET', k.idem, a.id .. '|' .. a.req_hash, 'EX', a.idem_ttl) end
+  return seq
 end
 ```
 
-The prelude splices `seq` into the body as a string so cjson never re-encodes it. cjson turns `[]` into `{}`
-and reformats numbers.
+### 2.2 Scripts, KEYS/ARGV and status codes
 
-| Script | Extra KEYS (after C) | Extra ARGV (after A) | Checks → effects |
-|---|---|---|---|
-| `append` (note, update, stage, assign, status-with-entry) | `now_hash` (or a dummy key in the slot), `log…` | `now_pairs_json` (`[]` = none), `ref…` | → core; `HSET now` pairs |
-| `handoff` | `agent_list`, `open:handoff:{to}`, `follows:{to}`, `job_now` (or dummy), `log…` (where + receiver) | `to`, `follows_json`, `owner_pairs_json`, `ref…` | `to` ∈ `agent:list` (SISMEMBER) else `unknown_agent` → core; `ZADD open:handoff:{to} ts id`; `HSET follows`; `HSET job now owner, handoff_id` |
-| `accept` | `open:handoff:{me}`, `log…` (handoff's where + my log) | `handoff_id`, `ref…` | `ZSCORE open:handoff:{me} handoff_id` else `not_open` → core; `ZREM` |
-| `ask` | `open:ask`, `asker_now`, `log…` | `waiting_on_json`, `ref…` | → core; `ZADD open:ask ts id`; `HSET now waiting_on` |
-| `decide` | `open:ask`, `asker_now`, `answered:{asker}`, `log…` | `ask_id`, `verdict`, `ref…` | `ZSCORE open:ask ask_id` else `already_decided`; `verdict ∈ {approve,reject}` → core; `ZREM open:ask`; `HDEL waiting_on` only if it names `ask_id`; `ZADD answered`, trimmed to 50 |
-| `shift` (auto Start, idle/switch Recap, manual Recap) | **replaces C**: `session`, `entries`, `seq`, `activity`, `logs_index`, `old_shift_idx`, `new_shift_idx`, `old_agent_log`, `new_agent_log`, `old_recap`, `new_shifts` | `expected_ver`, `new_rec_json`, `session_ttl`, `recap_id`, `recap_ts`, `recap_body` ('' = none), `recap_doc`, `start_id`, `start_ts`, `start_body` ('' = none), `shift_member`, `shift_ttl` | `session.ver == expected_ver` else `{0, current}` (lost the race: caller adopts the winner's record) → up to two core appends; `SET recap`; `ZADD shifts`; `SET session` (ver+1) `EX ttl` |
-| `redact` | `entries`, `seq`, `redactions` | `id`, `tombstone_json` | `HEXISTS` else `not_found` → `INCR seq`; `HSET` tombstone; `ZADD redactions seq id` |
+Common KEYS **C** = `[bucket, seq, activity, days, logs_index, meta, idem (or dummy lm:{s}:idem:-), shift_idx]`.
+Common ARGV **A** = `[id, ts, day, body, req_hash ('' = none), idem_ttl, shift_ttl]`. Scripts that use C/A
+pass `k` and `a` built from those positions, plus their own `logs`/`refs`.
 
-### 2.2 Reads
+| Script | Extra KEYS | Extra ARGV | Checks (all before any write) | Writes |
+|---|---|---|---|---|
+| `append` (note, update, stage, assign) | `now_hash` or dummy, `log…` | `now_pairs_json`, `ref…` | core | core; `HSET now` |
+| `handoff` | `agent_list`, `open:handoff:{to}`, `follows:{to}`, `job_now` or dummy, `log…` | `to`, `follows_json`, `owner_pairs_json`, `ref…` | `SISMEMBER agent_list to` (else −10); core | core; `ZADD open`; `HSET follows`; `HSET job now` |
+| `accept` | `handoff_bucket`, `open:handoff:{me}`, `claim:accept:{hid}`, `log…` | `handoff_id`, `me`, `claim_ttl`, `ref…` | claim exists → −23 (returns the winner id); handoff body missing → −20; `kind ≠ handoff` → −21; body `to ≠ me` → −22; not in open set → −24; core | `SET claim NX`; core; `ZREM open` |
+| `ask` | `open:ask`, `asker_now`, `log…` | `waiting_on_json`, `ref…` | core | core; `ZADD open:ask`; `HSET waiting_on` |
+| `decide` | `ask_bucket`, `open:ask`, `asker_now`, `answered:{asker}`, `claim:decide:{aid}`, `log…` | `ask_id`, `verdict`, `asker`, `claim_ttl`, `ref…` | claim exists → −33; ask body missing → −30; `kind ≠ approval` → −31; body `by ≠ asker` → −32; `verdict ∉ {approve,reject}` → −34; not in `open:ask` → −33; core | `SET claim NX`; core; `ZREM open:ask`; `HDEL waiting_on` only if it names `ask_id`; `ZADD answered`; `ZPOPMIN` past 50 |
+| `shift` | own layout, below | own layout, below | `GET session` `.ver ≠ expected` or `EXISTS session:v{n+1}` → −40 (returns the current record); core for each entry | `SET session:v{n+1} NX`; recap core; start core; `SET recap`; `ZADD shifts`; `SET session` (ver n+1) |
+| `redact` (admin) | own layout, below | own layout, below | body missing → −50; already a tombstone → −51; core for the audit entry | `HSET` tombstone; `INCR rseq`; `ZADD redactions`; audit core |
+| `page_ids` (`#!lua flags=no-writes`) | `log…` (≤ 16) | `dir`, `cursor_seq`, `limit` | none | none: returns merged `[id, seq]…` and `next_cursor` |
 
-`page` (read-only script): KEYS = up to 16 log ZSETs + `entries`. ARGV = `dir, cursor_ts, cursor_id, limit`.
-It merges by `(ts, id)` and returns `[bodies…, next_cursor]` in **one** round trip. Without scripts it takes two
-pipelined round trips: the `ZRANGE … LIMIT`s, then one `HMGET`. Brief, View and Open batch their
-who/now/recap/follows/shifts reads into one `pipeline()`.
+**`shift` layout.** KEYS: 1 `session`, 2 `session:v{n+1}`, 3 `seq`, 4 `activity`, 5 `days`, 6 `logs_index`,
+7 `meta`, 8 `recap_bucket`, 9 `start_bucket`, 10 `old_shift_idx`, 11 `new_shift_idx`, 12 `old_agent_log`,
+13 `new_agent_log`, 14 `old_recap`, 15 `new_shifts`. ARGV: 1 `expected_ver`, 2 `new_rec`, 3 `session_ttl`,
+4 `recap_id`, 5 `recap_ts`, 6 `recap_day`, 7 `recap_body` ('' = none), 8 `recap_doc`, 9 `start_id`,
+10 `start_ts`, 11 `start_day`, 12 `start_body` ('' = none), 13 `shift_member`, 14 `shift_ttl`, 15 `old_ref`,
+16 `new_ref`.
+Recap entry: `k = {bucket=K8, seq=K3, activity=K4, days=K5, logs_index=K6, meta=K7, idem=false, shift_idx=K10, logs={K12}}`,
+`a = {id=A4, ts=A5, day=A6, body=A7, shift_ttl=A14, refs={A15}}`.
+Start entry: same, but `bucket=K9, shift_idx=K11, logs={K13}`, `a = {id=A9, ts=A10, day=A11, body=A12, refs={A16}}`.
 
-### 2.3 Runner abstraction
+**`redact` layout.** KEYS: 1 `target_bucket`, 2 `rseq`, 3 `redactions`, 4 `audit_bucket`, 5 `seq`,
+6 `activity`, 7 `days`, 8 `logs_index`, 9 `meta`, 10 `audit_log`. ARGV: 1 `id`, 2 `tombstone_json`,
+3 `audit_id`, 4 `audit_ts`, 5 `audit_day`, 6 `audit_body`, 7 `audit_ref` (`space:audit`).
+Audit entry: `k = {bucket=K4, seq=K5, activity=K6, days=K7, logs_index=K8, meta=K9, idem=false, shift_idx=false, logs={K10}}`.
 
-The runner is still `redis(cmd, ...args)`, with two optional methods:
+**Status codes** (the first element of every reply):
+
+| Code | Meaning | Tool error |
+|---|---|---|
+| 1 | written; reply `{1, id, seq}` | |
+| 0 | replay (same id, or idempotency hit); reply `{0, id}` | (ok, `deduped: true`) |
+| −1 | idempotency key reused with different args | `idempotency_conflict` |
+| −2 | a key has an unexpected type; nothing written | `internal` (alert) |
+| −10 | `to` not on the roster | `unknown_agent` |
+| −20 / −21 / −22 | handoff not found / not a handoff / not addressed to you | `not_found` / `invalid_argument` / `forbidden` |
+| −23 | already accepted (reply carries the accepting id) | `already_accepted` |
+| −24 | addressed to you but no longer open (reassigned, or trimmed) | `not_open` |
+| −30 / −31 / −32 | ask not found / not an approval / asker mismatch | `not_found` / `invalid_argument` / `invalid_argument` |
+| −33 | already decided | `already_decided` |
+| −34 | bad verdict | `invalid_argument` |
+| −40 | shift version conflict (reply carries the current record; the caller adopts it) | (internal, not surfaced) |
+| −50 / −51 | redaction target missing / already redacted | `not_found` / `conflict` |
+
+### 2.3 Reads
+
+`page_ids` merges ids by seq across up to 16 logs in one call. Bodies then come from **one pipelined `HMGET`
+per day bucket**; ids are grouped by the bucket derived from their ULID. Without scripts, the first step is a
+pipelined `ZRANGE … LIMIT` per log, merged in JS. Brief, View and Open batch their
+who/now/recap/follows/shifts reads into one `pipeline()`. An id whose bucket has been trimmed is skipped, and
+the reader removes it from that log with `ZREM` (bounded to 50 per read).
+
+### 2.4 Runner and modes
 
 ```js
-runner.script(name, keys, args)  // EVALSHA sha(name) → on NOSCRIPT: EVAL src (REST) / SCRIPT LOAD + EVALSHA (TCP)
-runner.pipeline(cmds)            // REST: POST {base}/pipeline; TCP: client.multi().execAsPipeline(); else Promise.all
-runner.caps                      // { scripts: "atomic"|"sequenced", pipeline: bool, probed_at }
+runner.script(name, keys, args)  // EVALSHA → NOSCRIPT → EVAL (REST) / SCRIPT LOAD + EVALSHA (TCP)
+runner.pipeline(cmds)            // Upstash REST /pipeline; node-redis execAsPipeline(); else Promise.all
+runner.caps                      // { writes: "atomic"|"sequenced"|"refused", pipeline, redis7, zpopmin, probed_at }
 ```
 
-- **Upstash REST**: `["EVALSHA", sha, n, ...keys, ...args]` on the normal endpoint, and `/pipeline` for
-  batches. SHA1s are computed from the bundled sources when the module loads.
-- **node-redis** (`redis-native.mjs`): add a `default:` passthrough to `client.sendCommand([...])` so
-  EVAL/EVALSHA/SCRIPT/ZRANGE … BYSCORE REV LIMIT work without per-command translation.
-- **Memory** (tests, degraded): scripts run through a **JS implementation of each script**. It's the same
-  code as the sequenced fallback (§2.4), so it gets tested against real Lua in CI.
-
-### 2.4 When a bridge blocks EVAL
-
-**Capability probe**, run once per backend descriptor (stdio at boot; HTTP cached 10 min per warm instance):
-`EVALSHA <sha("return 1")> 0`. NOSCRIPT or `1` means scripts are allowed. HTTP 403 or "not allowed" means they
-aren't. Then `POST /pipeline [["PING"]]`. The result is reported in `logmem_connection.capabilities` and
-`initialize`.
+- **node-redis**: `redis-native.mjs` gets a `default:` passthrough to `client.sendCommand([...])`.
+- **Memory** (tests, degraded): runs the sequenced implementation, which CI tests against real Lua.
+- **Probe** (stdio at boot; HTTP cached 10 min per warm instance):
+  1. `EVALSHA sha("return 1") 0`: NOSCRIPT or 1 means scripts are allowed; 403 or "not allowed" means they
+     aren't.
+  2. `EVAL "#!lua flags=no-writes\nreturn 1" 0` tells whether Redis is 7+. `page_ids` gets the shebang only on
+     7+, because Redis 6 rejects the line.
+  3. `ZRANGE k 0 0 BYSCORE REV LIMIT 0 1` checks for 6.2+. On older Redis, the runner falls back to
+     `ZREVRANGEBYSCORE`.
+  4. `ZPOPMIN lm:{s}:probe 0` and `POST /pipeline [["PING"]]`.
 
 | Mode | When | Behaviour |
 |---|---|---|
-| `atomic` | scripts allowed | as above |
-| `sequenced` | scripts refused, `LOGMEM_REQUIRE_SCRIPTS` unset | The JS twin of each script runs the same steps in a fixed, crash-safe order: body `HSETNX` first, then indexes, then the idempotency key, so a crash leaves a body without indexes and never an index without a body. Checks become check-then-write. Races are settled deterministically: **lowest `seq` wins** for accept and decide, and a later duplicate is re-marked `superseded_by` on read. Results carry `atomic: false` |
-| refuse | scripts refused and `LOGMEM_REQUIRE_SCRIPTS=1` (**default for hosted**) | writes return `backend_refused` (non-retryable) |
+| `atomic` | scripts allowed | §2.2. **Required for hosted** |
+| `sequenced` | scripts refused, `LOGMEM_REQUIRE_SCRIPTS` unset. **BYO and `madez` only** | single-command claim keys, below |
+| `refused` | scripts refused and `LOGMEM_REQUIRE_SCRIPTS=1` (the hosted default) | writes return `backend_refused` |
 
-A nightly `repair` (v1.1) re-indexes orphaned bodies by checking that each `activity` member resolves and each
-body's `logs` contains it. The Polar bridge already blocks PUBLISH and ZREMRANGEBYRANK, so `madez` may land in
-`sequenced` (owner question 1).
+**Sequenced mode.** The step that decides the winner is a single `SET … NX`, which every bridge executes
+atomically. It always comes **before** anything entry-related. The claim value carries the full intended write
+(entry body and side effects), so the winner's work can be completed later by anyone.
 
-**Rejected: MULTI/EXEC.** It's not available over a plain REST exec, and it can't express "check, then
-write". **Rejected: Redis Functions (`FCALL`).** They're cleaner, but need Redis 7 and a `FUNCTION LOAD`
-deployment step per backend, which BYO users won't do.
+| Operation | Claim (first command) | Loser gets |
+|---|---|---|
+| any write with `idempotency_key` | `SET idem:{h} "<id>|<req_hash>" NX EX 86400` | replay or `idempotency_conflict` |
+| accept | `SET claim:accept:{handoff_id} <write JSON> NX EX <hot window + 7 d>` | `already_accepted` + the winner id |
+| decide | `SET claim:decide:{ask_id} <write JSON> NX EX <hot window + 7 d>` | `already_decided` |
+| shift transition | `SET session:{sid}:v{ver+1} <write JSON> NX EX <session ttl>` | re-reads, then adopts |
+| plain append | none needed: only this caller holds the fresh `id` (`HSETNX` on the body) | |
+
+After a claim, the winner runs, in order: the checks, `INCR seq`, `HSETNX` the body, the indexes, the open-set
+`ZREM`/`ZADD`, then the record (`SET session`). A crash leaves a claim whose writes are incomplete.
+**`repair` only completes the claimed write**: it adds missing indexes, and a missing body is written from the
+claim value. Repair never chooses a winner, because the claim already did. It runs lazily (a reader that finds
+a claim with no body after 60 s completes it) and nightly. Results in this mode carry `atomic: false`.
+
+**Rejected: "lowest seq wins"** (rev 1). Two callers could both write entries and readers would have to hide
+the loser. A claim decides before anything is visible.
+**Rejected: MULTI/EXEC as the primary path.** Upstash REST does expose `/multi-exec`, but it can't express
+"check, then write" (there's no WATCH over REST). Every backend that offers it also allows scripts, and the
+Polar bridge offers neither.
+**Rejected: Redis Functions.** They need Redis 7 and a `FUNCTION LOAD` step per backend.
+
+### 2.5 Upstash notes (verify before phase A merges)
+
+- `ZRANGE … BYSCORE REV LIMIT` needs Redis 6.2+; the probe falls back to `ZREVRANGEBYSCORE`.
+- `#!lua flags=no-writes` only on Redis 7+ (probe step 2).
+- **Request size**: Upstash caps the size of each request and response, and the cap depends on the plan.
+  Pages are therefore capped at **1 MB of bodies** as well as by count (a page that's too big ends early with
+  `next_cursor`). `HMGET` calls are split into groups of 100 ids.
+- **Billing**: confirm whether Upstash counts a script as one command or counts each `redis.call` inside it.
+  A handoff is about 12 calls. Budget the free tier on the per-call assumption until confirmed.
 
 ---
 
@@ -242,163 +337,163 @@ deployment step per backend, which BYO users won't do.
 
 ### 3.1 Version
 
-- `serverInfo = { name: "logmem", version: "1.0.0" }`. The `initialize` result adds
-  `capabilities.experimental["logmem/contract"] = { version: "1.0", entry_schema: 1, writes: "atomic"|"sequenced", pipeline, search: "keyword"|"fts" }`.
-- The first line of `instructions` names the contract (`LogMem contract 1.0.`).
-- `tools.schema.json` gains a top-level `"contract": "1.0"`, and `spec:check` fails on mismatch.
-- The minor version only adds. A major bump renames or removes. Deprecations live at least one minor version.
+- `serverInfo = { name: "logmem", version: "1.0.0" }`.
+- `initialize` adds `capabilities.experimental["logmem/contract"]`:
+  `{ version: "1.0", entry_schema: 1, writes: "atomic"|"sequenced", pipeline, search: "keyword" }`.
+- The first line of `instructions` is `LogMem contract 1.0.`
+- `tools.schema.json` gains `"contract": "1.0"`; `spec:check` enforces it.
+- Minor versions only add. A rename or removal is a major bump. Deprecations live at least one minor version.
 
 ### 3.2 Common shapes
 
 | Rule | Shape |
 |---|---|
-| List reads | in: `limit` (default/max per tool), `cursor`; out: `next_cursor` (string or `null` at the end) |
-| Writes | in: `idempotency_key?`; out: `id`, `seq`, `deduped`, `atomic` |
-| Refs to entries | anywhere v0 takes a trail to point at one entry (`origin` stays a trail), v1 also takes `id` |
-| Errors | `{ ok:false, tool, code, error:"<message>", retryable, details? }` with `isError: true`. `error` stays a string, so v0 readers keep working |
+| List reads | in: `limit` (default/max per tool), `cursor` (reverse) **or** `after` (forward poll); out: `next_cursor`, `null` at the end of a reverse read. A forward read always returns a cursor to poll from |
+| Entry writes | in: `idempotency_key?`; out: `id`, `seq`, `deduped`, `atomic` |
+| Errors | `{ ok:false, tool, code, error:"<message>", retryable, details? }` + `isError`. `error` stays a string so v0 readers keep working |
 
 Error codes: `invalid_argument`, `not_found`, `unknown_agent`, `reserved_kind`, `not_open`, `already_accepted`,
-`already_decided`, `idempotency_conflict`, `forbidden`, `too_large`, `quota_exceeded`, `rate_limited`,
-`backend_unavailable` (retryable), `backend_refused`, `degraded`, `internal`.
+`already_decided`, `idempotency_conflict`, `conflict`, `forbidden`, `too_large`, `quota_exceeded`,
+`rate_limited`, `backend_unavailable` (retryable), `backend_refused`, `degraded`, `internal`.
 
 ### 3.3 Tools
 
-| Tool | Change in 1.0 |
+| Tool | 1.0 change |
 |---|---|
-| `logmem_start` | goes through the `shift` script; result adds `brief.pending` |
-| `logmem_brief` | `log` limit 20 (max 50) + `next_cursor`; `handoffs_to_me` from `open:handoff:{me}` (never ages out); new `my_asks` (`waiting_on` + answered via `answered:{me}`, with `verdict`) |
-| `logmem_recap` | reads the shift index (§5.1); `idempotency_key` |
-| `logmem_note` | `idempotency_key`; `kind: "decided"` → `reserved_kind`; `kind: "accepted"` still works and routes through `accept` with a `deprecation` field (removed in 2.0) |
-| `logmem_handoff` | `to` must be on the roster, else `unknown_agent` with `details.did_you_mean`; returns `id` |
-| `logmem_accept` **new** | in: `handoff` (id or trail), `note?`, `idempotency_key?`. Only the addressee (`to`) can accept; second accept → `already_accepted` |
-| `logmem_ask` | returns `id`; no `status` field written; `idempotency_key` |
-| `logmem_pending` **new**, R | in: `of` ∈ `handoff`·`ask`, `to?` (default me, for handoffs), `limit` 20/100, `cursor`. Reads open-item indexes |
-| `logmem_decide` **new**, human-only | in: `ask` (id), `verdict` ∈ `approve`·`reject`, `comment?`. Listed only when the connection's principal is a human with the approver role. Agent connections never see it, and the web Approve/Reject (U3) calls the same core function. Writes `kind: decided`, `by: human:<id>`, `decides: <ask id>` |
-| `logmem_status`, `logmem_bio`, `logmem_follow` | `idempotency_key` (they are idempotent anyway); unchanged otherwise |
-| `logmem_view` | `limit` 10/100, `cursor` |
-| `logmem_feed` | `refs` ≤ 16, `limit` 50/200, `cursor`; `since` kept |
-| `logmem_roster` | `limit` 200/1000, `cursor` (SSCAN); `ids` unchanged |
-| `logmem_assign`, `logmem_update`, `logmem_stage` | `idempotency_key`; `append` script (now + entry atomic) |
-| `logmem_open` | `limit` 50/200, `cursor` |
-| `logmem_jobs` | `limit`/`cursor`; returns `jobs: [{id, title, stage, owner}]` (breaking: v0 returned bare ids) |
-| `logmem_recall` | `limit` 5/50; result `mode` ∈ `keyword`·`fts`; bounded scan (§5.3) |
-| `logmem_remove` | refuses `:log` keys (§1.5) |
-| `logmem_spaces`, `logmem_connection` | `connection` adds `contract`, `capabilities`, `schema_version` |
+| `logmem_start` | goes through the `shift` script; adds `brief.pending` |
+| `logmem_brief` | log limit 20/50 + `next_cursor`; `handoffs_to_me` from `open:handoff:{me}`; `my_asks` (`waiting_on` + `answered:{me}` with `verdict`) |
+| `logmem_recap` | reads the shift index (§5.1) |
+| `logmem_note` | `idempotency_key`; `kind: decided` and `kind: redacted` → `reserved_kind`; `kind: accepted` routes to `accept` with a `deprecation` field |
+| `logmem_handoff` | `to` must be on the roster (`unknown_agent` + `did_you_mean`); returns `id`, `seq` |
+| `logmem_accept` **new** | in: `handoff` (id or trail), `note?`, `idempotency_key?`. Only the addressee can accept |
+| `logmem_ask` | returns `id`; no `status` field written |
+| `logmem_pending` **new**, R | in: `of` ∈ `handoff`·`ask`, `to?`, `limit` 20/100, `cursor` |
+| `logmem_decide` **new**, human-only | in: `ask` (id), `verdict` ∈ `approve`·`reject`, `comment?`. Listed only for a human approver principal. The U3 web Approve/Reject buttons call the same core function. Writes `decided`, `by: human:<id>`, `decides: <ask id>` |
+| `logmem_status`, `logmem_bio`, `logmem_follow` | unchanged: no entry, so no `id`/`seq`/`idempotency_key` |
+| `logmem_view`, `logmem_open` | `limit` (10/100, 50/200), `cursor` |
+| `logmem_feed` | `refs` ≤ 16, `limit` 50/200, `cursor` or `after` (polling), `since` |
+| `logmem_roster`, `logmem_jobs` | `limit`/`cursor` (SSCAN); `jobs` returns `[{id, title, stage, owner}]` (breaking) |
+| `logmem_recall` | `limit` 5/50; `mode: keyword`, bounded (§5.3) |
+| `logmem_remove` | refuses `:log` and `:e:` keys |
+| `logmem_connection` | adds `contract`, `capabilities`, `schema_version` |
 
-That makes 23 tools for agents, 24 for approvers. `acmi_*` compat tools are unchanged.
+That makes 23 tools for agents, 24 for approvers. The `acmi_*` compat tools are unchanged.
 
-**Rejected: `decided` stays an agent-writable kind, with server checks on `by`.** `by` is self-asserted (S2).
-The only fix is that agents can't reach the write path at all. **Rejected: hard-blocking the asker's writes
-while an ask is open (O3).** Moved to v1.1. v1.0 puts `waiting_on` into every write result for the asker.
+**Rejected:** agent-writable `decided` checked by `by`, because `by` is self-asserted (S2; the v0.x hotfix
+already closes this). Hard-blocking the asker while an ask is open (O3) moves to v1.1; v1.0 puts `waiting_on`
+into the asker's write results.
 
 ### 3.4 Deprecations from v0
 
-`note kind:accepted` (use `accept`), `note kind:decided` (refused), approval `status` field (derived), client
-`ts` (dropped), unbounded `feed` (capped), `remove` on log keys (refused), bare-id `jobs` (objects), `_o` in
-entries (gone). Each deprecated path that still works returns `deprecation: "<what to use>"`.
+- `note kind:accepted` → use `accept`.
+- `note kind:decided` → refused.
+- Approval `status` field → derived from `open:ask`.
+- Client `ts` → dropped.
+- Unbounded `feed` → capped.
+- `remove` on log or bucket keys → refused.
+- `jobs` returning bare ids → returns objects.
+- `_o` → gone.
+
+Each deprecated path that still works returns `deprecation: "<use instead>"`.
 
 ---
 
 ## 4. D4: hosted layout
 
-### 4.1 Keys
+### 4.1 Keys and scale ceiling
 
-`lm:{space}:…`, where `{space}` is a Redis Cluster hash tag, so one space lives in one slot and every script
-is cluster-legal. Space names now forbid `{`, `}` and `:`. Namespaces may not be reserved words: `entries seq
-activity logs shift open answered idem redactions outbox meta session mirror registry`.
+`lm:{space}:…` puts a whole space in **one cluster slot**, so every script is cluster-legal. The ceiling is
+therefore **one space per shard**: a single space can't use more memory or throughput than one shard has.
+Scale-out happens across spaces, not within one. The seq `INCR` is not a hot key in any meaningful sense,
+because every write in the space already lands on that same shard. If a space ever outgrows a shard, it gets a
+dedicated instance; splitting a space is out of scope.
+
+Space names forbid `{`, `}` and `:`. These namespace words are reserved: `e seq activity days logs shift open
+answered idem claim redactions rseq outbox meta session mirror registry space`.
 
 | Key | Purpose |
 |---|---|
-| `lm:{s}:logs` | ZSET `"ns:id"` → last ts. Replaces `SCAN lm:{s}:*:log` |
-| `lm:{s}:shift:{shift}` | ZSET entry ids written in a shift, TTL 30 d (U5) |
-| `lm:{s}:open:handoff:{agent}`, `lm:{s}:open:ask`, `lm:{s}:answered:{agent}` | open items (U6) |
-| `lm:{s}:outbox:mark` | last `seq` shipped to Postgres |
-| `lm:{s}:meta` | HASH: registry projection read by the data plane (`schema_version`, `plan`, `retention_hot_days`, quota numbers, `status`) |
-| `lm:{s}:{ns}:{id}:who\|now\|recap\|follows\|shifts\|sessions`, `lm:{s}:{ns}:list`, `lm:{s}:session:{sid}`, `lm:{s}:mirror:retry` | as v0, re-prefixed |
-| `lm:oauth:*` | outside every space (S3 moves it to the deploy Redis) |
+| `lm:{s}:logs` | ZSET `"ns:id"` → last ts. Replaces `SCAN …:log` |
+| `lm:{s}:shift:{shift}` | ZSET of the shift's entry ids, scored by seq, TTL 30 d (U5) |
+| `lm:{s}:open:handoff:{agent}` · `open:ask` · `answered:{agent}` | open items (U6) |
+| `lm:{s}:claim:accept:{id}` · `claim:decide:{id}` · `session:{sid}:v{n}` | claim keys (§2.4) |
+| `lm:{s}:outbox:mark` · `outbox:mark:redactions` | archive watermarks (§4.4) |
+| `lm:{s}:meta` | HASH: `schema_version`, `plan`, `retention_hot_days`, quotas, `status`, `entries_total` |
+| `lm:{s}:space:audit:log` | redaction and admin audit log |
+| who/now/recap/follows/shifts/sessions, `{ns}:list`, `session:{sid}`, `mirror:retry` | as v0, re-prefixed |
 
-**No global SCAN.** `scanKeys` in `view.mjs` (log, settings) and the `list()` × `readLog(500)` loops in
-`keywordRecall` are removed from request paths. A test greps `src/core`, `src/http` and `api/` for
-`"SCAN"`/`"KEYS"` and fails outside `scripts/`.
+**No SCAN, no whole-bucket reads.** `scanKeys` in `view.mjs` and the `keywordRecall` loops leave request paths.
+A test greps `src/core`, `src/http` and `api/` for `SCAN`, `KEYS`, and `HGETALL`/`HLEN`/`HSCAN` on `:e:` keys,
+and fails on any hit outside `scripts/`.
 
 ### 4.2 Space registry
 
-Postgres is the source of truth (control plane). `lm:{s}:meta` is a projection that the control plane writes
-on change. Self-hosted stdio with no account has no registry, so the server uses defaults and writes `meta`
-itself on the first write.
+In v1.0, `lm:{s}:meta` holds defaults and is written by the server on the first write.
+
+In v1.1, the registry moves to Postgres as the control plane, and `meta` becomes its projection:
 
 ```jsonc
-{
-  "space": "madez", "display_name": "Madez fleet", "owner_account": "acct_…",
-  "plan": "free" | "team" | "agency",
-  "backend": { "kind": "hosted" | "byo", "region": "eu-central", "redis_ref": "sec_…" },  // secret id, never creds
-  "archive": { "enabled": true, "target": "logmem-pg" | "none" },
+{ "space": "madez", "owner_account": "acct_…", "plan": "free" | "team" | "agency",
+  "backend": { "kind": "hosted" | "byo", "region": "eu-central", "redis_ref": "sec_…" },  // secret id only
+  "archive": { "enabled": true, "target": "jsonl" | "jsonl+pg" | "none" },
   "retention": { "hot_days": 30, "history_days": 365 },
   "quotas": { "entries_per_day": 5000, "max_entry_bytes": 16384, "agents": 10, "storage_mb": 256 },
-  "schema_version": 1, "contract": "1.0",
-  "compat": { "acmi": false, "mirror": false },
-  "status": "active" | "suspended" | "migrating" | "deleting",
-  "created_at": "...", "updated_at": "..."
-}
+  "schema_version": 1, "contract": "1.0", "compat": { "acmi": false, "mirror": false },
+  "status": "active" | "suspended" | "migrating" | "deleting", "created_at": "…", "updated_at": "…" }
 ```
 
-### 4.3 Postgres for history, search and export
+### 4.3 History, search and export (v1.1)
 
-```sql
-create table entries (
-  space text not null, id char(26) not null, seq bigint not null, ts timestamptz not null,
-  kind text not null, by_ref text not null, trail text, origin text, logs text[] not null,
-  body jsonb not null, redacted_at timestamptz,
-  tsv tsvector generated always as
-    (to_tsvector('simple', coalesce(body->>'summary','') || ' ' || coalesce((body->'payload')::text,''))) stored,
-  primary key (space, id));
-create index on entries (space, seq);
-create index on entries using gin (logs);
-create index on entries using gin (tsv);
-alter table entries enable row level security;   -- policy: space = current_setting('app.space')
-```
+1. **First: JSONL in object storage.** `archive/{space}/{yyyymmdd}.jsonl.gz`, one file per day bucket, written
+   by the outbox. It covers `/api/export` (P3), delete-space and backup, and it's the precondition for
+   trimming.
+2. **Then: Postgres** for history past the hot window and full-text search:
 
-**Why Postgres.** Upstash Redis has no RediSearch, so FTS in Redis would mean running our own Redis Stack.
-History beyond the hot window costs too much in RAM. Export, delete-space (P3) and analytics are SQL problems.
-`pgvector` gives P5 a place to land.
-**Rejected: everything in Redis.** No FTS on Upstash, RAM cost grows with history, and retention would have to
-choose between losing data and paying for memory. **Rejected: Postgres as the primary store.** It adds a
-second network hop to every write from serverless, breaks the "bring your own Redis" story, and the ACMI
-compat and mirror are Redis-shaped. **Rejected: object storage alone.** It handles export, but not search.
+   ```sql
+   create table entries (space text, id char(26), seq bigint, ts timestamptz, kind text, by_ref text,
+     trail text, origin text, logs text[], body jsonb, redacted_at timestamptz,
+     tsv tsvector generated always as (to_tsvector('simple',
+       coalesce(body->>'summary','') || ' ' || coalesce((body->'payload')::text,''))) stored,
+     primary key (space, id));
+   -- indexes: (space, seq), gin(logs), gin(tsv); RLS: space = current_setting('app.space')
+   ```
 
-### 4.4 Outbox
+**Why Postgres in the end.** Upstash has no RediSearch, history in RAM is expensive, and export and analytics
+are SQL problems. **Rejected:** everything in Redis (no full-text search, RAM cost). **Rejected:** Postgres as
+the primary store (an extra hop on every serverless write, and it breaks BYO Redis). **Rejected:** Postgres in
+v1.0, which is too much scope before the core is proven. v1.0 ships the hooks only.
 
-Every append and redaction gets a `seq`. A worker (Vercel cron, every minute in v1.1) runs per active space:
-`ZRANGE activity (mark +inf BYSCORE LIMIT 0 500` + `HMGET` → `INSERT … ON CONFLICT (space,id) DO UPDATE`, then
-it drains `redactions` the same way and `SET outbox:mark`. Upserts are idempotent, so a crash just replays.
-The set of active spaces comes from the registry, not from SCAN.
+### 4.4 Outbox (hooks in v1.0, worker in v1.1)
+
+- **Entries**: `ZRANGE activity (mark +inf BYSCORE LIMIT 0 500` → group by bucket → `HMGET` → write. The mark
+  advances only through **contiguous** seqs. A gap is held for a **settle window** (60 s in sequenced mode;
+  in atomic mode a gap can only come from a script failing after `INCR`, which the checks-first rule prevents, so it is settled at once), then skipped and
+  recorded in `lm:{s}:outbox:gaps` so `repair` can backfill it if the body appears.
+- **Redactions**: a separate stream and mark. `ZRANGE redactions (mark:redactions +inf BYSCORE`, scored by
+  `rseq`, rewrites the entry in every sink, and that day's JSONL file is rewritten within 24 h.
+- Writes are idempotent upserts keyed by `(space, id)`, so a crash just replays.
 
 ### 4.5 Hosted and BYO side by side
-
-Both run the same store code. The registry `backend.kind` only decides where the runner's credentials come
-from and whether the outbox runs.
 
 | | Hosted | BYO |
 |---|---|---|
 | Hot store | LogMem Redis: shared for free/team, dedicated instance for agency | customer's Redis (creds sealed per S3) |
-| Archive/search | Postgres, always | off by default (data stays with them); opt in to LogMem Postgres; BYO-Postgres DSN is v1.2+ |
-| Recall without archive | | keyword over the hot window only |
-| Writes | `atomic` required | `atomic` or `sequenced` |
+| Writes | `atomic` required | `atomic`, or `sequenced` with claim keys |
+| Archive | JSONL (v1.1), then Postgres | off by default; opt in to LogMem's archive |
+| Recall | keyword, then FTS | keyword over the hot window |
 
 ### 4.6 Tenant isolation, plainly
 
-- **Hosted shared tier:** every space sits in the same Redis behind **one credential that the LogMem server
-  holds**. Isolation is enforced only by the server: the space is bound by the authenticated connection, never
-  taken from a parameter, and key segments are validated. A bug in that code path is a cross-tenant read.
-  Mitigations: one key builder (`lmKey`) as the only way to name a key, a cross-space fuzz test, Postgres RLS
-  as a second check on history, and Redis ACL users scoped `~lm:{s}:*` where the provider supports them
-  (self-run Redis 6+, not Upstash REST today).
-- **Dedicated tier (agency):** a separate Redis instance per customer, so separate credentials. That's real
-  isolation at the storage layer.
-- **BYO:** anyone holding the customer's Redis creds can read every space in that Redis. Spaces inside one BYO
-  Redis are a namespace, not a security boundary.
-- **The fleet today:** one bridge token reaches all of `acmi:*` and `lm:*` (S1). There's no isolation at all
-  until S1 lands.
+- **Hosted shared tier:** one credential, held by the LogMem server, reaches every space in that Redis.
+  Isolation is enforced only by the server: the space is bound by the authenticated connection, `lmKey` is the
+  single key builder, segments are validated. A bug there is a cross-tenant read. Mitigations: a cross-space
+  fuzz test, Postgres RLS as a second check on history, and Redis ACL users scoped to `~lm:{s}:*` where the
+  provider supports them.
+- **Dedicated tier:** a separate instance and separate credentials per customer. That's real isolation.
+- **BYO:** anyone holding the creds reads every space in that Redis. Spaces there are namespaces, not
+  boundaries.
+- **The fleet today:** one bridge token reaches all of `acmi:*` and `lm:*` (S1). There's no isolation until S1
+  is fixed.
 
 ---
 
@@ -406,125 +501,122 @@ from and whether the outbox runs.
 
 ### 5.1 Auto-Recap correctness (U5)
 
-Today `recapShift` reads only the **agent's own log** since `started_at`, then filters by `shift`. Entries the
-agent wrote to jobs and channels are missed, and so are handoffs it sent (those land on the receiver's log and
-the job). Two concurrent stateless calls after an idle gap can both write the idle Recap.
+v0 builds the Recap from the agent's own log only. That misses job and channel writes and handoffs the agent
+sent. Two concurrent stateless calls after an idle gap can also both write a Recap.
 
-Fixes:
+v1:
 
-1. Every append adds its id to `lm:{s}:shift:{entry.shift}` (prelude). The Recap is
-   `ZRANGE shift:{id} 0 -1` (capped at 500) + `HMGET`, so it counts every entry the shift wrote, wherever it
-   landed, once each.
-2. The session record gains `ver`. All transitions (auto Start, idle Recap, switch Recap, manual Recap) go
-   through the `shift` script's compare-and-set, so exactly one caller writes the Recap and the loser adopts
-   the winner's record.
-3. The Recap's own entry and the `started` entry are excluded from its counts (filter by kind).
+1. Every append adds its id to `lm:{s}:shift:{entry.shift}`. The Recap reads that set (cap 500) plus the
+   bodies, so every entry the shift wrote counts once, wherever it landed. `recap` and `started` entries are
+   excluded from the counts.
+2. Every transition goes through `shift`: a version check plus the `session:{sid}:v{n+1}` claim. Exactly one
+   caller writes the Recap; the other gets −40 and adopts the winner's record.
 
 ### 5.2 Open handoffs and asks (U6)
 
-- `handoff` → `ZADD open:handoff:{to}`. `accept` → `ZREM`.
-- `ask` → `ZADD open:ask`. `decide` → `ZREM` + `answered:{asker}`.
+- `handoff` → `open:handoff:{to}`; `accept` removes it and writes the claim.
+- `ask` → `open:ask`; `decide` removes it, writes the claim and adds to `answered:{asker}`.
 - Brief, `logmem_pending`, the overview "waiting" count and the dogfood "unanswered for more than 24 h" check
-  read these sets (`ZRANGEBYSCORE open:* -inf now-24h`), not the last 200–500 log entries.
-- Open items are **pinned**: retention never trims an entry that is still in an open set.
-- Migration fills the sets from v0 by the current rule: a handoff with no `accepted` whose origin is its
-  trail, and an approval with no `decided`.
+  read these sets, not the last 200–500 entries.
+- Open items are pinned: the trimmer keeps a day bucket while any id in it is still in an open set (that day
+  waits), and the JSONL archive has it anyway.
+- Migration fills the sets with the v0 rule: a handoff with no `accepted` whose origin is its trail, and an
+  approval with no `decided`.
 
 ### 5.3 Bounded reads (U8)
 
 | Read | v0 | v1 |
 |---|---|---|
-| any log | `ZRANGEBYSCORE -inf +inf` then slice in JS | `page`: `ZRANGE … BYSCORE REV LIMIT` + `HMGET` |
-| overview/log views | SCAN every `:log`, 100 each, dedupe by signature | `ZRANGE activity +inf -inf BYSCORE REV LIMIT 0 200` + `HMGET` |
-| channels list | `list` + 1 read per channel | `lm:{s}:logs` filtered to `channel:` |
-| settings key count | SCAN | `meta` counters + `HLEN entries` |
-| compat legacy log | `ZRANGE 0 -1` (whole key) | **bounded to the ms score window** `[since, now]`, `REV LIMIT`. Legacy entries scored in ns/µs/s fall outside it and become visible through the migrated `lm` copy, which has corrected scores. That's 74 entries per the dry run, an accepted trade |
-| compat dedupe | `ts|trail|summary` signature | skip legacy members with `mirrored_from: "lm"` (twins carry `lm_id`) |
-| recall | every log × 500 entries | v1.0: keyword over the last 2,000 `activity` ids (HMGET in batches of 200). v1.1: Postgres FTS (`mode: "fts"`). Embeddings come after (P5) |
+| any log | `ZRANGEBYSCORE -inf +inf`, sliced in JS | `page_ids` + per-bucket `HMGET`, seq cursor |
+| overview, log view | SCAN every `:log` | `activity` `REV LIMIT 200` |
+| channels list | `list` + one read each | `lm:{s}:logs` filtered to `channel:` |
+| settings key count | SCAN | `meta.entries_total` |
+| compat legacy log | `ZRANGE 0 -1` | bounded to the ms score window `[since, now]` with `REV LIMIT`. The 74 legacy entries scored in ns/µs/s fall outside it; they appear through the migrated copy |
+| compat dedupe | `ts|trail|summary` signature | skip `mirrored_from: "lm"` twins |
+| recall | every log × 500 | v1.0: keyword over the last 2,000 `activity` ids. v1.1: Postgres FTS |
 
 ---
 
 ## 6. D5: retention and ACMI sunset
 
-### 6.1 Hot window
+### 6.1 Hot window (trimmer in v1.1)
 
-Default `hot_days`: **30** on free, **90** on team and agency. BYO defaults to **off** (never trim) unless set,
-because it's their memory.
+The default hot window is 30 days (free) or 90 days (team, agency). BYO is off (never trimmed) unless the
+customer sets it.
 
-The daily trimmer (v1.1) runs only when `archive.enabled` and does this per space:
+The daily trimmer runs per space, and only when the archive is on:
 
-1. Pick candidate ids: `ZRANGEBYSCORE activity -inf <mark> LIMIT 0 5000`, so only already-archived seqs.
-2. Keep ids with `ts` older than the window that aren't in any `open:*` set.
-3. For each id, `ZREM` from every log in its `logs` and from `activity`, then `HDEL entries`.
+1. A day bucket is eligible when it's older than the window, the entries mark has passed its last seq, the
+   redactions mark is current, and none of its ids are in an open set.
+2. For an eligible bucket, `UNLINK lm:{s}:e:{day}` (falling back to `DEL`), then trim logs and `activity` with
+   `ZREMRANGEBYSCORE -inf <first seq of the next kept day>` from `days` where that's allowed. Otherwise it
+   relies on the lazy `ZREM` on read (§2.3).
 
-Who, Now, Recap, follows and rosters are never trimmed. Reads that page past the hot window return
-`next_cursor` plus `details.archived: true`, and v1.1 continues the page from Postgres transparently.
+Who, Now, Recap, follows and rosters are never trimmed. Pages that reach the window return
+`details.archived: true`, and v1.1 continues them from the archive.
 
-### 6.2 Archive
+### 6.2 ACMI sunset
 
-- History: Postgres `entries`, kept `history_days` (365 free, unlimited paid).
-- Export/backup: nightly gzipped JSONL per space per day to object storage
-  (`archive/{space}/{yyyy}/{mm}/{dd}.jsonl.gz`). `/api/export` streams from Postgres (P3).
-- A redaction marks that day's file dirty, and the worker rewrites it within 24 h. This is the stated GDPR
-  erasure SLA, together with immediate removal from Redis and Postgres.
-
-### 6.3 ACMI sunset
-
-| Step | Target date | Conditions (all must hold) |
+| Step | Target | Conditions (all must hold) |
 |---|---|---|
-| Mirror off (`LOGMEM_MIRROR_ACMI=0`) | **2026-12-01** | dogfood gate GO; ACMI `--apply` + `--verify` clean; every VM writer (opencode, codex, ops-center, bentley, grok) reads LogMem directly or through compat |
-| Compat reads off (`LOGMEM_ACMI_COMPAT` removed, `acmi_*` tools kept only as v1.x aliases writing `lm`) | **not before 2027-01-15** | zero native `acmi:madez:*` writes (entries without `mirrored_from`) for **14 consecutive days**, measured by the daily check; one delta copy run since the last native write |
-| Compat code deleted | **by 2027-03-31** | the above, plus Mikey GO. If the conditions aren't met by then, compat stays but remains bounded (§5.3), and the date moves only by a written decision |
+| Mirror off | **2026-12-01** | dogfood GO; ACMI `--apply` + field-level `--verify` clean; every VM writer (opencode, codex, ops-center, bentley, grok) reads LogMem directly or through compat |
+| Compat reads off | **not before 2027-01-15** | zero native `acmi:madez:*` writes (entries without `mirrored_from`) for **14 consecutive days**, measured by the daily check; a final delta pass |
+| Compat code deleted | **by 2027-03-31** | the above plus a Mikey GO. If the conditions aren't met by then, compat stays bounded (§5.3) and the date moves only by a written decision |
 
-Legacy `acmi:*` cleanup stays a separate HITL task (PLAN.md step 6).
+Legacy `acmi:*` cleanup stays a separate HITL task.
 
 ---
 
 ## 7. Phased plan
 
-Target v1.0 is after the dogfood gate (Oct 21). Nothing changes key layout during the 7-day pass window.
+Prerequisites: **O1** (required CI on PRs) and **S2** (v0.x hotfix, T0-b PR). The v1 cutover happens after the
+dogfood gate (Oct 21). Nothing changes the key layout during the 7-day pass window.
 
-### v1.0
+### v1.0 (minimum)
 
 | Phase | Ships | Tests | Migration / dry run |
 |---|---|---|---|
-| A. Runner | `script()`, `pipeline()`, probe, native passthrough, JS script twins | unit: EVALSHA → NOSCRIPT → EVAL; 403 → `sequenced`; `REQUIRE_SCRIPTS` refuses. **Differential**: random op sequences give identical key state under Lua (local Redis :6399) and the JS twin | `bridge-probe --scripts` extended to EVAL/EVALSHA/`/pipeline` on `lm:probe:*` (HITL run on Polar) |
-| B. Entry v1 and store | ULID, `seq`, `entries`, `{s}` keys, `activity`, `logs`, `idem`, reserved ns | ordering with same-ms ties; transport-retry exactly-once; idempotency conflict; 16 KB cap; cross-space fuzz | `migrate-v0-v1 --dry-run` on `lm:madez:*` (read-only allowlist): counts, groups, ids, report hash |
-| C. Workflows | `handoff/accept/ask/decide/shift/redact`, open indexes, shift index, Brief/Recap rewired | race tests: 2 accepts → 1 wins; 2 decides → `already_decided`; 2 idle touches → 1 Recap; Recap counts job and channel entries; `waiting_on` cleared only for its ask | dry run reports the open sets that would be built |
-| D. Contract 1.0 and bounded reads | §3 tools, errors, version, `page`, view.mjs without SCAN, bounded compat | `spec:check`; cursor round trip with no dupes or gaps across ties; no-SCAN grep test; ACMI conformance 30/30 + 35/35; Field Notes day end to end | n/a |
-| E. Cutover | `--apply` (HITL) → `--verify` → switch `madez` agents | verify: `ZCARD` parity, no `seq` gaps, all ms | v0 keys kept 30 d |
+| **A′. Runner** | `script()`, `pipeline()`, probe (scripts, 6.2/7, ZPOPMIN, pipeline), node-redis passthrough, claim-key sequenced mode | EVALSHA → NOSCRIPT → EVAL; 403 → sequenced; `REQUIRE_SCRIPTS` → refused. **Differential**: random op sequences give the same key state under Lua (local Redis :6399) and sequenced mode. **Crash injection**: kill sequenced mode after each step, run repair, and exactly one winner remains with every index present | `bridge-probe --scripts` on `lm:probe:*` (HITL run on Polar) |
+| **B. Entry v1** | ULID, seq, day buckets, `{s}` keys, activity, days, logs index, idem, meta counters, reserved namespaces | seq-ordered pages with exclusive cursors; replay exactly-once; idempotency conflict; 16 KB cap; per-bucket HMGET grouping; cross-space fuzz | `migrate-v0-v1 --dry-run` on `lm:madez:*` (read-only): groups, `ungrouped_lookalikes`, report hash |
+| **C′. Workflows** | `append`, `handoff`, `accept`, `ask`, `decide`, `shift`; `redact` as an admin script; open, shift and answered indexes; Brief/Recap rewired | **Every status code** reached by a test. Checks-before-writes: each failing check leaves the key space byte-identical. Races (in both modes): 2 accepts → 1 wins, the other gets `already_accepted`; 2 decides → `already_decided`; 2 idle touches → 1 Recap. Recap counts job and channel entries. Asker mismatch is refused | dry run reports the open sets it would build |
+| **D′. Contract 1.0** | §3 tools, errors, version, seq forward cursors (`after`), `page_ids`, view.mjs without SCAN, bounded compat | `spec:check`; forward polling under concurrent writes never skips; settle rule; no-SCAN / no-HGETALL grep test; ACMI conformance 30/30 + 35/35; Field Notes day end to end | n/a |
+| **E. Migration** | freeze, `--apply` (HITL), field-level `--verify`, delta pass, cross-source dedupe, `migrate-v1-v0` rollback | verify catches a planted one-field diff; the delta pass converges; rollback round trip | v0 keys kept 30 d |
+| **U3** | web Approve/Reject → `decide` | approver-only; double-click → `already_decided` | n/a |
+| **U1** | `npx github:madezmedia/logmem` install path and matching snippets | a clean-machine smoke test | n/a |
 
 ### v1.1
 
-| Phase | Ships | Tests | Dry run |
-|---|---|---|---|
-| F. Archive and search | Postgres schema, outbox worker, FTS recall, `/api/export`, redaction propagation | replay idempotency; redaction reaches Redis, PG and JSONL; RLS denies cross-space | outbox `--dry-run` prints the rows it would upsert |
-| G. Retention and registry | trimmer, registry tables + `meta` projection, quotas, hosted provisioning | open items never trimmed; reads past the window continue from PG | trimmer `--dry-run` lists ids per space |
-| H. Sunset and hardening | mirror off, compat removal path, ask enforcement (O3), signed session ids (O4), `repair` | daily check measures native ACMI writes | 14-day zero-native-writes report |
+| Phase | Ships |
+|---|---|
+| F. Archive | outbox worker, JSONL day files, `/api/export`, delete-space, redaction propagation |
+| G. Postgres | history, FTS recall (`mode: fts`), RLS |
+| H. Retention and registry | trimmer (bucket `UNLINK`), Postgres registry + `meta` projection, quotas, hosted provisioning |
+| I. Product | U4 webhooks, U2 real onboarding probe |
+| J. Sunset and hardening | mirror off, compat removal path, O3 enforcement, O4 signed session ids, nightly `repair` |
+
+Each v1.1 phase ships with a `--dry-run` that prints what it would write or delete, plus replay and
+idempotency tests.
 
 ## 8. Risks
 
-1. **The fleet bridge blocks EVAL.** `madez` then runs `sequenced`. Races are settled by `seq` but not
-   prevented. Mitigation: ask for EVAL/EVALSHA/SCRIPT in the allowlist (Q1), or move `madez` to a
-   script-capable Redis.
-2. **Upstash Lua limits** (script time, size, request size on large `HMGET`). Mitigation: pages ≤ 200,
-   `page` ≤ 16 logs, trimmer batches of 5,000.
-3. **The `entries` HASH grows with history** until v1.1 trimming. 36k entries is ~20 MB, so this is fine for
-   the fleet but has to land before hosted free signups.
-4. **Clock skew between serverless instances** reorders entries within a few ms. Display is `(ts, id)`;
-   `seq` is the truth for sync. Accepted.
-5. **Two migrations in flight** (v0 `lm` → v1, `acmi` → v1) plus compat merge. Mitigation: v1 cutover only
-   after the gate; the ACMI copy targets v1 directly; both have `--verify`.
-6. **Shared-credential hosting** puts a single code path between tenants (§4.6). Mitigation: fuzz + RLS +
-   ACLs where possible; a dedicated tier for customers who need real isolation.
-7. **The human-only decide** depends on admin auth until U7. Until then the single admin password is the only
-   approver identity, and that's weak (S2 is only as strong as that password).
+1. **The fleet bridge blocks EVAL**, so `madez` runs sequenced. Claim keys keep the outcome exactly-once, but
+   multi-step writes become visible in pieces until repair completes them. Mitigation: owner Q1.
+2. **Upstash limits** (request size, script billing, Redis version) are unverified. §2.5 must be checked
+   before A′ merges.
+3. **One space per shard** is a hard ceiling. That's fine for the fleet (36k entries is about 20 MB); a large
+   agency space needs a dedicated instance.
+4. **Late history imports** sort as new, because seq is commit order. Mitigation: import everything at the
+   cutover; anything missed needs an explicit decision.
+5. **Two migrations plus compat merge.** Mitigations: the freeze, field-level verify, cross-source dedupe and
+   the rollback script.
+6. **Shared-credential hosting** puts a single code path between tenants (§4.6).
+7. **Human-only decide** rests on admin auth until U7 (accounts with roles).
 
 ## 9. Questions for the owner
 
-1. **Bridge scripts:** will the fleet bridge allow `EVAL`/`EVALSHA`/`SCRIPT LOAD` (and a pipeline endpoint)?
-   Or is `sequenced` mode acceptable for `madez` until the bridge is replaced?
-2. **Postgres and plans:** which Postgres provider for the hosted control plane and archive, and are the
-   defaults right (hot 30/90 days, history 365 days free, BYO archive off)?
-3. **Sunset dates:** are mirror-off 2026-12-01 and compat removal between 2027-01-15 and 2027-03-31 acceptable,
-   and who drives the VM-agent cutover that the 14-day zero-native-writes condition depends on?
+1. **Bridge:** will the fleet bridge allow `EVAL`/`EVALSHA`/`SCRIPT LOAD`, `ZPOPMIN` and a pipeline endpoint?
+   If not, is claim-key sequenced mode acceptable for `madez` until the bridge is replaced?
+2. **Storage:** which object store (the JSONL archive, v1.1 first) and which Postgres provider (v1.1 second),
+   and are the defaults right (hot window 30/90 days, history 365 days on free, BYO archive off)?
+3. **Sunset:** are mirror-off 2026-12-01 and compat removal between 2027-01-15 and 2027-03-31 acceptable, and
+   who drives the VM-agent cutover that the 14-day zero-native-writes condition depends on?
