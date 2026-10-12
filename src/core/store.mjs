@@ -205,7 +205,12 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       let entries = rows.map((r, i) => {
         const e = asEntry(tryParse(r.member));
         const { _o, ...obj } = e && typeof e === "object" ? e : { summary: String(e) };
-        return { e: { ...obj, ts: normTs(obj.ts ?? r.score) }, o: _o ?? "", i };
+        const out = { ...obj, ts: normTs(obj.ts ?? r.score) };
+        // Rows merged from legacy acmi:* keys carry a non-enumerable flag, so
+        // readers can refuse to treat them as asks or decisions without
+        // changing what compat reads return.
+        if (r.legacy) Object.defineProperty(out, "legacy", { value: true, enumerable: false });
+        return { e: out, o: _o ?? "", i };
       });
       // Stable: ts, then same-ms ordinal, then read order.
       entries.sort((a, b) => a.e.ts - b.e.ts || (a.o < b.o ? -1 : a.o > b.o ? 1 : a.i - b.i));

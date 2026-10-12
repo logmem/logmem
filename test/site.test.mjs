@@ -55,12 +55,14 @@ test("seen buckets and waiting decisions", () => {
   assert.equal(seen(now - 5 * 3600e3, now).state, "offline");
   assert.equal(seen(null).state, "unknown");
   const secret = process.env.LOGMEM_DECIDE_SECRET;
-  const signed = (origin, by) => ({ kind: "decided", origin, by, ts: 1, payload: { verdict: "approve", sig: signDecision({ space: "s", origin, verdict: "approve", by, ts: 1 }, secret) } });
-  const entries = [{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "approval", trail: "c" }, signed("a", "human:you"), { kind: "decided", origin: "b", by: "agent:mallory" }, { kind: "decided", origin: "c", by: "human:you", payload: { verdict: "approve" } }];
-  const d = decisionsFrom(entries, { secret, space: "s" });
-  assert.deepEqual(d.waiting.map((x) => x.trail), ["b", "c"], "an agent-written or unsigned decided never closes an ask");
-  assert.deepEqual(decisionsFrom(entries, { secret, space: "other" }).waiting.length, 3, "a signature is bound to its space");
-  assert.deepEqual(decisionsFrom(entries, {}).waiting.length, 3, "no secret: nothing counts as decided");
+  const ask = (trail, ts) => ({ kind: "approval", trail, by: "agent:q", ts, ask_digest: `h-${trail}` });
+  const registry = new Map([["a", "h-a"], ["b", "h-b"], ["c", "h-c"]]);
+  const signed = (origin, by) => ({ kind: "decided", origin, by, ts: 10, payload: { verdict: "approve", ask_hash: `h-${origin}`, sig: signDecision({ space: "s", origin, ask_hash: `h-${origin}`, verdict: "approve", by, ts: 10 }, secret) } });
+  const entries = [ask("c", 3), ask("b", 2), ask("a", 1), ask("z", 0), signed("a", "human:you"), { kind: "decided", origin: "b", by: "agent:mallory" }, { kind: "decided", origin: "c", by: "human:you", payload: { verdict: "approve" } }];
+  const d = decisionsFrom(entries, { secret, space: "s", registry });
+  assert.deepEqual(d.waiting.map((x) => x.trail), ["c", "b"], "an agent-written or unsigned decided never closes an ask; an unregistered ask is not shown");
+  assert.deepEqual(decisionsFrom(entries, { secret, space: "other", registry }).waiting.length, 3, "a signature is bound to its space");
+  assert.deepEqual(decisionsFrom(entries, { registry }).waiting.length, 3, "no secret: nothing counts as decided");
 });
 
 test("security: scorecard ignores forged checkups and coerces every field", async () => {

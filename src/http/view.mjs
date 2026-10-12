@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, verifyDecision, SETTLES } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -37,7 +37,11 @@ export function seen(ts, now = Date.now()) {
 const slim = (e, from) => ({
   ts: e.ts, kind: e.kind, group: groupOf(e.kind), by: e.by, via: e.via, summary: e.summary,
   trail: e.trail, origin: e.origin, where: from, to: e.to,
-  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null, sig: e.payload?.sig ?? null } : undefined,
+  // Asks carry the digest of their canonical content (computed here from the
+  // raw entry, never read from it) so decisionsFrom can pick the canonical one.
+  ...(e.kind === "approval" ? { ask_digest: askDigest(e) } : {}),
+  ...(e.legacy === true ? { legacy: true } : {}),
+  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null, ask_hash: e.payload?.ask_hash ?? null, sig: e.payload?.sig ?? null } : undefined,
 });
 
 export async function allEntries(store, r, space, { limit = 200 } = {}) {
@@ -50,7 +54,9 @@ export async function allEntries(store, r, space, { limit = 200 } = {}) {
     const m = k.match(new RegExp(`^lm:${space}:([^:]+):([^:]+):log$`));
     if (!m) continue;
     for (const e of await store.readLog(m[1], m[2], { reverse: true, limit: 100 })) {
-      const sig = `${e.ts}|${e.trail}|${e.summary}`;
+      // Asks dedupe on their content digest too, so a twin under the same
+      // ts/trail/summary can never hide the canonical ask.
+      const sig = `${e.ts}|${e.trail}|${e.summary}${e.kind === "approval" ? `|${askDigest(e)}` : ""}`;
       if (seenSig.has(sig)) continue;
       seenSig.add(sig);
       merged.push(slim(e, `${m[1]}:${m[2]}`));
@@ -63,6 +69,7 @@ export async function allEntries(store, r, space, { limit = 200 } = {}) {
 export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   const r = readOnly(redis);
   const verify = { secret, space };
+  const withState = async (entries) => decisionsFrom(entries, { ...verify, ...(await askState(store, entries)) });
   const store = createStore(r, { space });
 
   if (what === "log") {
@@ -83,7 +90,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     if (what === "agents") return { agents };
     const jobs = await jobsView(store);
     const entries = await allEntries(store, r, space, { limit: 300 });
-    const decisions = decisionsFrom(entries, verify);
+    const decisions = await withState(entries);
     return {
       agents, jobs, recent: entries.slice(0, 8), waiting: decisions.waiting,
       stats: {
@@ -123,7 +130,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     return { channels, selected: pick || null, log };
   }
 
-  if (what === "decisions") return decisionsFrom(await allEntries(store, r, space, { limit: 500 }), verify);
+  if (what === "decisions") return withState(await allEntries(store, r, space, { limit: 500 }));
 
   if (what === "recall") {
     const q = String(params.q || "").slice(0, 200);
@@ -154,24 +161,23 @@ async function jobsView(store) {
 }
 
 /**
- * Waiting = approval entries with no decided entry whose origin is their trail.
- * Only a signed person's answer counts (written by /api/decide, HMAC verified
- * with LOGMEM_DECIDE_SECRET): an unsigned or forged "decided", including a
- * legacy ACMI row claiming a human source, does not close an ask.
+ * Waiting = canonical asks with no settling answer; decided = canonical asks
+ * with one. The same rule as the Brief (tools.mjs decisionsFor): only the
+ * ask whose content hash matches the ask registry counts (twins and legacy
+ * rows are dropped), only a signed decision bound to that ask's hash counts,
+ * the settling decision held by the set-once claim wins, and a defer keeps
+ * the ask waiting (marked deferred).
  */
-export function decisionsFrom(entries, { secret, space } = {}) {
-  const signed = entries.filter((e) => e.kind === "decided" && verifyDecision(e, { secret, space }));
-  // Approve / reject settle an ask. Defer does not: the ask stays waiting (and visible), marked deferred.
-  const decided = new Map(signed.filter((e) => SETTLES.includes(e.payload?.verdict)).map((e) => [e.origin, e]));
-  const deferred = new Map();
-  for (const e of [...signed].sort((x, y) => y.ts - x.ts)) if (e.payload?.verdict === "defer" && !deferred.has(e.origin)) deferred.set(e.origin, e);
-  const asks = entries.filter((e) => e.kind === "approval");
+export function decisionsFrom(entries, { secret, space, registry, claims } = {}) {
+  const canon = canonicalAsks(entries, registry, (e) => e.ask_digest);
+  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims });
+  const asks = [...canon.values()].map((c) => c.ask).sort((a, b) => b.ts - a.ts);
   const mark = (a) => {
-    const d = deferred.get(a.trail);
+    const d = deferrals.get(a.trail);
     return d ? { ...a, deferred: { by: d.by, note: d.payload?.note ?? null, at: d.ts } } : a;
   };
   return {
-    waiting: asks.filter((a) => !decided.has(a.trail)).map(mark),
-    decided: asks.filter((a) => decided.has(a.trail)).map((a) => ({ ask: a, answer: decided.get(a.trail) })),
+    waiting: asks.filter((a) => !answers.has(a.trail)).map(mark),
+    decided: asks.filter((a) => answers.has(a.trail)).map((a) => ({ ask: a, answer: answers.get(a.trail) })),
   };
 }

@@ -94,8 +94,9 @@ test("writeDecision: decided on the ask's log and the asker's log; Brief shows t
   assert.equal(out.entry.kind, "decided");
   assert.equal(out.entry.by, "human:mikey");
   assert.equal(out.entry.origin, ask.trail);
-  const { sig, ...rest } = out.entry.payload;
+  const { sig, ask_hash, ...rest } = out.entry.payload;
   assert.deepEqual(rest, { verdict: "approve", note: "Go for Tuesday" });
+  assert.match(ask_hash, /^[0-9a-f]{64}$/, "bound to the ask's content");
   assert.match(sig, /^[0-9a-f]{64}$/, "signed");
 
   const jobLog = (await sc(a, "logmem_open", { job: "issue-14" })).log;
