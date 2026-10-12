@@ -4,7 +4,9 @@
 // the read-only guard; this route holds the read-write backend and does one
 // thing: writeDecision(), which appends a "decided" entry (by human:admin,
 // payload.verdict) to the ask's log and the asker's log and clears the
-// asker's now.waiting_on. Agents cannot write "decided" at all.
+// asker's now.waiting_on. Agents cannot write "decided" at all. The decider
+// is human:<LOGMEM_ADMIN_ID> (default human:admin); an ask addressed to a
+// different person (logmem_ask to=human:<id>) is refused with 403.
 //
 // Gates, in order:
 //   1. POST only.
@@ -25,7 +27,10 @@ import { isAdmin, adminEnabled, viewSpaces } from "../src/http/admin-auth.mjs";
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
 export const INTENT_HEADER = "x-logmem-intent";
-const STATUS = { bad_request: 400, not_found: 404, not_pending: 409, misconfigured: 503 };
+const STATUS = { bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, misconfigured: 503 };
+
+/** The signed-in person: human:<LOGMEM_ADMIN_ID> (default "admin"). Asks addressed to someone else are refused (403). */
+export const deciderFrom = (env) => `human:${String(env.LOGMEM_ADMIN_ID || "admin")}`;
 
 function sameOrigin(req) {
   const origin = req.headers?.origin;
@@ -83,7 +88,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
   }
   try {
     const store = createStore(runner, { space });
-    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: "human:admin", via: "web", ...(now ? { now } : {}) });
+    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", ...(now ? { now } : {}) });
     return res.status(201).json({ ok: true, space, ...out });
   } catch (e) {
     if (e instanceof DecisionError) return res.status(STATUS[e.code] || 400).json({ error: e.message, code: e.code });

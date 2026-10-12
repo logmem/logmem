@@ -321,3 +321,48 @@ test("item 1: only entries whose HMAC verifies count; forged, tampered, moved or
   assert.deepEqual(b.pending_asks.map((x) => x.trail), [ask2.trail]);
   assert.equal(b.answered_asks[0].verdict, "reject");
 });
+
+// ─── Item 4: only the receiver settles an approval ──────────────────────
+test("item 4: an ask addressed to a person can only be settled by that person; never by the asker", async () => {
+  const { q, store } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "Refund $400?", action: "POST /refunds ord-9", reversible: true, to: "human:mikey" });
+  assert.equal(ask.entry.to, "human:mikey");
+  assert.equal((await sc(q, "logmem_brief", {})).pending_asks[0].to, "human:mikey");
+
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:avery" }), (e) => isCode("forbidden")(e) && /only they can answer/.test(e.message));
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:quill" }), (e) => isCode("forbidden")(e) && /asker can't answer/.test(e.message), "the asker under a human-looking name");
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "agent:quill" }), isCode("bad_request"), "an agent is never a decider");
+  assert.equal((await store.readLog("agent", "quill")).filter((e) => e.kind === "decided").length, 0, "no refused answer landed");
+  assert.equal((await writeDecision(store, ask.trail, { verdict: "approve", by: "human:mikey" })).ok, true, "the receiver can");
+
+  // Unaddressed asks: any person except the asker.
+  const open = await sc(q, "logmem_ask", { question: "Deploy?", action: "deploy", reversible: true });
+  await assert.rejects(() => writeDecision(store, open.trail, { verdict: "approve", by: "human:quill" }), isCode("forbidden"));
+  assert.equal((await writeDecision(store, open.trail, { verdict: "reject", by: "human:avery" })).ok, true);
+});
+
+test("item 4: logmem_ask refuses a to that is not a person (an agent, or the asker)", async () => {
+  const { q } = await team();
+  for (const to of ["agent:atlas", "quill", "agent:quill", "human:", "human:a b", `human:${"x".repeat(65)}`]) {
+    const r = await q.callTool("logmem_ask", { question: "q", action: "a", reversible: true, to });
+    assert.equal(r.isError, true, to);
+    assert.match(r.structuredContent.error, /to must be a person/);
+  }
+});
+
+test("item 4: /api/decide decides as human:<LOGMEM_ADMIN_ID> and answers 403 for an ask addressed to someone else", async () => {
+  const { redis, q } = await team();
+  const forMikey = await sc(q, "logmem_ask", { question: "Send?", action: "send", reversible: true, to: "human:mikey" });
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const run = async (e, trail) => {
+    const res = mockRes();
+    await decide({ method: "POST", headers: { host: "h", origin: "https://h", cookie: issueCookie(e).split(";")[0], "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail, verdict: "reject" } }, res, { env: e, redis });
+    return res;
+  };
+  const no = await run(env, forMikey.trail);
+  assert.equal(no.statusCode, 403);
+  assert.equal(no.body.code, "forbidden");
+  const yes = await run({ ...env, LOGMEM_ADMIN_ID: "mikey" }, forMikey.trail);
+  assert.equal(yes.statusCode, 201, JSON.stringify(yes.body));
+  assert.equal(yes.body.entry.by, "human:mikey");
+});

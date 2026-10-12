@@ -66,6 +66,8 @@ export const isAskKind = (kind) => kind != null && normalizeKind(String(kind).tr
 /** Asks only come from logmem_ask, so their trail is always fresh and unguessable (never a reused or chosen one). */
 export const ASK_ONLY = "approval entries are written by logmem_ask, which picks a fresh trail; call logmem_ask instead";
 export const isHuman = (by) => /^human:/.test(String(by || ""));
+/** A person's ref: human:<1-64 of [A-Za-z0-9_.-]>. */
+export const HUMAN_RE = /^human:[A-Za-z0-9_.-]{1,64}$/;
 
 /** Edit distance, for "did you mean" on agent ids. */
 export function levenshtein(a, b) {
@@ -205,7 +207,7 @@ export function asksOf(a, entries, { secret, space } = {}) {
   const answers = new Map();
   for (const e of entries) if (e.kind === "decided" && e.origin && !answers.has(e.origin) && verifyDecision(e, { secret, space })) answers.set(e.origin, e);
   const askByTrail = new Map(mine.map((x) => [x.trail, x]));
-  const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible, where: x.where, asked_at: x.ts });
+  const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible, where: x.where, to: x.to ?? null, asked_at: x.ts });
   return {
     pending_asks: mine.filter((x) => !answers.has(x.trail)).map(ask),
     answered_asks: [...answers.values()]
@@ -390,16 +392,20 @@ export const TOOLS = [
       reversible: { type: "boolean", desc: "Can this be undone afterwards?" },
       where: { type: "string", desc: "Job or channel this belongs to (default: your agent log)", optional: true },
       origin: { type: "string", desc: "Trail id this request follows from", optional: true },
+      to: { type: "string", desc: "The person who must answer, as 'human:<id>' (default: any signed-in person). Only they can settle it; never an agent, never you", optional: true },
     }),
     annotations: WRITE,
-    async run({ question, action, reversible, where, origin }, ctx) {
+    async run({ question, action, reversible, where, origin, to }, ctx) {
       const agent = me(ctx);
       capText("question", question);
       capText("action", action, LIMITS.action);
+      if (to != null && !HUMAN_RE.test(String(to))) {
+        return { ok: false, error: "to must be a person, 'human:<id>' (1-64 of letters, digits, '.', '_', '-'): an ask is answered by a person, never by an agent or by the asker" };
+      }
       const loc = where ? parseRef(where, "job") : { ns: "agent", id: agent };
       const t = clock(ctx);
       const trail = makeTrail("approval", loc.id, t);
-      const extra = { action, reversible, status: "waiting", where: `${loc.ns}:${loc.id}` };
+      const extra = { action, reversible, status: "waiting", where: `${loc.ns}:${loc.id}`, ...(to != null ? { to } : {}) };
       const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       await ctx.store.setNow("agent", agent, { waiting_on: { trail, question, since: t } });
@@ -741,7 +747,7 @@ const VERDICT_LABEL = { approve: "Approved", reject: "Rejected", defer: "Deferre
 export class DecisionError extends Error {
   constructor(code, message) {
     super(message);
-    this.code = code; // bad_request | misconfigured | not_found | not_pending
+    this.code = code; // bad_request | misconfigured | forbidden | not_found | not_pending
   }
 }
 
@@ -804,19 +810,26 @@ async function findAskLog(store, trail, ts) {
  * concurrent answers can't both land. No usable secret: fail closed
  * (DecisionError "misconfigured"), nothing is written.
  *
- * Throws DecisionError: bad_request, misconfigured, not_found, not_pending.
+ * Receiver only: if the ask names `to` (human:<id>), only that person can
+ * settle it, and the asker can never settle its own ask.
+ *
+ * Throws DecisionError: bad_request, misconfigured, forbidden, not_found, not_pending.
  */
 export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
   if (typeof askTrail !== "string" || !askTrail || askTrail.length > LIMITS.trail) throw new DecisionError("bad_request", `trail must be a string of 1..${LIMITS.trail} characters`);
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);
-  if (!/^human:[A-Za-z0-9_.-]{1,64}$/.test(String(by || ""))) throw new DecisionError("bad_request", "by must be 'human:<id>': only a person decides");
+  if (!HUMAN_RE.test(String(by || ""))) throw new DecisionError("bad_request", "by must be 'human:<id>': only a person decides");
   if (note != null && (typeof note !== "string" || note.length > LIMITS.summary)) throw new DecisionError("bad_request", `note must be text of at most ${LIMITS.summary} characters`);
   if (askTrail.includes(":")) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
 
   const found = await findAsk(store, askTrail);
   if (!found) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
   const { ask, asker, where } = found;
+  // Only the receiver settles: the person the ask was sent to (when it names
+  // one), and never the asker itself under a human-looking name.
+  if (by.replace(/^human:/, "") === asker || by === ask.by) throw new DecisionError("forbidden", "the asker can't answer its own ask; a different person must decide");
+  if (ask.to && by !== ask.to) throw new DecisionError("forbidden", `this ask is for ${ask.to}; only they can answer it`);
   const w = parseRef(where, "job");
   const logs = [[w.ns, w.id]];
   if (!(w.ns === "agent" && w.id === asker)) logs.push(["agent", asker]);
