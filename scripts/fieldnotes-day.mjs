@@ -7,6 +7,7 @@
 
 import { createLogmem } from "../src/server.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
+import { writeDecision } from "../src/core/tools.mjs";
 
 export async function runDay(redis, { space = "fieldnotes", mirror, log = () => {} } = {}) {
   const run = Date.now();
@@ -32,7 +33,11 @@ export async function runDay(redis, { space = "fieldnotes", mirror, log = () => 
   await call("quill", "logmem_recall", { query: "issue 14 draft links" }, "10:52 Find it");
   await call("relay", "logmem_start", { agent: "relay" }, "11:07 relay starts");
   const ask = await call("relay", "logmem_ask", { question: "Email issue 14 to 2,184 subscribers Tue 9:00am?", action: "POST /v1/campaigns/iss-14/send audience=list:subscribers(2184) schedule=2026-10-13T09:00-04:00", reversible: false, where: `job:${job}`, origin: draft.entry.trail }, "11:07 Ask first");
-  await call("atlas", "logmem_note", { where: `job:${job}`, kind: "decided", summary: "Approved the send (sandbox stand-in for You)", origin: ask.trail }, "11:15 Decided");
+  // Only a person decides. In production that is the Decisions page (/api/decide);
+  // the sandbox calls the same store helper as a stand-in for You.
+  const dec = await writeDecision(A.atlas.store, ask.trail, { verdict: "approve", note: "Approved the send (sandbox stand-in for You)", by: "human:you", via: "fieldnotes-script" });
+  steps.push({ step: "11:15 Decided", agent: "human:you", tool: "writeDecision", ok: dec.ok });
+  log("ok   11:15 Decided (human:you writeDecision)");
   await call("relay", "logmem_stage", { job, stage: "done", note: "Issue 14 scheduled for Tue 9:00am" }, "11:20 Ship it");
   await call("tally", "logmem_start", { agent: "tally" }, "14:30 tally starts");
   await call("tally", "logmem_note", { where: "channel:field-notes", kind: "stuck", summary: "Bank export unavailable since 1:10pm. Reconciling September invoices is paused." }, "14:30 Raise a flag");

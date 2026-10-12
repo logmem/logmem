@@ -12,6 +12,17 @@ import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
 import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
 import { SLOTS } from "../core/keys.mjs";
+import { HUMAN_ONLY, isDecidedKind, capEntry, capJson } from "../core/tools.mjs";
+
+/** Rollups are cross-session summaries; they get more room than one entry's payload. */
+const ROLLUP_MAX = 64 * 1024;
+
+/** ACMI events go through the same rules as logmem_note: no agent-written decisions, size caps. */
+function guardEvent({ kind, summary, correlationId, parentCorrelationId }) {
+  if (isDecidedKind(kind)) return { ok: false, error: HUMAN_ONLY };
+  capEntry({ summary, trail: correlationId, origin: parentCorrelationId });
+  return null;
+}
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -59,6 +70,7 @@ export const ACMI_TOOLS = [
     async run({ namespace, id, profile }, { store }) {
       validateKeySegments(namespace, id);
       validateJson(profile, "profile");
+      capJson("profile", profile);
       const ns = nsFromAcmi(namespace);
       await store.setWho(ns, id, json(profile));
       return { ok: true, key: store.key(ns, id, "who") };
@@ -77,6 +89,7 @@ export const ACMI_TOOLS = [
     async run({ namespace, id, signals }, { store }) {
       validateKeySegments(namespace, id);
       validateJson(signals, "signals");
+      capJson("signals", signals);
       const ns = nsFromAcmi(namespace);
       await store.replaceNow(ns, id, json(signals));
       return { ok: true, key: store.key(ns, id, "now") };
@@ -99,6 +112,8 @@ export const ACMI_TOOLS = [
     skipTouch: true,
     async run({ namespace, id, source, summary, kind, correlationId, parentCorrelationId }, { store, surface }) {
       validateKeySegments(namespace, id);
+      const refused = guardEvent({ kind, summary, correlationId, parentCorrelationId });
+      if (refused) return refused;
       const ns = nsFromAcmi(namespace);
       const ev = { source, summary, via: surface };
       if (kind) ev.kind = kind;
@@ -151,6 +166,7 @@ export const ACMI_TOOLS = [
     async run({ id, profile }, { store }) {
       validateKeySegments(id);
       validateJson(profile, "profile");
+      capJson("profile", profile);
       await store.setWho("job", id, json(profile));
       return { ok: true, work_id: id };
     },
@@ -171,6 +187,8 @@ export const ACMI_TOOLS = [
     skipTouch: true,
     async run({ id, source, summary, kind, correlationId, parentCorrelationId, sessionId }, { store, surface }) {
       validateKeySegments(id);
+      const refused = guardEvent({ kind, summary, correlationId, parentCorrelationId });
+      if (refused) return refused;
       const ev = { source, summary, via: surface };
       if (kind) ev.kind = kind;
       if (correlationId) ev.correlationId = correlationId;
@@ -193,6 +211,7 @@ export const ACMI_TOOLS = [
     async run({ id, signals }, { store }) {
       validateKeySegments(id);
       validateJson(signals, "signals");
+      capJson("signals", signals);
       await store.replaceNow("job", id, json(signals));
       return { ok: true, work_id: id };
     },
@@ -348,6 +367,7 @@ export const ACMI_TOOLS = [
     async run({ agentId, rollup }, { store }) {
       validateKeySegments(agentId);
       validateJson(rollup, "rollup");
+      capJson("rollup", rollup, ROLLUP_MAX);
       await store.setRecap(agentId, json(rollup));
       return { ok: true, key: store.key("agent", agentId, "recap") };
     },
