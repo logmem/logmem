@@ -25,7 +25,7 @@ import { isAdmin, adminEnabled, viewSpaces } from "../src/http/admin-auth.mjs";
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
 export const INTENT_HEADER = "x-logmem-intent";
-const STATUS = { bad_request: 400, not_found: 404, not_pending: 409 };
+const STATUS = { bad_request: 400, not_found: 404, not_pending: 409, misconfigured: 503 };
 
 function sameOrigin(req) {
   const origin = req.headers?.origin;

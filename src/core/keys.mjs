@@ -90,5 +90,14 @@ export function parseRef(ref, defaultNs = "channel") {
   return { ns, id };
 }
 
-/** Protected prefixes never removed by logmem_remove, even with confirm. */
-export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/];
+/**
+ * The set-once settlement key for one ask: written with SET NX by
+ * writeDecision, so an ask is approved or rejected exactly once.
+ */
+export function lmDecisionKey(space, trail) {
+  validateKeySegments(space, trail);
+  return `${PREFIX}:${space}:decision:${trail}`;
+}
+
+/** Protected prefixes never removed by logmem_remove, even with confirm. Decision keys stay: removing one would allow a second answer. */
+export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/];

@@ -4,6 +4,9 @@ import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createLogmem } from "../src/server.mjs";
 import { writeDecision } from "../src/core/tools.mjs";
 
+// Test-only HMAC key for human decisions (writeDecision fails closed without one).
+process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
+
 const call = async (lm, name, args) => {
   const r = await lm.callTool(name, args);
   return r.structuredContent;

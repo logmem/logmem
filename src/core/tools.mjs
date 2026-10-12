@@ -13,9 +13,10 @@
 // the admin login). Every write is size-capped (LIMITS) because entry text
 // is shown to other agents and must stay data, not a prompt channel.
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import { params } from "./params.mjs";
-import { parseRef } from "./keys.mjs";
+import { parseRef, lmDecisionKey } from "./keys.mjs";
+import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
 
@@ -188,16 +189,21 @@ async function brief(ctx, agent) {
     follows,
     log: log.slice(0, 20),
     handoffs_to_me: waiting,
-    ...asksOf(a, week),
+    ...asksOf(a, week, { secret: decideSecret(ctx), space: s.space }),
     recent_shifts: shifts,
   };
 }
 
-/** pending_asks / answered_asks for agent `a` from its own log (newest first). */
-export function asksOf(a, entries) {
+/**
+ * pending_asks / answered_asks for agent `a` from its own log (newest first).
+ * Only a decided entry whose HMAC verifies with LOGMEM_DECIDE_SECRET counts:
+ * a "decided" forged into the store (legacy ACMI writes, direct Redis) never
+ * answers an ask. No secret means nothing counts as answered (fail closed).
+ */
+export function asksOf(a, entries, { secret, space } = {}) {
   const mine = entries.filter((e) => e.kind === "approval" && e.by === agentRef(a));
   const answers = new Map();
-  for (const e of entries) if (e.kind === "decided" && e.origin && isHuman(e.by) && !answers.has(e.origin)) answers.set(e.origin, e);
+  for (const e of entries) if (e.kind === "decided" && e.origin && !answers.has(e.origin) && verifyDecision(e, { secret, space })) answers.set(e.origin, e);
   const askByTrail = new Map(mine.map((x) => [x.trail, x]));
   const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible, where: x.where, asked_at: x.ts });
   return {
@@ -694,12 +700,48 @@ export const TOOLS = [
 
 // ─── Human decisions ─────────────────────────────────────────────────────
 export const VERDICTS = ["approve", "reject", "defer"];
+
+/** Minimum length for LOGMEM_DECIDE_SECRET (32 characters, e.g. `openssl rand -hex 32`). */
+export const DECIDE_SECRET_MIN = 32;
+export const NO_SECRET =
+  "decisions are disabled: LOGMEM_DECIDE_SECRET is not set (or shorter than 32 characters). Set it on the server (e.g. `openssl rand -hex 32`); nothing was written";
+
+/** The decide secret for a tool context: an explicit ctx.decideSecret, else the env. */
+export const decideSecret = (ctx) => (ctx && ctx.decideSecret !== undefined ? ctx.decideSecret : process.env.LOGMEM_DECIDE_SECRET);
+const usableSecret = (secret) => typeof secret === "string" && secret.length >= DECIDE_SECRET_MIN;
+
+/** The exact bytes a decision signature covers. Binding space + origin means a signature can't be moved to another ask or space. */
+function decisionMessage({ space, origin, verdict, note, by, ts }) {
+  return stableJson({ v: 1, space, origin, verdict, note: note ?? null, by, ts });
+}
+
+/** HMAC-SHA256 (hex) over a decision. Throws if the secret is unusable. */
+export function signDecision(fields, secret) {
+  if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
+  return createHmac("sha256", secret).update(decisionMessage(fields)).digest("hex");
+}
+
+/**
+ * True when `e` is a decided entry written by writeDecision for this space:
+ * human `by`, and payload.sig matches the HMAC (constant-time compare).
+ * False for anything unsigned, tampered, from another space, or when the
+ * secret is missing.
+ */
+export function verifyDecision(e, { secret, space } = {}) {
+  if (!e || e.kind !== "decided" || !e.origin || !isHuman(e.by) || !usableSecret(secret)) return false;
+  const sig = e.payload?.sig;
+  if (typeof sig !== "string" || !/^[0-9a-f]{64}$/.test(sig)) return false;
+  const want = createHmac("sha256", secret)
+    .update(decisionMessage({ space, origin: e.origin, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
+    .digest();
+  return timingSafeEqual(want, Buffer.from(sig, "hex"));
+}
 const VERDICT_LABEL = { approve: "Approved", reject: "Rejected", defer: "Deferred" };
 
 export class DecisionError extends Error {
   constructor(code, message) {
     super(message);
-    this.code = code; // bad_request | not_found | not_pending
+    this.code = code; // bad_request | misconfigured | not_found | not_pending
   }
 }
 
@@ -752,15 +794,25 @@ async function findAskLog(store, trail, ts) {
  *   writeDecision(store, askTrail, { verdict: "approve"|"reject"|"defer", note?, by: "human:<id>" })
  *
  * `store` is bound to one space (createStore(redis, { space })). Writes kind
- * decided (origin = askTrail, payload.verdict) to the ask's where log and the
- * asker's agent log, and clears the asker's now.waiting_on if it is this ask.
- * Throws DecisionError: bad_request, not_found, not_pending (already decided).
+ * decided (origin = askTrail, payload.verdict, payload.sig) to the ask's
+ * where log and the asker's agent log, and clears the asker's now.waiting_on
+ * if it is this ask.
+ *
+ * Integrity: the decision is HMAC-signed with LOGMEM_DECIDE_SECRET (readers
+ * only count entries whose signature verifies) and claimed once with
+ * SET lm:{space}:decision:{trail} NX before any entry is written, so two
+ * concurrent answers can't both land. No usable secret: fail closed
+ * (DecisionError "misconfigured"), nothing is written.
+ *
+ * Throws DecisionError: bad_request, misconfigured, not_found, not_pending.
  */
-export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now } = {}) {
+export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+  if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
   if (typeof askTrail !== "string" || !askTrail || askTrail.length > LIMITS.trail) throw new DecisionError("bad_request", `trail must be a string of 1..${LIMITS.trail} characters`);
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);
   if (!/^human:[A-Za-z0-9_.-]{1,64}$/.test(String(by || ""))) throw new DecisionError("bad_request", "by must be 'human:<id>': only a person decides");
   if (note != null && (typeof note !== "string" || note.length > LIMITS.summary)) throw new DecisionError("bad_request", `note must be text of at most ${LIMITS.summary} characters`);
+  if (askTrail.includes(":")) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
 
   const found = await findAsk(store, askTrail);
   if (!found) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
@@ -769,14 +821,10 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   const logs = [[w.ns, w.id]];
   if (!(w.ns === "agent" && w.id === asker)) logs.push(["agent", asker]);
 
-  for (const [ns, id] of logs) {
-    const prior = (await store.readLog(ns, id, { sinceMs: ask.ts })).find((e) => e.kind === "decided" && e.origin === askTrail && isHuman(e.by));
-    if (prior) throw new DecisionError("not_pending", `already decided: ${prior.payload?.verdict || "answered"} by ${prior.by.replace(/^human:/, "")}`);
-  }
-
   const t = typeof now === "function" ? now() : now;
   const label = VERDICT_LABEL[verdict];
   const who = by.replace(/^human:/, "");
+  const sig = signDecision({ space: store.space, origin: askTrail, verdict, note, by, ts: t }, secret);
   const entry = {
     ts: t,
     kind: "decided",
@@ -786,10 +834,30 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     trail: makeTrail("decided", asker, t),
     origin: askTrail,
     summary: `${label}: ${note || ask.summary || askTrail}`.slice(0, LIMITS.summary),
-    payload: { verdict, ...(note ? { note } : {}) },
+    payload: { verdict, ...(note ? { note } : {}), sig },
   };
+
+  // Set once: the first answer claims the key; any later (or concurrent) one gets not_pending.
+  const key = lmDecisionKey(store.space, askTrail);
+  const claimed = await store.redis("SET", key, JSON.stringify({ origin: askTrail, verdict, by, ts: t, sig }), "NX");
+  if (claimed == null) {
+    let prior = null;
+    try {
+      prior = JSON.parse(await store.redis("GET", key));
+    } catch {
+      prior = null;
+    }
+    throw new DecisionError("not_pending", `already decided: ${prior?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
+  }
+
   const written = [];
-  for (const [ns, id] of logs) written.push(await store.append(ns, id, entry));
+  try {
+    for (const [ns, id] of logs) written.push(await store.append(ns, id, entry));
+  } catch (e) {
+    // Nothing (or only part) landed: release the claim so a person can answer again.
+    if (!written.length) await store.redis("DEL", key).catch(() => {});
+    throw e;
+  }
 
   const cur = await store.getNow("agent", asker);
   const cleared = cur?.waiting_on?.trail === askTrail;

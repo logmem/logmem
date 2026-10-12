@@ -58,7 +58,10 @@ export function createMemoryRedis() {
       const e = get(k, "string");
       return e ? e.value : null;
     },
-    SET: (k, v) => {
+    SET: (k, v, ...opts) => {
+      const flags = opts.map((o) => String(o).toUpperCase());
+      if (flags.includes("NX") && data.has(k)) return null;
+      if (flags.includes("XX") && !data.has(k)) return null;
       data.set(k, { type: "string", value: String(v) });
       return "OK";
     },

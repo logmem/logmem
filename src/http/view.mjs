@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall } from "../core/tools.mjs";
+import { keywordRecall, verifyDecision } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -37,7 +37,7 @@ export function seen(ts, now = Date.now()) {
 const slim = (e, from) => ({
   ts: e.ts, kind: e.kind, group: groupOf(e.kind), by: e.by, via: e.via, summary: e.summary,
   trail: e.trail, origin: e.origin, where: from, to: e.to,
-  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null } : undefined,
+  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null, sig: e.payload?.sig ?? null } : undefined,
 });
 
 export async function allEntries(store, r, space, { limit = 200 } = {}) {
@@ -60,8 +60,9 @@ export async function allEntries(store, r, space, { limit = 200 } = {}) {
   return merged.slice(0, limit);
 }
 
-export async function buildView(redis, space, what, params = {}, now = Date.now()) {
+export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   const r = readOnly(redis);
+  const verify = { secret, space };
   const store = createStore(r, { space });
 
   if (what === "log") {
@@ -82,7 +83,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     if (what === "agents") return { agents };
     const jobs = await jobsView(store);
     const entries = await allEntries(store, r, space, { limit: 300 });
-    const decisions = decisionsFrom(entries);
+    const decisions = decisionsFrom(entries, verify);
     return {
       agents, jobs, recent: entries.slice(0, 8), waiting: decisions.waiting,
       stats: {
@@ -122,7 +123,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     return { channels, selected: pick || null, log };
   }
 
-  if (what === "decisions") return decisionsFrom(await allEntries(store, r, space, { limit: 500 }));
+  if (what === "decisions") return decisionsFrom(await allEntries(store, r, space, { limit: 500 }), verify);
 
   if (what === "recall") {
     const q = String(params.q || "").slice(0, 200);
@@ -154,11 +155,12 @@ async function jobsView(store) {
 
 /**
  * Waiting = approval entries with no decided entry whose origin is their trail.
- * Only a person's answer counts (by "human:*", written by /api/decide); a
- * "decided" entry an agent wrote before agents were refused does not close an ask.
+ * Only a signed person's answer counts (written by /api/decide, HMAC verified
+ * with LOGMEM_DECIDE_SECRET): an unsigned or forged "decided", including a
+ * legacy ACMI row claiming a human source, does not close an ask.
  */
-export function decisionsFrom(entries) {
-  const decided = new Map(entries.filter((e) => e.kind === "decided" && e.origin && /^human:/.test(String(e.by || ""))).map((e) => [e.origin, e]));
+export function decisionsFrom(entries, { secret, space } = {}) {
+  const decided = new Map(entries.filter((e) => e.kind === "decided" && verifyDecision(e, { secret, space })).map((e) => [e.origin, e]));
   const asks = entries.filter((e) => e.kind === "approval");
   return {
     waiting: asks.filter((a) => !decided.has(a.trail)),

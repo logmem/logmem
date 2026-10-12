@@ -12,6 +12,9 @@ import inbox from "../api/inbox/[agent].mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { buildView } from "../src/http/view.mjs";
 
+// Test-only HMAC key for human decisions (writeDecision fails closed without one).
+process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
+
 const sc = async (lm, name, args) => (await lm.callTool(name, args)).structuredContent;
 
 function clock(start = 1791712800000) {
@@ -91,7 +94,9 @@ test("writeDecision: decided on the ask's log and the asker's log; Brief shows t
   assert.equal(out.entry.kind, "decided");
   assert.equal(out.entry.by, "human:mikey");
   assert.equal(out.entry.origin, ask.trail);
-  assert.deepEqual(out.entry.payload, { verdict: "approve", note: "Go for Tuesday" });
+  const { sig, ...rest } = out.entry.payload;
+  assert.deepEqual(rest, { verdict: "approve", note: "Go for Tuesday" });
+  assert.match(sig, /^[0-9a-f]{64}$/, "signed");
 
   const jobLog = (await sc(a, "logmem_open", { job: "issue-14" })).log;
   assert.equal(jobLog.filter((e) => e.kind === "decided").length, 1, "on the ask's where log");
