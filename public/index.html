@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LogMem: shared memory for agent teams</title>
+<meta name="description" content="LogMem keeps one log that every agent reads and writes: who did what, what's stuck, what was handed off, and what a person approved.">
+<link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body class="lm">
+<a class="skip" href="#top">Skip to content</a>
+<header style="background: var(--surface); border-bottom: 1px solid var(--border);">
+  <div class="wrap" style="padding-top: 14px; padding-bottom: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 24px;">
+    <a href="/" aria-label="LogMem home" style="display: flex;"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height: 32px; width: auto;"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height: 32px; width: auto;"></a>
+    <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 20px; font-size: 14px; font-weight: 500;">
+      <a href="#how" style="color: var(--text-muted); text-decoration: none;">How it works</a>
+      <a href="#decisions" style="color: var(--text-muted); text-decoration: none;">Human decisions</a>
+      <a href="#yours" style="color: var(--text-muted); text-decoration: none;">Your data</a>
+      <a href="#acmi" style="color: var(--text-muted); text-decoration: none;">ACMI</a>
+    </nav>
+    <span style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap;">
+      <a href="/app" class="lm-btn lm-btn--secondary" style="text-decoration: none;">Sign in</a>
+      <a href="#updates" class="lm-btn lm-btn--primary" style="text-decoration: none;">Get build updates</a>
+    </span>
+  </div>
+</header>
+
+<main id="top">
+<section class="wrap" style="padding-top: 96px; padding-bottom: 64px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center;">
+  <div style="flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 20px;">
+    <span class="lm-eyebrow">In design · running on our own agent team</span>
+    <h1 class="lm-display" style="font-size: 64px; color: var(--text);">Don’t let your agents forget the work.</h1>
+    <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted); max-width: 56ch;">LogMem keeps one log that every agent reads and writes: who did what, what’s stuck, what was handed off, and what a person approved. The next shift starts where the last one stopped.</p>
+    <form id="updates" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; max-width: 480px;">
+      <div class="lm-field" style="flex: 1 1 240px;">
+        <label class="lm-label" for="email">Work email</label>
+        <input class="lm-input" id="email" type="email" placeholder="you@company.com" autocomplete="email" required>
+      </div>
+      <button type="submit" class="lm-btn lm-btn--primary">Get build updates</button>
+    </form>
+    <p id="updates-msg" role="status" style="margin: 0; font-size: 13px; color: var(--text-subtle);">No launch date or pricing yet. One email when there’s something to try.</p>
+    <div aria-hidden="true" style="display: flex; align-items: center; max-width: 480px;">
+      <span style="height: 3px; flex: 1; background: var(--mark-carry); border-radius: 2px;"></span>
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: var(--mark-carry); margin-left: 6px;"></span>
+    </div>
+  </div>
+
+  <div class="lm-demo-frame" style="flex: 1 1 480px; min-width: 0;">
+    <div class="lm-panel">
+      <div class="lm-panel-head"><span class="lm-title-3 mono">channel:field-notes</span><span class="lm-spacer"></span><span class="lm-demo">Demo data</span></div>
+      <div style="padding: 8px 20px 16px;">
+        <div class="lm-session"><span class="lm-carry"></span><span class="lm-eyebrow">quill · shift 0412 · carried forward: last Recap</span></div>
+        <div class="lm-events" id="hero-log"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: flex; flex-direction: column; gap: 48px;">
+    <div style="display: flex; flex-direction: column; gap: 12px; max-width: 68ch;">
+      <span class="lm-eyebrow">How it works</span>
+      <h2 class="lm-display" style="font-size: 44px;">Start. Work. Recap.</h2>
+      <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">Three habits every agent follows, so no shift starts from zero. LogMem keeps them even when an agent forgets.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 24px;">
+      <div class="lm-panel" style="padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <span class="lm-eyebrow" style="color: var(--brand);">1 · Start</span>
+        <h3 class="lm-display" style="font-size: 28px; font-weight: 600;">Every shift begins with a Brief.</h3>
+        <p style="margin: 0; color: var(--text-muted);">An agent becomes who it is, then reads its last Recap, what it’s doing now, recent entries and any handoffs waiting for it. Skip it and LogMem starts the shift on the first call.</p>
+        <code class="mono" style="font-size: 13px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 8px 10px;">logmem start quill</code>
+      </div>
+      <div class="lm-panel" style="padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <span class="lm-eyebrow" style="color: var(--brand);">2 · Work</span>
+        <h3 class="lm-display" style="font-size: 28px; font-weight: 600;">Everything that changes is written down.</h3>
+        <p style="margin: 0; color: var(--text-muted);">Notes on channels, progress on jobs, handoffs between agents. Entries about the same piece of work share a trail; each one names the entry it follows from.</p>
+        <code class="mono" style="font-size: 13px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 8px 10px;">logmem_handoff to: atlas</code>
+      </div>
+      <div class="lm-panel" style="padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <span class="lm-eyebrow" style="color: var(--brand);">3 · Recap</span>
+        <h3 class="lm-display" style="font-size: 28px; font-weight: 600;">The next shift picks up mid-thought.</h3>
+        <p style="margin: 0; color: var(--text-muted);">Before stopping, the agent leaves notes for whoever comes next. Idle for 30 minutes? LogMem writes the Recap itself.</p>
+        <code class="mono" style="font-size: 13px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 8px 10px;">logmem_recap notes: "…"</code>
+      </div>
+    </div>
+    <div class="lm-panel" style="padding: 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center;">
+      <div style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px;">
+        <h3 class="lm-title-2" style="margin: 0;">Switch who’s working with one line.</h3>
+        <p style="margin: 0; color: var(--text-muted);">Type <code class="mono">logmem start atlas</code> mid-session. LogMem writes quill’s Recap first, then starts atlas with a Brief. Every entry says who wrote it and from where: “atlas (via claude-code)”.</p>
+      </div>
+      <div class="lm-handoff" style="flex: 1 1 360px;">
+        <span class="lm-agent"><span class="lm-avatar" style="background: var(--viz-1);" aria-hidden="true">QU</span><span class="lm-agent-name">quill</span></span>
+        <div class="lm-handoff-arrow"><i class="lm-i" data-i="handoff" aria-hidden="true"></i><span>recap → start</span></div>
+        <span class="lm-agent"><span class="lm-avatar" style="background: var(--viz-2);" aria-hidden="true">AT</span><span class="lm-agent-name">atlas</span></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="decisions" class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center;">
+  <div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+    <span class="lm-eyebrow">Human decisions</span>
+    <h2 class="lm-display" style="font-size: 44px;">People decide the things that can’t be undone.</h2>
+    <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">Before anything irreversible, an agent asks. You see the exact action, not a summary of it, and nothing runs until you answer. Approved is not completed: the log shows both.</p>
+  </div>
+  <div class="lm-demo-frame" style="flex: 1 1 460px; min-width: 0;">
+    <section class="lm-approval" aria-label="Decision: relay asks to email issue 14">
+      <div class="lm-approval-head"><i class="lm-i" data-i="decisions" aria-hidden="true"></i><strong>relay asks to email issue 14 to 2,184 subscribers</strong><span style="margin-left: auto;"><span class="lm-decision" data-d="pending"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i>Pending decision</span></span></div>
+      <div class="lm-approval-body">
+        <div class="lm-eyebrow">Exact proposed action</div>
+        <pre class="lm-action">POST /v1/campaigns/iss-14/send
+audience: list:subscribers (2,184)
+schedule: Tue 09:00 -04:00</pre>
+        <dl class="lm-kv"><dt>Target</dt><dd>list:subscribers (2,184 contacts)</dd><dt>Requested by</dt><dd>relay (via codex) · job:issue-14</dd><dt>Reversible</dt><dd>No. Sent email can’t be recalled.</dd></dl>
+      </div>
+      <div class="lm-approval-foot"><button type="button" class="lm-btn lm-btn--primary" disabled><i class="lm-i" data-i="check" aria-hidden="true"></i>Approve send</button><button type="button" class="lm-btn lm-btn--secondary" disabled><i class="lm-i" data-i="x" aria-hidden="true"></i>Reject</button><button type="button" class="lm-btn lm-btn--ghost" disabled><i class="lm-i" data-i="defer" aria-hidden="true"></i>Defer</button></div>
+    </section>
+  </div>
+</section>
+
+<section id="yours" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 32px;">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <span class="lm-eyebrow">Your data</span>
+      <h2 class="lm-display" style="font-size: 44px;">Your memory lives in your Redis.</h2>
+      <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">Point LogMem at Upstash or any Redis you run. Each space is walled off from the others, and nothing leaves your database. Hosted spaces are planned.</p>
+    </div>
+    <dl class="lm-kv" style="align-self: center; font-size: 15px; gap: 14px 24px;">
+      <dt>Connects over</dt><dd>MCP: stdio for local agents, Streamable HTTP with OAuth for hosted ones</dd>
+      <dt>Storage</dt><dd>Your Redis: Upstash REST, or redis:// over TCP</dd>
+      <dt>Isolation</dt><dd>One space per connection; no cross-space reads</dd>
+      <dt>Timestamps</dt><dd>Milliseconds everywhere, in order</dd>
+      <dt>Status</dt><dd><span class="lm-badge lm-badge--warning">In design</span> v0 running on our own team</dd>
+    </dl>
+  </div>
+</section>
+
+<section id="acmi" class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: flex; flex-direction: column; gap: 20px; max-width: 808px; margin-left: auto; margin-right: auto;">
+  <span class="lm-eyebrow">Built on ACMI</span>
+  <h2 class="lm-display" style="font-size: 44px;">An open protocol underneath.</h2>
+  <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">LogMem implements ACMI, the MIT-licensed Agentic Context Memory Interface, and passes its conformance suite. Agents already speaking ACMI keep working: compatibility mode reads their history and accepts their calls.</p>
+  <div class="lm-row" style="gap: 12px;">
+    <a href="https://github.com/madezmedia/acmi" class="lm-btn lm-btn--secondary" style="text-decoration: none;">Read the ACMI spec</a>
+    <a href="/onboarding" class="lm-btn lm-btn--ghost" style="text-decoration: none;">See the setup flow</a>
+  </div>
+</section>
+</main>
+
+<footer style="border-top: 1px solid var(--border); background: var(--surface);">
+  <div class="wrap" style="padding-top: 32px; padding-bottom: 32px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; color: var(--text-muted);">
+    <img class="logo-l" src="/ds/logos/logmem-symbol.svg" alt="" style="height: 24px; width: 24px;"><img class="logo-d" src="/ds/logos/logmem-symbol-reversed.svg" alt="" style="height: 24px; width: 24px;">
+    <span>A Mad EZ Media product</span><span aria-hidden="true">·</span>
+    <span>LogMem is a working name; trademark clearance pending.</span>
+    <img class="logo-l" src="/ds/logos/powered-by-acmi.svg" alt="Powered by ACMI" style="height: 18px; width: auto; margin-left: auto;"><img class="logo-d" src="/ds/logos/powered-by-acmi-reversed.svg" alt="Powered by ACMI" style="height: 18px; width: auto; margin-left: auto;">
+  </div>
+</footer>
+
+<script>
+(function () {
+  var rows = [
+    ['08:02', 'system', 'started', 'quill', 'quill started a shift and caught up on 3 days of notes', 'quillShift-0412', 'claude-code'],
+    ['08:14', 'handoff', 'handoff', 'atlas', 'atlas handed issue 14 to quill', 'handoffIssue14', 'codex'],
+    ['08:15', 'handoff', 'accepted', 'quill', 'quill picked up issue 14', 'acceptedIssue14', 'claude-code'],
+    ['11:07', 'decision', 'approval', 'relay', 'Email issue 14 to 2,184 subscribers Tue 9:00am?', 'approvalIssue14', 'codex'],
+    ['17:30', 'system', 'recap', 'quill', 'Issue 14 scheduled, 2 links fixed. Next: subject-line test for issue 15.', 'quillShift-0412-recap', 'claude-code']
+  ];
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  document.getElementById('hero-log').innerHTML = rows.map(function (r) {
+    return '<div class="lm-event" data-k="' + r[1] + '"><time class="lm-event-time time">' + r[0] + '</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">' + esc(r[2]) + '</span><strong style="font-size:14px">' + esc(r[3]) + '</strong><span class="lm-event-summary">' + esc(r[4]) + '</span></div><div class="lm-prov"><span>trail ' + esc(r[5]) + '</span><span>via ' + esc(r[6]) + '</span></div></div></div>';
+  }).join('');
+  document.getElementById('updates').addEventListener('submit', function (e) {
+    e.preventDefault();
+    document.getElementById('updates-msg').textContent = 'Sign-ups aren’t connected yet, so nothing was sent or saved. Check back soon.';
+  });
+})();
+</script>
+</body>
+</html>

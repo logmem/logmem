@@ -1,0 +1,27 @@
+/* site.css — page shell for the LogMem site and web app. Tokens and
+   components come from ds/tokens/logmem.css and ds/components/bundle.css. */
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);-webkit-font-smoothing:antialiased}
+a{color:var(--link)}a:hover{color:var(--brand-hover)}
+.wrap{max-width:var(--web-max,1160px);margin:0 auto;padding-left:24px;padding-right:24px;box-sizing:border-box}
+.shell{display:flex;flex-wrap:wrap;min-height:100vh}
+.shell>.lm-rail{flex:0 0 232px;box-sizing:border-box}
+.shell>.col{flex:999 1 560px;min-width:0;display:flex;flex-direction:column}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr));gap:24px}
+.split{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.split>.main{flex:999 1 520px;min-width:0}
+.split>.side{flex:1 1 340px;min-width:0}
+.big{font-size:26px;line-height:32px;font-weight:600;font-variant-numeric:tabular-nums}
+.muted{color:var(--text-muted)}.subtle{color:var(--text-subtle)}
+.mono{font-family:var(--font-mono)}
+.time{font-family:var(--font-mono);font-size:12px;color:var(--text-subtle)}
+.lm-table th{text-align:left;padding:10px 12px;font-size:12px;color:var(--text-muted);font-weight:600}
+.lm-table td{padding:10px 12px;vertical-align:top}
+.lm-table tr+tr td,.lm-table tbody tr td{border-top:1px solid var(--border)}
+.lm-avatar{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;color:#fff;font-size:11px;font-weight:600}
+.lm-avatar[data-human]{background:transparent;color:var(--decision);border:1.5px solid var(--decision)}
+pre.code{margin:0;padding:12px 14px;background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12.5px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.skip{position:absolute;left:-999px}.skip:focus{left:8px;top:8px;z-index:999;background:var(--surface);padding:8px}
+@media (max-width:767px){.shell>.lm-rail{flex:1 1 100%;flex-direction:row;flex-wrap:wrap;gap:4px;border-right:0;border-bottom:1px solid var(--border)}.shell>.lm-rail .lm-rail-foot{display:none}.lm-display{font-size:40px!important}}
+/* logos: dark ink files on light grounds, reversed files on dark grounds */
+.logo-d{display:none!important}
+@media (prefers-color-scheme:dark){.logo-l{display:none!important}.logo-d{display:inline-block!important}}

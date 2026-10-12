@@ -10,6 +10,8 @@ import { createRedis } from "./redis-rest.mjs";
 import { createMemoryRedis } from "./memory-redis.mjs";
 
 export function fromDescriptor(d) {
+  // Local dev only (scripts/dev-site.mjs --seed): an in-process Redis.
+  if (String(d?.url || "").startsWith("memory://") && globalThis.__lmDevRedis) return { kind: "memory", redis: globalThis.__lmDevRedis };
   if (d?.kind === "redis" && d.uri) {
     return {
       kind: "native",

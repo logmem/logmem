@@ -1,0 +1,183 @@
+/* LogMem tokens v0.1 — generated from tokens.json (semantic tier). Light is default; dark via data-theme or OS. */
+@font-face { font-family: 'Schibsted Grotesk'; font-weight: 600; font-style: normal; font-display: swap; src: url('../fonts/schibsted-grotesk-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Schibsted Grotesk'; font-weight: 800; font-style: normal; font-display: swap; src: url('../fonts/schibsted-grotesk-latin-800-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 500; font-style: normal; font-display: swap; src: url('../fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 600; font-style: normal; font-display: swap; src: url('../fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; font-style: normal; font-display: swap; src: url('../fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 500; font-style: normal; font-display: swap; src: url('../fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
+:root, [data-theme="light"] {
+  --bg: #F4F6F5;
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-sunken: #EAEEEC;
+  --border: #D3DAD8;
+  --border-strong: #7A8784;
+  --text: #121A19;
+  --text-muted: #46534F;
+  --text-subtle: #5C6966;
+  --text-inverse: #F4F6F5;
+  --brand: #0E6863;
+  --brand-hover: #0A524E;
+  --brand-subtle: #DDF1EE;
+  --on-brand: #FFFFFF;
+  --focus: #2453D6;
+  --link: #0B5E59;
+  --success: #1E6B35;
+  --success-subtle: #E2F1E5;
+  --warning: #875100;
+  --warning-subtle: #FBEED6;
+  --danger: #B42318;
+  --danger-subtle: #FBE6E3;
+  --info: #2453D6;
+  --info-subtle: #E6ECFC;
+  --decision: #6B3FA0;
+  --decision-subtle: #F1EAF8;
+  --demo: #9A3412;
+  --demo-subtle: #FDEBE1;
+  --viz-1: #0E6863;
+  --viz-2: #2453D6;
+  --viz-3: #A86B12;
+  --viz-4: #8248B8;
+  --viz-5: #C2410C;
+  --viz-6: #5B6670;
+  --mark: #121A19;
+  --mark-carry: #0E6863;
+  --shadow-1: 0 1px 2px rgba(18,26,25,0.06);
+  --shadow-2: 0 4px 16px rgba(18,26,25,0.10), 0 1px 3px rgba(18,26,25,0.08);
+  --shadow-3: 0 16px 48px rgba(18,26,25,0.18), 0 2px 6px rgba(18,26,25,0.08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0C1211;
+  --surface: #121A19;
+  --surface-raised: #19231F;
+  --surface-sunken: #080D0C;
+  --border: #2B3835;
+  --border-strong: #6B7975;
+  --text: #E9EEEC;
+  --text-muted: #B3BEBA;
+  --text-subtle: #97A4A0;
+  --text-inverse: #121A19;
+  --brand: #4FC3B8;
+  --brand-hover: #74D2C8;
+  --brand-subtle: #0F2D2A;
+  --on-brand: #06201E;
+  --focus: #86A6FF;
+  --link: #6FD2C7;
+  --success: #5DC47C;
+  --success-subtle: #0F2618;
+  --warning: #E8A746;
+  --warning-subtle: #2C1F08;
+  --danger: #F47A66;
+  --danger-subtle: #341411;
+  --info: #86A6FF;
+  --info-subtle: #121C38;
+  --decision: #C6A0F0;
+  --decision-subtle: #231637;
+  --demo: #F6A276;
+  --demo-subtle: #32180B;
+  --viz-1: #4FC3B8;
+  --viz-2: #86A6FF;
+  --viz-3: #E0B04F;
+  --viz-4: #C6A0F0;
+  --viz-5: #F28A5B;
+  --viz-6: #9EAAB4;
+  --mark: #E9EEEC;
+  --mark-carry: #4FC3B8;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-2: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-3: 0 18px 56px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+  color-scheme: dark;
+} }
+[data-theme="dark"] {
+  --bg: #0C1211;
+  --surface: #121A19;
+  --surface-raised: #19231F;
+  --surface-sunken: #080D0C;
+  --border: #2B3835;
+  --border-strong: #6B7975;
+  --text: #E9EEEC;
+  --text-muted: #B3BEBA;
+  --text-subtle: #97A4A0;
+  --text-inverse: #121A19;
+  --brand: #4FC3B8;
+  --brand-hover: #74D2C8;
+  --brand-subtle: #0F2D2A;
+  --on-brand: #06201E;
+  --focus: #86A6FF;
+  --link: #6FD2C7;
+  --success: #5DC47C;
+  --success-subtle: #0F2618;
+  --warning: #E8A746;
+  --warning-subtle: #2C1F08;
+  --danger: #F47A66;
+  --danger-subtle: #341411;
+  --info: #86A6FF;
+  --info-subtle: #121C38;
+  --decision: #C6A0F0;
+  --decision-subtle: #231637;
+  --demo: #F6A276;
+  --demo-subtle: #32180B;
+  --viz-1: #4FC3B8;
+  --viz-2: #86A6FF;
+  --viz-3: #E0B04F;
+  --viz-4: #C6A0F0;
+  --viz-5: #F28A5B;
+  --viz-6: #9EAAB4;
+  --mark: #E9EEEC;
+  --mark-carry: #4FC3B8;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-2: 0 6px 20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-3: 0 18px 56px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+  color-scheme: dark;
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  --control-compact: 28px;
+  --control-comfortable: 36px;
+  --row-compact: 32px;
+  --row-comfortable: 44px;
+  --rail-width: 232px;
+  --rail-collapsed: 56px;
+  --content-max: 1280px;
+  --web-max: 1160px;
+  --measure: 68ch;
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-rail: 200;
+  --z-popover: 400;
+  --z-overlay: 500;
+  --z-dialog: 510;
+  --z-toast: 600;
+  --bp-sm: 480px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1440px;
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-carry: cubic-bezier(0.3, 0, 0, 1);
+  --font-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --control-h: var(--control-comfortable); --row-h: var(--row-comfortable); --pad-panel: var(--space-5);
+}
+[data-density="compact"] { --control-h: var(--control-compact); --row-h: var(--row-compact); --pad-panel: var(--space-4); }
+@media (prefers-reduced-motion: reduce) { :root { --duration-instant: 0ms; --duration-fast: 0ms; --duration-base: 0ms; --duration-slow: 0ms; } }

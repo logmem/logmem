@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set up LogMem</title>
+<link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
+<link rel="stylesheet" href="/site.css">
+<style>
+.step-btn{width:100%;display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--radius-md);border:0;cursor:pointer;font:inherit;color:var(--text);background:transparent;text-align:left}
+.step-btn[aria-current]{background:var(--brand-subtle)}
+.dot{width:26px;height:26px;flex:none;display:grid;place-items:center;border-radius:50%;font-size:12px;font-weight:600;box-sizing:border-box;border:1.5px solid var(--border-strong);color:var(--text-subtle)}
+.dot.done{background:var(--brand);color:var(--on-brand);border:0}.dot.cur{border:2px solid var(--brand);color:var(--brand)}
+.card{padding:28px;display:flex;flex-direction:column;gap:20px}
+.toggle{display:flex;gap:12px;align-items:flex-start;padding:16px;border:1px solid var(--border);border-radius:var(--radius-md)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body class="lm">
+<header style="background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+  <a href="/" style="display: flex;"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height: 28px; width: auto;"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height: 28px; width: auto;"></a>
+  <span class="lm-eyebrow">Set up · bring your own Redis</span>
+  <span class="lm-demo" title="This is a preview of the setup flow; nothing here is saved">Preview · nothing is saved</span>
+  <span id="count" style="margin-left: auto; font-size: 13px; color: var(--text-muted);"></span>
+</header>
+
+<div class="wrap" style="display: flex; flex-wrap: wrap; gap: 32px; padding-top: 40px; padding-bottom: 40px;">
+  <nav aria-label="Setup steps" style="flex: 1 1 240px; max-width: 280px;"><ol id="steps" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;"></ol></nav>
+
+  <main style="flex: 999 1 560px; min-width: 0;">
+    <section class="lm-panel card" data-step="1">
+      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Name your space.</h1><p style="margin: 0;" class="muted">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px;">
+        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" value="Field Notes Co."></div>
+        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" value="fieldnotes" pattern="[a-z0-9][a-z0-9_-]*"><span style="font-size: 12px;" class="subtle">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:fieldnotes:*</span>.</span></div>
+      </div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <section class="lm-panel card" data-step="2" hidden>
+      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Connect your Redis.</h1><p style="margin: 0;" class="muted">LogMem stores everything in a Redis you control. It sends one PING before saving anything.</p></div>
+      <div class="lm-seg" role="group" aria-label="Backend type" style="align-self: flex-start;"><button type="button" id="b-rest" aria-pressed="true">HTTP REST (Upstash)</button><button type="button" id="b-tcp" aria-pressed="false">redis:// over TCP</button></div>
+      <div id="f-rest" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px;">
+        <div class="lm-field"><label class="lm-label" for="ru">REST URL</label><input class="lm-input mono" id="ru" placeholder="https://….upstash.io"></div>
+        <div class="lm-field"><label class="lm-label" for="rt">REST token</label><input class="lm-input" id="rt" type="password" autocomplete="off"></div>
+      </div>
+      <div id="f-tcp" class="lm-field" hidden><label class="lm-label" for="uri">Redis URI</label><input class="lm-input mono" id="uri" type="password" placeholder="rediss://:password@host:6379/0" autocomplete="off"><span style="font-size: 12px;" class="subtle">Must be reachable from the public internet.</span></div>
+      <div id="tested" class="lm-alert lm-alert--success" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><strong>Preview:</strong> in the real flow LogMem sends one PING and checks the 21 commands it uses, without writing anything. This preview doesn’t contact your Redis.</div></div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--secondary" id="test">Test connection</button><button type="button" class="lm-btn lm-btn--primary" data-next id="save" disabled>Save and continue</button></div>
+      <p style="margin: 0; font-size: 13px;" class="subtle">Credentials are bound to this workspace and dropped if you disconnect. v0 stores them unencrypted on the server; encryption at rest is planned.</p>
+    </section>
+
+    <section class="lm-panel card" data-step="3" hidden>
+      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Already running ACMI agents?</h1><p style="margin: 0;" class="muted">Compatibility mode lets agents keep their acmi_* tools and shows their existing history in LogMem. Turn it off if you’re starting fresh.</p></div>
+      <label class="toggle"><input class="lm-switch" type="checkbox" role="switch" checked><span style="display: flex; flex-direction: column; gap: 4px;"><strong style="font-size: 14px;">ACMI compatibility</strong><span style="font-size: 13px;" class="muted">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*.</span></span></label>
+      <label class="toggle"><input class="lm-switch" type="checkbox" role="switch"><span style="display: flex; flex-direction: column; gap: 4px;"><strong style="font-size: 14px;">Mirror writes back to ACMI</strong><span style="font-size: 13px;" class="muted">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it.</span></span></label>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <section class="lm-panel card" data-step="4" hidden>
+      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Connect your first agent.</h1><p style="margin: 0;" class="muted">Pick where the agent runs. Paste the snippet, restart it, and come back here.</p></div>
+      <div class="lm-tabs" role="tablist" id="hosts"></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;"><span class="lm-eyebrow" id="snip-label"></span><pre class="code" id="snip"></pre>
+        <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" id="copy"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy snippet</button><span style="font-size: 13px;" class="subtle" id="copied">The npm package isn’t published yet; the real flow will show your space token here.</span></div></div>
+      <div id="waiting" class="lm-alert lm-alert--info" role="status"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i><div><strong>Waiting for the first call.</strong> Nothing has connected yet. <button type="button" id="sim" style="background: none; border: 0; padding: 0; font: inherit; color: var(--link); text-decoration: underline; cursor: pointer;">Show what success looks like</button></div></div>
+      <div id="connected" class="lm-alert lm-alert--success" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><strong>quill connected</strong> from Claude Code. Its first call started a shift automatically.</div></div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="c4" disabled>Continue</button></div>
+    </section>
+
+    <section class="lm-panel card" data-step="5" hidden>
+      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Watch the first entries arrive.</h1><p style="margin: 0;" class="muted">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. Each change shows up here in order.</p></div>
+      <div class="lm-panel" style="padding: 8px 20px;"><div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div><div class="lm-events" id="first"></div></div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <section class="lm-panel card" data-step="6" hidden>
+      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Add a second agent and pass it work.</h1><p style="margin: 0;" class="muted">Memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it.</p></div>
+      <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px;" class="muted">
+        <li>Repeat step 4 on another host, with <code class="mono">LOGMEM_AGENT=atlas</code>.</li>
+        <li>Tell quill: <code class="mono">hand issue 14 to atlas</code>. LogMem writes a Handoff and atlas follows the job.</li>
+        <li>atlas’s next Brief lists the handoff until it notes <code class="mono">accepted</code>.</li>
+      </ol>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><a href="/app" class="lm-btn lm-btn--primary" style="text-decoration: none;">Open the app</a></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var titles = [['Name your space', 'One walled-off memory'], ['Connect your Redis', 'Upstash or redis://'], ['ACMI compatibility', 'Optional'], ['Connect an agent', 'Claude Code, Codex, Cursor…'], ['First entries', 'See the log fill'], ['Second agent', 'Your first handoff']];
+  var step = 1, max = 1, host = 0;
+  function space() { return ($('#sp').value || 'fieldnotes').toLowerCase(); }
+  var hosts = [
+    ['Claude Code', 'Run in a terminal', function () { return 'claude mcp add logmem --scope user \\\n  -e LOGMEM_SPACE=' + space() + ' -e LOGMEM_AGENT=quill \\\n  -e LOGMEM_REST_URL=<your REST URL> -e LOGMEM_REST_TOKEN=<space token> \\\n  -- npx @logmem/mcp'; }],
+    ['Codex', '~/.codex/config.toml', function () { return '[mcp_servers.logmem]\ncommand = "npx"\nargs = ["@logmem/mcp"]\nenv = { LOGMEM_SPACE = "' + space() + '", LOGMEM_AGENT = "quill", LOGMEM_REST_URL = "<your REST URL>", LOGMEM_REST_TOKEN = "<space token>" }'; }],
+    ['Cursor', '.cursor/mcp.json', function () { return '{ "mcpServers": { "logmem": {\n  "command": "npx", "args": ["@logmem/mcp"],\n  "env": { "LOGMEM_SPACE": "' + space() + '", "LOGMEM_AGENT": "quill",\n           "LOGMEM_REST_URL": "<your REST URL>", "LOGMEM_REST_TOKEN": "<space token>" } } } }'; }],
+    ['Claude Web', 'Settings › Connectors › Add custom connector', function () { return location.origin + '/mcp\n\nClaude asks you to sign in to LogMem and pick a space. The connection can only use that space.'; }]
+  ];
+  function render() {
+    $('#count').textContent = 'Step ' + step + ' of 6';
+    $('#steps').innerHTML = titles.map(function (t, i) {
+      var n = i + 1, done = n < step, cur = n === step;
+      return '<li><button type="button" class="step-btn" data-go="' + n + '"' + (cur ? ' aria-current="step"' : '') + (n > max ? ' disabled' : '') + '><span class="dot ' + (done ? 'done' : cur ? 'cur' : '') + '">' + (done ? '✓' : n) + '</span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">' + t[0] + '</span><span style="font-size:12px" class="subtle">' + t[1] + '</span></span></button></li>';
+    }).join('');
+    document.querySelectorAll('[data-step]').forEach(function (s) { s.hidden = Number(s.dataset.step) !== step; });
+    $('#hosts').innerHTML = hosts.map(function (h, i) { return '<button type="button" class="lm-tab" role="tab" aria-selected="' + (i === host) + '" data-host="' + i + '"' + (i === host ? ' style="color:var(--text);border-bottom-color:var(--brand)"' : '') + '>' + h[0] + '</button>'; }).join('');
+    $('#snip-label').textContent = hosts[host][1];
+    $('#snip').textContent = hosts[host][2]();
+    $('#sp-echo').textContent = 'lm:' + space() + ':*';
+  }
+  function go(n) { step = Math.min(6, Math.max(1, n)); max = Math.max(max, step); render(); window.scrollTo(0, 0); }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button,a'); if (!t) return;
+    if (t.hasAttribute('data-next')) go(step + 1);
+    else if (t.hasAttribute('data-back')) go(step - 1);
+    else if (t.dataset.go) go(Number(t.dataset.go));
+    else if (t.dataset.host) { host = Number(t.dataset.host); render(); }
+  });
+  $('#sp').addEventListener('input', render);
+  $('#b-rest').onclick = function () { $('#b-rest').setAttribute('aria-pressed', 'true'); $('#b-tcp').setAttribute('aria-pressed', 'false'); $('#f-rest').hidden = false; $('#f-tcp').hidden = true; };
+  $('#b-tcp').onclick = function () { $('#b-tcp').setAttribute('aria-pressed', 'true'); $('#b-rest').setAttribute('aria-pressed', 'false'); $('#f-rest').hidden = true; $('#f-tcp').hidden = false; };
+  $('#test').onclick = function () { $('#tested').hidden = false; $('#save').disabled = false; };
+  $('#sim').onclick = function () { $('#waiting').hidden = true; $('#connected').hidden = false; $('#c4').disabled = false; };
+  $('#copy').onclick = function () { try { navigator.clipboard.writeText($('#snip').textContent); $('#copied').textContent = 'Copied.'; } catch (e) {} };
+  $('#first').innerHTML = [['08:02', 'system', 'started', 'quill (via claude-code) started a shift (auto)'], ['08:04', 'work', 'assigned', 'New job: Draft newsletter issue 14'], ['08:11', 'work', 'progress', 'Outline done, 6 sections']].map(function (r) {
+    return '<div class="lm-event" data-k="' + r[1] + '"><time class="lm-event-time time">' + r[0] + '</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">' + r[2] + '</span><strong style="font-size:14px">quill</strong><span class="lm-event-summary">' + esc(r[3]) + '</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>';
+  }).join('');
+  render();
+})();
+</script>
+</body>
+</html>

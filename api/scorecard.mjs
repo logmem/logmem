@@ -9,6 +9,7 @@ import { createStore } from "../src/core/store.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { readOnly } from "../src/lib/read-only.mjs";
 import { updateScorecard, gate, CHECK_JOB, DELIVERABLE_JOB } from "../scripts/dogfood-check.mjs";
+import { mayRead } from "../src/http/admin-auth.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
@@ -32,6 +33,7 @@ export async function buildScorecard(redis, space) {
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+  if (!mayRead(req)) return res.status(401).json({ error: "sign in required" });
   try {
     const space = String(req.query?.space || "madez").toLowerCase();
     if (!/^[a-z0-9_-]{1,60}$/.test(space)) return res.status(400).json({ error: "bad space" });
