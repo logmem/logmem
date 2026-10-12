@@ -125,7 +125,7 @@
     {
       "name": "logmem_note",
       "title": "Note",
-      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined is refused too. Limits: summary 1000 characters, payload 16 KB.",
+      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined true is refused too, and payload.declined must be a boolean. Limits: summary 1000 characters, payload 16 KB.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -866,7 +866,7 @@
     {
       "name": "logmem_remove",
       "title": "Remove",
-      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. Another agent's who, log, or profile is refused. A log that holds a signed decision is never removed.",
+      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. You can only remove your own agent's keys, never another agent's, a roster index, or any log that holds asks or decisions.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -59,12 +59,22 @@ export class AgentIdError extends Error {
   }
 }
 
+/**
+ * Ids an agent can't take: the web decider's id (LOGMEM_ADMIN_ID, default
+ * "admin") and "human", so an agent can never share a name with the person
+ * who answers its asks. ("human:<x>" is already refused by the charset.)
+ */
+export const reservedAgentIds = (env = process.env) => new Set([String(env.LOGMEM_ADMIN_ID || "admin").toLowerCase(), "human"]);
+
 /** Validate an agent id ("quill" or "agent:quill"); returns the bare id or throws AgentIdError. */
-export function checkAgentId(agent, field = "agent") {
+export function checkAgentId(agent, field = "agent", env = process.env) {
   if (typeof agent !== "string") throw new AgentIdError(`${field} must be a string agent id`);
   const id = agent.replace(/^agent:/, "");
   if (!AGENT_ID_RE.test(id)) {
     throw new AgentIdError(`${field} must be 1-64 characters: letters, digits, '.', '_' or '-', starting with a letter or digit (got ${id.length} characters)`);
+  }
+  if (reservedAgentIds(env).has(id.toLowerCase())) {
+    throw new AgentIdError(`${field} '${id}' is reserved for the person who answers asks; pick another agent id`);
   }
   return id;
 }
@@ -99,5 +109,16 @@ export function lmDecisionKey(space, trail) {
   return `${PREFIX}:${space}:decision:${trail}`;
 }
 
-/** Protected prefixes never removed by logmem_remove, even with confirm. Decision keys stay: removing one would allow a second answer. */
-export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/];
+/**
+ * The ask registry: one per ask, written with SET NX by logmem_ask and
+ * holding the hash of the ask's canonical content. It is what makes an ask
+ * canonical: any other approval entry under the same trail (a twin written
+ * straight into a log, or a legacy acmi:* row) is ignored.
+ */
+export function lmAskKey(space, trail) {
+  validateKeySegments(space, trail);
+  return `${PREFIX}:${space}:ask:${trail}`;
+}
+
+/** Protected prefixes never removed by logmem_remove, even with confirm. Ask and decision keys stay: removing one would allow a second answer or a swapped ask. */
+export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/, /^lm:[^:]+:ask:/];

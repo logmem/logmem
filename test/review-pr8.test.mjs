@@ -8,7 +8,8 @@ import { createStore } from "../src/core/store.mjs";
 import { checkAgentId, AGENT_ID_RE } from "../src/core/keys.mjs";
 import { buildView } from "../src/http/view.mjs";
 import inbox from "../api/inbox/[agent].mjs";
-import { makeTrail, trailTs, trailNonce, NONCE_RE, ASK_ONLY, writeDecision, DecisionError, signDecision, verifyDecision, NO_SECRET } from "../src/core/tools.mjs";
+import { makeTrail, trailTs, trailNonce, NONCE_RE, ASK_ONLY, writeDecision, DecisionError, signDecision, verifyDecision, NO_SECRET, askDigest, findAsk } from "../src/core/tools.mjs";
+import { stableJson } from "../src/core/store.mjs";
 import { decide } from "../api/decide.mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { sendServerError, GENERIC_ERROR } from "../src/http/log.mjs";
@@ -28,8 +29,7 @@ function clock(start = 1791712800000) {
 }
 
 /** Two agents in one space: atlas (a) and quill (q), both started. */
-async function team({ compat = false, now } = {}) {
-  const redis = createMemoryRedis();
+async function team({ compat = false, now, redis = createMemoryRedis() } = {}) {
   const mk = (sid) => createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: sid, compat, ...(now ? { now } : {}) });
   const a = mk("atlas-s");
   const q = mk("quill-s");
@@ -288,7 +288,8 @@ test("item 1: the decision key is set once with SET NX; a second or concurrent a
   assert.ok(isCode("not_pending")(results.find((r) => r.status === "rejected").reason));
   const key = JSON.parse(await redis("GET", `lm:fieldnotes:decision:${ask.trail}`));
   assert.equal(key.origin, ask.trail);
-  assert.match(key.sig, /^[0-9a-f]{64}$/);
+  assert.match(key.entry.payload.sig, /^[0-9a-f]{64}$/, "the claim holds the full signed entry");
+  assert.equal(key.sig, key.entry.payload.sig);
   const decided = (await store.readLog("agent", "quill")).filter((e) => e.kind === "decided");
   assert.equal(decided.length, 1, "only one decided entry landed");
   assert.equal(decided[0].payload.verdict, key.verdict);
@@ -318,7 +319,10 @@ test("item 1: only entries whose HMAC verifies count; forged, tampered, moved or
   assert.equal(verifyDecision({ ...real.entry, origin: ask2.trail }, { secret: SECRET, space: "fieldnotes", ask: ask.entry }), false, "moved to another ask");
   assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes", ask: { ...ask.entry, reversible: false } }), false, "altered reversible");
   assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "other", ask: ask.entry }), false, "another space");
-  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes" }), false, "no ask: fail closed");
+  // Without an ask argument the signed ask_hash is checked by the readers against the canonical ask;
+  // with the wrong ask (or a null one) it fails closed.
+  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes", ask: ask2.entry }), false, "the wrong ask: fail closed");
+  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes", ask: null }), false, "a null ask: fail closed");
   assert.equal(verifyDecision(real.entry, { space: "fieldnotes", ask: ask.entry }), false, "no key: fail closed");
   // Copy the real signed entry onto the second ask: still pending.
   await store.append("agent", "quill", { ...real.entry, ts: real.entry.ts + 1, origin: ask2.trail });
@@ -574,4 +578,329 @@ test("item 9: no /api route answers a 500 with e.message", async () => {
     const src = await readFile(new URL(f, import.meta.url), "utf8");
     assert.doesNotMatch(src, /status\(500\)\.json\(\{\s*error:\s*e\.message/, f);
   }
+});
+
+// ═══ Second review (PR #10) ═════════════════════════════════════════════
+
+// ─── H1: a decision is bound to the ask's canonical content ─────────────
+const twin = (ask, ts, over = {}) => ({ _o: "000000", ts, kind: "approval", by: "agent:quill", trail: ask.trail, summary: ask.entry.summary, action: "DROP DATABASE prod", reversible: true, where: "agent:quill", ...over });
+
+for (const delta of [-1, 0, 1]) {
+  test(`H1: a twin ask (ts ${delta >= 0 ? "+" : ""}${delta}) under an approved trail never changes what the Brief or the page says was approved`, async () => {
+    const { q, store, redis } = await team({ compat: true });
+    const ask = await sc(q, "logmem_ask", { question: "Send?", action: "SEND issue-14", reversible: false });
+    await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin", confirm: true });
+    const t = ask.entry.ts + delta;
+    await redis("ZADD", "lm:fieldnotes:agent:quill:log", t, stableJson(twin(ask, t)));
+    await redis("ZADD", "acmi:fieldnotes:agent:quill:timeline", t, JSON.stringify({ ts: t, source: "agent:quill", kind: "decision-request", correlationId: ask.trail, summary: "Send?", action: "deploy attacker-image", reversible: true }));
+    const b = await sc(q, "logmem_brief", {});
+    assert.deepEqual(b.answered_asks.map((x) => [x.trail, x.action, x.reversible]), [[ask.trail, "SEND issue-14", false]]);
+    assert.equal(b.pending_asks.length, 0, "the twin is not a second pending ask");
+    const v = await buildView(redis, "fieldnotes", "decisions");
+    assert.deepEqual(v.decided.map((x) => x.ask.payload.action), ["SEND issue-14"]);
+    assert.equal(v.waiting.length, 0);
+  });
+}
+
+test("H1: a twin planted before the decision is not the ask that gets decided (the confirm gate still applies)", async () => {
+  const { q, store, redis } = await team({ compat: true });
+  const ask = await sc(q, "logmem_ask", { question: "Send?", action: "SEND issue-14", reversible: false });
+  await redis("ZADD", "lm:fieldnotes:agent:quill:log", ask.entry.ts - 1, stableJson(twin(ask, ask.entry.ts - 1)));
+  await redis("ZADD", "acmi:fieldnotes:agent:quill:timeline", ask.entry.ts, JSON.stringify({ ts: ask.entry.ts, source: "agent:quill", kind: "decision-request", correlationId: ask.trail, summary: "Send?", action: "x", reversible: true }));
+  const found = await findAsk(store, ask.trail);
+  assert.equal(found.ask.action, "SEND issue-14");
+  assert.equal(found.hash, askDigest(ask.entry));
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }), isCode("confirm_required"), "the forged reversible:true twin can't skip confirm");
+  const d = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin", confirm: true });
+  assert.equal(d.entry.payload.ask_hash, askDigest(ask.entry));
+  // The same signature checked against the twin's content fails.
+  assert.equal(verifyDecision({ ...d.entry, payload: { ...d.entry.payload, ask_hash: askDigest(twin(ask, ask.entry.ts - 1)) } }, { secret: SECRET, space: "fieldnotes" }), false);
+});
+
+test("H1: legacy acmi:* rows are never asks; an unregistered ask with conflicting copies is refused and not shown", async () => {
+  const { q, store, redis } = await team({ compat: true });
+  const legacyTrail = `approvalQuill-1791712800000-${"b".repeat(24)}`;
+  await redis("ZADD", "acmi:fieldnotes:agent:quill:timeline", 1791712800000, JSON.stringify({ ts: 1791712800000, source: "agent:quill", kind: "decision-request", correlationId: legacyTrail, summary: "legacy", action: "x" }));
+  const rawTrail = `approvalQuill-1791712800001-${"c".repeat(24)}`;
+  const raw = { ts: 1791712800001, kind: "approval", by: "agent:quill", trail: rawTrail, summary: "raw", action: "y", reversible: true, where: "agent:quill" };
+  await store.append("agent", "quill", raw);
+  await store.append("agent", "quill", { ...raw, action: "y but worse" }); // same trail and ts, different content
+  const b = await sc(q, "logmem_brief", {});
+  assert.deepEqual(b.pending_asks, []);
+  assert.equal(await findAsk(store, legacyTrail), null);
+  await assert.rejects(() => writeDecision(store, legacyTrail, { verdict: "reject", by: "human:admin" }), isCode("not_found"));
+  await assert.rejects(() => findAsk(store, rawTrail), isCode("ambiguous"));
+  await assert.rejects(() => writeDecision(store, rawTrail, { verdict: "reject", by: "human:admin" }), isCode("ambiguous"));
+  assert.equal((await buildView(redis, "fieldnotes", "decisions")).waiting.length, 0);
+  const legacyEntries = (await createStore(redis, { space: "fieldnotes", compat: true }).readLog("agent", "quill")).filter((e) => e.trail === legacyTrail);
+  assert.equal(legacyEntries[0].legacy, true, "legacy rows are flagged");
+  assert.ok(!Object.keys(legacyEntries[0]).includes("legacy"), "the flag is not enumerable: compat reads are unchanged");
+});
+
+test("H1: a registered ask whose where-copy disagrees is refused (ambiguous) until the copies agree", async () => {
+  const { q, a, store, redis } = await team();
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "Send?", action: "SEND", reversible: false, where: "job:j1" });
+  const rows = (await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).filter((x) => JSON.parse(x).trail === ask.trail);
+  await redis("ZREM", "lm:fieldnotes:job:j1:log", rows[0]);
+  await redis("ZADD", "lm:fieldnotes:job:j1:log", ask.entry.ts, JSON.stringify({ ...JSON.parse(rows[0]), reversible: true }));
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }), (e) => isCode("ambiguous")(e) && /conflicting copies/.test(e.message));
+  assert.equal(await redis("EXISTS", `lm:fieldnotes:decision:${ask.trail}`), 0);
+  assert.deepEqual((await sc(q, "logmem_brief", {})).pending_asks.map((x) => [x.trail, x.reversible]), [[ask.trail, false]], "the Brief still shows the registered ask");
+});
+
+test("H1: a second ask on an existing trail is refused (the registry is SET NX) and the registry is protected", async () => {
+  const base = createMemoryRedis();
+  let taken = false; // simulate: the trail logmem_ask picks is already registered
+  const redis = async (cmd, ...args) => (taken && cmd === "SET" && String(args[0]).includes(":ask:") && args.includes("NX") ? null : base(cmd, ...args));
+  redis._data = base._data;
+  const q = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  await sc(q, "logmem_start", { agent: "quill" });
+  const first = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  const key = `lm:fieldnotes:ask:${first.trail}`;
+  assert.equal(JSON.parse(await base("GET", key)).hash, askDigest(first.entry), "registered with its content hash");
+  taken = true;
+  const before = (await createStore(redis, { space: "fieldnotes" }).readLog("agent", "quill")).filter((e) => e.kind === "approval").length;
+  const second = await q.callTool("logmem_ask", { question: "q2", action: "b", reversible: true });
+  assert.equal(second.isError, true);
+  assert.match(second.structuredContent.error, /already exists; a trail carries one ask/);
+  assert.equal((await createStore(redis, { space: "fieldnotes" }).readLog("agent", "quill")).filter((e) => e.kind === "approval").length, before, "nothing written");
+  taken = false;
+  const rm = await q.callTool("logmem_remove", { key, confirm: true });
+  assert.equal(rm.isError, true, "the registry is protected");
+  assert.equal(await base("EXISTS", key), 1);
+});
+
+// ─── M1: a settle that partly fails still counts, and a retry repairs it ─
+function flaky() {
+  const base = createMemoryRedis();
+  const fail = new Set(); // log keys whose next ZADD throws
+  const redis = async (cmd, ...args) => {
+    if (cmd === "ZADD" && fail.has(String(args[0]))) {
+      fail.delete(String(args[0]));
+      throw new Error("network blip");
+    }
+    return base(cmd, ...args);
+  };
+  redis._data = base._data;
+  return { redis, fail };
+}
+
+test("M1: the asker's log is written first; if it fails nothing is claimed and a retry succeeds", async () => {
+  const { redis, fail } = flaky();
+  const { q, a } = await team({ redis });
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true, where: "job:j1" });
+  const store = createStore(redis, { space: "fieldnotes" });
+  fail.add("lm:fieldnotes:agent:quill:log");
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }), /network blip/);
+  assert.equal(await redis("EXISTS", `lm:fieldnotes:decision:${ask.trail}`), 0, "claim released");
+  assert.equal((await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).map((m) => JSON.parse(m).kind).includes("decided"), false, "nothing half-written");
+  const ok = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" });
+  assert.equal(ok.ok, true);
+  assert.equal((await sc(q, "logmem_brief", {})).answered_asks[0].verdict, "approve");
+});
+
+test("M1: if the second log write fails, everything is rolled back (all or nothing) and a retry succeeds", async () => {
+  const { redis, fail } = flaky();
+  const { q, a } = await team({ redis });
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true, where: "job:j1" });
+  const store = createStore(redis, { space: "fieldnotes" });
+  fail.add("lm:fieldnotes:job:j1:log"); // the second write fails
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }));
+  assert.equal(await redis("EXISTS", `lm:fieldnotes:decision:${ask.trail}`), 0, "claim released");
+  assert.equal((await store.readLog("agent", "quill")).filter((e) => e.kind === "decided").length, 0, "the asker's row was rolled back");
+  assert.deepEqual((await sc(q, "logmem_brief", {})).pending_asks.map((x) => x.trail), [ask.trail], "still pending, still answerable");
+  const retry = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" });
+  assert.equal(retry.ok, true);
+  const jobDecided = (await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).map((m) => JSON.parse(m)).filter((e) => e.kind === "decided");
+  assert.equal(jobDecided.length, 1);
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" }), isCode("not_pending"));
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }), isCode("not_pending"), "nothing left to repair: not_pending");
+});
+
+test("M1: a claim left by a crash (rows missing) counts, and an identical retry writes the missing rows", async () => {
+  const { q, a, store, redis } = await team();
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true, where: "job:j1" });
+  const d = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" });
+  // Simulate a crash after the claim and the first row: drop the job row.
+  await redis("ZREM", "lm:fieldnotes:job:j1:log", ...(await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).filter((m) => JSON.parse(m).kind === "decided"));
+  assert.equal((await buildView(redis, "fieldnotes", "decisions")).decided.length, 1, "the claim counts");
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" }), isCode("not_pending"), "a different answer is still refused");
+  const retry = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" });
+  assert.equal(retry.reconciled, true);
+  assert.equal(retry.entry.payload.sig, d.entry.payload.sig, "the same signed entry, not a new one");
+  assert.equal((await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).map((m) => JSON.parse(m)).filter((e) => e.kind === "decided").length, 1);
+  assert.equal((await store.readLog("agent", "quill")).filter((e) => e.kind === "decided").length, 1, "no duplicate entries");
+});
+
+test("M1: a claim whose log writes all vanished still answers the ask (claim-first)", async () => {
+  const { q, store, redis } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  const d = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" });
+  await redis("ZREM", "lm:fieldnotes:agent:quill:log", ...(await redis("ZRANGE", "lm:fieldnotes:agent:quill:log", 0, -1)).filter((m) => JSON.parse(m).kind === "decided"));
+  assert.equal((await sc(q, "logmem_brief", {})).answered_asks[0].verdict, "reject");
+  const again = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" });
+  assert.equal(again.reconciled, true, "and an identical retry restores the entry");
+  assert.equal(again.entry.payload.sig, d.entry.payload.sig);
+});
+
+// ─── L3: the Brief and the page agree; the claim holder wins ────────────
+test("L3: with two signed settling entries, the Brief and the Decisions page both report the claim holder", async () => {
+  const { q, store, redis } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin", now: () => 2e12 });
+  await redis("DEL", `lm:fieldnotes:decision:${ask.trail}`);
+  await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin", now: () => 2e12 + 5 });
+  const brief = (await sc(q, "logmem_brief", {})).answered_asks.find((x) => x.trail === ask.trail).verdict;
+  const page = (await buildView(redis, "fieldnotes", "decisions")).decided.find((x) => x.ask.trail === ask.trail).answer.payload.verdict;
+  assert.equal(brief, "reject");
+  assert.equal(page, "reject");
+  // Without any claim, both fall back to the earliest signed settling entry.
+  await redis("DEL", `lm:fieldnotes:decision:${ask.trail}`);
+  const brief2 = (await sc(q, "logmem_brief", {})).answered_asks[0].verdict;
+  const page2 = (await buildView(redis, "fieldnotes", "decisions")).decided[0].answer.payload.verdict;
+  assert.deepEqual([brief2, page2], ["approve", "approve"]);
+});
+
+// ─── L1: an empty note is normalized the same way for signing and storing ─
+test("L1: note '' (and a whitespace note) sign and store identically; the decision counts", async () => {
+  const { q, store } = await team();
+  const a1 = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  const d1 = await writeDecision(store, a1.trail, { verdict: "approve", by: "human:admin", note: "" });
+  assert.equal("note" in d1.entry.payload, false);
+  assert.equal(verifyDecision(d1.entry, { secret: SECRET, space: "fieldnotes" }), true);
+  const a2 = await sc(q, "logmem_ask", { question: "q2", action: "b", reversible: true });
+  const d2 = await writeDecision(store, a2.trail, { verdict: "reject", by: "human:admin", note: "  " });
+  assert.equal(verifyDecision(d2.entry, { secret: SECRET, space: "fieldnotes" }), true);
+  const b = await sc(q, "logmem_brief", {});
+  assert.deepEqual(b.answered_asks.map((x) => x.trail).sort(), [a1.trail, a2.trail].sort());
+  assert.equal(b.pending_asks.length, 0, "not stuck");
+});
+
+// ─── M2: remove applies the own-agent guard; asks/decisions are undeletable ─
+test("M2: logmem_remove / acmi_delete can't remove another agent's keys, roster indexes, or logs holding asks or decisions", async () => {
+  const { a, q, redis } = await team({ compat: true });
+  await sc(a, "logmem_bio", { who: { role: "lead" } });
+  await sc(a, "acmi_rollup_set", { agentId: "atlas", rollup: JSON.stringify({ s: 1 }) });
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true, where: "job:j1" });
+  await writeDecision(createStore(redis, { space: "fieldnotes" }), ask.trail, { verdict: "reject", by: "human:admin" });
+  const refused = [
+    ["acmi_delete", "lm:fieldnotes:agent:atlas:who", /belongs to another agent \(atlas\)/],
+    ["acmi_delete", "acmi:fieldnotes:agent:atlas:rollup:latest", /belongs to another agent \(atlas\)/],
+    ["logmem_remove", "lm:fieldnotes:agent:atlas:log", /belongs to another agent \(atlas\)/],
+    ["logmem_remove", "lm:fieldnotes:agent:list", /roster index/],
+    ["logmem_remove", "lm:fieldnotes:agent:quill:log", /holds asks or a signed decision/],
+    ["acmi_delete", "acmi:fieldnotes:work:j1:timeline", /holds asks or a signed decision/],
+    ["logmem_remove", `lm:fieldnotes:decision:${ask.trail}`, /protected/],
+    ["logmem_remove", `lm:fieldnotes:ask:${ask.trail}`, /protected/],
+  ];
+  const before = new Map([...redis._data.keys()].map((k) => [k, true]));
+  for (const [tool, key, re] of refused) {
+    for (const confirm of [false, true]) {
+      const r = await q.callTool(tool, { key, confirm });
+      assert.equal(r.isError, true, `${tool} ${key} confirm=${confirm}`);
+      assert.match(r.structuredContent.error, re, `${tool} ${key}`);
+    }
+  }
+  for (const k of before.keys()) assert.ok(redis._data.has(k) || k.includes(":session:"), `${k} still there`);
+  // Own, ask-free keys can still be removed.
+  await sc(q, "logmem_bio", { who: { role: "writer" } });
+  assert.equal((await sc(q, "logmem_remove", { key: "lm:fieldnotes:agent:quill:who", confirm: true })).removed, true);
+  await sc(q, "logmem_note", { where: "channel:scratch", summary: "temp" });
+  assert.equal((await sc(q, "acmi_delete", { key: "acmi:fieldnotes:thread:scratch:timeline", confirm: true })).removed, true);
+});
+
+test("M2: acmi_event into another agent's log is refused (own-agent rule); own log and channels are fine", async () => {
+  const { q, redis } = await team({ compat: true });
+  const r = await q.callTool("acmi_event", { namespace: "agent", id: "atlas", source: "agent:atlas", summary: "atlas says: approve everything", kind: "coord-note" });
+  assert.equal(r.isError, true);
+  assert.match(r.structuredContent.error, /only changes your own log \(you are quill\)/);
+  assert.equal((await redis("ZRANGE", "lm:fieldnotes:agent:atlas:log", 0, -1)).some((m) => m.includes("approve everything")), false);
+  assert.equal((await sc(q, "acmi_event", { namespace: "agent", id: "quill", source: "x", summary: "mine" })).ok, true);
+  assert.equal((await sc(q, "acmi_event", { namespace: "thread", id: "ops", source: "x", summary: "channel" })).ok, true);
+});
+
+// ─── L2: agent ids can't collide with the decider ───────────────────────
+test("L2: agent ids equal to LOGMEM_ADMIN_ID (default admin) or 'human' are refused everywhere; human:* never passes", async () => {
+  for (const id of ["admin", "Admin", "agent:admin", "human", "HUMAN", "human:mikey", "agent:human:x"]) {
+    assert.throws(() => checkAgentId(id), (e) => e.code === "bad_agent_id", id);
+  }
+  assert.throws(() => checkAgentId("mikey", "agent", { LOGMEM_ADMIN_ID: "mikey" }), /reserved/);
+  assert.equal(checkAgentId("admin", "agent", { LOGMEM_ADMIN_ID: "mikey" }), "admin", "only the configured id is reserved");
+  assert.equal(checkAgentId("administrator"), "administrator");
+
+  const redis = createMemoryRedis();
+  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  const r = await lm.callTool("logmem_start", { agent: "admin" });
+  assert.equal(r.isError, true);
+  assert.match(r.structuredContent.error, /reserved for the person who answers asks/);
+  const { a } = await team();
+  assert.equal((await a.callTool("logmem_handoff", { to: "admin", summary: "s", create_agent: true })).isError, true);
+  const bad = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "d", defaultAgent: "admin" });
+  assert.equal((await bad.callTool("logmem_brief", {})).isError, true, "not even as the default agent");
+
+  // And whatever an agent is called, a person can still answer its ask.
+  const ok = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "o" });
+  await sc(ok, "logmem_start", { agent: "admin-bot" });
+  const ask = await sc(ok, "logmem_ask", { question: "q", action: "a", reversible: true });
+  assert.equal((await writeDecision(createStore(redis, { space: "fieldnotes" }), ask.trail, { verdict: "approve", by: "human:admin" })).ok, true);
+});
+
+// ─── Nit: tool errors are generic for unexpected failures ───────────────
+test("nit: a backend failure inside a tool returns 'internal error' + ref; the detail is only logged", async () => {
+  const base = createMemoryRedis();
+  let broken = false;
+  const redis = async (cmd, ...args) => {
+    if (broken && cmd !== "GET" && cmd !== "SET" && cmd !== "EXPIRE") throw new Error(LEAK);
+    return base(cmd, ...args);
+  };
+  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  await sc(lm, "logmem_start", { agent: "quill" });
+  broken = true;
+  let r;
+  const logs = await captureLogs(async () => {
+    r = await lm.callTool("logmem_note", { where: "channel:ops", summary: "x" });
+  });
+  assert.equal(r.isError, true);
+  assert.equal(r.structuredContent.error, GENERIC_ERROR);
+  assert.match(r.structuredContent.ref, /^[0-9a-f]{12}$/);
+  assert.ok(!r.content[0].text.includes("WRONGTYPE") && !r.content[0].text.includes("fake-token"), "nothing leaks to the client");
+  const rec = logs.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((x) => x?.ref === r.structuredContent.ref);
+  assert.equal(rec.tool, "logmem_note");
+  assert.match(rec.err, /WRONGTYPE/, "the detail is in the server log");
+
+  broken = false;
+  // Expected refusals keep their specific text.
+  const v = await lm.callTool("logmem_note", { where: "channel:ops", summary: "x".repeat(1001) });
+  assert.match(v.structuredContent.error, /summary is 1001 characters/);
+  const ping = createLogmem({ redis: async (c) => { if (c === "PING") throw new Error(LEAK); return base(c); }, space: "fieldnotes", sessionId: "p" });
+  const pc = await ping.callTool("logmem_connection", {});
+  assert.equal(pc.structuredContent.ping, "error: backend unreachable");
+});
+
+test("nit: toolError keeps expected messages and hides unexpected ones", async () => {
+  const { toolError } = await import("../src/server.mjs");
+  assert.deepEqual(toolError(new Error("agent must be 1-64 characters"), "t"), { ok: false, error: "agent must be 1-64 characters", tool: "t" });
+  const lines = [];
+  for (const e of [new TypeError("cannot read x of undefined at /srv/app.mjs"), Object.defineProperty(new Error(LEAK), "backend", { value: true }), "a string"]) {
+    const out = toolError(e, "t", { sink: (l) => lines.push(l) });
+    assert.equal(out.error, GENERIC_ERROR);
+  }
+  assert.equal(lines.length, 3);
+});
+
+test("nit: /api/mcp tools/call never echoes a server-build failure", async () => {
+  const { dispatch } = await import("../api/mcp.mjs");
+  let reply;
+  const logs = await captureLogs(async () => {
+    reply = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_brief", arguments: {} } }, { toolDefs: () => [], lmFactory: async () => { throw new Error(LEAK); } });
+  });
+  const res = reply.result.structuredContent;
+  assert.equal(res.error, GENERIC_ERROR);
+  assert.ok(!JSON.stringify(reply).includes("WRONGTYPE"));
+  assert.ok(logs.some((l) => l.includes(res.ref) && l.includes("WRONGTYPE")));
 });

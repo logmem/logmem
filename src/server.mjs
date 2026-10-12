@@ -17,6 +17,8 @@ import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { RESULT_SCHEMA } from "./core/params.mjs";
 import { validateKeySegments } from "./lib/helpers.mjs";
 import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { logRequest, GENERIC_ERROR } from "./http/log.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /** package.json version, read at load time. readFileSync(new URL(...)) is traced by Vercel's bundler. */
@@ -52,6 +54,32 @@ export function toResult(data) {
   };
 }
 
+const markBackend = (e) => {
+  const err = e instanceof Error ? e : new Error(String(e));
+  try {
+    Object.defineProperty(err, "backend", { value: true, enumerable: false });
+  } catch {
+    /* frozen error: still an Error, treated as unexpected below */
+  }
+  return err;
+};
+
+/** Programming errors and backend failures are unexpected: their text stays in the server log. */
+export const isUnexpected = (e) =>
+  !(e instanceof Error) || e.backend === true || e instanceof TypeError || e instanceof ReferenceError || e instanceof RangeError || e instanceof SyntaxError;
+
+/**
+ * The result for a tool that threw. Expected refusals (validation, limits,
+ * guards) keep their message, since a model needs it to fix the call. Anything
+ * unexpected gets a generic message and a ref; the detail is logged.
+ */
+export function toolError(e, tool, { sink } = {}) {
+  if (!isUnexpected(e)) return { ok: false, error: e.message, tool };
+  const ref = randomBytes(6).toString("hex");
+  logRequest({ route: "tool", tool, ok: false, err: e, ref }, sink ? { sink } : {});
+  return { ok: false, error: GENERIC_ERROR, ref, tool };
+}
+
 export function createLogmem({
   redis,
   backend = "unknown",
@@ -77,6 +105,16 @@ export function createLogmem({
   const scope = live ? new AsyncLocalStorage() : null;
   const snapshot = () => scope.getStore() ?? live.current();
   if (live) redis = (...cmd) => snapshot().redis(...cmd);
+  // Tag every backend failure, so tool results never carry backend detail
+  // (hosts, key names, driver text) back to the client: see toolError.
+  const raw = redis;
+  redis = async (...cmd) => {
+    try {
+      return await raw(...cmd);
+    } catch (e) {
+      throw markBackend(e);
+    }
+  };
   /** Run fn with one backend snapshot for all of its commands (no-op without `live`). */
   const inScope = (fn) => (live ? scope.run(live.current(), fn) : fn());
   validateKeySegments(space);
@@ -129,7 +167,7 @@ export function createLogmem({
       }
       return degradedMark(toResult(out));
     } catch (e) {
-      return degradedMark(toResult({ ok: false, error: e.message, tool: name }));
+      return degradedMark(toResult(toolError(e, name)));
     }
   }
 

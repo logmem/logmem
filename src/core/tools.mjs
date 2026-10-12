@@ -13,9 +13,9 @@
 // the admin login). Every write is size-capped (LIMITS) because entry text
 // is shown to other agents and must stay data, not a prompt channel.
 
-import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
+import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypto";
 import { params } from "./params.mjs";
-import { parseRef, lmDecisionKey } from "./keys.mjs";
+import { parseRef, lmDecisionKey, lmAskKey } from "./keys.mjs";
 import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
@@ -71,11 +71,31 @@ export const HANDOFF_ONLY =
   "accepted entries and declined feedback are written by logmem_accept (pass decline=true to refuse a handoff); call logmem_accept";
 export const HANDOFF_WRITE_ONLY = "handoff entries are written by logmem_handoff; call logmem_handoff";
 
+/**
+ * A decline is the boolean true and nothing else.
+ * 1, [], "yes", and the string "true" are not declines: readers and the write
+ * guard share this so a truthy non-boolean cannot clear handoffs_to_me.
+ */
+export function isDeclined(payload) {
+  return payload != null && payload.declined === true;
+}
+
+/** Shown when a write carries payload.declined that is not a boolean. */
+export const DECLINED_TYPE =
+  "payload.declined must be a boolean; only true declines a handoff, and only logmem_accept (decline=true) can write that";
+
+/** Refuse a non-boolean payload.declined so it is never stored for a reader to misread. */
+export function assertDeclinedType(payload) {
+  if (payload == null || typeof payload !== "object") return;
+  if (!Object.hasOwn(payload, "declined")) return;
+  if (typeof payload.declined !== "boolean") throw new Error(DECLINED_TYPE);
+}
+
 /** True when this kind/payload would settle a handoff (accepted, or feedback marked declined). */
 export function handoffSettlement(kind, payload) {
   const word = normalizeKind(kind == null || String(kind).trim() === "" ? "memo" : String(kind).trim().toLowerCase()).kind;
   if (word === "accepted") return true;
-  if (word === "feedback" && payload && payload.declined === true) return true;
+  if (word === "feedback" && isDeclined(payload)) return true;
   return false;
 }
 
@@ -130,44 +150,6 @@ export function onlyMe(ctx, agent, tool, slot) {
   };
 }
 
-const OWN_AGENT_SLOTS = new Set(["who", "log", "profile", "timeline"]);
-
-/**
- * logmem_remove / acmi_delete: another agent's who, log, or profile is refused.
- * A log that holds a signed decided row is refused even when it is your own
- * (the settlement itself also lives on the decision key).
- * Returns an error result, or null to continue. Space and protected-key
- * checks stay in store.remove.
- */
-export async function guardRemoval(ctx, key) {
-  const space = ctx.store.space;
-  const own = `lm:${space}:`;
-  const text = String(key || "");
-  if (!text.startsWith(own)) return null;
-  const parts = text.slice(own.length).split(":");
-  if (parts.length < 3) return null;
-  const [ns, id, ...slotParts] = parts;
-  const slot = slotParts.join(":");
-  if (ns === "agent" && OWN_AGENT_SLOTS.has(slot)) {
-    let mine = null;
-    try {
-      mine = agentId(me(ctx));
-    } catch {
-      mine = null;
-    }
-    if (mine && id !== mine) {
-      return { ok: false, error: `remove only deletes your own agent ${slot} (you are ${mine}). ${id} is another agent.` };
-    }
-  }
-  if (slot === "log") {
-    const entries = await ctx.store.readLog(ns, id);
-    if (entries.some((e) => e.kind === "decided" && typeof e.payload?.sig === "string")) {
-      return { ok: false, error: "refused: this log holds a signed decision and is never removed" };
-    }
-  }
-  return null;
-}
-
 function parseSince(s) {
   const m = String(s || "").match(/^(\d+)([mhd])$/);
   if (!m) return 0;
@@ -198,6 +180,7 @@ export function me(ctx) {
 /** Write one entry, stamped with who/where/which shift. */
 async function write(ctx, ns, id, { kind, summary, trail, origin, payload, ts, extra, ask = false, settle = false, handoff = false }) {
   const agent = me(ctx);
+  assertDeclinedType(payload);
   if (isDecidedKind(kind)) throw new Error(HUMAN_ONLY);
   if (isAskKind(kind) && !ask) throw new Error(ASK_ONLY);
   if (!handoff && isHandoffKind(kind)) throw new Error(HANDOFF_WRITE_ONLY);
@@ -237,12 +220,11 @@ async function brief(ctx, agent) {
     s.readLog("agent", a, { reverse: true, sinceMs: clock(ctx) - WEEK_MS, limit: 2000 }),
   ]);
   const settled = new Set(
-    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined))).map((e) => e.origin),
+    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin),
   );
   const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
   const verify = { secret: decideSecret(ctx), space: s.space };
-  const weekAsks = week.filter((e) => e.kind === "approval" && e.by === agentRef(a));
-  const settlements = await decisionSettlements(s, weekAsks);
+  const state = await askState(s, week);
   return {
     agent: a,
     space: s.space,
@@ -251,156 +233,44 @@ async function brief(ctx, agent) {
     now,
     recap,
     follows,
-    // A decided row that does not verify is still shown, marked unverified, so it is not an answer.
-    log: annotateDecisions(log.slice(0, 20), { ...verify, asks: week }),
+    // A decided row that does not verify against its canonical ask is still shown, marked unverified: it is not an answer.
+    log: annotateDecisions(log.slice(0, 20), { ...verify, canon: canonicalAsks(week, state.registry) }),
     handoffs_to_me: waiting,
-    ...asksOf(a, week, { ...verify, settlements }),
+    ...asksOf(a, week, { ...verify, ...state }),
     recent_shifts: shifts,
   };
 }
 
 /**
- * The ask fields a decision signature covers. `question` is the ask's summary.
- * `reversible` is true only when the ask said exactly true. Works for a raw
- * log entry and for a view row that put action/reversible on payload.
- */
-export function askBinding(ask) {
-  if (!ask || typeof ask !== "object") return null;
-  const action = ask.action !== undefined ? ask.action : ask.payload && Object.hasOwn(ask.payload, "action") ? ask.payload.action : null;
-  const reversible = ask.reversible !== undefined ? ask.reversible : ask.payload?.reversible;
-  return {
-    action: action ?? null,
-    question: ask.summary ?? ask.question ?? null,
-    reversible: reversible === true,
-    to: ask.to ?? null,
-    where: ask.where ?? null,
-    trail: ask.trail ?? null,
-    by: ask.by ?? null,
-  };
-}
-
-const bindingKey = (ask) => {
-  const b = askBinding(ask);
-  return b ? stableJson(b) : "";
-};
-
-/**
- * One canonical ask per trail. A trail whose copies disagree (action, question,
- * reversible, to, where, trail, or by) is ambiguous and is left out, so it
- * cannot be closed.
- */
-export function indexAsks(entries) {
-  const groups = new Map();
-  for (const e of entries || []) {
-    if (!e || e.kind !== "approval" || !e.trail) continue;
-    const list = groups.get(e.trail) || [];
-    list.push(e);
-    groups.set(e.trail, list);
-  }
-  const askByTrail = new Map();
-  const ambiguous = new Set();
-  for (const [trail, list] of groups) {
-    const keys = new Set(list.map((e) => bindingKey(e)));
-    if (keys.size !== 1) ambiguous.add(trail);
-    else askByTrail.set(trail, list[0]);
-  }
-  return { askByTrail, ambiguous };
-}
-
-/** NX decision record -> a decided-shaped entry verifyDecision can check. */
-export function settlementAsEntry(rec) {
-  if (!rec || typeof rec !== "object" || typeof rec.sig !== "string" || !rec.origin) return null;
-  return {
-    kind: "decided",
-    origin: rec.origin,
-    by: rec.by,
-    ts: rec.ts,
-    payload: { verdict: rec.verdict, note: rec.note ?? null, sig: rec.sig },
-  };
-}
-
-/** Load lm:{space}:decision:{trail} for each ask. Invalid keys are skipped. */
-export async function decisionSettlements(store, asks) {
-  const out = [];
-  const seen = new Set();
-  for (const ask of asks || []) {
-    const trail = ask?.trail;
-    if (!trail || seen.has(trail) || String(trail).includes(":")) continue;
-    seen.add(trail);
-    let rec = null;
-    try {
-      const raw = await store.redis("GET", lmDecisionKey(store.space, trail));
-      rec = typeof raw === "string" ? JSON.parse(raw) : null;
-    } catch {
-      rec = null;
-    }
-    const entry = settlementAsEntry(rec);
-    if (entry) out.push(entry);
-  }
-  return out;
-}
-
-/**
- * Settle asks from verified decided rows and from decision keys.
- * Keys are applied first, so a signed settlement still closes the ask when
- * the log row was removed. Unsigned rows, deferrals, and altered asks do not
- * settle. Ambiguous trails never settle.
- */
-export function classifyAsks(entries, { secret, space, settlements = [] } = {}) {
-  const { askByTrail } = indexAsks(entries);
-  const answers = new Map();
-  const deferrals = new Map();
-  const consider = (e) => {
-    if (!e || e.kind !== "decided" || !e.origin || answers.has(e.origin)) return;
-    const ask = askByTrail.get(e.origin);
-    if (!ask || !verifyDecision(e, { secret, space, ask })) return;
-    if (SETTLES.includes(e.payload?.verdict)) answers.set(e.origin, e);
-    else if (e.payload?.verdict === "defer" && !deferrals.has(e.origin)) deferrals.set(e.origin, e);
-  };
-  for (const e of settlements) consider(e);
-  const logs = (entries || []).filter((e) => e && e.kind === "decided").slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  for (const e of logs) consider(e);
-  return { askByTrail, answers, deferrals };
-}
-
-/** Mark decided rows whose signature does not verify against the ask. */
-export function annotateDecisions(entries, { secret, space, asks } = {}) {
-  const { askByTrail } = indexAsks(asks || entries);
-  return (entries || []).map((e) => {
-    if (!e || e.kind !== "decided") return e;
-    if (verifyDecision(e, { secret, space, ask: askByTrail.get(e.origin) })) return e;
-    return { ...e, unverified: true, payload: { ...(e.payload || {}), unverified: true } };
-  });
-}
-
-/**
  * pending_asks / answered_asks for agent `a` from its own log (newest first).
- * Only a decided entry whose HMAC verifies with LOGMEM_DECIDE_SECRET counts:
- * a "decided" forged into the store (legacy ACMI writes, direct Redis) never
- * answers an ask. No secret means nothing counts as answered (fail closed).
- * The signature also covers the ask, so an altered ask does not count as answered.
- * A verifying decision key settles the ask even when the log row is gone.
+ *
+ * Only canonical asks count: the one approval entry per trail whose content
+ * hash matches the ask registry (lm:{space}:ask:{trail}, written once by
+ * logmem_ask). Twins under the same trail and legacy acmi:* rows are ignored.
+ *
+ * Only a decided entry whose HMAC verifies with LOGMEM_DECIDE_SECRET, and
+ * whose signed ask_hash is the canonical ask's hash, counts. No secret means
+ * nothing counts as answered (fail closed). See settledFor for which answer
+ * wins.
  */
-export function asksOf(a, entries, { secret, space, settlements = [] } = {}) {
-  const mine = entries.filter((e) => e.kind === "approval" && e.by === agentRef(a));
-  const { askByTrail, answers, deferrals } = classifyAsks([...mine, ...entries.filter((e) => e.kind === "decided")], { secret, space, settlements });
+export function asksOf(a, entries, { secret, space, registry, claims } = {}) {
+  const canon = canonicalAsks(entries.filter((e) => e.by === agentRef(a)), registry);
+  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims });
+  const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible === true, where: x.where, to: x.to ?? null, asked_at: x.ts });
   const deferred = (t) => {
     const d = deferrals.get(t);
     return d ? { deferred: { note: d.payload?.note ?? null, by: d.by, at: d.ts } } : {};
   };
-  const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible === true, where: x.where, to: x.to ?? null, asked_at: x.ts });
+  const mine = [...canon.values()].map((c) => c.ask).sort((x, y) => y.ts - x.ts);
   return {
     // A deferred ask stays pending (defer = "not yet"), with the latest deferral attached.
     pending_asks: mine.filter((x) => !answers.has(x.trail)).map((x) => ({ ...ask(x), ...deferred(x.trail) })),
-    answered_asks: [...answers.values()]
-      .filter((d) => askByTrail.has(d.origin))
-      .map((d) => ({
-        ...ask(askByTrail.get(d.origin)),
-        verdict: d.payload?.verdict ?? null,
-        note: d.payload?.note ?? null,
-        decided_by: d.by,
-        decided_at: d.ts,
-      })),
+    answered_asks: mine
+      .filter((x) => answers.has(x.trail))
+      .map((x) => {
+        const d = answers.get(x.trail);
+        return { ...ask(x), verdict: d.payload?.verdict ?? null, note: d.payload?.note ?? null, decided_by: d.by, decided_at: d.ts };
+      }),
   };
 }
 
@@ -457,7 +327,7 @@ export const TOOLS = [
     name: "logmem_note",
     title: "Note",
     description:
-      "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined is refused too. Limits: summary 1000 characters, payload 16 KB.",
+      "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined true is refused too, and payload.declined must be a boolean. Limits: summary 1000 characters, payload 16 KB.",
     params: params({
       where: { type: "string", desc: "Which log: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)" },
       summary: { type: "string", desc: "One line, plain language" },
@@ -537,7 +407,7 @@ export const TOOLS = [
       const log = await ctx.store.readLog("agent", a, { reverse: true, limit: 500 });
       const ho = log.find((e) => e.kind === "handoff" && e.trail === trail && e.to === agentRef(a));
       if (!ho) return { ok: false, error: `no handoff with trail '${trail}' was passed to ${a}; check handoffs_to_me in your Brief` };
-      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined)));
+      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload))));
       if (done) return { ok: false, error: `you already ${done.kind === "accepted" ? "accepted" : "declined"} this handoff`, entry: done };
 
       const where = ho.job ? parseRef(ho.job) : null;
@@ -589,6 +459,12 @@ export const TOOLS = [
       const trail = makeTrail("approval", loc.id, t);
       // Default not reversible: only an explicit boolean true counts as reversible.
       const extra = { action, reversible: reversible === true, status: "waiting", where: `${loc.ns}:${loc.id}`, ...(to != null ? { to } : {}) };
+      // Register the ask once (SET NX) with the hash of its canonical content.
+      // This is what makes it the ask for this trail: any other approval entry
+      // under the same trail is ignored by findAsk, the Brief and the web app.
+      const hash = askDigest({ trail, by: agentRef(agent), ts: t, summary: question, ...extra });
+      const reg = await ctx.store.redis("SET", lmAskKey(ctx.store.space, trail), JSON.stringify({ hash, asker: agentId(agent), where: extra.where, ts: t }), "NX");
+      if (reg == null) return { ok: false, error: `an ask with trail '${trail}' already exists; a trail carries one ask` };
       const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       await ctx.store.setNow("agent", agent, { waiting_on: { trail, question, since: t } });
@@ -834,16 +710,14 @@ export const TOOLS = [
     name: "logmem_remove",
     title: "Remove",
     description:
-      "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. Another agent's who, log, or profile is refused. A log that holds a signed decision is never removed.",
+      "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. You can only remove your own agent's keys, never another agent's, a roster index, or any log that holds asks or decisions.",
     params: params({
       key: { type: "string", desc: "Full key, e.g. 'lm:<space>:channel:x:log'" },
       confirm: { type: "boolean", desc: "true to actually remove (default false = preview)", optional: true },
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async run({ key, confirm }, ctx) {
-      const refused = await guardRemoval(ctx, key);
-      if (refused) return refused;
-      const r = await ctx.store.remove(key, { confirm: confirm === true });
+      const r = await ctx.store.remove(key, { confirm: confirm === true, actor: agentId(me(ctx)) });
       if (r.removed) {
         await write(ctx, "agent", me(ctx), { kind: "fix", summary: `Removed ${key}` });
       }
@@ -872,8 +746,8 @@ export const TOOLS = [
       let ping = null;
       try {
         ping = await ctx.store.redis("PING");
-      } catch (e) {
-        ping = `error: ${e.message}`;
+      } catch {
+        ping = "error: backend unreachable"; // detail stays server-side
       }
       return {
         ok: true,
@@ -908,58 +782,190 @@ export const decideSecret = (ctx) => (ctx && ctx.decideSecret !== undefined ? ct
 const usableSecret = (secret) => typeof secret === "string" && secret.length >= DECIDE_SECRET_MIN;
 
 /**
- * The exact bytes a decision signature covers.
- * v2 binds the ask itself (action, question, reversible, to, where, trail, by)
- * so a store writer cannot swap the ask or flip reversible under a valid signature.
+ * The exact bytes a decision signature covers. Binding space + origin means
+ * a signature can't be moved to another ask or space; binding ask_hash (the
+ * digest of the ask's canonical content) means it can't be re-pointed at a
+ * different action, question, reversible flag, receiver or place under the
+ * same trail.
  */
-function decisionMessage({ space, origin, verdict, note, by, ts, ask }) {
-  return stableJson({ v: 2, space, origin, verdict, note: note ?? null, by, ts, ask: askBinding(ask) });
+function decisionMessage({ space, origin, ask_hash, verdict, note, by, ts }) {
+  return stableJson({ v: 2, space, origin, ask_hash: ask_hash ?? null, verdict, note: note ?? null, by, ts });
 }
 
-/** HMAC-SHA256 (hex) over a decision. Throws if the secret is unusable. */
+// ─── Canonical asks ──────────────────────────────────────────────────────
+/** True for an entry that may be an ask: kind approval, by an agent, not a legacy acmi:* row. */
+export const isAskCandidate = (e) =>
+  !!e && e.kind === "approval" && e.legacy !== true && typeof e.trail === "string" && /^agent:/.test(String(e.by || ""));
+
+/** SHA-256 over an ask's canonical content: what a person sees and approves. */
+export function askDigest(e) {
+  return createHash("sha256")
+    .update(stableJson({
+      v: 1, kind: "approval", trail: e.trail, by: e.by, ts: e.ts,
+      summary: e.summary ?? null, action: e.action ?? null, reversible: e.reversible === true,
+      to: e.to ?? null, where: e.where ?? null,
+    }))
+    .digest("hex");
+}
+
+/**
+ * The ask fields a person sees (no ts). Two copies of one ask agree on these.
+ * Works for a raw log entry and for a view row that put action/reversible on payload.
+ */
+export function askBinding(ask) {
+  if (!ask || typeof ask !== "object") return null;
+  const action = ask.action !== undefined ? ask.action : ask.payload && Object.hasOwn(ask.payload, "action") ? ask.payload.action : null;
+  const reversible = ask.reversible !== undefined ? ask.reversible : ask.payload?.reversible;
+  return { action: action ?? null, question: ask.summary ?? ask.question ?? null, reversible: reversible === true, to: ask.to ?? null, where: ask.where ?? null, trail: ask.trail ?? null, by: ask.by ?? null };
+}
+const bindingKey = (ask) => stableJson(askBinding(ask));
+const earliest = (list) => [...list].sort((a, b) => (a.ts || 0) - (b.ts || 0) || bindingKey(a).localeCompare(bindingKey(b)))[0];
+
+/**
+ * One canonical ask per trail. Returns Map trail -> { ask, hash, answerable }.
+ *   - Registered ask (lm:{space}:ask:{trail}, written once by logmem_ask): the
+ *     candidate whose digest matches the registry. Twins under the same trail
+ *     and legacy acmi:* rows are ignored. If no copy matches (the ask was
+ *     altered in the store) but the copies agree, it is shown as pending and
+ *     can't be answered.
+ *   - Unregistered ask (older data): only when every copy agrees; the
+ *     earliest copy is canonical. Copies that disagree are ambiguous and left out.
+ * `digest` lets the web view pass a digest it computed from the raw entry.
+ */
+export function canonicalAsks(entries, registry = new Map(), digest = askDigest) {
+  const groups = new Map();
+  for (const e of entries || []) {
+    if (!isAskCandidate(e)) continue;
+    const list = groups.get(e.trail) || [];
+    list.push(e);
+    groups.set(e.trail, list);
+  }
+  const out = new Map();
+  for (const [trail, list] of groups) {
+    const want = registry?.get?.(trail);
+    const consistent = new Set(list.map(bindingKey)).size === 1;
+    if (want) {
+      const m = list.find((e) => digest(e) === want);
+      if (m) out.set(trail, { ask: m, hash: want, answerable: true });
+      else if (consistent) out.set(trail, { ask: earliest(list), hash: want, answerable: false, altered: true });
+    } else if (consistent) {
+      const first = earliest(list);
+      out.set(trail, { ask: first, hash: digest(first), answerable: true });
+    }
+  }
+  return out;
+}
+
+const parse = (s) => {
+  try {
+    return typeof s === "string" ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** The decided entry a settlement claim holds (claims store { v, verdict, …, entry }). */
+const claimEntry = (rec) => (rec && typeof rec === "object" ? (rec.entry && typeof rec.entry === "object" ? rec.entry : rec.kind === "decided" ? rec : null) : null);
+
+/** Ask registry hashes and settlement claims for the approval trails in `entries`. */
+export async function askState(store, entries) {
+  const registry = new Map();
+  const claims = new Map();
+  const trails = new Set((entries || []).filter(isAskCandidate).map((e) => e.trail));
+  for (const t of trails) {
+    let askKey, decKey;
+    try {
+      askKey = lmAskKey(store.space, t);
+      decKey = lmDecisionKey(store.space, t);
+    } catch {
+      continue;
+    }
+    const reg = parse(await store.redis("GET", askKey));
+    if (reg && typeof reg.hash === "string") registry.set(t, reg.hash);
+    const claim = claimEntry(parse(await store.redis("GET", decKey)));
+    if (claim) claims.set(t, claim);
+  }
+  return { registry, claims };
+}
+
+/** True when decided entry `d` answers canonical ask `c`: signature verifies and it signed c's hash. */
+function answersAsk(d, c, { secret, space }) {
+  return !!c && c.answerable && !!d && d.kind === "decided" && d.legacy !== true && d.origin === c.ask.trail && d.payload?.ask_hash === c.hash && verifyDecision(d, { secret, space });
+}
+
+/**
+ * Which decision answers each canonical ask. One rule, shared by the Brief
+ * and the Decisions page:
+ *   - a decision counts only if its signature verifies and its signed
+ *     ask_hash is the canonical ask's hash;
+ *   - the answer is the settling decision held by the set-once claim
+ *     (lm:{space}:decision:{trail}); with no valid claim, the earliest valid
+ *     settling decision in the logs;
+ *   - a defer never settles; the latest valid defer is reported.
+ * Returns { answers: Map trail -> entry, deferrals: Map trail -> entry }.
+ */
+export function decisionsFor(canon, entries, { secret, space, claims = new Map() } = {}) {
+  const answers = new Map();
+  const deferrals = new Map();
+  for (const [t, c] of canon) {
+    const d = claims.get(t);
+    if (d && SETTLES.includes(d.payload?.verdict) && answersAsk(d, c, { secret, space })) answers.set(t, d);
+  }
+  // `entries` are newest first. Walk them oldest first (by ts, ties keep that
+  // order reversed) so the earliest settling answer and the latest defer win.
+  const decided = (entries || [])
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e && e.kind === "decided" && answersAsk(e, canon.get(e.origin), { secret, space }))
+    .sort((x, y) => x.e.ts - y.e.ts || y.i - x.i)
+    .map(({ e }) => e);
+  for (const e of decided) {
+    if (SETTLES.includes(e.payload?.verdict)) {
+      if (!answers.has(e.origin)) answers.set(e.origin, e);
+    } else deferrals.set(e.origin, e);
+  }
+  return { answers, deferrals };
+}
+
+/** Mark decided rows that don't answer their canonical ask (unsigned, forged, altered ask) as unverified. */
+export function annotateDecisions(entries, { secret, space, canon = new Map() } = {}) {
+  return (entries || []).map((e) => {
+    if (!e || e.kind !== "decided") return e;
+    if (answersAsk(e, canon.get(e.origin), { secret, space })) return e;
+    return { ...e, unverified: true, payload: { ...(e.payload || {}), unverified: true } };
+  });
+}
+
+/** HMAC-SHA256 (hex) over a decision. `ask_hash`, or `ask` (hashed here). Throws if the secret is unusable. */
 export function signDecision(fields, secret) {
   if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
-  return createHmac("sha256", secret).update(decisionMessage(fields)).digest("hex");
+  const ask_hash = fields.ask_hash ?? (fields.ask ? askDigest(fields.ask) : null);
+  return createHmac("sha256", secret).update(decisionMessage({ ...fields, ask_hash })).digest("hex");
 }
 
 /**
  * True when `e` is a decided entry written by writeDecision for this space:
- * human `by`, and payload.sig matches the HMAC over this ask (constant-time compare).
- * False for anything unsigned, tampered, from another space, when the secret
- * is missing, or when `ask` is missing or no longer matches what was signed.
+ * human `by`, and payload.sig matches the HMAC (constant-time compare).
+ * With `ask`, it must also be the ask that was signed (its digest is the
+ * signed ask_hash): changing any field a person saw fails. False for anything
+ * unsigned, tampered, from another space, or when the secret is missing.
  */
 export function verifyDecision(e, { secret, space, ask } = {}) {
   if (!e || e.kind !== "decided" || !e.origin || !isHuman(e.by) || !usableSecret(secret)) return false;
-  if (!ask || ask.trail !== e.origin) return false;
   const sig = e.payload?.sig;
   if (typeof sig !== "string" || !/^[0-9a-f]{64}$/.test(sig)) return false;
+  let ask_hash = e.payload?.ask_hash;
+  if (ask !== undefined) {
+    if (!ask || ask.trail !== e.origin) return false;
+    const want = askDigest(ask);
+    if (ask_hash != null && ask_hash !== want) return false;
+    ask_hash = want;
+  }
   const want = createHmac("sha256", secret)
-    .update(decisionMessage({ space, origin: e.origin, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts, ask }))
+    .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
     .digest();
   const got = Buffer.from(sig, "hex");
   if (got.length !== want.length) return false;
   return timingSafeEqual(want, got);
-}
-
-/** True when `rec` (the decision key JSON) verifies against the live ask. */
-function recordVerifies(rec, secret, space, ask) {
-  const entry = settlementAsEntry(rec);
-  return !!entry && verifyDecision(entry, { secret, space, ask });
-}
-
-/** True when `rec` still verifies against the ask binding stored in the key (the secret has not changed). */
-function recordVerifiesStoredAsk(rec, secret, space) {
-  if (!rec?.ask || typeof rec.ask !== "object") return false;
-  const ask = {
-    action: rec.ask.action ?? null,
-    summary: rec.ask.question ?? null,
-    reversible: rec.ask.reversible === true,
-    to: rec.ask.to ?? null,
-    where: rec.ask.where ?? null,
-    trail: rec.ask.trail ?? null,
-    by: rec.ask.by ?? null,
-  };
-  return recordVerifies(rec, secret, space, ask);
 }
 const VERDICT_LABEL = { approve: "Approved", reject: "Rejected", defer: "Deferred" };
 
@@ -976,61 +982,92 @@ export const trailTs = (trail) => {
   return m ? Number(m[1]) : null;
 };
 
+const ALTERED =
+  "this ask was altered after it was signed (question, action, reversible, who it is for, or where); the old decision does not apply and was not replaced";
+const ROTATE =
+  "the stored decision does not verify under the current LOGMEM_DECIDE_SECRET; re-answer it from the Decisions page to migrate it. Nothing new was kept";
+
 async function readTrail(store, ns, id, ts) {
   if (ts != null) return store.readLog(ns, id, { sinceMs: ts, untilMs: ts });
   return store.readLog(ns, id, { reverse: true, limit: 500 });
 }
 
 /**
- * Find an ask (kind approval) by trail. The canonical copy is the one on the
- * asker's own log (by matches that agent). Copies are read in agent-id order.
- * An approval for the same trail on another agent's log is a shadow and is
- * refused, except the agent log named as the ask's `where` (logmem_ask writes
- * both). Copies whose action, question, reversible, to, where, trail, or by
- * disagree are refused too. Returns { ask, asker, where } or null. Throws
- * DecisionError "ambiguous" when it refuses.
+ * Find the canonical ask for a trail. Returns { ask, hash, asker, where } or
+ * null; throws DecisionError "ambiguous" or "not_pending" when it refuses.
+ *
+ * Registered asks (every ask logmem_ask writes): the approval on the asker's
+ * own log whose content hash matches lm:{space}:ask:{trail}. A copy of the
+ * same trail on the asker's log or the ask's `where` log that disagrees is a
+ * conflict and is refused (nobody decides while the store says two things).
+ * If no copy matches any more, the ask was altered: refused, and if it was
+ * already decided the message says so.
+ *
+ * Unregistered asks (older data): the earliest copy on the asker's own log,
+ * refusing a shadow copy on another agent's log and copies that disagree.
+ * Legacy acmi:* rows are never asks.
  */
-export async function findAsk(store, trail) {
+export async function findAsk(store, trail, { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+  let key;
+  try {
+    key = lmAskKey(store.space, trail);
+  } catch {
+    return null; // not a trail we could ever have registered
+  }
+  const reg = parse(await store.redis("GET", key));
+  if (reg && typeof reg.hash === "string" && typeof reg.asker === "string" && Number.isFinite(reg.ts)) {
+    const mine = (await store.readLog("agent", reg.asker, { sinceMs: reg.ts, untilMs: reg.ts })).filter((e) => isAskCandidate(e) && e.trail === trail);
+    let others = [];
+    if (typeof reg.where === "string" && reg.where !== `agent:${reg.asker}`) {
+      try {
+        const w = parseRef(reg.where, "job");
+        others = (await store.readLog(w.ns, w.id, { sinceMs: reg.ts, untilMs: reg.ts })).filter((e) => isAskCandidate(e) && e.trail === trail);
+      } catch {
+        others = [];
+      }
+    }
+    const ask = mine.find((e) => e.by === agentRef(reg.asker) && askDigest(e) === reg.hash);
+    if (!ask) {
+      let claim = null;
+      try {
+        claim = claimEntry(parse(await store.redis("GET", lmDecisionKey(store.space, trail))));
+      } catch {
+        claim = null;
+      }
+      if (claim && claim.payload?.ask_hash === reg.hash && verifyDecision(claim, { secret, space: store.space })) throw new DecisionError("not_pending", ALTERED);
+      if (mine.length || others.length) throw new DecisionError("ambiguous", `ask '${trail}' no longer matches what was asked; refusing so the question, action, or reversible flag cannot be swapped`);
+      return null;
+    }
+    if ([...mine, ...others].some((e) => bindingKey(e) !== bindingKey(ask))) {
+      throw new DecisionError("ambiguous", `ask '${trail}' has conflicting copies; refusing so the question, action, or reversible flag cannot be swapped`);
+    }
+    return { ask, hash: reg.hash, asker: reg.asker, where: ask.where || `agent:${reg.asker}` };
+  }
+
+  // Unregistered (older) ask.
   const ts = trailTs(trail);
   const hits = [];
   for (const id of [...(await store.list("agent"))].sort()) {
-    for (const e of await readTrail(store, "agent", id, ts)) {
-      if (e.kind === "approval" && e.trail === trail) hits.push({ ask: e, log: `agent:${id}` });
-    }
+    for (const e of await readTrail(store, "agent", id, ts)) if (isAskCandidate(e) && e.trail === trail) hits.push({ ask: e, log: `agent:${id}` });
   }
-  const twins = await findAskTwins(store, trail, ts);
-  const own = hits.filter((h) => String(h.ask.by || "").startsWith("agent:") && agentId(h.ask.by) === h.log.slice("agent:".length));
+  const own = hits.filter((h) => agentId(h.ask.by) === h.log.slice("agent:".length));
   if (!own.length) {
-    if (hits.length) {
-      const where = [...new Set(hits.map((h) => h.log))].sort().join(", ");
-      throw new DecisionError("ambiguous", `ask '${trail}' appears only on another agent's log (${where}); refusing a shadow approval`);
-    }
+    if (hits.length) throw new DecisionError("ambiguous", `ask '${trail}' appears only on another agent's log (${[...new Set(hits.map((h) => h.log))].sort().join(", ")}); refusing a shadow approval`);
     return null;
   }
-  // The ask's own log, plus the agent log it names as `where` (logmem_ask writes both).
-  // Any other agent log is a shadow a store writer could swap in.
   const allowed = new Set(own.map((h) => h.log));
-  for (const h of own) {
-    const w = String(h.ask.where || "");
-    if (w.startsWith("agent:")) allowed.add(w);
-  }
+  for (const h of own) if (String(h.ask.where || "").startsWith("agent:")) allowed.add(h.ask.where);
   const shadows = hits.filter((h) => !allowed.has(h.log));
-  if (shadows.length) {
-    const where = [...new Set(shadows.map((h) => h.log))].sort().join(", ");
-    throw new DecisionError("ambiguous", `ask '${trail}' also appears on another agent's log (${where}); refusing a shadow approval`);
-  }
-  const copies = [...hits.filter((h) => allowed.has(h.log)), ...twins];
-  const keys = new Set(copies.map((h) => bindingKey(h.ask)));
-  if (keys.size !== 1) {
-    throw new DecisionError("ambiguous", `ask '${trail}' has conflicting copies; refusing so the question, action, or reversible flag cannot be swapped`);
-  }
-  const ask = own.map((h) => h.ask).sort((a, b) => (a.ts || 0) - (b.ts || 0) || bindingKey(a).localeCompare(bindingKey(b)))[0];
+  if (shadows.length) throw new DecisionError("ambiguous", `ask '${trail}' also appears on another agent's log (${[...new Set(shadows.map((h) => h.log))].sort().join(", ")}); refusing a shadow approval`);
+  const twins = await findAskTwins(store, trail, ts);
+  const copies = [...hits.filter((h) => allowed.has(h.log)), ...twins].map((h) => h.ask);
+  if (new Set(copies.map(bindingKey)).size !== 1) throw new DecisionError("ambiguous", `ask '${trail}' has conflicting copies; refusing so the question, action, or reversible flag cannot be swapped`);
+  const ask = earliest(own.map((h) => h.ask));
   const asker = agentId(ask.by);
-  const where = ask.where || twins[0]?.log || `agent:${asker}`;
-  return { ask, asker, where };
+  return { ask, hash: askDigest(ask), asker, where: ask.where || twins[0]?.log || `agent:${asker}` };
 }
 
-/** Job and channel copies of an ask, so a flipped twin cannot hide behind the agent log. */
+/** Job and channel copies of an unregistered ask, so a flipped twin cannot hide behind the agent log. */
 async function findAskTwins(store, trail, ts) {
   const out = [];
   let cursor = "0";
@@ -1041,9 +1078,7 @@ async function findAskTwins(store, trail, ts) {
     for (const k of keys) {
       const m = k.match(/^lm:[^:]+:([^:]+):([^:]+):log$/);
       if (!m || m[1] === "agent") continue;
-      for (const e of await readTrail(store, m[1], m[2], ts)) {
-        if (e.kind === "approval" && e.trail === trail) out.push({ ask: e, log: `${m[1]}:${m[2]}` });
-      }
+      for (const e of await readTrail(store, m[1], m[2], ts)) if (isAskCandidate(e) && e.trail === trail) out.push({ ask: e, log: `${m[1]}:${m[2]}` });
     }
     scanned += keys.length;
   } while (cursor !== "0" && scanned < 5000);
@@ -1054,50 +1089,47 @@ async function findAskTwins(store, trail, ts) {
  * The one way a "decided" entry is written. Called by /api/decide for a
  * signed-in person, never by an agent tool.
  *
- *   writeDecision(store, askTrail, { verdict: "approve"|"reject"|"defer", note?, by: "human:<id>" })
+ *   writeDecision(store, askTrail, { verdict: "approve"|"reject"|"defer", note?, by: "human:<id>", confirm?, reclaim? })
  *
  * `store` is bound to one space (createStore(redis, { space })). Writes kind
- * decided (origin = askTrail, payload.verdict, payload.sig) to the ask's
- * where log and the asker's agent log, and clears the asker's now.waiting_on
- * if it is this ask.
+ * decided (origin = askTrail, payload { verdict, note?, ask_hash, sig }) to
+ * the asker's agent log and the ask's where log, and clears the asker's
+ * now.waiting_on if it settles this ask.
  *
- * Integrity: the decision is HMAC-signed with LOGMEM_DECIDE_SECRET over the
- * verdict and the ask binding. Entries are appended first; the settlement key
- * is claimed with SET NX only after every append succeeds. A failed append
- * rolls those entries back and leaves the key unset, so the ask can be
- * answered again. No usable secret: fail closed (DecisionError
- * "misconfigured"), nothing is written.
+ * Integrity:
+ *   - Signed: HMAC-SHA256 with LOGMEM_DECIDE_SECRET over the verdict and the
+ *     canonical ask's hash. No usable secret: fail closed ("misconfigured").
+ *   - Set once: a settling answer claims lm:{space}:decision:{trail} with
+ *     SET NX first; the claim holds the full signed entry, so it counts at
+ *     once (readers take the claim first). Then every log is written. If an
+ *     append fails, the appended rows are removed and the claim released
+ *     (all or nothing). If the process dies in between, the claim still
+ *     counts and an identical retry (same verdict and person) writes the
+ *     missing rows (reconciled: true). Any other second answer: not_pending.
+ *   - Rotation: a claim that doesn't verify under the current secret can be
+ *     replaced only with `reclaim` (the admin Decisions route sets it) and a
+ *     settling verdict. A claim on an ask that was altered afterwards is
+ *     never replaced.
  *
- * A key whose signature still verifies is final. A key whose signature does
- * not verify under the current secret (rotation, or a claim left by a crash
- * of an older writer) can be replaced only when `reclaim` is true — the
- * admin Decisions route sets that. A key that still verifies against the
- * ask that was signed, but not against the ask as it reads now, is an altered
- * ask and is not replaced.
+ * Defer is "not yet": a signed entry, no claim, waiting_on kept.
+ * Irreversible by default: approve needs `confirm: true` unless the ask said reversible: true.
+ * Receiver only: if the ask names `to`, only that person decides; never the asker.
  *
- * Defer is "not yet": it writes a signed decided entry (verdict defer) but
- * does not claim the settlement key or clear waiting_on, so the ask stays
- * pending and can still be approved or rejected.
- *
- * Irreversible by default: approving an ask whose reversible is not exactly
- * true needs `confirm: true` (DecisionError "confirm_required" otherwise).
- *
- * Receiver only: if the ask names `to` (human:<id>), only that person can
- * settle it, and the asker can never settle its own ask.
- *
- * Throws DecisionError: bad_request, misconfigured, forbidden, not_found, not_pending, ambiguous.
+ * Throws DecisionError: bad_request, misconfigured, forbidden, confirm_required, not_found, not_pending, ambiguous.
  */
-export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, secret = process.env.LOGMEM_DECIDE_SECRET, reclaim = false } = {}) {
+export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, reclaim = false, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
   if (typeof askTrail !== "string" || !askTrail || askTrail.length > LIMITS.trail) throw new DecisionError("bad_request", `trail must be a string of 1..${LIMITS.trail} characters`);
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);
   if (!HUMAN_RE.test(String(by || ""))) throw new DecisionError("bad_request", "by must be 'human:<id>': only a person decides");
   if (note != null && (typeof note !== "string" || note.length > LIMITS.summary)) throw new DecisionError("bad_request", `note must be text of at most ${LIMITS.summary} characters`);
+  // One normalization for signing and storing: an empty note is no note.
+  note = note === "" || note == null ? undefined : note;
   if (askTrail.includes(":")) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
 
-  const found = await findAsk(store, askTrail);
+  const found = await findAsk(store, askTrail, { secret });
   if (!found) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
-  const { ask, asker, where } = found;
+  const { ask, hash: askHash, asker, where } = found;
   // Only the receiver settles: the person the ask was sent to (when it names
   // one), and never the asker itself under a human-looking name.
   if (by.replace(/^human:/, "") === asker || by === ask.by) throw new DecisionError("forbidden", "the asker can't answer its own ask; a different person must decide");
@@ -1107,13 +1139,14 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     throw new DecisionError("confirm_required", "this action can't be undone (the ask did not say reversible: true): confirm the exact action to approve it");
   }
   const w = parseRef(where, "job");
-  const logs = [[w.ns, w.id]];
-  if (!(w.ns === "agent" && w.id === asker)) logs.push(["agent", asker]);
+  // The asker's own log first: it is what the agent's Brief reads.
+  const logs = [["agent", asker]];
+  if (!(w.ns === "agent" && w.id === asker)) logs.push([w.ns, w.id]);
 
   const t = typeof now === "function" ? now() : now;
   const label = VERDICT_LABEL[verdict];
   const who = by.replace(/^human:/, "");
-  const sig = signDecision({ space: store.space, origin: askTrail, verdict, note, by, ts: t, ask }, secret);
+  const sig = signDecision({ space: store.space, origin: askTrail, ask_hash: askHash, verdict, note, by, ts: t }, secret);
   const entry = {
     ts: t,
     kind: "decided",
@@ -1123,88 +1156,77 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     trail: makeTrail("decided", asker, t),
     origin: askTrail,
     summary: `${label}: ${note || ask.summary || askTrail}`.slice(0, LIMITS.summary),
-    payload: { verdict, ...(note ? { note } : {}), sig },
+    payload: { verdict, ...(note !== undefined ? { note } : {}), ask_hash: askHash, sig },
   };
 
-  // The log is written first. The settlement key is claimed only after every
-  // append has succeeded, so a crash or a failed append cannot leave an ask
-  // stuck behind a key that has no verifying entry.
   const key = lmDecisionKey(store.space, askTrail);
   const settles = SETTLES.includes(verdict);
-  const readRecord = async () => {
-    try {
-      const raw = await store.redis("GET", key);
-      return typeof raw === "string" ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  };
-  const decidedError = (prior) => new DecisionError("not_pending", `already decided: ${prior?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
-  const ALTERED = "this ask was altered after it was signed (question, action, reversible, who it is for, or where); the old decision does not apply and was not replaced";
-  const ROTATE = "the stored decision does not verify under the current LOGMEM_DECIDE_SECRET; re-answer it from the Decisions page to migrate it. Nothing new was kept";
-  const priorState = (prior) => {
-    if (recordVerifies(prior, secret, store.space, ask)) return "same";
-    if (recordVerifiesStoredAsk(prior, secret, store.space)) return "altered";
-    return "rotate";
-  };
-
-  const prior = await readRecord();
-  let overwrite = false;
-  if (prior) {
-    const state = priorState(prior);
-    if (state === "same") throw decidedError(prior);
-    if (state === "altered") throw new DecisionError("not_pending", ALTERED);
-    // Signature does not verify under the current key. Only an admin re-answer
-    // (reclaim) may replace it, and only with a settling verdict.
-    if (!reclaim || !settles) throw new DecisionError("not_pending", ROTATE);
-    overwrite = true;
-  }
-
-  const written = [];
-  const rollback = async () => {
-    for (const w of written) {
-      if (!w.added) continue;
-      try {
-        await store.removeEntry(w.ns, w.id, w.entry);
-      } catch {
-        /* the key was not claimed; a later answer can still proceed */
-      }
-    }
-  };
-  try {
+  const validClaim = (c) => c && c.kind === "decided" && c.origin === askTrail && c.payload?.ask_hash === askHash && verifyDecision(c, { secret, space: store.space });
+  const alreadyDecided = (prior) =>
+    new DecisionError("not_pending", `already decided: ${prior?.payload?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
+  const missingLogs = async (d) => {
+    const out = [];
     for (const [ns, id] of logs) {
-      const logKey = store.key(ns, id, "log");
-      const before = Number(await store.redis("ZCARD", logKey)) || 0;
-      const saved = await store.append(ns, id, entry);
-      const after = Number(await store.redis("ZCARD", logKey)) || 0;
-      written.push({ ns, id, entry: saved, added: after > before });
+      const have = (await store.readLog(ns, id, { sinceMs: d.ts, untilMs: d.ts })).some((e) => e.kind === "decided" && e.trail === d.trail);
+      if (!have) out.push([ns, id]);
     }
-  } catch (e) {
-    await rollback();
-    throw e;
+    return out;
+  };
+  const claimValue = JSON.stringify({ v: 3, origin: askTrail, verdict, note: note ?? null, by, ts: t, ask_hash: askHash, sig, entry });
+
+  let final = entry;
+  let reconciled = false;
+  let priorRaw = null; // a claim being replaced (reclaim), restored if the write fails
+  const existing = async () => {
+    const raw = await store.redis("GET", key);
+    return { raw, entry: claimEntry(parse(raw)) };
+  };
+  if (settles) {
+    const claimed = await store.redis("SET", key, claimValue, "NX");
+    if (claimed == null) {
+      const prior = await existing();
+      if (validClaim(prior.entry)) {
+        if (prior.entry.payload.verdict !== verdict || prior.entry.by !== by) throw alreadyDecided(prior.entry);
+        const missing = await missingLogs(prior.entry);
+        if (!missing.length) throw alreadyDecided(prior.entry);
+        for (const [ns, id] of missing) await store.append(ns, id, prior.entry);
+        final = prior.entry;
+        reconciled = true;
+      } else {
+        // The claim doesn't verify under the current key (rotation, or junk).
+        if (!reclaim) throw new DecisionError("not_pending", ROTATE);
+        priorRaw = prior.raw;
+        await store.redis("SET", key, claimValue);
+      }
+    }
+  } else {
+    const prior = await existing();
+    if (prior.raw != null) throw validClaim(prior.entry) ? alreadyDecided(prior.entry) : new DecisionError("not_pending", ROTATE);
   }
 
-  if (settles) {
-    const value = JSON.stringify({ v: 2, origin: askTrail, verdict, note: note ?? null, by, ts: t, sig, ask: askBinding(ask) });
-    if (overwrite) {
-      await store.redis("SET", key, value);
-    } else {
-      const claimed = await store.redis("SET", key, value, "NX");
-      if (claimed == null) {
-        const winner = await readRecord();
-        const state = priorState(winner);
-        if (!(state === "same" && winner?.sig === sig)) await rollback();
-        if (state === "same") throw decidedError(winner);
-        throw new DecisionError("not_pending", state === "altered" ? ALTERED : ROTATE);
+  if (!reconciled) {
+    const written = [];
+    try {
+      for (const [ns, id] of logs) {
+        await store.append(ns, id, entry);
+        written.push([ns, id]);
       }
+    } catch (e) {
+      // All or nothing: take back the rows that landed and the claim.
+      for (const [ns, id] of written) await store.removeEntry(ns, id, entry).catch(() => {});
+      if (settles) {
+        if (priorRaw != null) await store.redis("SET", key, priorRaw).catch(() => {});
+        else await store.redis("DEL", key).catch(() => {});
+      }
+      throw e;
     }
   }
 
   // Only a settling answer clears waiting_on; after a defer the agent keeps waiting.
   const cur = await store.getNow("agent", asker);
   const cleared = settles && cur?.waiting_on?.trail === askTrail;
-  if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: t } });
-  return { ok: true, entry: written[0]?.entry, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, reclaimed: overwrite };
+  if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: final.ts } });
+  return { ok: true, entry: final, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, reclaimed: priorRaw != null, ...(reconciled ? { reconciled: true } : {}) };
 }
 
 /** Keyword recall over this space's logs. Bounded; used when no index is attached. */

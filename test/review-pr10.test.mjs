@@ -17,6 +17,8 @@ import {
   findAsk,
   HANDOFF_ONLY,
   HANDOFF_WRITE_ONLY,
+  DECLINED_TYPE,
+  isDeclined,
 } from "../src/core/tools.mjs";
 import { lmDecisionKey, lmSessionKey } from "../src/core/keys.mjs";
 import { createShifts } from "../src/core/session.mjs";
@@ -246,6 +248,86 @@ test("high 2: acmi_event cannot append to another agent's log; only accept/decli
   const ho2 = await sc(a, "logmem_handoff", { to: "quill", summary: "a second piece", where: "job:issue-14" });
   assert.equal((await sc(q, "logmem_accept", { trail: ho2.trail })).ok, true);
   assert.ok((await redis("ZRANGE", "lm:fieldnotes:job:issue-14:log", 0, -1)).some((m) => JSON.parse(m).kind === "accepted"));
+});
+
+test("high b: non-boolean payload.declined does not settle a handoff", async () => {
+  const { a, q, store, redis } = await team();
+  await sc(a, "logmem_assign", { job: "issue-14", title: "Issue 14" });
+  const ho = await sc(a, "logmem_handoff", { to: "quill", summary: "take issue 14", where: "job:issue-14" });
+  assert.equal(isDeclined({ declined: true }), true);
+  assert.equal(isDeclined({ declined: false }), false);
+  assert.equal(isDeclined(null), false);
+  assert.equal(isDeclined(undefined), false);
+  const bad = [1, [], "yes", "true"];
+  for (const declined of bad) {
+    assert.equal(isDeclined({ declined }), false, JSON.stringify(declined));
+    for (const where of ["agent:quill", "job:issue-14"]) {
+      const note = await a.callTool("logmem_note", {
+        where,
+        kind: "feedback",
+        summary: "no",
+        origin: ho.trail,
+        payload: { declined },
+      });
+      assert.equal(note.isError, true, `${where} ${JSON.stringify(declined)}`);
+      assert.equal(note.structuredContent.error, DECLINED_TYPE, `${where} ${JSON.stringify(declined)}`);
+    }
+  }
+  const memo = await a.callTool("logmem_note", {
+    where: "channel:ops",
+    kind: "memo",
+    summary: "aside",
+    payload: { declined: "true" },
+  });
+  assert.equal(memo.isError, true);
+  assert.equal(memo.structuredContent.error, DECLINED_TYPE, "non-boolean declined is refused on any kind");
+
+  const stillTrue = await a.callTool("logmem_note", {
+    where: "agent:quill",
+    kind: "feedback",
+    summary: "no",
+    origin: ho.trail,
+    payload: { declined: true },
+  });
+  assert.equal(stillTrue.isError, true);
+  assert.equal(stillTrue.structuredContent.error, HANDOFF_ONLY, "boolean true stays on the accept-only guard");
+
+  const ordinary = await sc(q, "logmem_note", {
+    where: "agent:quill",
+    kind: "feedback",
+    summary: "not a decline",
+    origin: ho.trail,
+    payload: { declined: false, note: "thinking" },
+  });
+  assert.equal(ordinary.ok, true);
+  assert.equal(ordinary.entry.payload.declined, false);
+
+  let brief = await sc(q, "logmem_brief", {});
+  assert.deepEqual(brief.handoffs_to_me.map((e) => e.trail), [ho.trail], "refused notes did not clear it");
+
+  // A row that skipped the write guard (already stored) is still not a decline.
+  let ts = 1;
+  for (const declined of bad) {
+    await store.append("agent", "quill", {
+      ts: ts++,
+      kind: "feedback",
+      origin: ho.trail,
+      by: "agent:atlas",
+      summary: "forged",
+      payload: { declined },
+    });
+  }
+  brief = await sc(q, "logmem_brief", {});
+  assert.deepEqual(brief.handoffs_to_me.map((e) => e.trail), [ho.trail], "stored 1, [], yes, and \"true\" do not clear the brief");
+  const view = await buildView(redis, "fieldnotes", "agent", { id: "quill" });
+  assert.ok(view.handoffs.some((e) => e.trail === ho.trail), "agent view still lists the handoff");
+
+  const declined = await sc(q, "logmem_accept", { trail: ho.trail, decline: true, reason: "not this week" });
+  assert.equal(declined.ok, true, "accept does not treat the forgeries as already declined");
+  assert.equal(declined.entries.every((e) => e.payload.declined === true), true);
+  assert.equal((await sc(q, "logmem_brief", {})).handoffs_to_me.length, 0, "a real decline still clears the brief");
+  const after = await buildView(redis, "fieldnotes", "agent", { id: "quill" });
+  assert.equal(after.handoffs.some((e) => e.trail === ho.trail), false, "a real decline still clears the agent view");
 });
 
 test("high 2: dropping signed decided rows does not reopen an ask; the decision key still settles it", async () => {
