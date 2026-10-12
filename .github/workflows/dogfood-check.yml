@@ -1,0 +1,62 @@
+name: dogfood-check
+
+# Daily LogMem dogfood audit (design: docs/superpowers/specs/2026-10-11-logmem-dogfood-design.md).
+# Runs the check against the live bridge, writes the checkup entry, and commits
+# scorecard.json to the dogfood/scorecard branch. Never touches main.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      space:
+        description: "space to check"
+        default: "madez"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dogfood-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        space: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.space)) || fromJSON('["madez","fieldnotes"]') }}
+    steps:
+      - name: Code (LogMem dogfood branch)
+        uses: actions/checkout@v4
+        with:
+          ref: feat/dogfood-phase0
+          path: code
+      - name: Scorecard branch
+        uses: actions/checkout@v4
+        with:
+          ref: dogfood/scorecard
+          path: card
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --omit=dev
+        working-directory: code
+      - name: Run check
+        working-directory: code
+        env:
+          LOGMEM_REST_URL: ${{ secrets.LOGMEM_REST_URL }}
+          LOGMEM_REST_TOKEN: ${{ secrets.LOGMEM_REST_TOKEN }}
+        run: node scripts/dogfood-check.mjs --space "${{ matrix.space }}" --mirror-spaces madez --scorecard "../card/scorecard-${{ matrix.space }}.json" > "../check-${{ matrix.space }}.json"
+      - name: Commit scorecard
+        working-directory: card
+        run: |
+          git config user.name "logmem-check"
+          git config user.email "logmem-check@users.noreply.github.com"
+          git add "scorecard-${{ matrix.space }}.json"
+          git diff --cached --quiet || git commit -m "scorecard(${{ matrix.space }}): $(date -u +%F)"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 3; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check-${{ matrix.space }}-${{ github.run_id }}
+          path: check-${{ matrix.space }}.json

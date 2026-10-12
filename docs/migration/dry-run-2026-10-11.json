@@ -1,0 +1,659 @@
+{
+  "mode": "DRY-RUN",
+  "writes": 0,
+  "space": "madez",
+  "started_at": "2026-10-11T15:42:35.275Z",
+  "db_keys_total": 3184,
+  "scanned": 3165,
+  "mapped": 1677,
+  "by_target_slot": {
+    "log": 575,
+    "now": 431,
+    "who": 543,
+    "recap": 48,
+    "follows": 8,
+    "shifts": 26,
+    "list": 29,
+    "sessions": 17
+  },
+  "by_ns": {
+    "--action": 1,
+    "acmi.madez.agent.open-design": 1,
+    "acmi.madez.bus.events": 1,
+    "agent-coordination": 1,
+    "agent": 327,
+    "agents": 3,
+    "architecture": 3,
+    "avery": 1,
+    "bentley-main": 2,
+    "bus": 4,
+    "busrelayevents": 1,
+    "character": 1,
+    "client": 3,
+    "clip-pack": 1,
+    "coordination": 2,
+    "cowork": 5,
+    "doc": 50,
+    "event": 1,
+    "fleet-architect": 1,
+    "fleet": 11,
+    "gpu-team": 2,
+    "idea": 3,
+    "inbox": 5,
+    "incident": 5,
+    "issue": 4,
+    "kanban": 4,
+    "lab-buyer": 9,
+    "library": 2,
+    "madez": 5,
+    "mission": 12,
+    "objective": 3,
+    "operations": 3,
+    "partner": 6,
+    "project": 222,
+    "quota": 6,
+    "registry": 6,
+    "research": 2,
+    "rollup": 1,
+    "sales": 2,
+    "service": 36,
+    "session": 1,
+    "signals": 2,
+    "skill": 47,
+    "task": 16,
+    "team": 3,
+    "test": 2,
+    "channel": 66,
+    "track": 1,
+    "tracker": 27,
+    "undefined": 1,
+    "user": 42,
+    "vapi": 1,
+    "job": 704,
+    "workflow": 3,
+    "workspace": 3
+  },
+  "type_mismatch": {
+    "timeline:string": 45,
+    "spawns:string": 5,
+    "profile:hash": 1
+  },
+  "unmapped": {
+    "unknown-slot": 366,
+    "id-has-colon": 1108,
+    "no-id": 14
+  },
+  "unmapped_examples": {
+    "unknown-slot": [
+      "acmi:madez:agent:TestUser:rollup:1783438226182",
+      "acmi:madez:agent:TestUser:signals:legacy-hash-backup",
+      "acmi:madez:agent:aba-bcba-expert:signals:legacy-hash-backup",
+      "acmi:madez:agent:antigravity-cli:active_threads",
+      "acmi:madez:agent:antigravity:list",
+      "acmi:madez:agent:antigravity:profile_history",
+      "acmi:madez:agent:antigravity:signals:sot",
+      "acmi:madez:agent:artist-factory-agent:profile_history"
+    ],
+    "id-has-colon": [
+      "acmi:madez:agent:agent:bentley:timeline",
+      "acmi:madez:agent:agent:fleet-architect:rollup:latest",
+      "acmi:madez:agent:agent:open-design:rollup:latest",
+      "acmi:madez:agent:antigravity:ops-center-amd-agents:timeline",
+      "acmi:madez:agent:antigravity:repo-boundary-ack-required:timeline",
+      "acmi:madez:agent:avery:install-hygiene-ack-required:timeline",
+      "acmi:madez:agent:batch:drift-policy-update:timeline",
+      "acmi:madez:agent:bentley-main:rollup:latest:profile"
+    ],
+    "no-id": [
+      "acmi:madez:avery:timeline",
+      "acmi:madez:blood-chrome-expansion-storyboard:timeline",
+      "acmi:madez:fleet-main:timeline",
+      "acmi:madez:fleet:timeline",
+      "acmi:madez:folana-fleet-obs:timeline",
+      "acmi:madez:folana-fleet-watch:timeline",
+      "acmi:madez:folana-journal-pipeline:timeline",
+      "acmi:madez:folana:signals"
+    ]
+  },
+  "targets_already_present": 0,
+  "entries": {
+    "total": 36103,
+    "unparseable": 13,
+    "kinds_remapped": 9490,
+    "kinds_alias_preserved": 743,
+    "kinds_unknown_passthrough": 25462,
+    "fields_renamed": 66498,
+    "rescored": 74,
+    "collisions_after_rescore": 0
+  },
+  "score_units": {
+    "small": 88,
+    "ms": 35941,
+    "us": 3,
+    "s": 2,
+    "ns": 69
+  },
+  "kinds_remapped": [
+    [
+      "heartbeat -> ping",
+      6905
+    ],
+    [
+      "coord-note -> memo",
+      806
+    ],
+    [
+      "milestone-shipped -> done",
+      394
+    ],
+    [
+      "task-delegation -> handoff",
+      225
+    ],
+    [
+      "handoff-ack -> accepted",
+      195
+    ],
+    [
+      "work-completed -> done",
+      165
+    ],
+    [
+      "spawn -> started",
+      155
+    ],
+    [
+      "decision -> decided",
+      116
+    ],
+    [
+      "stalled-alert -> stuck",
+      106
+    ],
+    [
+      "fleet-sync -> huddle",
+      75
+    ],
+    [
+      "session-start -> started",
+      61
+    ],
+    [
+      "artifact-published -> shared",
+      49
+    ],
+    [
+      "work-update -> progress",
+      46
+    ],
+    [
+      "pre-compact-snapshot -> recap",
+      41
+    ],
+    [
+      "work-created -> assigned",
+      32
+    ],
+    [
+      "research-brief -> research",
+      29
+    ],
+    [
+      "decision-request -> approval",
+      14
+    ],
+    [
+      "incident-update -> problem",
+      13
+    ],
+    [
+      "correction -> fix",
+      10
+    ],
+    [
+      "alignment-fix -> fix",
+      10
+    ],
+    [
+      "decision-ratified -> decided",
+      9
+    ],
+    [
+      "onboarding-complete -> joined",
+      9
+    ],
+    [
+      "install -> setup",
+      6
+    ],
+    [
+      "scope-decision -> pivot",
+      5
+    ],
+    [
+      "rollup -> recap",
+      4
+    ],
+    [
+      "diagnostic-report -> checkup",
+      3
+    ],
+    [
+      "audit-report -> checkup",
+      3
+    ],
+    [
+      "critical-finding -> alert",
+      3
+    ],
+    [
+      "review-note -> feedback",
+      1
+    ]
+  ],
+  "now_fields": 2875,
+  "timeline_as_string": [
+    {
+      "key": "acmi:madez:--action:read:timeline",
+      "parsed": "array(3)"
+    },
+    {
+      "key": "acmi:madez:acmi.madez.bus.events:open-design-onboard-001:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:agent:bentley-main:spawns",
+      "parsed": "array(9)"
+    },
+    {
+      "key": "acmi:madez:agent:folana:spawns",
+      "parsed": "array(2)"
+    },
+    {
+      "key": "acmi:madez:agent:hermes-alpha:spawns",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:agent:open-design:spawns",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:agent:openclaw:spawns",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:bus:*:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:bus:events:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:event:agent:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:sales:agent:timeline",
+      "parsed": "array(6)"
+    },
+    {
+      "key": "acmi:madez:service:open-connector:timeline",
+      "parsed": "array(2)"
+    },
+    {
+      "key": "acmi:madez:thread:undefined:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:amd-self-hosted-agents:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:avery-rei-scaffold-20260714:timeline",
+      "parsed": "array(6)"
+    },
+    {
+      "key": "acmi:madez:work:avery-rei-scaffold:timeline",
+      "parsed": "array(6)"
+    },
+    {
+      "key": "acmi:madez:work:bentley-main-evening-rollup:timeline",
+      "parsed": "array(2)"
+    },
+    {
+      "key": "acmi:madez:work:charlotte-acmi-prospecting:timeline",
+      "parsed": "array(2)"
+    },
+    {
+      "key": "acmi:madez:work:client-signals-update:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:diff-not-less-balto-ecosystem:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:ez-influencer-genui-agentify:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-analytics-automation:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-cloudflare-expert:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-dept-faceless-pages:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-dept-open-connector:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-dept-repo-deployment:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-dept-webmaster:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-repo-deploy-vm:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-seo-aeo-geo:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-smb-agent-harness:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-voice-selfhosted:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:fleet-webmaster-research:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:folana-disk-recovery-2026-07-06:timeline",
+      "parsed": "array(7)"
+    },
+    {
+      "key": "acmi:madez:work:folana-vm-migration-push:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:folana-workspace-assist:timeline",
+      "parsed": "array(2)"
+    },
+    {
+      "key": "acmi:madez:work:gsd-dashboard-client-access:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:invite-2026-05-11-perplexity-onboard:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:nocodb-client-bases-setup:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:openclaw-comms-overstep-probe:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:ops-center-billing-2026-07-14:timeline",
+      "parsed": "array(3)"
+    },
+    {
+      "key": "acmi:madez:work:ops-center-config-inspect-1751825640:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:rapidapi-renewal-20260708:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:rei-batch-2-dropbox-push:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:remediate-acp-method-routing:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:specialized-vertical-acmis:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:story.1:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:t_c57c9ab7:timeline",
+      "parsed": "array(11)"
+    },
+    {
+      "key": "acmi:madez:work:webhook-loop-triage:timeline",
+      "parsed": "array(1)"
+    },
+    {
+      "key": "acmi:madez:work:work-mcp-metasearch-dedupe-2026-07-14:timeline",
+      "parsed": "array(17)"
+    },
+    {
+      "key": "acmi:madez:work:workspace-cleanup-2026-05-12:timeline",
+      "parsed": "array(1)"
+    }
+  ],
+  "rescored_top_keys": [
+    [
+      "acmi:madez:thread:agent-coordination:timeline",
+      46
+    ],
+    [
+      "acmi:madez:agent:opencode:timeline",
+      19
+    ],
+    [
+      "acmi:madez:agent:claude-engineer:timeline",
+      2
+    ],
+    [
+      "acmi:madez:mission:folana-journal-pipeline:timeline",
+      2
+    ],
+    [
+      "acmi:madez:agent:bentley:timeline",
+      1
+    ],
+    [
+      "acmi:madez:agent:muse:timeline",
+      1
+    ],
+    [
+      "acmi:madez:thread:agent-roundtable:timeline",
+      1
+    ],
+    [
+      "acmi:madez:thread:bentley-main:timeline",
+      1
+    ],
+    [
+      "acmi:madez:thread:infra:timeline",
+      1
+    ]
+  ],
+  "kinds_unknown_top": [
+    [
+      "project-rollup-sync",
+      4484
+    ],
+    [
+      "mm-command",
+      4175
+    ],
+    [
+      "session",
+      2392
+    ],
+    [
+      "research-request",
+      1469
+    ],
+    [
+      "research-output",
+      1388
+    ],
+    [
+      "publish-output",
+      1176
+    ],
+    [
+      "synthesis-output",
+      1038
+    ],
+    [
+      "wrapper-start",
+      984
+    ],
+    [
+      "blocker",
+      536
+    ],
+    [
+      "drift-delta",
+      452
+    ],
+    [
+      "framework-task-start",
+      418
+    ],
+    [
+      "framework-task-complete",
+      417
+    ],
+    [
+      "openclaw-comms",
+      262
+    ],
+    [
+      "step-done",
+      230
+    ],
+    [
+      "diagnostic",
+      213
+    ],
+    [
+      "fleet-audit",
+      169
+    ],
+    [
+      "pulse-anomaly",
+      164
+    ],
+    [
+      "note",
+      145
+    ],
+    [
+      "error",
+      138
+    ],
+    [
+      "bus-pump",
+      134
+    ],
+    [
+      "diagnosis",
+      126
+    ],
+    [
+      "call-end",
+      122
+    ],
+    [
+      "quota-red",
+      122
+    ],
+    [
+      "diagnostic-confirm",
+      102
+    ],
+    [
+      "alert-ack",
+      100
+    ],
+    [
+      "task-deliverable",
+      94
+    ],
+    [
+      "coord-claim",
+      93
+    ],
+    [
+      "session-rollup",
+      92
+    ],
+    [
+      "handoff-complete",
+      76
+    ],
+    [
+      "roundtable-open",
+      74
+    ],
+    [
+      "tick-summary",
+      69
+    ],
+    [
+      "tick-end",
+      68
+    ],
+    [
+      "coord-release",
+      68
+    ],
+    [
+      "status",
+      67
+    ],
+    [
+      "tick-start",
+      67
+    ],
+    [
+      "inbox_item_completed",
+      66
+    ],
+    [
+      "item-completed",
+      66
+    ],
+    [
+      "directive",
+      54
+    ],
+    [
+      "insight",
+      49
+    ],
+    [
+      "milestone",
+      48
+    ]
+  ],
+  "kinds_unknown_distinct": 907,
+  "finished_at": "2026-10-11T15:45:35.665Z"
+}

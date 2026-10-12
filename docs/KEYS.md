@@ -4,6 +4,8 @@
 lm:{space}:{ns}:{id}:{slot}
 lm:{space}:{ns}:list          SET of ids
 lm:{space}:session:{sid}      shift bookkeeping (STRING JSON, 7-day TTL)
+lm:{space}:ask:{trail}        ask registry: {hash, asker, where, ts} of the one canonical ask (STRING JSON, SET NX; protected)
+lm:{space}:decision:{trail}   set-once claim {v, verdict, by, ts, ask_hash, sig, entry}: the full signed decided entry that settled the ask (STRING JSON, SET NX; an admin re-answer replaces one that no longer verifies after a key rotation; protected)
 lm:oauth:{client|code|token|refresh}:{x}   OAuth, outside every space
 ```
 
@@ -29,7 +31,7 @@ lm:oauth:{client|code|token|refresh}:{x}   OAuth, outside every space
 ```json
 { "_o": "000000", "ts": 1791731538741, "kind": "accepted", "by": "agent:quill",
   "via": "codex", "byline": "quill (via codex)", "trail": "...", "origin": "...",
-  "shift": "quillShift-1791731500000", "summary": "...", "payload": {} }
+  "shift": "quillShift-1791731500000-<24 hex>", "summary": "...", "payload": {} }
 ```
 
 `acmi_kind` is present only when the entry came in under an ACMI alias

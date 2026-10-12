@@ -85,7 +85,7 @@ async function readIds(redis, key) {
   return [];
 }
 
-export function createStore(redis, { space, compat = false } = {}) {
+export function createStore(redis, { space, compat = false, mirror = null } = {}) {
   if (!space) throw new Error("createStore: space required");
   const k = (ns, id, slot) => lmKey(space, ns, id, slot);
   const legacy = (ns, id, slot) => acmiKey(space, ns, id, slot);
@@ -94,11 +94,20 @@ export function createStore(redis, { space, compat = false } = {}) {
     await redis("SADD", lmIndexKey(space, ns), id);
   }
 
+  /** Dogfood mirror: write the ACMI twin; record ok/failed for the caller. */
+  async function mirrorWrite(op) {
+    if (!mirror) return;
+    store.mirrorEvents.push(await mirror.write(op));
+  }
+
   const store = {
     space,
     compat,
     redis,
     key: k,
+    mirror,
+    /** "ok" | "failed" per mirrored write since the last reset (server resets per tool call). */
+    mirrorEvents: [],
 
     // ─── Who ────────────────────────────────────────────────────────────
     async getWho(ns, id) {
@@ -109,6 +118,7 @@ export function createStore(redis, { space, compat = false } = {}) {
     async setWho(ns, id, doc) {
       await redis("SET", k(ns, id, "who"), JSON.stringify(doc));
       await index(ns, id);
+      await mirrorWrite({ slot: "who", ns, id, doc });
       return doc;
     },
     async mergeWho(ns, id, partial) {
@@ -130,6 +140,7 @@ export function createStore(redis, { space, compat = false } = {}) {
       const pairs = Object.entries(fields).flatMap(([f, v]) => [f, JSON.stringify(v)]);
       if (pairs.length) await redis("HSET", k(ns, id, "now"), ...pairs);
       await index(ns, id);
+      await mirrorWrite({ slot: "now", ns, id, fields });
       return store.getNow(ns, id);
     },
     /** ACMI semantics: signals are replaced wholesale, not merged. */
@@ -168,7 +179,25 @@ export function createStore(redis, { space, compat = false } = {}) {
       const ordinal = String((same || []).length).padStart(6, "0");
       await redis("ZADD", key, ts, stableJson({ _o: ordinal, ...full }));
       await index(ns, id);
+      await mirrorWrite({ slot: "log", ns, id, entry: full });
       return full;
+    },
+    /** Remove one appended entry (the ZSET member whose body matches, ignoring the `_o` tie-break). */
+    async removeEntry(ns, id, entry) {
+      if (!entry || typeof entry !== "object") return 0;
+      const ts = normTs(entry.ts);
+      const key = k(ns, id, "log");
+      const same = await redis("ZRANGEBYSCORE", key, ts, ts);
+      const body = stableJson(entry);
+      let n = 0;
+      for (const m of same || []) {
+        const parsed = tryParse(m);
+        if (!parsed || typeof parsed !== "object") continue;
+        const { _o, ...rest } = parsed;
+        if (stableJson(rest) !== body) continue;
+        n += Number(await redis("ZREM", key, m)) || 0;
+      }
+      return n;
     },
     async readLog(ns, id, { limit, reverse = false, sinceMs, untilMs } = {}) {
       const min = sinceMs != null ? normTs(sinceMs) : "-inf";
@@ -193,7 +222,12 @@ export function createStore(redis, { space, compat = false } = {}) {
       let entries = rows.map((r, i) => {
         const e = asEntry(tryParse(r.member));
         const { _o, ...obj } = e && typeof e === "object" ? e : { summary: String(e) };
-        return { e: { ...obj, ts: normTs(obj.ts ?? r.score) }, o: _o ?? "", i };
+        const out = { ...obj, ts: normTs(obj.ts ?? r.score) };
+        // Rows merged from legacy acmi:* keys carry a non-enumerable flag, so
+        // readers can refuse to treat them as asks or decisions without
+        // changing what compat reads return.
+        if (r.legacy) Object.defineProperty(out, "legacy", { value: true, enumerable: false });
+        return { e: out, o: _o ?? "", i };
       });
       // Stable: ts, then same-ms ordinal, then read order.
       entries.sort((a, b) => a.e.ts - b.e.ts || (a.o < b.o ? -1 : a.o > b.o ? 1 : a.i - b.i));
@@ -253,8 +287,14 @@ export function createStore(redis, { space, compat = false } = {}) {
     },
 
     // ─── Remove ─────────────────────────────────────────────────────────
-    /** Dry-run unless confirm. Only keys inside this space; never protected. */
-    async remove(key, { confirm = false } = {}) {
+    /**
+     * Dry-run unless confirm. Only keys inside this space; never protected.
+     * With `actor` (the agent calling logmem_remove / acmi_delete) the same
+     * own-agent rule as every other agent write applies: another agent's
+     * keys and the roster indexes are refused, and so is any log that holds
+     * asks or decisions (agents can never delete those).
+     */
+    async remove(key, { confirm = false, actor } = {}) {
       const own = `lm:${space}:`;
       if (!String(key).startsWith(own)) {
         throw new Error(`refused: key must start with '${own}' (this space only)`);
@@ -264,6 +304,21 @@ export function createStore(redis, { space, compat = false } = {}) {
       }
       const exists = Number(await redis("EXISTS", key)) === 1;
       const type = exists ? await typeOf(redis, key) : null;
+      if (actor != null) {
+        const rest = String(key).slice(own.length).split(":");
+        if (rest[0] === "agent" && rest.length > 2 && rest[1] !== actor) {
+          throw new Error(`refused: ${key} belongs to another agent (${rest[1]}); you (${actor}) can only remove your own agent's keys`);
+        }
+        if (rest.length === 2 && rest[1] === "list") throw new Error(`refused: ${key} is a roster index; agents can't remove it`);
+        if (exists && type === "zset" && rest.at(-1) === "log") {
+          const held = (await redis("ZRANGE", key, 0, -1)).some((m) => {
+            const e = asEntry(tryParse(m));
+            const k = e && typeof e === "object" ? normalizeKind(e.kind).kind : null;
+            return k === "approval" || k === "decided";
+          });
+          if (held) throw new Error(`refused: ${key} holds asks or a signed decision; agents can never delete those`);
+        }
+      }
       if (!confirm) return { dry_run: true, key, exists, type, hint: "pass confirm=true to remove" };
       if (!exists) return { dry_run: false, key, removed: false, reason: "key did not exist" };
       const n = Number(await redis("DEL", key));

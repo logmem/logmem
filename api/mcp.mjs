@@ -10,9 +10,21 @@
 // auto Recap / persona switch) survive across stateless invocations.
 
 import { randomUUID, createHash } from "node:crypto";
-import { createLogmem, compatFromEnv, toResult, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
+import { createLogmem, compatFromEnv, mirrorConfigFromEnv, toResult, toolError, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
+
+/** A failure building the server instance (backend, config) is never shown to the client verbatim. */
+const markUnexpected = (e) => {
+  const err = e instanceof Error ? e : new Error(String(e));
+  try {
+    Object.defineProperty(err, "backend", { value: true, enumerable: false });
+  } catch {
+    /* ignore */
+  }
+  return err;
+};
 import { fromDescriptor } from "../src/lib/backend.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate, bearerOf } from "../src/http/auth.mjs";
+import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
@@ -64,6 +76,7 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     surface: surfaceFromSession(sessionId) || "http",
     sessionId,
     defaultAgent: env.LOGMEM_AGENT,
+    mirror: mirrorConfigFromEnv(env),
   });
 }
 
@@ -95,7 +108,7 @@ export async function dispatch(msg, { lmFactory, toolDefs }) {
       try {
         lm = await lmFactory();
       } catch (e) {
-        return ok(toResult({ ok: false, error: e.message }));
+        return ok(toResult(toolError(markUnexpected(e), params?.name)));
       }
       return ok(await lm.callTool(params?.name, params?.arguments || {}));
     }
@@ -149,6 +162,6 @@ export default async function handler(req, res) {
     });
     return send(res, wantsSSE, reply, headers);
   } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: e.message || String(e) });
+    sendServerError(res, "/api/mcp", e);
   }
 }

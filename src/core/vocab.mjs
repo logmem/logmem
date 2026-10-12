@@ -118,6 +118,7 @@ export const TOOLS = {
   logmem_recap: "acmi_rollup_set",
   logmem_note: "acmi_event",
   logmem_handoff: null,
+  logmem_accept: null,
   logmem_ask: null,
   logmem_status: "acmi_signal",
   logmem_bio: "acmi_profile",

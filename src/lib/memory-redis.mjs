@@ -58,7 +58,10 @@ export function createMemoryRedis() {
       const e = get(k, "string");
       return e ? e.value : null;
     },
-    SET: (k, v) => {
+    SET: (k, v, ...opts) => {
+      const flags = opts.map((o) => String(o).toUpperCase());
+      if (flags.includes("NX") && data.has(k)) return null;
+      if (flags.includes("XX") && !data.has(k)) return null;
       data.set(k, { type: "string", value: String(v) });
       return "OK";
     },
@@ -70,6 +73,14 @@ export function createMemoryRedis() {
       return [...data.keys()].filter((k) => re.test(k)).sort();
     },
     EXPIRE: (k) => (data.has(k) ? 1 : 0),
+    TTL: (k) => (data.has(k) ? -1 : -2),
+    DBSIZE: () => data.size,
+    // Single-pass SCAN: returns everything matching with cursor "0".
+    SCAN: (_cursor, ...opts) => {
+      const i = opts.findIndex((o) => String(o).toUpperCase() === "MATCH");
+      const re = globToRegex(i >= 0 ? opts[i + 1] : "*");
+      return ["0", [...data.keys()].filter((k) => re.test(k)).sort()];
+    },
     SADD: (k, ...members) => {
       let e = get(k, "set");
       if (!e) {
