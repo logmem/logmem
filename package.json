@@ -10,7 +10,7 @@
     "logmem-mcp": "src/stdio/index.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/stdio/index.mjs",
@@ -18,10 +18,12 @@
     "conformance": "node scripts/conformance.mjs",
     "spec": "node scripts/gen-spec.mjs",
     "spec:check": "node scripts/gen-spec.mjs --check",
-    "migrate:dry-run": "node scripts/migrate-dry-run.mjs"
+    "migrate:dry-run": "node scripts/migrate-dry-run.mjs",
+    "test:ops": "node --test test/ops*.test.mjs",
+    "ci": "npm test && npm run spec:check && npm run conformance"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "redis": "^4.7.1",
     "zod": "^3.24.0"
   },
