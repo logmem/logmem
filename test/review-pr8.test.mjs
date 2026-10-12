@@ -313,11 +313,13 @@ test("item 1: only entries whose HMAC verifies count; forged, tampered, moved or
   assert.equal((await buildView(redis, "fieldnotes", "decisions")).waiting.length, 2);
 
   const real = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:mikey" });
-  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes" }), true);
-  assert.equal(verifyDecision({ ...real.entry, payload: { ...real.entry.payload, verdict: "approve" } }, { secret: SECRET, space: "fieldnotes" }), false, "tampered verdict");
-  assert.equal(verifyDecision({ ...real.entry, origin: ask2.trail }, { secret: SECRET, space: "fieldnotes" }), false, "moved to another ask");
-  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "other" }), false, "another space");
-  assert.equal(verifyDecision(real.entry, { space: "fieldnotes" }), false, "no key: fail closed");
+  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes", ask: ask.entry }), true);
+  assert.equal(verifyDecision({ ...real.entry, payload: { ...real.entry.payload, verdict: "approve" } }, { secret: SECRET, space: "fieldnotes", ask: ask.entry }), false, "tampered verdict");
+  assert.equal(verifyDecision({ ...real.entry, origin: ask2.trail }, { secret: SECRET, space: "fieldnotes", ask: ask.entry }), false, "moved to another ask");
+  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes", ask: { ...ask.entry, reversible: false } }), false, "altered reversible");
+  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "other", ask: ask.entry }), false, "another space");
+  assert.equal(verifyDecision(real.entry, { secret: SECRET, space: "fieldnotes" }), false, "no ask: fail closed");
+  assert.equal(verifyDecision(real.entry, { space: "fieldnotes", ask: ask.entry }), false, "no key: fail closed");
   // Copy the real signed entry onto the second ask: still pending.
   await store.append("agent", "quill", { ...real.entry, ts: real.entry.ts + 1, origin: ask2.trail });
   b = await sc(q, "logmem_brief", {});

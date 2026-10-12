@@ -125,7 +125,7 @@
     {
       "name": "logmem_note",
       "title": "Note",
-      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kind 'decided' is refused: only a person answers an ask. Limits: summary 1000 characters, payload 16 KB.",
+      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined is refused too. Limits: summary 1000 characters, payload 16 KB.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -139,7 +139,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "Entry type. One of: started, ping, recap, joined, setup, handoff, accepted, assigned, progress, done, shared, research, checkup, feedback, approval, pivot, stuck, alert, memo, huddle, problem, fix. Default memo."
+            "description": "Entry type. One of: started, ping, recap, joined, setup, assigned, progress, done, shared, research, checkup, feedback, approval, pivot, stuck, alert, memo, huddle, problem, fix. Default memo. decided, accepted, and handoff are refused."
           },
           "trail": {
             "type": "string",
@@ -200,7 +200,7 @@
           },
           "trail": {
             "type": "string",
-            "description": "Trail id (auto if omitted)"
+            "description": "Trail id (auto if omitted). Refused when that trail is already used on the receiver"
           },
           "origin": {
             "type": "string",
@@ -648,7 +648,7 @@
     {
       "name": "logmem_update",
       "title": "Update",
-      "description": "Add progress to a job's log. Default kind is progress. Kind 'decided' is refused: only a person answers an ask.",
+      "description": "Add progress to a job's log. Default kind is progress. Kinds decided, accepted, and handoff are refused, as is feedback that declines a handoff.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -866,7 +866,7 @@
     {
       "name": "logmem_remove",
       "title": "Remove",
-      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed.",
+      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. Another agent's who, log, or profile is refused. A log that holds a signed decision is never removed.",
       "inputSchema": {
         "type": "object",
         "properties": {

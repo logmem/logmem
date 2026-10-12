@@ -28,7 +28,7 @@ export async function runDay(redis, { space = "fieldnotes", mirror, log = () => 
   const asg = await call("atlas", "logmem_assign", { job, title: "Launch newsletter issue 14", details: { due: "Tue" } }, "08:10 Assign a job");
   await call("atlas", "logmem_stage", { job, stage: "active" }, "08:10 Stage active");
   const ho = await call("atlas", "logmem_handoff", { to: "quill", where: `job:${job}`, summary: "Draft issue 14", origin: asg.entry.trail }, "08:14 Pass the baton");
-  await call("quill", "logmem_note", { where: `job:${job}`, kind: "accepted", summary: "quill picked up issue 14", origin: ho.trail }, "08:15 Accept");
+  await call("quill", "logmem_accept", { trail: ho.trail, reason: "quill picked up issue 14" }, "08:15 Accept");
   const draft = await call("quill", "logmem_update", { job, summary: "Draft done. 2 links need a check before send." }, "10:40 Progress report");
   await call("quill", "logmem_recall", { query: "issue 14 draft links" }, "10:52 Find it");
   await call("relay", "logmem_start", { agent: "relay" }, "11:07 relay starts");

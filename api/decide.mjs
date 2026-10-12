@@ -32,7 +32,7 @@ import { sendServerError } from "../src/http/log.mjs";
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
 export const INTENT_HEADER = "x-logmem-intent";
-const STATUS = { bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, confirm_required: 428, misconfigured: 503 };
+const STATUS = { bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, ambiguous: 409, confirm_required: 428, misconfigured: 503 };
 
 /** The signed-in person: human:<LOGMEM_ADMIN_ID> (default "admin"). Asks addressed to someone else are refused (403). */
 export const deciderFrom = (env) => `human:${String(env.LOGMEM_ADMIN_ID || "admin")}`;
@@ -93,7 +93,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
   }
   try {
     const store = createStore(runner, { space });
-    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", confirm: confirm === "approve", ...(now ? { now } : {}) });
+    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", confirm: confirm === "approve", reclaim: true, ...(now ? { now } : {}) });
     return res.status(201).json({ ok: true, space, ...out });
   } catch (e) {
     if (e instanceof DecisionError) return res.status(STATUS[e.code] || 400).json({ error: e.message, code: e.code });

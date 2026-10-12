@@ -20,7 +20,7 @@ test("healthy day passes: parity 0, 3 agents, handoff accepted", async () => {
   const redis = createMemoryRedis();
   const { a, b } = await team(redis, "madez");
   const ho = await sc(a, "logmem_handoff", { to: "grok-local", where: "job:logmem-v0-ship", summary: "review #1" });
-  await sc(b, "logmem_note", { where: "job:logmem-v0-ship", kind: "accepted", summary: "on it", origin: ho.trail });
+  await sc(b, "logmem_accept", { trail: ho.trail, reason: "on it" });
   const { day } = await runCheck(redis, { space: "madez" });
   assert.equal(day.mirror_mismatches, 0);
   assert.deepEqual(day.agents, ["agent:claude-code", "agent:claude-engineer", "agent:grok-local"]);

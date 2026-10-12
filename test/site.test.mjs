@@ -55,8 +55,9 @@ test("seen buckets and waiting decisions", () => {
   assert.equal(seen(now - 5 * 3600e3, now).state, "offline");
   assert.equal(seen(null).state, "unknown");
   const secret = process.env.LOGMEM_DECIDE_SECRET;
-  const signed = (origin, by) => ({ kind: "decided", origin, by, ts: 1, payload: { verdict: "approve", sig: signDecision({ space: "s", origin, verdict: "approve", by, ts: 1 }, secret) } });
-  const entries = [{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "approval", trail: "c" }, signed("a", "human:you"), { kind: "decided", origin: "b", by: "agent:mallory" }, { kind: "decided", origin: "c", by: "human:you", payload: { verdict: "approve" } }];
+  const askOf = (trail) => ({ kind: "approval", trail, summary: "Send?", action: "send", reversible: false, by: "agent:q", where: "job:j" });
+  const signed = (origin, by) => ({ kind: "decided", origin, by, ts: 1, payload: { verdict: "approve", sig: signDecision({ space: "s", origin, verdict: "approve", by, ts: 1, ask: askOf(origin) }, secret) } });
+  const entries = [askOf("a"), askOf("b"), askOf("c"), signed("a", "human:you"), { kind: "decided", origin: "b", by: "agent:mallory" }, { kind: "decided", origin: "c", by: "human:you", payload: { verdict: "approve" } }];
   const d = decisionsFrom(entries, { secret, space: "s" });
   assert.deepEqual(d.waiting.map((x) => x.trail), ["b", "c"], "an agent-written or unsigned decided never closes an ask");
   assert.deepEqual(decisionsFrom(entries, { secret, space: "other" }).waiting.length, 3, "a signature is bound to its space");

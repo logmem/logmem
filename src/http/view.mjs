@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, verifyDecision, SETTLES } from "../core/tools.mjs";
+import { keywordRecall, classifyAsks, decisionSettlements, annotateDecisions } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -67,7 +67,8 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
 
   if (what === "log") {
     const entries = await allEntries(store, r, space, { limit: 200 });
-    return { entries: params.where ? entries.filter((e) => e.where === params.where) : entries };
+    const picked = params.where ? entries.filter((e) => e.where === params.where) : entries;
+    return { entries: annotateDecisions(picked, verify) };
   }
 
   if (what === "agents" || what === "overview") {
@@ -83,9 +84,10 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     if (what === "agents") return { agents };
     const jobs = await jobsView(store);
     const entries = await allEntries(store, r, space, { limit: 300 });
-    const decisions = decisionsFrom(entries, verify);
+    const settlements = await decisionSettlements(store, entries.filter((e) => e.kind === "approval"));
+    const decisions = decisionsFrom(entries, { ...verify, settlements });
     return {
-      agents, jobs, recent: entries.slice(0, 8), waiting: decisions.waiting,
+      agents, jobs, recent: annotateDecisions(entries.slice(0, 8), { ...verify, asks: entries }), waiting: decisions.waiting,
       stats: {
         active: agents.filter((a) => a.seen.state === "active").length, agents: agents.length,
         open: jobs.filter((j) => j.stage !== "done").length, stuck: jobs.filter((j) => j.stage === "blocked").length,
@@ -99,8 +101,9 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const [who, nowSlot, log, recap, follows, shifts] = await Promise.all([
       store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 50 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);
-    const accepted = new Set(log.filter((e) => e.kind === "accepted" && e.origin).map((e) => e.origin));
-    return { id, who, now: nowSlot, recap, follows, shifts, log: log.map((e) => slim(e, `agent:${id}`)), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !accepted.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
+    const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined))).map((e) => e.origin));
+    const slimLog = log.map((e) => slim(e, `agent:${id}`));
+    return { id, who, now: nowSlot, recap, follows, shifts, log: annotateDecisions(slimLog, verify), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
   }
 
   if (what === "jobs") return { jobs: await jobsView(store) };
@@ -108,7 +111,10 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   if (what === "job") {
     const id = String(params.id || "");
     const [who, nowSlot, log, sessions] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 100 }), store.jobSessions(id)]);
-    return { id, who, now: nowSlot, log: log.map((e) => slim(e, `job:${id}`)), shifts: sessions };
+    const slimLog = log.map((e) => slim(e, `job:${id}`));
+    const settlements = await decisionSettlements(store, slimLog.filter((e) => e.kind === "approval"));
+    const decisions = decisionsFrom(slimLog, { ...verify, settlements });
+    return { id, who, now: nowSlot, log: annotateDecisions(slimLog, verify), open_asks: decisions.waiting, shifts: sessions };
   }
 
   if (what === "channels") {
@@ -123,7 +129,11 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     return { channels, selected: pick || null, log };
   }
 
-  if (what === "decisions") return decisionsFrom(await allEntries(store, r, space, { limit: 500 }), verify);
+  if (what === "decisions") {
+    const entries = await allEntries(store, r, space, { limit: 500 });
+    const settlements = await decisionSettlements(store, entries.filter((e) => e.kind === "approval"));
+    return decisionsFrom(entries, { ...verify, settlements });
+  }
 
   if (what === "recall") {
     const q = String(params.q || "").slice(0, 200);
@@ -154,24 +164,26 @@ async function jobsView(store) {
 }
 
 /**
- * Waiting = approval entries with no decided entry whose origin is their trail.
- * Only a signed person's answer counts (written by /api/decide, HMAC verified
- * with LOGMEM_DECIDE_SECRET): an unsigned or forged "decided", including a
- * legacy ACMI row claiming a human source, does not close an ask.
+ * Waiting = approval entries with no verified approve/reject.
+ * The same rule as asksOf: HMAC over the ask, defer does not close, unsigned
+ * rows do not close, and a verifying decision key does (even if the log row is gone).
  */
-export function decisionsFrom(entries, { secret, space } = {}) {
-  const signed = entries.filter((e) => e.kind === "decided" && verifyDecision(e, { secret, space }));
-  // Approve / reject settle an ask. Defer does not: the ask stays waiting (and visible), marked deferred.
-  const decided = new Map(signed.filter((e) => SETTLES.includes(e.payload?.verdict)).map((e) => [e.origin, e]));
-  const deferred = new Map();
-  for (const e of [...signed].sort((x, y) => y.ts - x.ts)) if (e.payload?.verdict === "defer" && !deferred.has(e.origin)) deferred.set(e.origin, e);
-  const asks = entries.filter((e) => e.kind === "approval");
+export function decisionsFrom(entries, { secret, space, settlements = [] } = {}) {
+  const { askByTrail, answers, deferrals } = classifyAsks(entries, { secret, space, settlements });
+  const asks = [];
+  const seen = new Set();
+  for (const a of entries) {
+    if (a.kind !== "approval" || !a.trail || seen.has(a.trail)) continue;
+    seen.add(a.trail);
+    asks.push(a);
+  }
   const mark = (a) => {
-    const d = deferred.get(a.trail);
-    return d ? { ...a, deferred: { by: d.by, note: d.payload?.note ?? null, at: d.ts } } : a;
+    if (!askByTrail.has(a.trail)) return a;
+    const d = deferrals.get(a.trail);
+    return d && !answers.has(a.trail) ? { ...a, deferred: { by: d.by, note: d.payload?.note ?? null, at: d.ts } } : a;
   };
   return {
-    waiting: asks.filter((a) => !decided.has(a.trail)).map(mark),
-    decided: asks.filter((a) => decided.has(a.trail)).map((a) => ({ ask: a, answer: decided.get(a.trail) })),
+    waiting: asks.filter((a) => !answers.has(a.trail)).map(mark),
+    decided: asks.filter((a) => answers.has(a.trail) && askByTrail.has(a.trail)).map((a) => ({ ask: a, answer: answers.get(a.trail) })),
   };
 }

@@ -48,8 +48,23 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     return rec;
   }
 
+  function validAgent(id) {
+    if (typeof id !== "string") return null;
+    try {
+      return checkAgentId(id);
+    } catch {
+      return null;
+    }
+  }
+
   function fallbackAgent() {
-    return agentId(defaultAgent || slug(surface) || "guest");
+    const raw = defaultAgent || slug(surface) || "guest";
+    const id = validAgent(agentId(raw));
+    // A configured default that is not an agent id fails closed. It must not
+    // start a shift under a made-up name. A valid surface slug is the fallback
+    // when the stored shift names an agent id that does not validate.
+    if (id) return id;
+    return checkAgentId(String(raw));
   }
 
   /** Build and write a mechanical Recap for the shift in `rec`. */
@@ -125,14 +140,17 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async touch(toolName) {
       const events = [];
       let rec = await load();
+      // A tampered or non-id agent must not be recapped or resumed.
+      if (rec && !validAgent(rec.agent)) rec = null;
       const t = now();
       if (rec && !rec.ended && t - rec.last_seen > idleMs) {
+        rec = { ...rec, agent: validAgent(rec.agent) };
         await recapShift(rec, { reason: "idle" });
         events.push({ type: "auto-recap", agent: rec.agent, shift: rec.shift });
         rec = await save({ ...rec, ended: true, ended_at: t });
       }
       if ((!rec || rec.ended) && toolName !== "logmem_start") {
-        const agent = rec?.agent || fallbackAgent();
+        const agent = (rec && validAgent(rec.agent)) || fallbackAgent();
         rec = await startShift(agent, { auto: true });
         events.push({ type: "auto-start", agent: rec.agent, shift: rec.shift });
       }
@@ -144,7 +162,8 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async start(agent, { modelId } = {}) {
       const events = [];
       const a = checkAgentId(agent);
-      const rec = await load();
+      let rec = await load();
+      if (rec && !validAgent(rec.agent)) rec = null;
       if (rec && !rec.ended) {
         if (rec.agent === a) {
           await save({ ...rec, last_seen: now() });
@@ -162,7 +181,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     /** Explicit Recap with the agent's own notes; ends the shift. */
     async recap({ notes, next, end = true } = {}) {
       const rec = await load();
-      if (!rec || rec.ended) throw new Error("no open shift to recap (call logmem_start first)");
+      if (!rec || rec.ended || !validAgent(rec.agent)) throw new Error("no open shift to recap (call logmem_start first)");
       const recap = await recapShift(rec, { notes, next, reason: "recap" });
       if (end) await save({ ...rec, ended: true, ended_at: now() });
       return recap;
@@ -171,6 +190,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     /** stdio timer: write the idle Recap without waiting for the next call. */
     async sweep() {
       const rec = await load();
+      if (rec && !validAgent(rec.agent)) return false;
       if (rec && !rec.ended && now() - rec.last_seen > idleMs) {
         await recapShift(rec, { reason: "idle" });
         await save({ ...rec, ended: true, ended_at: now() });

@@ -6,12 +6,25 @@ Findings were spot-checked before acting. Already fixed in `fix(security)` (depl
 the scorecard, the open-relay/SSRF via raw creds on production, CSP and framing headers, scorecard space allowlist,
 `.vercelignore`.
 
+## Decision integrity follow-up (2026-10-12)
+
+Independent review `logmemPr10Review-20261012d` of the decision-integrity work merged in PR #10.
+Fixed on this branch. Do not treat a `decided` row as an answer unless its signature verifies against the ask.
+
+| # | Gap | Fix |
+|---|---|---|
+| H1 | The decision HMAC did not bind the ask, so a store writer could swap the question or flip `reversible` under a valid signature. `findAsk` could also accept a shadow copy of the same trail on another agent's log. | **Fixed.** Signature v2 covers action, question, reversible, to, where, trail, and by. `verifyDecision` fails when the live ask differs. `findAsk` reads agents in id order, keeps the earliest copy on the asker's own log, and refuses shadows and conflicting copies (`ambiguous`). |
+| H2 | `acmi_delete` / `logmem_remove` could delete another agent's who/log/profile. `acmi_event` could append to another agent's log. `logmem_note`, `acmi_event`, and `logmem_update` could write `accepted` or declined feedback and settle a handoff. Deleting a log dropped the signed `decided` row. | **Fixed.** Removal of another agent's who/log/profile is refused. A log that holds a signed decision is never removed. `acmi_event` is own-agent. Only `logmem_accept` (including decline) writes those settlement rows. Readers also settle from the decision key when its signature verifies, so a missing log row does not reopen the ask. |
+| M1 | The job page closed ask cards from unsigned `decided` rows and from deferrals. | **Fixed.** The page renders `open_asks` computed with the same rule as the Brief. Unverified `decided` rows stay in the log and are marked unverified. |
+| M2 | A crash after `SET NX`, or a `LOGMEM_DECIDE_SECRET` rotation, left an ask stuck. | **Fixed.** Entries are appended first; the key is claimed only after every append succeeds, and a failed append rolls those entries back. An admin re-answer from the Decisions page replaces a key whose signature does not verify under the current secret. A key that still verifies against the ask that was signed, but not against the ask as it reads now, is not replaced. |
+| L1 | A resumed shift trusted a caller-tampered agent id, and a caller-chosen trail could collide with one already on the receiver. | **Fixed.** An invalid stored agent id is dropped (not recapped). Handoff and inbox refuse a trail that is already used on that agent's log. |
+
 ## Tier 0: fix before anyone else uses it (safety)
 
 | # | Gap | Evidence | Fix |
 |---|---|---|---|
 | S1 | **The fleet bridge token is a guessable constant** (`vm-local-bridge`), and the bridge URL is public. Anyone can read and write the whole fleet Redis directly, not only through LogMem | confirmed: production env value; `reference/*`, PHASE2-KIT | Rotate to a random token and restrict the bridge by source. **HITL (fleet infra)** |
-| S2 | **Approvals can be forged.** Any agent can write `decided`, and `by` is self-asserted, so an agent can approve its own irreversible action | `tools.mjs` note, `instructions.mjs:14`, `view.mjs` decisions | Server-only `decided`, written by an authenticated human endpoint with `verdict`; agents can't write that kind. **Done (T0-b + PR #8 review):** HMAC-signed, set-once (`SET NX`) decisions that fail closed without `LOGMEM_DECIDE_SECRET`; receiver-only; confirm for irreversible; compat `by` from the shift |
+| S2 | **Approvals can be forged.** Any agent can write `decided`, and `by` is self-asserted, so an agent can approve its own irreversible action | `tools.mjs` note, `instructions.mjs:14`, `view.mjs` decisions | Server-only `decided`, written by an authenticated human endpoint with `verdict`; agents can't write that kind. **Done (T0-b + PR #8 review):** HMAC-signed, set-once (`SET NX`) decisions that fail closed without `LOGMEM_DECIDE_SECRET`; receiver-only; confirm for irreversible; compat `by` from the shift. **Follow-up (2026-10-12):** the signature also binds the ask; see the table above |
 | S3 | OAuth stores users' Redis creds **plaintext under the raw token**, possibly in the shared Redis | `api/oauth/_lib/storage.mjs:117` | `sha256(token)` keys, AES-GCM envelope (KEK env), a dedicated deploy Redis with no fallback |
 | S4 | No rate limits: login, OAuth register (unbounded, no TTL), MCP | `login.mjs`, `register.mjs` | Vercel Firewall rules; caps and TTL on client records |
 | S5 | SSRF via the OAuth consent probes (any host and port) | `authorize.mjs:205-240` | Require `https`/`rediss`, block private IPs after DNS, generic errors |

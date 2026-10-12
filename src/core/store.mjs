@@ -182,6 +182,23 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       await mirrorWrite({ slot: "log", ns, id, entry: full });
       return full;
     },
+    /** Remove one appended entry (the ZSET member whose body matches, ignoring the `_o` tie-break). */
+    async removeEntry(ns, id, entry) {
+      if (!entry || typeof entry !== "object") return 0;
+      const ts = normTs(entry.ts);
+      const key = k(ns, id, "log");
+      const same = await redis("ZRANGEBYSCORE", key, ts, ts);
+      const body = stableJson(entry);
+      let n = 0;
+      for (const m of same || []) {
+        const parsed = tryParse(m);
+        if (!parsed || typeof parsed !== "object") continue;
+        const { _o, ...rest } = parsed;
+        if (stableJson(rest) !== body) continue;
+        n += Number(await redis("ZREM", key, m)) || 0;
+      }
+      return n;
+    },
     async readLog(ns, id, { limit, reverse = false, sinceMs, untilMs } = {}) {
       const min = sinceMs != null ? normTs(sinceMs) : "-inf";
       const max = untilMs != null ? normTs(untilMs) : "+inf";

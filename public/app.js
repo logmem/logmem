@@ -33,7 +33,7 @@
     return '<div class="lm-event" data-k="' + esc(e.group) + '"' + (sel ? ' aria-selected="true"' : '') + '>' +
       '<time class="lm-event-time time" datetime="' + new Date(e.ts).toISOString() + '">' + hhmm(e.ts) + '</time><span class="lm-event-rule" aria-hidden="true"></span>' +
       '<div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">' + esc(e.kind) + '</span><strong style="font-size:14px">' + esc(agentName(e.by)) + '</strong><span class="lm-event-summary">' + esc(e.summary) + '</span></div>' +
-      '<div class="lm-prov"><span>' + esc(e.where) + '</span>' + (e.trail ? '<span>trail ' + esc(e.trail) + '</span>' : '') + (e.origin ? '<span>↳ origin ' + esc(e.origin) + '</span>' : '') + (e.via ? '<span>via ' + esc(e.via) + '</span>' : '') + '</div></div></div>';
+      '<div class="lm-prov"><span>' + esc(e.where) + '</span>' + (e.trail ? '<span>trail ' + esc(e.trail) + '</span>' : '') + (e.origin ? '<span>↳ origin ' + esc(e.origin) + '</span>' : '') + (e.via ? '<span>via ' + esc(e.via) + '</span>' : '') + (e.unverified ? '<span>unverified</span>' : '') + '</div></div></div>';
   }
   function entries(list, empty) { return list && list.length ? '<div class="lm-events">' + list.map(function (e) { return entry(e); }).join('') + '</div>' : emptyState(empty || 'No entries yet.', 'Connect an agent and its entries will appear here in order. Nothing is invented while you wait.'); }
   function emptyState(title, body) { return '<div class="lm-empty" style="max-width:none"><span class="lm-title-3" style="font-size:14px;font-weight:600">' + esc(title) + '</span><span style="font-size:13px">' + esc(body) + '</span></div>'; }
@@ -104,7 +104,7 @@
         var shifts = (d.shifts || []).map(function (s) { return '<tr><td class="mono" style="font-size:12px">' + esc(s.shift || '') + '</td><td style="font-size:13px">' + esc(s.surface || '') + '</td><td style="font-size:13px">' + hhmm(s.ts) + '</td><td style="font-size:13px">' + (s.auto ? 'auto' : 'manual') + '</td></tr>'; });
         render('agents', ['<a href="#/agents">Agents</a>', esc(id)], '<div class="lm-row" style="gap:14px">' + agent('agent:' + id) + seenTag(d.seen) + '</div>' +
           '<p style="margin:0;font-size:13px" class="muted">This is what ' + esc(id) + ' reads at the start of every shift (logmem_brief).</p>' +
-          '<div class="grid2">' + panel('Last Recap', recap) + panel('Now', kv(d.now)) + panel('Handoffs waiting for ' + id, d.handoffs.length ? entries(d.handoffs) : emptyState('Nothing waiting.', 'Handoffs show here until the agent notes accepted.')) + panel('Follows', follows.length ? follows.map(function (f) { return '<div class="lm-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span class="mono" style="font-size:13px">' + esc(f) + '</span><span class="lm-badge">' + esc((d.follows[f] || {}).role || '') + '</span></div>'; }).join('') : emptyState('Follows nothing.', 'Handoffs and logmem_follow add channels and jobs here.')) + '</div>' +
+          '<div class="grid2">' + panel('Last Recap', recap) + panel('Now', kv(d.now)) + panel('Handoffs waiting for ' + id, d.handoffs.length ? entries(d.handoffs) : emptyState('Nothing waiting.', 'Handoffs show here until the agent accepts or declines them.')) + panel('Follows', follows.length ? follows.map(function (f) { return '<div class="lm-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span class="mono" style="font-size:13px">' + esc(f) + '</span><span class="lm-badge">' + esc((d.follows[f] || {}).role || '') + '</span></div>'; }).join('') : emptyState('Follows nothing.', 'Handoffs and logmem_follow add channels and jobs here.')) + '</div>' +
           panel('Recent shifts', shifts.length ? table(['Shift', 'Host', 'Started', 'Start'], shifts) : emptyState('No shifts.', '')) + panel('Log', entries(d.log)));
       });
     },
@@ -119,9 +119,8 @@
       return api('job', { id: id }).then(function (d) {
         if (!ok(d)) return;
         var who = d.who || {};
-        var asks = d.log.filter(function (e) { return e.kind === 'approval'; });
-        var decidedOrigins = d.log.filter(function (e) { return e.kind === 'decided'; }).map(function (e) { return e.origin; });
-        var open = asks.filter(function (a) { return decidedOrigins.indexOf(a.trail) < 0; });
+        // Open asks are computed on the server (signed approve/reject only; defer stays open).
+        var open = d.open_asks || [];
         render('jobs', ['<a href="#/jobs">Jobs</a>', esc(id)], '<div style="display:flex;flex-direction:column;gap:10px"><h1 class="lm-title-1" style="margin:0;font-size:22px">' + esc(who.title || id) + '</h1><div class="lm-row" style="gap:14px">' + stage(d.now.stage) + (d.now.owner ? '<span class="muted" style="font-size:13px">Owner</span>' + agent(d.now.owner) : '') + '<span class="mono subtle" style="font-size:12px">job:' + esc(id) + '</span></div></div>' +
           '<div class="split"><div class="main">' + panel('Job log', entries(d.log), '<span class="subtle" style="font-size:13px">' + d.log.length + ' entries · ' + (d.shifts || []).length + ' shifts</span>') + '</div><div class="side" style="display:flex;flex-direction:column;gap:24px">' + open.map(askCard).join('') + panel('Who', kv(who)) + panel('Now', kv(d.now)) + '</div></div>');
       });
