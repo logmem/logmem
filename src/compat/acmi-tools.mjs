@@ -12,16 +12,18 @@ import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
 import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
 import { SLOTS, checkAgentId } from "../core/keys.mjs";
-import { HUMAN_ONLY, ASK_ONLY, isDecidedKind, isAskKind, capEntry, capJson, capText, onlyMe, me } from "../core/tools.mjs";
+import { HUMAN_ONLY, ASK_ONLY, HANDOFF_ONLY, HANDOFF_WRITE_ONLY, isDecidedKind, isAskKind, isHandoffKind, handoffSettlement, capEntry, capJson, capText, onlyMe, me, guardRemoval } from "../core/tools.mjs";
 import { agentRef, byline } from "../core/session.mjs";
 
 /** Rollups are cross-session summaries; they get more room than one entry's payload. */
 const ROLLUP_MAX = 64 * 1024;
 
 /** ACMI events go through the same rules as logmem_note: no agent-written decisions, size caps. */
-function guardEvent({ kind, summary, correlationId, parentCorrelationId }) {
+function guardEvent({ kind, summary, correlationId, parentCorrelationId, payload }) {
   if (isDecidedKind(kind)) return { ok: false, error: HUMAN_ONLY };
   if (isAskKind(kind)) return { ok: false, error: ASK_ONLY };
+  if (isHandoffKind(kind)) return { ok: false, error: HANDOFF_WRITE_ONLY };
+  if (handoffSettlement(kind, payload)) return { ok: false, error: HANDOFF_ONLY };
   capEntry({ summary, trail: correlationId, origin: parentCorrelationId });
   return null;
 }
@@ -137,7 +139,7 @@ export const ACMI_TOOLS = [
   },
   {
     name: "acmi_event",
-    description: "Log a timeline event for an entity. The workhorse tool — records timestamped events with source, kind, correlationId, and summary. Follows ACMI Communication Standard v1.1.",
+    description: "Log a timeline event for an entity. The workhorse tool — records timestamped events with source, kind, correlationId, and summary. Follows ACMI Communication Standard v1.1. Writes to an agent log only for this session's own agent. Kinds decision, decision-request, handoff, and handoff-ack are refused.",
     params: params({
       namespace: { type: "string", desc: "ACMI namespace (e.g. 'thread', 'agent', 'work')" },
       id: { type: "string", desc: "Entity ID" },
@@ -152,9 +154,9 @@ export const ACMI_TOOLS = [
     async run({ namespace, id, source, summary, kind, correlationId, parentCorrelationId, tenant }, ctx) {
       const { store } = ctx;
       checkEntity(namespace, id);
-      const refused = ownSpace(store, tenant) || guardEvent({ kind, summary, correlationId, parentCorrelationId });
-      if (refused) return refused;
       const ns = nsFromAcmi(namespace);
+      const refused = ownSpace(store, tenant) || guardEvent({ kind, summary, correlationId, parentCorrelationId }) || ownAgent(ctx, ns, id, "acmi_event", "log");
+      if (refused) return refused;
       const ev = { source, summary };
       if (kind) ev.kind = kind;
       if (correlationId) ev.correlationId = correlationId;
@@ -428,15 +430,18 @@ export const ACMI_TOOLS = [
   },
   {
     name: "acmi_delete",
-    description: "Delete an ACMI key. Refuses protected paths and anything outside this space. Defaults to dry-run; pass confirm=true to actually delete. ACMI keys are mapped to their lm:* equivalents.",
+    description: "Delete an ACMI key. Refuses protected paths, another agent's who/log/profile, a log that holds a signed decision, and anything outside this space. Defaults to dry-run; pass confirm=true to actually delete. ACMI keys are mapped to their lm:* equivalents.",
     params: params({
       key: { type: "string", desc: "Full ACMI key ('acmi:...') or LogMem key ('lm:<space>:...')" },
       confirm: { type: "boolean", desc: "Must be true to actually delete; otherwise returns dry-run preview.", optional: true },
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    async run({ key, confirm }, { store }) {
+    async run({ key, confirm }, ctx) {
+      const { store } = ctx;
       const target = key.startsWith("acmi:") ? acmiKeyToLm(key, store.space) : key;
       if (!target) throw new Error(`cannot map ${key} to a LogMem key; legacy acmi:* keys are never deleted from compat mode`);
+      const refused = await guardRemoval(ctx, target);
+      if (refused) return refused;
       const r = await store.remove(target, { confirm: confirm === true });
       return { ok: true, requested: key, ...r, deleted: r.removed };
     },

@@ -4,7 +4,7 @@
 lm:{space}:{ns}:{id}:{slot}
 lm:{space}:{ns}:list          SET of ids
 lm:{space}:session:{sid}      shift bookkeeping (STRING JSON, 7-day TTL)
-lm:{space}:decision:{trail}   set-once claim for one ask's approve/reject (STRING JSON, SET NX, signed; protected)
+lm:{space}:decision:{trail}   set-once claim for one ask's approve/reject (STRING JSON, signed v2 ask binding; SET NX after the log append; admin re-sign replaces a key that does not verify; protected)
 lm:oauth:{client|code|token|refresh}:{x}   OAuth, outside every space
 ```
 

@@ -53,6 +53,12 @@ export default async function handler(req, res) {
     }
 
     const store = createStore(b.redis, { space: auth.space });
+    if (trail) {
+      const prior = await store.readLog("agent", agent);
+      if (prior.some((e) => e.trail === trail)) {
+        return res.status(409).json({ error: `trail '${trail}' is already used on agent ${agent}; omit trail to mint a new one` });
+      }
+    }
     const ts = Date.now();
     const by = auth.sub ? `human:${String(auth.sub).replace(/[^a-z0-9_.-]/gi, "-")}` : "human:operator";
     const entry = await store.append("agent", agent, {

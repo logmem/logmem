@@ -33,7 +33,16 @@ function hangingFetch(calls) {
   return (url, init) => {
     calls.push({ url, init });
     return new Promise((_, reject) => {
-      init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      // AbortSignal.timeout does not ref the event loop, so the test runner
+      // would cancel the test before the abort fired. This timer only keeps
+      // the loop awake; the abort still decides when the fetch fails.
+      const hold = setTimeout(() => {}, 120000);
+      const fail = () => {
+        clearTimeout(hold);
+        reject(init.signal.reason);
+      };
+      if (init.signal.aborted) fail();
+      else init.signal.addEventListener("abort", fail, { once: true });
     });
   };
 }

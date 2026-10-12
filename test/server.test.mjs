@@ -86,7 +86,7 @@ test("clean room: start, note, assign, handoff, accept, ask, decide, stage, reca
   const start = await call(q, "logmem_start", { agent: "quill" });
   assert.equal(start.brief.handoffs_to_me.length, 1);
   assert.equal(start.brief.follows["job:issue-14"].role, "owner");
-  await call(q, "logmem_note", { where: "job:issue-14", kind: "accepted", summary: "quill picked up issue 14", origin: ho.trail });
+  await call(q, "logmem_accept", { trail: ho.trail, reason: "quill picked up issue 14" });
   assert.equal((await call(q, "logmem_brief", {})).handoffs_to_me.length, 0, "accepted clears the waiting handoff");
   await call(q, "logmem_update", { job: "issue-14", summary: "Draft done" });
   const ask = await call(q, "logmem_ask", { question: "Send to 2,184 subscribers?", action: "POST /v1/campaigns/iss-14/send", reversible: false, where: "job:issue-14" });
@@ -144,18 +144,20 @@ test("compat mode: acmi_* tools write LogMem shape and read back ACMI shape", as
   // The writer is this session's agent (codex), never the caller's `source`.
   const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "c", defaultAgent: "codex" });
   assert.equal(lm.tools.length, 41);
-  await call(lm, "acmi_event", { namespace: "thread", id: "agent-coordination", source: "agent:codex", kind: "handoff-ack", summary: "ack", correlationId: "x-1", parentCorrelationId: "p-1" });
+  await call(lm, "acmi_event", { namespace: "thread", id: "agent-coordination", source: "agent:codex", kind: "coord-note", summary: "ack", correlationId: "x-1", parentCorrelationId: "p-1" });
   const raw = await redis("ZRANGE", "lm:madez:channel:agent-coordination:log", 0, -1);
   const stored = JSON.parse(raw[0]);
-  assert.equal(stored.kind, "accepted");
+  assert.equal(stored.kind, "memo");
   assert.equal(stored.trail, "x-1");
   assert.equal(stored.origin, "p-1");
   assert.equal(stored.by, "agent:codex");
   const got = await call(lm, "acmi_get", { namespace: "thread", id: "agent-coordination" });
   assert.deepEqual(
     { kind: got.timeline_recent[0].kind, correlationId: got.timeline_recent[0].correlationId, parentCorrelationId: got.timeline_recent[0].parentCorrelationId, source: got.timeline_recent[0].source },
-    { kind: "handoff-ack", correlationId: "x-1", parentCorrelationId: "p-1", source: "agent:codex" },
+    { kind: "coord-note", correlationId: "x-1", parentCorrelationId: "p-1", source: "agent:codex" },
   );
+  const ack = await lm.callTool("acmi_event", { namespace: "thread", id: "agent-coordination", source: "agent:codex", kind: "handoff-ack", summary: "ack", correlationId: "x-2", parentCorrelationId: "p-1" });
+  assert.equal(ack.isError, true, "handoff-ack is not a way to settle a handoff");
   await call(lm, "acmi_work_signal", { id: "w1", signals: JSON.stringify({ status: "active" }) });
   await call(lm, "acmi_work_signal", { id: "w1", signals: JSON.stringify({ owner: "x" }) });
   assert.deepEqual((await call(lm, "acmi_work_get", { id: "w1" })).signals, { owner: "x" }, "ACMI signals replace, not merge");
