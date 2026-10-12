@@ -1,0 +1,107 @@
+// server.mjs — one LogMem server, any transport.
+//
+//   const lm = createLogmem({ redis, space, surface, sessionId, compat });
+//   lm.listTools()            -> tools/list payload (JSON Schema, annotations)
+//   await lm.callTool(n, a)   -> MCP CallToolResult (content + structuredContent)
+//   lm.attach(mcpServer)      -> register on an @modelcontextprotocol/sdk McpServer
+//
+// The stdio entry (src/stdio/index.mjs) and the HTTP route (api/mcp.mjs)
+// are thin shells around this.
+
+import { createStore } from "./core/store.mjs";
+import { createShifts } from "./core/session.mjs";
+import { TOOLS, keywordRecall } from "./core/tools.mjs";
+import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
+import { INSTRUCTIONS } from "./core/instructions.mjs";
+import { RESULT_SCHEMA } from "./core/params.mjs";
+import { validateKeySegments } from "./lib/helpers.mjs";
+
+export const SERVER_INFO = { name: "logmem", version: "0.1.0" };
+export { INSTRUCTIONS };
+
+export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());
+
+export function toResult(data) {
+  const structured = data !== null && typeof data === "object" && !Array.isArray(data) ? data : { ok: true, value: data };
+  return {
+    content: [{ type: "text", text: JSON.stringify(structured, null, 2) }],
+    structuredContent: structured,
+    ...(structured.ok === false ? { isError: true } : {}),
+  };
+}
+
+export function createLogmem({
+  redis,
+  backend = "unknown",
+  space,
+  spaces,
+  compat = false,
+  surface = "unknown",
+  sessionId,
+  defaultAgent,
+  recall,
+  idleMs,
+  now,
+} = {}) {
+  if (!redis) throw new Error("createLogmem: redis runner required");
+  validateKeySegments(space);
+  const allowed = spaces && spaces.length ? spaces : [space];
+  if (!allowed.includes(space)) throw new Error(`space '${space}' is not in the allowed list`);
+
+  const store = createStore(redis, { space, compat });
+  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, idleMs, now });
+  const ctx = {
+    store,
+    shifts,
+    surface,
+    backend,
+    spaces: allowed,
+    shift: null,
+    now: now || Date.now,
+    recall: recall || ((q, n) => keywordRecall(store, q, n)),
+  };
+  const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
+  const byName = new Map(tools.map((t) => [t.name, t]));
+
+  async function callTool(name, args = {}) {
+    const tool = byName.get(name);
+    if (!tool) return toResult({ ok: false, error: `unknown tool: ${name}` });
+    try {
+      let events = [];
+      if (!tool.skipTouch) {
+        const touched = await shifts.touch(name);
+        ctx.shift = touched.shift;
+        events = touched.events;
+      }
+      const out = await tool.run(args || {}, ctx);
+      if (events.length) out.shift_events = events;
+      return toResult(out);
+    } catch (e) {
+      return toResult({ ok: false, error: e.message, tool: name });
+    }
+  }
+
+  function listTools() {
+    return tools.map((t) => ({
+      name: t.name,
+      ...(t.title ? { title: t.title } : {}),
+      description: t.description,
+      inputSchema: t.params.jsonSchema,
+      outputSchema: RESULT_SCHEMA,
+      annotations: { title: t.title || t.name, ...t.annotations },
+    }));
+  }
+
+  function attach(mcp) {
+    for (const t of tools) {
+      mcp.registerTool(
+        t.name,
+        { title: t.title, description: t.description, inputSchema: t.params.shape, annotations: t.annotations },
+        (args) => callTool(t.name, args),
+      );
+    }
+    return mcp;
+  }
+
+  return { store, shifts, ctx, tools, callTool, listTools, attach, instructions: INSTRUCTIONS };
+}

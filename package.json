@@ -1,0 +1,24 @@
+{
+  "name": "@logmem/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LogMem server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
+  "type": "module",
+  "license": "UNLICENSED",
+  "main": "src/server.mjs",
+  "bin": { "logmem-mcp": "src/stdio/index.mjs" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/stdio/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "conformance": "node scripts/conformance.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "redis": "^4.7.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@madezmedia/acmi": "1.2.0"
+  }
+}

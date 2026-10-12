@@ -70,6 +70,7 @@ export default async function handler(req, res) {
         upstash_url: codeRecord.upstash_url,
         upstash_token: codeRecord.upstash_token,
         backend: codeRecord.backend,
+        space: codeRecord.space,
       });
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));
@@ -97,6 +98,7 @@ export default async function handler(req, res) {
         upstash_url: rec.upstash_url,
         upstash_token: rec.upstash_token,
         backend: rec.backend,
+        space: rec.space,
       });
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));
