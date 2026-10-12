@@ -125,6 +125,7 @@ Treat any leak of the values below as a full compromise of that credential. Rota
 | Secret | Where it lives | Rotate |
 |---|---|---|
 | `LOGMEM_ADMIN_PASSWORD` (and `LOGMEM_ADMIN_SECRET` if set) | Vercel env | Set a new value, redeploy. Every admin cookie stops working at once (the cookie is signed with a key derived from it). |
+| `LOGMEM_DECIDE_SECRET` (min 32 chars, e.g. `openssl rand -hex 32`) | Vercel env and any MCP server that serves Briefs | Set a new value everywhere at once, redeploy. Decisions signed with the old key stop verifying, so their asks show as pending again; re-answer the ones still relevant. Unset = `/api/decide` answers 503 and nothing counts as decided (fail closed). `LOGMEM_ADMIN_ID` (default `admin`) names the person the web login decides as. |
 | `LOGMEM_OAUTH_KEK` | Vercel env (from the OAuth hardening track) | Set a new key, redeploy, then purge OAuth records (below): records sealed with the old key cannot be read. |
 | Bridge token (`LOGMEM_REST_TOKEN` / `ACMI_BRIDGE_TOKEN` / `LOGMEM_DEPLOY_REST_TOKEN`) | Vercel env and the bridge config on the VM | Issue a new token on the bridge (**TODO (infra)**), update every Vercel env that holds it, redeploy, then revoke the old token on the bridge. Update stdio clients' env. |
 | `LOGMEM_DIRECT_AUTH_TOKEN` (break-glass bearer) | Vercel env | Remove it, or set a new one, and redeploy. |

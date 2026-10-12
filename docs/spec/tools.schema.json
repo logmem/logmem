@@ -281,7 +281,7 @@
     {
       "name": "logmem_ask",
       "title": "Ask",
-      "description": "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. A person answers on the Decisions page; the answer shows in your Brief under answered_asks with verdict approve, reject or defer. Do the action only on approve.",
+      "description": "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. A person answers on the Decisions page; the answer shows in your Brief under answered_asks with verdict approve or reject. A deferred ask stays in pending_asks (with deferred: note, by, at): keep waiting. Do the action only on approve.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -295,7 +295,7 @@
           },
           "reversible": {
             "type": "boolean",
-            "description": "Can this be undone afterwards?"
+            "description": "true only if this can be fully undone afterwards. Default false: treated as irreversible, so the person must confirm the exact action before approving"
           },
           "where": {
             "type": "string",
@@ -304,13 +304,16 @@
           "origin": {
             "type": "string",
             "description": "Trail id this request follows from"
+          },
+          "to": {
+            "type": "string",
+            "description": "The person who must answer, as 'human:<id>' (default: any signed-in person). Only they can settle it; never an agent, never you"
           }
         },
         "additionalProperties": false,
         "required": [
           "question",
-          "action",
-          "reversible"
+          "action"
         ]
       },
       "outputSchema": {
@@ -563,7 +566,7 @@
           },
           "agent": {
             "type": "string",
-            "description": "Agent (default: you)"
+            "description": "Agent whose follows to list (default: you). Follow/unfollow only changes your own"
           }
         },
         "additionalProperties": false,
