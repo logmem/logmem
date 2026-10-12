@@ -5,7 +5,7 @@
 // Per MCP spec: PKCE verification is mandatory; client_secret check only when
 // the registered client used token_endpoint_auth_method=client_secret_post.
 
-import { consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url } from "./_lib/storage.mjs";
+import { consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
 
 export const config = { runtime: "nodejs" };
 
@@ -29,6 +29,13 @@ function readBody(req) {
   return {};
 }
 
+// client_secret_post: constant-time compare; a record without a stored
+// secret never matches (no "" == "" bypass).
+function secretMatches(client, presented) {
+  if (typeof client.client_secret !== "string" || !client.client_secret) return false;
+  return safeEqual(String(presented ?? ""), client.client_secret);
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -39,6 +46,8 @@ export default async function handler(req, res) {
   try {
     const body = readBody(req);
     const grant_type = body.grant_type;
+    // Refuse before consuming a code/refresh token we could not re-seal.
+    assertKekReady();
 
     if (grant_type === "authorization_code") {
       const { code, redirect_uri, client_id, client_secret, code_verifier } = body;
@@ -48,7 +57,7 @@ export default async function handler(req, res) {
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
-      if (client.token_endpoint_auth_method === "client_secret_post" && client.client_secret !== client_secret) {
+      if (client.token_endpoint_auth_method === "client_secret_post" && !secretMatches(client, client_secret)) {
         return bad(res, 401, "invalid_client", "client_secret mismatch");
       }
 
@@ -59,7 +68,7 @@ export default async function handler(req, res) {
 
       // PKCE verification — S256 only
       const computed = sha256base64url(code_verifier);
-      if (computed !== codeRecord.code_challenge) {
+      if (!safeEqual(computed, String(codeRecord.code_challenge ?? ""))) {
         return bad(res, 400, "invalid_grant", "code_verifier failed PKCE check");
       }
 
@@ -72,6 +81,7 @@ export default async function handler(req, res) {
         backend: codeRecord.backend,
         space: codeRecord.space,
       });
+      await touchClient(client_id);
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));
       return;
@@ -83,13 +93,16 @@ export default async function handler(req, res) {
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
-      if (client.token_endpoint_auth_method === "client_secret_post" && client.client_secret !== client_secret) {
+      if (client.token_endpoint_auth_method === "client_secret_post" && !secretMatches(client, client_secret)) {
         return bad(res, 401, "invalid_client", "client_secret mismatch");
       }
 
-      const rec = await consumeRefresh(refresh_token);
-      if (!rec) return bad(res, 400, "invalid_grant", "refresh token invalid or already used");
-      if (rec.client_id !== client_id) return bad(res, 400, "invalid_grant", "refresh/client mismatch");
+      // client_id is checked inside consumeRefresh BEFORE the token is
+      // consumed, so a mismatched client cannot burn someone else's token.
+      const got = await consumeRefresh(refresh_token, client_id);
+      if (!got) return bad(res, 400, "invalid_grant", "refresh token invalid or already used");
+      if (got.mismatch) return bad(res, 400, "invalid_grant", "refresh/client mismatch");
+      const rec = got.rec;
 
       const tokens = await mintTokens({
         client_id,
@@ -100,6 +113,8 @@ export default async function handler(req, res) {
         backend: rec.backend,
         space: rec.space,
       });
+      if (!got.grace) await linkRefreshChildren(refresh_token, tokens);
+      await touchClient(client_id);
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));
       return;
@@ -107,6 +122,12 @@ export default async function handler(req, res) {
 
     return bad(res, 400, "unsupported_grant_type", `grant_type ${grant_type} not supported`);
   } catch (e) {
-    return bad(res, 500, "server_error", e.message);
+    // KekMissingError / StorageConfigError carry status 503. Never echo
+    // internal error text (it can include upstream bodies).
+    if (e && e.status === 503) {
+      return bad(res, 503, "temporarily_unavailable", "token issuance is not configured on this server");
+    }
+    console.error(`[oauth/token] ${e?.name || "Error"}`);
+    return bad(res, 500, "server_error", "internal error");
   }
 }
