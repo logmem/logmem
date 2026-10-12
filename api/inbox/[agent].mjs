@@ -14,6 +14,7 @@ import { createStore } from "../../src/core/store.mjs";
 import { makeTrail, capJson, capText, LIMITS } from "../../src/core/tools.mjs";
 import { fromDescriptor } from "../../src/lib/backend.mjs";
 import { validateKeySegments } from "../../src/lib/helpers.mjs";
+import { checkAgentId } from "../../src/core/keys.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate } from "../../src/http/auth.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
@@ -32,8 +33,12 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "authentication required" });
     }
     const agent = String(req.query?.agent || "").toLowerCase();
-    validateKeySegments(agent);
-    if (!/^[a-z0-9_-]+$/.test(agent)) return res.status(400).json({ error: "agent must be [a-z0-9_-]" });
+    try {
+      validateKeySegments(agent);
+      checkAgentId(agent);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
 
     const { summary, priority = "P2", payload, trail } = req.body || {};
     if (!summary || typeof summary !== "string" || summary.length > 280) return res.status(400).json({ error: "summary required, max 280 chars" });

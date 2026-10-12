@@ -16,7 +16,7 @@
 import { params } from "./params.mjs";
 import { parseRef } from "./keys.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
-import { agentRef, agentId, byline } from "./session.mjs";
+import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -91,7 +91,8 @@ export function closeMatches(id, roster, n = 3) {
 /** An agent may only change its own Who / Now. Returns an error result or null. */
 function onlyMe(ctx, agent, tool, slot) {
   const mine = agentId(me(ctx));
-  if (agent == null || agentId(agent) === mine) return null;
+  if (agent == null) return null;
+  if (checkAgentId(agent) === mine) return null;
   return {
     ok: false,
     error: `${tool} only changes your own ${slot} (you are ${mine}). ${agentId(agent)} updates its own; to give it work, use logmem_handoff.`,
@@ -221,7 +222,7 @@ export const TOOLS = [
     params: params({ agent: { type: "string", desc: "Agent to brief (default: you)", optional: true } }),
     annotations: READ,
     async run({ agent }, ctx) {
-      return { ok: true, ...(await brief(ctx, agent || me(ctx))) };
+      return { ok: true, ...(await brief(ctx, agent == null ? me(ctx) : checkAgentId(agent))) };
     },
   },
   {
@@ -285,7 +286,7 @@ export const TOOLS = [
     }),
     annotations: WRITE,
     async run({ to, summary, where: whereRef, trail, origin, create_agent }, ctx) {
-      const receiver = agentId(to);
+      const receiver = checkAgentId(to, "to");
       capEntry({ summary, trail, origin });
       const roster = await ctx.store.list("agent");
       if (!roster.includes(receiver) && create_agent !== true) {
@@ -487,7 +488,7 @@ export const TOOLS = [
     }),
     annotations: SET,
     async run({ action, ref, role, agent }, ctx) {
-      const a = agentId(agent || me(ctx));
+      const a = agent == null ? agentId(me(ctx)) : checkAgentId(agent);
       if (action === "list") return { ok: true, agent: a, follows: await ctx.store.follows(a) };
       if (!ref) throw new Error("ref is required to follow/unfollow");
       const { ns, id } = parseRef(ref);
@@ -518,7 +519,7 @@ export const TOOLS = [
       if (!reopen && (await ctx.store.getWho("job", id))) {
         throw new Error(`job '${id}' already exists; use logmem_update / logmem_stage, or pass reopen=true`);
       }
-      const own = agentRef(owner || me(ctx));
+      const own = agentRef(owner == null ? me(ctx) : checkAgentId(owner, "owner"));
       const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details };
       await ctx.store.setWho("job", id, who);
       await ctx.store.setNow("job", id, { stage: "open", owner: own });

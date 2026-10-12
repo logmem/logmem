@@ -46,6 +46,29 @@ export function acmiIndexKey(space, ns) {
   return `acmi:${space}:${nsToAcmi(ns)}:list`;
 }
 
+// ─── Agent ids ──────────────────────────────────────────────────────────
+// One rule everywhere an agent id enters (tools, compat tools, shifts,
+// /api/inbox, /api/view): 1-64 characters, letters, digits, '.', '_', '-',
+// starting with a letter or digit. An optional "agent:" prefix is allowed.
+export const AGENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+export class AgentIdError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = "bad_agent_id";
+  }
+}
+
+/** Validate an agent id ("quill" or "agent:quill"); returns the bare id or throws AgentIdError. */
+export function checkAgentId(agent, field = "agent") {
+  if (typeof agent !== "string") throw new AgentIdError(`${field} must be a string agent id`);
+  const id = agent.replace(/^agent:/, "");
+  if (!AGENT_ID_RE.test(id)) {
+    throw new AgentIdError(`${field} must be 1-64 characters: letters, digits, '.', '_' or '-', starting with a letter or digit (got ${id.length} characters)`);
+  }
+  return id;
+}
+
 /**
  * Parse an entity reference. Accepts "channel:field-notes", "job:issue-14",
  * "agent:quill", the ACMI forms "thread:x" / "work:x", or a bare id with a
@@ -55,11 +78,15 @@ export function parseRef(ref, defaultNs = "channel") {
   const s = String(ref ?? "").trim();
   if (!s) throw new Error("empty reference");
   const i = s.indexOf(":");
-  if (i < 0) return { ns: defaultNs, id: s };
+  if (i < 0) {
+    if (defaultNs === "agent") checkAgentId(s);
+    return { ns: defaultNs, id: s };
+  }
   const rawNs = s.slice(0, i);
   const id = s.slice(i + 1);
   const ns = { thread: "channel", work: "job" }[rawNs] ?? rawNs;
   validateKeySegments(ns, id);
+  if (ns === "agent") checkAgentId(id);
   return { ns, id };
 }
 

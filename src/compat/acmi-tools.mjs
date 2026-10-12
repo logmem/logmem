@@ -11,7 +11,7 @@ import { params } from "../core/params.mjs";
 import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
 import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
-import { SLOTS } from "../core/keys.mjs";
+import { SLOTS, checkAgentId } from "../core/keys.mjs";
 import { HUMAN_ONLY, isDecidedKind, capEntry, capJson } from "../core/tools.mjs";
 
 /** Rollups are cross-session summaries; they get more room than one entry's payload. */
@@ -22,6 +22,12 @@ function guardEvent({ kind, summary, correlationId, parentCorrelationId }) {
   if (isDecidedKind(kind)) return { ok: false, error: HUMAN_ONLY };
   capEntry({ summary, trail: correlationId, origin: parentCorrelationId });
   return null;
+}
+
+/** Validate key segments, and the id as an agent id when the namespace is agent. */
+function checkEntity(namespace, id) {
+  validateKeySegments(namespace, id);
+  if (nsFromAcmi(namespace) === "agent") checkAgentId(id, "id");
 }
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -68,7 +74,7 @@ export const ACMI_TOOLS = [
     annotations: WRITE,
     skipTouch: true,
     async run({ namespace, id, profile }, { store }) {
-      validateKeySegments(namespace, id);
+      checkEntity(namespace, id);
       validateJson(profile, "profile");
       capJson("profile", profile);
       const ns = nsFromAcmi(namespace);
@@ -87,7 +93,7 @@ export const ACMI_TOOLS = [
     annotations: WRITE,
     skipTouch: true,
     async run({ namespace, id, signals }, { store }) {
-      validateKeySegments(namespace, id);
+      checkEntity(namespace, id);
       validateJson(signals, "signals");
       capJson("signals", signals);
       const ns = nsFromAcmi(namespace);
@@ -111,7 +117,7 @@ export const ACMI_TOOLS = [
     annotations: WRITE,
     skipTouch: true,
     async run({ namespace, id, source, summary, kind, correlationId, parentCorrelationId }, { store, surface }) {
-      validateKeySegments(namespace, id);
+      checkEntity(namespace, id);
       const refused = guardEvent({ kind, summary, correlationId, parentCorrelationId });
       if (refused) return refused;
       const ns = nsFromAcmi(namespace);
@@ -133,7 +139,7 @@ export const ACMI_TOOLS = [
     annotations: READ,
     skipTouch: true,
     async run({ namespace, id }, { store }) {
-      validateKeySegments(namespace, id);
+      checkEntity(namespace, id);
       const ns = nsFromAcmi(namespace);
       const [profile, signals, log] = await Promise.all([
         store.getWho(ns, id),
@@ -289,6 +295,7 @@ export const ACMI_TOOLS = [
     skipTouch: true,
     async run({ agentId, sessionId, modelId }, { store }) {
       validateKeySegments(agentId);
+      checkAgentId(agentId, "agentId");
       await store.addShift(agentId, { ts: Date.now(), session_id: sessionId || "unknown", model_id: modelId || "unknown" });
       return { ok: true, agent_id: agentId };
     },
@@ -304,6 +311,7 @@ export const ACMI_TOOLS = [
     skipTouch: true,
     async run({ agentId }, { store }) {
       validateKeySegments(agentId);
+      checkAgentId(agentId, "agentId");
       const [profile, signals, active, rollup, log, spawns] = await Promise.all([
         store.getWho("agent", agentId),
         store.getNow("agent", agentId),
@@ -341,6 +349,7 @@ export const ACMI_TOOLS = [
     skipTouch: true,
     async run({ agentId, action, threadKey, role }, { store }) {
       validateKeySegments(agentId);
+      checkAgentId(agentId, "agentId");
       const ref = threadKey ? (threadKey.includes(":") ? threadKey.replace(/^thread:/, "channel:").replace(/^work:/, "job:") : `channel:${threadKey}`) : null;
       if (action === "add") {
         if (!ref) throw new Error("threadKey is required for 'add' action");
@@ -366,6 +375,7 @@ export const ACMI_TOOLS = [
     skipTouch: true,
     async run({ agentId, rollup }, { store }) {
       validateKeySegments(agentId);
+      checkAgentId(agentId, "agentId");
       validateJson(rollup, "rollup");
       capJson("rollup", rollup, ROLLUP_MAX);
       await store.setRecap(agentId, json(rollup));

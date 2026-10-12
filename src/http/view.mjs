@@ -9,6 +9,7 @@ import { readOnly } from "../lib/read-only.mjs";
 import { keywordRecall } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
+import { checkAgentId } from "../core/keys.mjs";
 
 const MAX_LOGS = 300;
 const GROUP = Object.fromEntries(Object.entries(KINDS).map(([k, d]) => [k, d.group]));
@@ -93,7 +94,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   }
 
   if (what === "agent") {
-    const id = String(params.id || "");
+    const id = checkAgentId(String(params.id || ""), "id");
     const [who, nowSlot, log, recap, follows, shifts] = await Promise.all([
       store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 50 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);

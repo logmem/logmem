@@ -13,7 +13,7 @@
 // Shift state lives in Redis (lm:{space}:session:{sid}) so stateless HTTP
 // requests that share a session id see the same shift.
 
-import { lmSessionKey } from "./keys.mjs";
+import { lmSessionKey, checkAgentId } from "./keys.mjs";
 import { tryParse } from "./store.mjs";
 
 export const IDLE_MS = 30 * 60 * 1000;
@@ -22,6 +22,7 @@ export const SESSION_TTL_S = 7 * 24 * 3600;
 
 export const agentRef = (agent) => (String(agent).startsWith("agent:") ? String(agent) : `agent:${agent}`);
 export const agentId = (agent) => String(agent).replace(/^agent:/, "");
+export { checkAgentId };
 
 /** "quill (via claude-code)" — how every entry names its writer. */
 export const byline = (agent, surface) => `${agentId(agent)} (via ${surface || "unknown"})`;
@@ -90,7 +91,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
 
   /** Open a shift for `agent` and log Started. */
   async function startShift(agent, { auto = false, modelId } = {}) {
-    const a = agentId(agent);
+    const a = checkAgentId(String(agent));
     const ts = now();
     const shift = `${a}Shift-${ts}`;
     const rec = { agent: a, surface, shift, started_at: ts, last_seen: ts, auto };
@@ -141,7 +142,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     /** Explicit Start / persona switch. */
     async start(agent, { modelId } = {}) {
       const events = [];
-      const a = agentId(agent);
+      const a = checkAgentId(agent);
       const rec = await load();
       if (rec && !rec.ended) {
         if (rec.agent === a) {
