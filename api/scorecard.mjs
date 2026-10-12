@@ -10,6 +10,7 @@ import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { readOnly } from "../src/lib/read-only.mjs";
 import { updateScorecard, gate, CHECK_JOB, DELIVERABLE_JOB } from "../scripts/dogfood-check.mjs";
 import { mayRead, viewSpaces } from "../src/http/admin-auth.mjs";
+import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
@@ -56,6 +57,6 @@ export default async function handler(req, res) {
     if (!d) return res.status(503).json({ error: "scorecard backend not configured on this deployment" });
     res.status(200).json(await buildScorecard(fromDescriptor(d).redis, space));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    sendServerError(res, "/api/scorecard", e);
   }
 }

@@ -27,6 +27,7 @@ import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { writeDecision, DecisionError, VERDICTS, LIMITS } from "../src/core/tools.mjs";
 import { isAdmin, adminEnabled, viewSpaces } from "../src/http/admin-auth.mjs";
+import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
@@ -96,7 +97,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
     return res.status(201).json({ ok: true, space, ...out });
   } catch (e) {
     if (e instanceof DecisionError) return res.status(STATUS[e.code] || 400).json({ error: e.message, code: e.code });
-    return res.status(500).json({ error: e.message });
+    return sendServerError(res, "/api/decide", e);
   }
 }
 

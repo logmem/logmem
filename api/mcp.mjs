@@ -13,6 +13,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { createLogmem, compatFromEnv, mirrorConfigFromEnv, toResult, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
 import { fromDescriptor } from "../src/lib/backend.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate, bearerOf } from "../src/http/auth.mjs";
+import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
@@ -150,6 +151,6 @@ export default async function handler(req, res) {
     });
     return send(res, wantsSSE, reply, headers);
   } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: e.message || String(e) });
+    sendServerError(res, "/api/mcp", e);
   }
 }

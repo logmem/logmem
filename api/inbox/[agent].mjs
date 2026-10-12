@@ -15,6 +15,7 @@ import { makeTrail, capJson, capText, LIMITS } from "../../src/core/tools.mjs";
 import { fromDescriptor } from "../../src/lib/backend.mjs";
 import { validateKeySegments } from "../../src/lib/helpers.mjs";
 import { checkAgentId } from "../../src/core/keys.mjs";
+import { sendServerError } from "../../src/http/log.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate } from "../../src/http/auth.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
@@ -68,6 +69,6 @@ export default async function handler(req, res) {
     });
     return res.status(201).json({ ok: true, space: auth.space, agent, entry });
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    return sendServerError(res, "/api/inbox", e);
   }
 }

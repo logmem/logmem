@@ -11,6 +11,9 @@ import inbox from "../api/inbox/[agent].mjs";
 import { makeTrail, trailTs, trailNonce, NONCE_RE, ASK_ONLY, writeDecision, DecisionError, signDecision, verifyDecision, NO_SECRET } from "../src/core/tools.mjs";
 import { decide } from "../api/decide.mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
+import { sendServerError, GENERIC_ERROR } from "../src/http/log.mjs";
+import viewHandler from "../api/view.mjs";
+import scorecardHandler from "../api/scorecard.mjs";
 
 // Test-only HMAC key for human decisions (writeDecision fails closed without one).
 process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
@@ -463,4 +466,110 @@ test("item 8: defer keeps the ask pending (Brief + Decisions page), keeps waitin
   assert.equal(view.decided[0].answer.payload.verdict, "approve");
   // Settled: no more defers.
   await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "defer", by: "human:mikey" }), isCode("not_pending"));
+});
+
+// ─── Item 9: 500s are generic; detail is logged server-side only ────────
+const LEAK = "WRONGTYPE at lm:secret-space:agent:x — token=fake-token-not-a-secret";
+const boom = async () => {
+  throw new Error(LEAK);
+};
+
+/** Capture what the route logs (logRequest writes JSON lines to console.log). */
+async function captureLogs(fn) {
+  const lines = [];
+  const orig = console.log;
+  console.log = (...a) => lines.push(a.join(" "));
+  try {
+    await fn();
+  } finally {
+    console.log = orig;
+  }
+  return lines;
+}
+
+const assertGeneric = (res, logs, route) => {
+  assert.equal(res.statusCode, 500, route);
+  assert.equal(res.body.error, GENERIC_ERROR, route);
+  assert.match(res.body.ref, /^[0-9a-f]{12}$/);
+  assert.ok(!JSON.stringify(res.body).includes("WRONGTYPE") && !JSON.stringify(res.body).includes("fake-token"), `${route} leaks nothing`);
+  const rec = logs.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((r) => r && r.ref === res.body.ref);
+  assert.ok(rec, `${route} logged the failure under the same ref`);
+  assert.equal(rec.level, "error");
+  assert.equal(rec.route, route);
+  assert.match(rec.err, /WRONGTYPE/, "detail is in the server log");
+};
+
+test("item 9: sendServerError answers a generic 500 with a ref and logs the detail", async () => {
+  const lines = [];
+  const res = mockRes();
+  sendServerError(res, "/api/x", new Error(LEAK), { sink: (l) => lines.push(l) });
+  assertGeneric(res, lines, "/api/x");
+});
+
+test("item 9: /api/decide, /api/inbox, /api/view and /api/scorecard never echo an exception on 500", async () => {
+  // /api/decide with a backend that throws.
+  {
+    const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+    const cookie = issueCookie(env).split(";")[0];
+    const res = mockRes();
+    const logs = await captureLogs(() => decide({ method: "POST", headers: { host: "h", cookie, "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail: "approvalQuill-1791712800000-" + "a".repeat(24), verdict: "reject" } }, res, { env, redis: boom }));
+    assertGeneric(res, logs, "/api/decide");
+  }
+  // /api/inbox, /api/view, /api/scorecard through the dev memory:// backend, made to throw.
+  const saved = { url: process.env.LOGMEM_REST_URL, token: process.env.LOGMEM_REST_TOKEN, ve: process.env.VERCEL_ENV, pw: process.env.LOGMEM_ADMIN_PASSWORD };
+  globalThis.__lmDevRedis = boom;
+  process.env.LOGMEM_REST_URL = "memory://t";
+  process.env.LOGMEM_REST_TOKEN = "t";
+  delete process.env.VERCEL_ENV;
+  delete process.env.LOGMEM_ADMIN_PASSWORD;
+  try {
+    {
+      const res = mockRes();
+      const logs = await captureLogs(() => inbox({ method: "POST", url: "/api/inbox/quill", query: { agent: "quill" }, headers: { host: "x", "x-logmem-rest-url": "memory://test", "x-logmem-rest-token": "t", "x-logmem-space": "acme" }, body: { summary: "hi" } }, res));
+      assertGeneric(res, logs, "/api/inbox");
+    }
+    {
+      const res = mockRes();
+      const logs = await captureLogs(() => viewHandler({ method: "GET", headers: {}, query: { space: "fieldnotes", what: "agents" } }, res));
+      assertGeneric(res, logs, "/api/view");
+    }
+    {
+      const res = mockRes();
+      const logs = await captureLogs(() => scorecardHandler({ method: "GET", headers: {}, query: { space: "fieldnotes" } }, res));
+      assertGeneric(res, logs, "/api/scorecard");
+    }
+  } finally {
+    delete globalThis.__lmDevRedis;
+    for (const [k, v] of [["LOGMEM_REST_URL", saved.url], ["LOGMEM_REST_TOKEN", saved.token], ["VERCEL_ENV", saved.ve], ["LOGMEM_ADMIN_PASSWORD", saved.pw]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test("item 9: expected refusals keep their specific messages (only 500s are generic)", async () => {
+  const { redis, q } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "Send?", action: "send" });
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const cookie = issueCookie(env).split(";")[0];
+  const res = mockRes();
+  await decide({ method: "POST", headers: { host: "h", cookie, "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail: ask.trail, verdict: "approve" } }, res, { env, redis });
+  assert.equal(res.statusCode, 428);
+  assert.match(res.body.error, /can't be undone/);
+});
+
+test("item 9: no /api route answers a 500 with e.message", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const files = [];
+  const walk = async (dir) => {
+    for (const d of await readdir(new URL(dir, import.meta.url), { withFileTypes: true })) {
+      if (d.isDirectory()) await walk(`${dir}${d.name}/`);
+      else if (d.name.endsWith(".mjs")) files.push(`${dir}${d.name}`);
+    }
+  };
+  await walk("../api/");
+  for (const f of files) {
+    const src = await readFile(new URL(f, import.meta.url), "utf8");
+    assert.doesNotMatch(src, /status\(500\)\.json\(\{\s*error:\s*e\.message/, f);
+  }
 });
