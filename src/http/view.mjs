@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, classifyAsks, decisionSettlements, annotateDecisions } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -34,10 +34,17 @@ export function seen(ts, now = Date.now()) {
   return { state: m <= 15 ? "active" : m <= 120 ? "idle" : "offline", since };
 }
 
+/** Digest for a view row: the one slim() computed from the raw entry, else computed now (direct callers). */
+const viewDigest = (e) => e.ask_digest ?? askDigest(e);
+
 const slim = (e, from) => ({
   ts: e.ts, kind: e.kind, group: groupOf(e.kind), by: e.by, via: e.via, summary: e.summary,
   trail: e.trail, origin: e.origin, where: from, to: e.to,
-  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null, sig: e.payload?.sig ?? null } : undefined,
+  // Asks carry the digest of their canonical content (computed here from the
+  // raw entry, never read from it) so decisionsFrom can pick the canonical one.
+  ...(e.kind === "approval" ? { ask_digest: askDigest(e) } : {}),
+  ...(e.legacy === true ? { legacy: true } : {}),
+  payload: e.kind === "approval" ? { action: e.action, reversible: e.reversible } : e.kind === "decided" ? { verdict: e.payload?.verdict ?? null, note: e.payload?.note ?? null, ask_hash: e.payload?.ask_hash ?? null, sig: e.payload?.sig ?? null } : undefined,
 });
 
 export async function allEntries(store, r, space, { limit = 200 } = {}) {
@@ -50,7 +57,9 @@ export async function allEntries(store, r, space, { limit = 200 } = {}) {
     const m = k.match(new RegExp(`^lm:${space}:([^:]+):([^:]+):log$`));
     if (!m) continue;
     for (const e of await store.readLog(m[1], m[2], { reverse: true, limit: 100 })) {
-      const sig = `${e.ts}|${e.trail}|${e.summary}`;
+      // Asks dedupe on their content digest too, so a twin under the same
+      // ts/trail/summary can never hide the canonical ask.
+      const sig = `${e.ts}|${e.trail}|${e.summary}${e.kind === "approval" ? `|${askDigest(e)}` : ""}`;
       if (seenSig.has(sig)) continue;
       seenSig.add(sig);
       merged.push(slim(e, `${m[1]}:${m[2]}`));
@@ -64,11 +73,19 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   const r = readOnly(redis);
   const verify = { secret, space };
   const store = createStore(r, { space });
+  /** Registry + claims for the asks in `rows`, plus the canonical asks (one rule for every view). */
+  const stateOf = async (rows) => {
+    const st = await askState(store, rows);
+    return { ...st, canon: canonicalAsks(rows, st.registry, viewDigest) };
+  };
+  const withState = async (rows) => decisionsFrom(rows, { ...verify, ...(await askState(store, rows)) });
+  // Decided rows that don't answer their canonical ask are shown marked unverified.
+  const annotate = async (rows, asks = rows) => annotateDecisions(rows, { ...verify, canon: (await stateOf(asks)).canon });
 
   if (what === "log") {
     const entries = await allEntries(store, r, space, { limit: 200 });
     const picked = params.where ? entries.filter((e) => e.where === params.where) : entries;
-    return { entries: annotateDecisions(picked, verify) };
+    return { entries: await annotate(picked, entries) };
   }
 
   if (what === "agents" || what === "overview") {
@@ -84,10 +101,9 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     if (what === "agents") return { agents };
     const jobs = await jobsView(store);
     const entries = await allEntries(store, r, space, { limit: 300 });
-    const settlements = await decisionSettlements(store, entries.filter((e) => e.kind === "approval"));
-    const decisions = decisionsFrom(entries, { ...verify, settlements });
+    const decisions = await withState(entries);
     return {
-      agents, jobs, recent: annotateDecisions(entries.slice(0, 8), { ...verify, asks: entries }), waiting: decisions.waiting,
+      agents, jobs, recent: await annotate(entries.slice(0, 8), entries), waiting: decisions.waiting,
       stats: {
         active: agents.filter((a) => a.seen.state === "active").length, agents: agents.length,
         open: jobs.filter((j) => j.stage !== "done").length, stuck: jobs.filter((j) => j.stage === "blocked").length,
@@ -101,9 +117,10 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const [who, nowSlot, log, recap, follows, shifts] = await Promise.all([
       store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 50 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);
+    // Accepted and declined both settle a handoff (same rule as the Brief).
     const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined))).map((e) => e.origin));
     const slimLog = log.map((e) => slim(e, `agent:${id}`));
-    return { id, who, now: nowSlot, recap, follows, shifts, log: annotateDecisions(slimLog, verify), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
+    return { id, who, now: nowSlot, recap, follows, shifts, log: await annotate(slimLog), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
   }
 
   if (what === "jobs") return { jobs: await jobsView(store) };
@@ -112,9 +129,9 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const id = String(params.id || "");
     const [who, nowSlot, log, sessions] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 100 }), store.jobSessions(id)]);
     const slimLog = log.map((e) => slim(e, `job:${id}`));
-    const settlements = await decisionSettlements(store, slimLog.filter((e) => e.kind === "approval"));
-    const decisions = decisionsFrom(slimLog, { ...verify, settlements });
-    return { id, who, now: nowSlot, log: annotateDecisions(slimLog, verify), open_asks: decisions.waiting, shifts: sessions };
+    // Open asks are computed here with the same rule as the Decisions page, not in the browser.
+    const decisions = await withState(slimLog);
+    return { id, who, now: nowSlot, log: await annotate(slimLog), open_asks: decisions.waiting, shifts: sessions };
   }
 
   if (what === "channels") {
@@ -129,11 +146,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     return { channels, selected: pick || null, log };
   }
 
-  if (what === "decisions") {
-    const entries = await allEntries(store, r, space, { limit: 500 });
-    const settlements = await decisionSettlements(store, entries.filter((e) => e.kind === "approval"));
-    return decisionsFrom(entries, { ...verify, settlements });
-  }
+  if (what === "decisions") return withState(await allEntries(store, r, space, { limit: 500 }));
 
   if (what === "recall") {
     const q = String(params.q || "").slice(0, 200);
@@ -164,26 +177,23 @@ async function jobsView(store) {
 }
 
 /**
- * Waiting = approval entries with no verified approve/reject.
- * The same rule as asksOf: HMAC over the ask, defer does not close, unsigned
- * rows do not close, and a verifying decision key does (even if the log row is gone).
+ * Waiting = canonical asks with no settling answer; decided = canonical asks
+ * with one. The same rule as the Brief (tools.mjs decisionsFor): only the
+ * ask whose content hash matches the ask registry counts (twins and legacy
+ * rows are dropped), only a signed decision bound to that ask's hash counts,
+ * the settling decision held by the set-once claim wins, and a defer keeps
+ * the ask waiting (marked deferred).
  */
-export function decisionsFrom(entries, { secret, space, settlements = [] } = {}) {
-  const { askByTrail, answers, deferrals } = classifyAsks(entries, { secret, space, settlements });
-  const asks = [];
-  const seen = new Set();
-  for (const a of entries) {
-    if (a.kind !== "approval" || !a.trail || seen.has(a.trail)) continue;
-    seen.add(a.trail);
-    asks.push(a);
-  }
+export function decisionsFrom(entries, { secret, space, registry, claims } = {}) {
+  const canon = canonicalAsks(entries, registry, viewDigest);
+  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims });
+  const asks = [...canon.values()].map((c) => c.ask).sort((a, b) => b.ts - a.ts);
   const mark = (a) => {
-    if (!askByTrail.has(a.trail)) return a;
     const d = deferrals.get(a.trail);
-    return d && !answers.has(a.trail) ? { ...a, deferred: { by: d.by, note: d.payload?.note ?? null, at: d.ts } } : a;
+    return d ? { ...a, deferred: { by: d.by, note: d.payload?.note ?? null, at: d.ts } } : a;
   };
   return {
     waiting: asks.filter((a) => !answers.has(a.trail)).map(mark),
-    decided: asks.filter((a) => answers.has(a.trail) && askByTrail.has(a.trail)).map((a) => ({ ask: a, answer: answers.get(a.trail) })),
+    decided: asks.filter((a) => answers.has(a.trail)).map((a) => ({ ask: a, answer: answers.get(a.trail) })),
   };
 }

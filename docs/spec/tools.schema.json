@@ -866,7 +866,7 @@
     {
       "name": "logmem_remove",
       "title": "Remove",
-      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. Another agent's who, log, or profile is refused. A log that holds a signed decision is never removed.",
+      "description": "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. You can only remove your own agent's keys, never another agent's, a roster index, or any log that holds asks or decisions.",
       "inputSchema": {
         "type": "object",
         "properties": {
