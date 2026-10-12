@@ -4,133 +4,220 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Set up LogMem</title>
+<meta name="description" content="Set up LogMem: join the LogMem Cloud waitlist, or run the open-source server on your own Redis and connect your agents.">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/site.css">
-<style>
-.step-btn{width:100%;display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--radius-md);border:0;cursor:pointer;font:inherit;color:var(--text);background:transparent;text-align:left}
-.step-btn[aria-current]{background:var(--brand-subtle)}
-.dot{width:26px;height:26px;flex:none;display:grid;place-items:center;border-radius:50%;font-size:12px;font-weight:600;box-sizing:border-box;border:1.5px solid var(--border-strong);color:var(--text-subtle)}
-.dot.done{background:var(--brand);color:var(--on-brand);border:0}.dot.cur{border:2px solid var(--brand);color:var(--brand)}
-.card{padding:28px;display:flex;flex-direction:column;gap:20px}
-.toggle{display:flex;gap:12px;align-items:flex-start;padding:16px;border:1px solid var(--border);border-radius:var(--radius-md)}
-[hidden]{display:none!important}
-</style>
+<link rel="stylesheet" href="/onboarding.css">
+<script src="/onboarding.js" defer></script>
 </head>
 <body class="lm">
-<header style="background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-  <a href="/" style="display: flex;"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height: 28px; width: auto;"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height: 28px; width: auto;"></a>
-  <span class="lm-eyebrow">Set up · bring your own Redis</span>
-  <span class="lm-demo" title="This is a preview of the setup flow; nothing here is saved">Preview · nothing is saved</span>
-  <span id="count" style="margin-left: auto; font-size: 13px; color: var(--text-muted);"></span>
+<a class="skip" href="#ob-main">Skip to the current step</a>
+
+<header class="ob-header">
+  <div class="wrap ob-header-in">
+    <a href="/" class="ob-logo" aria-label="LogMem home"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="127" height="28"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" width="127" height="28"></a>
+    <span class="lm-eyebrow">Set up LogMem</span>
+    <span class="ob-count" id="count" aria-live="polite"></span>
+  </div>
 </header>
 
-<div class="wrap" style="display: flex; flex-wrap: wrap; gap: 32px; padding-top: 40px; padding-bottom: 40px;">
-  <nav aria-label="Setup steps" style="flex: 1 1 240px; max-width: 280px;"><ol id="steps" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;"></ol></nav>
+<div class="wrap ob-layout">
+  <nav class="ob-rail" aria-label="Setup steps">
+    <ol class="ob-steps" id="steps"></ol>
+    <p class="ob-rail-now" id="rail-now"></p>
+  </nav>
 
-  <main style="flex: 999 1 560px; min-width: 0;">
-    <section class="lm-panel card" data-step="1">
-      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Name your space.</h1><p style="margin: 0;" class="muted">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px;">
-        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" value="Field Notes Co."></div>
-        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" value="fieldnotes" pattern="[a-z0-9][a-z0-9_-]*"><span style="font-size: 12px;" class="subtle">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:fieldnotes:*</span>.</span></div>
+  <main class="ob-main" id="ob-main">
+    <noscript><div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="alert" aria-hidden="true"></i><div>This setup flow needs JavaScript. You can still <a href="/probe.sh">read the probe script</a> or go back to the <a href="/">home page</a>.</div></div></noscript>
+
+    <!-- 1. Choose how to run it -->
+    <section class="lm-panel ob-card" data-step="choose" aria-labelledby="h-choose">
+      <div><h1 id="h-choose" tabindex="-1">Choose how to run LogMem.</h1><p class="ob-lede">LogMem is one shared log for a team of agents: who did what, Handoffs, Asks a person has to approve, and Recaps. Run it on our cloud, or run the open-source server on a Redis you control.</p></div>
+      <div class="ob-grid2">
+        <div class="lm-panel ob-choice ob-choice--rec">
+          <div class="lm-row"><h2 class="lm-title-2">LogMem Cloud</h2><span class="lm-badge lm-badge--brand">Recommended</span><span class="lm-demo" title="Hosted spaces and billing aren't built yet">Preview</span></div>
+          <p class="ob-note ob-note--muted">We host the spaces, quotas and approvals. Nothing to run.</p>
+          <ul class="ob-list"><li>Hosted spaces and billing don’t exist yet.</li><li>This path ends on a waitlist: your email and how many agents you plan to run.</li><li>Prices shown are proposed, not final.</li></ul>
+          <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-choose="cloud">See plans and join the waitlist</button></div>
+        </div>
+        <div class="lm-panel ob-choice">
+          <div class="lm-row"><h2 class="lm-title-2">Bring your own Redis</h2><span class="lm-badge">Open source · MIT</span></div>
+          <p class="ob-note ob-note--muted">Run the LogMem server against an Upstash (REST) or rediss:// Redis you own. Free, no limits.</p>
+          <ul class="ob-list"><li>Detect the agents on this machine.</li><li>Name a space, test your Redis, choose ACMI compatibility.</li><li>Get a snippet per agent host, then try a first Handoff.</li></ul>
+          <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-choose="byo">Set up on my Redis</button></div>
+        </div>
       </div>
-      <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
     </section>
 
-    <section class="lm-panel card" data-step="2" hidden>
-      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Connect your Redis.</h1><p style="margin: 0;" class="muted">LogMem stores everything in a Redis you control. It sends one PING before saving anything.</p></div>
-      <div class="lm-seg" role="group" aria-label="Backend type" style="align-self: flex-start;"><button type="button" id="b-rest" aria-pressed="true">HTTP REST (Upstash)</button><button type="button" id="b-tcp" aria-pressed="false">redis:// over TCP</button></div>
-      <div id="f-rest" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px;">
-        <div class="lm-field"><label class="lm-label" for="ru">REST URL</label><input class="lm-input mono" id="ru" placeholder="https://….upstash.io"></div>
+    <!-- Cloud: plan picker -->
+    <section class="lm-panel ob-card" data-step="plan" aria-labelledby="h-plan" hidden>
+      <div>
+        <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">Proposed pricing, not final</span><span class="lm-demo">Preview</span></div>
+        <h1 id="h-plan" tabindex="-1">Pick the plan you’d start on.</h1>
+        <p class="ob-lede">One meter: entries written per month. Reads, Briefs, recall and the app are never metered. The attributed log and approvals come with every plan. There is no checkout yet; your pick goes on the waitlist with your email.</p>
+      </div>
+      <fieldset class="ob-plans" id="plans-main">
+        <legend class="lm-sr">Plan</legend>
+        <div class="ob-plan" data-plan="free"><label class="lm-check"><input type="radio" name="plan" value="free" checked aria-describedby="plan-free-d"><span>Free</span></label><div class="ob-plan-body" id="plan-free-d"><span class="ob-price">$0 <small>/ month</small></span>
+          <dl class="lm-kv"><dt>Spaces</dt><dd>1</dd><dt>Agents</dt><dd>3</dd><dt>Entries</dt><dd>10k / month</dd><dt>History</dt><dd>7 days</dd><dt>Approvers</dt><dd>Owner only</dd><dt>Support</dt><dd>Community</dd></dl></div></div>
+        <div class="ob-plan" data-plan="dev"><label class="lm-check"><input type="radio" name="plan" value="dev" aria-describedby="plan-dev-d"><span>Dev</span></label><div class="ob-plan-body" id="plan-dev-d"><span class="ob-price">$19 <small>/ month</small></span>
+          <dl class="lm-kv"><dt>Spaces</dt><dd>1</dd><dt>Agents</dt><dd>5</dd><dt>Entries</dt><dd>50k / month</dd><dt>History</dt><dd>30 days</dd><dt>Approvers</dt><dd>Owner only</dd><dt>Support</dt><dd>Email</dd></dl></div></div>
+        <div class="ob-plan" data-plan="pro"><label class="lm-check"><input type="radio" name="plan" value="pro" aria-describedby="plan-pro-d"><span>Pro</span></label><div class="ob-plan-body" id="plan-pro-d"><span class="ob-price">$49 <small>/ month</small></span>
+          <dl class="lm-kv"><dt>Spaces</dt><dd>3</dd><dt>Agents</dt><dd>25</dd><dt>Entries</dt><dd>150k / month</dd><dt>History</dt><dd>90 days</dd><dt>Approvers</dt><dd>3 seats</dd><dt>Support</dt><dd>Email</dd></dl>
+          <p class="ob-plan-extra">Webhooks, Slack and Mattermost approvals, export. Overage about $2 per 10k.</p></div></div>
+        <div class="ob-plan" data-plan="team"><label class="lm-check"><input type="radio" name="plan" value="team" aria-describedby="plan-team-d"><span>Team</span></label><div class="ob-plan-body" id="plan-team-d"><span class="ob-price">$99 <small>/ month</small></span>
+          <dl class="lm-kv"><dt>Spaces</dt><dd>10</dd><dt>Agents</dt><dd>Unlimited</dd><dt>Entries</dt><dd>500k / month</dd><dt>History</dt><dd>1 year</dd><dt>Approvers</dt><dd>10 seats</dd><dt>Support</dt><dd>Priority</dd></dl>
+          <p class="ob-plan-extra">Everything in Pro. Overage about $2 per 10k.</p></div></div>
+      </fieldset>
+      <fieldset class="ob-plans ob-plans--row" id="plans-row">
+        <legend class="lm-sr">Larger plans</legend>
+        <div class="ob-plan" data-plan="agency"><label class="lm-check"><input type="radio" name="plan" value="agency" aria-describedby="plan-agency-d"><span>Agency</span></label><div class="ob-plan-body" id="plan-agency-d"><span class="ob-price">$199 <small>/ month</small></span>
+          <dl class="lm-kv"><dt>Spaces</dt><dd>30 client spaces</dd><dt>Agents</dt><dd>Unlimited</dd><dt>Entries</dt><dd>1.5M / month</dd><dt>History</dt><dd>1 year</dd><dt>Approvers</dt><dd>25 seats</dd></dl>
+          <p class="ob-plan-extra">Per-client scorecards and white-label. Overage about $1.50 per 10k.</p></div></div>
+        <div class="ob-plan" data-plan="enterprise"><label class="lm-check"><input type="radio" name="plan" value="enterprise" aria-describedby="plan-enterprise-d"><span>Enterprise</span></label><div class="ob-plan-body" id="plan-enterprise-d"><span class="ob-price">Contact <small>sales</small></span>
+          <dl class="lm-kv"><dt>Hosting</dt><dd>Hosted, BYOC or on-prem</dd><dt>Limits</dt><dd>Custom</dd><dt>Approvers</dt><dd>Unlimited</dd><dt>Support</dt><dd>SLA</dd></dl>
+          <p class="ob-plan-extra">SSO, SOC2-ready logs, HIPAA.</p></div></div>
+      </fieldset>
+      <div class="ob-oss"><span><strong>Open source (MIT)</strong> · $0 · your Redis, unlimited spaces and agents.</span><button type="button" class="ob-linkbtn" data-choose="byo">Set it up now instead</button></div>
+      <p class="ob-note">Annual billing is planned at about 17% off Dev, Pro and Team. When a Free or Dev space reaches its cap, writes keep landing for a 10% margin, then are refused with a clear error. Nothing is dropped silently.</p>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <!-- Detect agents (both paths) -->
+    <section class="lm-panel ob-card" data-step="detect" aria-labelledby="h-detect" hidden>
+      <div><h1 id="h-detect" tabindex="-1">Detect the agents on this machine.</h1><p class="ob-lede">Run this in a terminal. It looks for 9 agent CLIs on your PATH, prints what it finds, and sends only their names and versions back to this page.</p></div>
+      <div class="lm-stack">
+        <span class="lm-eyebrow">Run in a terminal</span>
+        <pre class="code" id="probe-cmd" aria-label="Probe command"></pre>
+        <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-copy="probe-cmd"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy command</button><a class="lm-btn lm-btn--ghost" href="/probe.sh" target="_blank" rel="noopener">View the script first <i class="lm-i" data-i="external" aria-hidden="true"></i><span class="lm-sr"> (opens in a new tab)</span></a><span class="ob-note" data-copied="probe-cmd" aria-live="polite"></span></div>
+      </div>
+      <ul class="ob-list">
+        <li>Read-only: it checks which commands exist and runs <code class="mono">--version</code> on each, 3 seconds at most.</li>
+        <li>It never reads config files or environment variables, and sends nothing without the code.</li>
+        <li>The code <code class="mono" id="probe-code"></code> works once. The result is deleted after 10 minutes.</li>
+      </ul>
+      <div id="probe-status" role="status" aria-live="polite"></div>
+      <fieldset class="ob-agents" id="agent-picks">
+        <legend>Your agents <span class="subtle ob-legend-sub">(the probe ticks the ones it finds; change them freely)</span></legend>
+      </fieldset>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--secondary" id="probe-skip">Skip, I’ll pick manually</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <!-- Cloud: waitlist -->
+    <section class="lm-panel ob-card" data-step="waitlist" aria-labelledby="h-waitlist" hidden>
+      <div>
+        <div class="lm-row ob-tags"><span class="lm-demo" title="LogMem Cloud isn't open yet">Preview</span></div>
+        <h1 id="h-waitlist" tabindex="-1">Join the LogMem Cloud waitlist.</h1>
+        <p class="ob-lede">LogMem Cloud isn’t open yet. Leave your email and we’ll write when hosted spaces are ready. That is the only thing we use it for.</p>
+      </div>
+      <form id="wl-form" novalidate class="lm-stack ob-form">
+        <div class="ob-grid2">
+          <div class="lm-field"><label class="lm-label" for="wl-email">Email</label><input class="lm-input" id="wl-email" name="email" type="email" autocomplete="email" required aria-describedby="wl-email-err"><span class="lm-error" id="wl-email-err" hidden></span></div>
+          <div class="lm-field"><label class="lm-label" for="wl-agents">Agents you plan to run</label><input class="lm-input" id="wl-agents" name="agents" type="number" min="1" max="10000" step="1" inputmode="numeric" value="3" aria-describedby="wl-agents-help"><span class="lm-help" id="wl-agents-help">A rough number is fine.</span></div>
+        </div>
+        <p class="ob-note ob-note--muted">Plan: <strong id="wl-plan"></strong> <button type="button" class="ob-linkbtn" data-goto="plan">Change</button></p>
+        <div id="wl-status" role="status" aria-live="polite"></div>
+        <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="submit" class="lm-btn lm-btn--primary" id="wl-submit">Join the waitlist</button></div>
+      </form>
+      <p class="ob-note">Signing up again with the same email only updates your plan and agent count. Want to start today? <button type="button" class="ob-linkbtn" data-choose="byo">Run the open-source server on your own Redis</button>.</p>
+    </section>
+
+    <!-- BYO: space -->
+    <section class="lm-panel ob-card" data-step="space" aria-labelledby="h-space" hidden>
+      <div><h1 id="h-space" tabindex="-1">Name your space.</h1><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
+      <div class="ob-grid2">
+        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" value="Field Notes Co." autocomplete="organization"></div>
+        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" value="fieldnotes" maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:fieldnotes:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
+      </div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="sp-next">Continue</button></div>
+    </section>
+
+    <!-- BYO: Redis -->
+    <section class="lm-panel ob-card" data-step="redis" aria-labelledby="h-redis" hidden>
+      <div><h1 id="h-redis" tabindex="-1">Connect your Redis.</h1><p class="ob-lede">LogMem stores everything in a Redis you control. The test sends three read-only commands: PING, then TYPE and EXISTS on a random key that doesn’t exist. It writes nothing.</p></div>
+      <div class="lm-seg ob-seg" role="group" aria-label="Backend type"><button type="button" id="b-rest" aria-pressed="true">HTTP REST (Upstash)</button><button type="button" id="b-tcp" aria-pressed="false">rediss:// over TCP</button></div>
+      <div id="f-rest" class="ob-grid2">
+        <div class="lm-field"><label class="lm-label" for="ru">REST URL</label><input class="lm-input mono" id="ru" type="url" placeholder="https://….upstash.io" spellcheck="false" autocomplete="off"></div>
         <div class="lm-field"><label class="lm-label" for="rt">REST token</label><input class="lm-input" id="rt" type="password" autocomplete="off"></div>
       </div>
-      <div id="f-tcp" class="lm-field" hidden><label class="lm-label" for="uri">Redis URI</label><input class="lm-input mono" id="uri" type="password" placeholder="rediss://:password@host:6379/0" autocomplete="off"><span style="font-size: 12px;" class="subtle">Must be reachable from the public internet.</span></div>
-      <div id="tested" class="lm-alert lm-alert--success" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><strong>Preview:</strong> in the real flow LogMem sends one PING and checks the 21 commands it uses, without writing anything. This preview doesn’t contact your Redis.</div></div>
-      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--secondary" id="test">Test connection</button><button type="button" class="lm-btn lm-btn--primary" data-next id="save" disabled>Save and continue</button></div>
-      <p style="margin: 0; font-size: 13px;" class="subtle">Credentials are bound to this workspace and dropped if you disconnect. v0 stores them unencrypted on the server; encryption at rest is planned.</p>
+      <div id="f-tcp" class="lm-field" hidden><label class="lm-label" for="uri">Redis URI</label><input class="lm-input mono" id="uri" type="password" placeholder="rediss://:password@host:6379/0" autocomplete="off" spellcheck="false" aria-describedby="uri-help"><span class="lm-help" id="uri-help">TLS (rediss://) on a public host, port 6379 or 6380.</span></div>
+      <div id="test-status" role="status" aria-live="polite"></div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--secondary" id="test">Test connection</button><button type="button" class="lm-btn lm-btn--primary" data-next id="redis-next" disabled>Continue</button><button type="button" class="ob-linkbtn" data-next>Skip the test for now</button></div>
+      <p class="ob-note">Your URL and token go to <span class="mono">/api/onboarding/test</span> once, are used for those three commands, and are dropped. This page doesn’t save them: they go into your agent’s own config in the next steps. Private and internal addresses are refused.</p>
     </section>
 
-    <section class="lm-panel card" data-step="3" hidden>
-      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Already running ACMI agents?</h1><p style="margin: 0;" class="muted">Compatibility mode lets agents keep their acmi_* tools and shows their existing history in LogMem. Turn it off if you’re starting fresh.</p></div>
-      <label class="toggle"><input class="lm-switch" type="checkbox" role="switch" checked><span style="display: flex; flex-direction: column; gap: 4px;"><strong style="font-size: 14px;">ACMI compatibility</strong><span style="font-size: 13px;" class="muted">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*.</span></span></label>
-      <label class="toggle"><input class="lm-switch" type="checkbox" role="switch"><span style="display: flex; flex-direction: column; gap: 4px;"><strong style="font-size: 14px;">Mirror writes back to ACMI</strong><span style="font-size: 13px;" class="muted">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it.</span></span></label>
+    <!-- BYO: ACMI -->
+    <section class="lm-panel ob-card" data-step="acmi" aria-labelledby="h-acmi" hidden>
+      <div><h1 id="h-acmi" tabindex="-1">Already running ACMI agents?</h1><p class="ob-lede">Compatibility mode lets agents keep their acmi_* tools and shows their existing history in LogMem. Turn it off if you’re starting fresh.</p></div>
+      <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="compat" checked><span class="ob-toggle-text"><strong class="lm-title-3">ACMI compatibility</strong><span class="muted ob-small">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*. Sets <code class="mono">LOGMEM_ACMI_COMPAT=1</code>.</span></span></label>
+      <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="mirror"><span class="ob-toggle-text"><strong class="lm-title-3">Mirror writes back to ACMI</strong><span class="muted ob-small">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it. Sets <code class="mono">LOGMEM_MIRROR_ACMI=1</code> for this space.</span></span></label>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
     </section>
 
-    <section class="lm-panel card" data-step="4" hidden>
-      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Connect your first agent.</h1><p style="margin: 0;" class="muted">Pick where the agent runs. Paste the snippet, restart it, and come back here.</p></div>
-      <div class="lm-tabs" role="tablist" id="hosts"></div>
-      <div style="display: flex; flex-direction: column; gap: 8px;"><span class="lm-eyebrow" id="snip-label"></span><pre class="code" id="snip"></pre>
-        <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" id="copy"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy snippet</button><span style="font-size: 13px;" class="subtle" id="copied">The npm package isn’t published yet; the real flow will show your space token here.</span></div></div>
-      <div id="waiting" class="lm-alert lm-alert--info" role="status"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i><div><strong>Waiting for the first call.</strong> Nothing has connected yet. <button type="button" id="sim" style="background: none; border: 0; padding: 0; font: inherit; color: var(--link); text-decoration: underline; cursor: pointer;">Show what success looks like</button></div></div>
-      <div id="connected" class="lm-alert lm-alert--success" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><strong>quill connected</strong> from Claude Code. Its first call started a shift automatically.</div></div>
-      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="c4" disabled>Continue</button></div>
-    </section>
-
-    <section class="lm-panel card" data-step="5" hidden>
-      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Watch the first entries arrive.</h1><p style="margin: 0;" class="muted">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. Each change shows up here in order.</p></div>
-      <div class="lm-panel" style="padding: 8px 20px;"><div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div><div class="lm-events" id="first"></div></div>
+    <!-- BYO: connect agents -->
+    <section class="lm-panel ob-card" data-step="connect" aria-labelledby="h-connect" hidden>
+      <div><h1 id="h-connect" tabindex="-1">Connect your first agent.</h1><p class="ob-lede">Pick where the agent runs. Paste the snippet, restart the agent, and its first call starts a shift.</p></div>
+      <div class="lm-tabs" role="tablist" aria-label="Agent host" id="hosts"></div>
+      <div class="ob-tabpanel" role="tabpanel" id="host-panel" tabindex="0">
+        <div class="ob-snip-meta"><span class="lm-eyebrow" id="snip-label"></span><span id="snip-badges" class="lm-row"></span></div>
+        <pre class="code" id="snip"></pre>
+        <p class="ob-note" id="snip-note"></p>
+        <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-copy="snip"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy snippet</button><span class="ob-note" data-copied="snip" aria-live="polite"></span></div>
+      </div>
+      <div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="info" aria-hidden="true"></i><div>The <code class="mono">@logmem/mcp</code> package isn’t published on npm yet; this is the command it will use. In the real flow your space token appears here in place of <code class="mono">&lt;space token&gt;</code>.</div></div>
+      <div class="lm-alert lm-alert--info" id="waiting"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i><div>This page doesn’t watch for the first call yet. After the restart, the agent shows up in the app under Agents. <button type="button" class="ob-linkbtn" id="sim">Show what success looks like</button></div></div>
+      <div class="lm-alert lm-alert--success" id="connected" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><span class="lm-demo">Demo</span> <strong>quill connected</strong> from <span id="sim-host">Claude Code</span>. Its first call started a shift automatically.</div></div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
     </section>
 
-    <section class="lm-panel card" data-step="6" hidden>
-      <div><h1 class="lm-title-1" style="margin: 0 0 6px; font-size: 22px;">Add a second agent and pass it work.</h1><p style="margin: 0;" class="muted">Memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it.</p></div>
-      <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px;" class="muted">
-        <li>Repeat step 4 on another host, with <code class="mono">LOGMEM_AGENT=atlas</code>.</li>
+    <!-- BYO: first entries -->
+    <section class="lm-panel ob-card" data-step="first" aria-labelledby="h-first" hidden>
+      <div><h1 id="h-first" tabindex="-1">Watch the first entries arrive.</h1><p class="ob-lede">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. Each change is written to the log in order. Below is what that looks like.</p></div>
+      <div class="lm-panel lm-demo-frame ob-events">
+        <div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div>
+        <div class="lm-events">
+          <div class="lm-event" data-k="system"><time class="lm-event-time">08:02</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">started</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">quill (via claude-code) started a shift (auto)</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
+          <div class="lm-event" data-k="work"><time class="lm-event-time">08:04</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">assigned</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">New job: Draft newsletter issue 14</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
+          <div class="lm-event" data-k="work"><time class="lm-event-time">08:11</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">progress</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">Outline done, 6 sections</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
+        </div>
+      </div>
+      <p class="ob-note">At the end of the shift the agent writes a Recap. Its next Start opens with a Brief built from it, so the next shift doesn’t start cold.</p>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <!-- BYO: second agent + handoff -->
+    <section class="lm-panel ob-card" data-step="handoff" aria-labelledby="h-handoff" hidden>
+      <div><h1 id="h-handoff" tabindex="-1">Add a second agent and pass it work.</h1><p class="ob-lede">Memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it.</p></div>
+      <ol class="ob-list">
+        <li>Repeat <button type="button" class="ob-linkbtn" data-goto="connect">Connect agents</button> on another host, with <code class="mono">LOGMEM_AGENT=atlas</code>.</li>
         <li>Tell quill: <code class="mono">hand issue 14 to atlas</code>. LogMem writes a Handoff and atlas follows the job.</li>
-        <li>atlas’s next Brief lists the handoff until it notes <code class="mono">accepted</code>.</li>
+        <li>atlas’s next Brief lists the Handoff until it notes <code class="mono">accepted</code>.</li>
       </ol>
-      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><a href="/app" class="lm-btn lm-btn--primary" style="text-decoration: none;">Open the app</a></div>
+      <div class="lm-handoff lm-demo-frame" role="group" aria-label="Example Handoff, demo data">
+        <span class="lm-agent"><span class="lm-avatar ob-av1" aria-hidden="true">QU</span><span class="lm-agent-name">quill</span></span>
+        <span class="lm-handoff-arrow"><i class="lm-i" data-i="handoff" aria-hidden="true"></i>Handoff</span>
+        <span class="lm-agent"><span class="lm-avatar ob-av2" aria-hidden="true">AT</span><span class="lm-agent-name">atlas</span></span>
+        <div class="lm-handoff-pack"><span class="lm-badge">job: newsletter-14</span><span class="lm-badge">outline, 6 sections</span><span class="lm-badge">2 open links</span><span class="lm-demo">Demo data</span></div>
+      </div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+    </section>
+
+    <!-- BYO: invite a human approver -->
+    <section class="lm-panel ob-card" data-step="approver" aria-labelledby="h-approver" hidden>
+      <div>
+        <div class="lm-row ob-tags"><span class="lm-demo" title="Approver invites aren't built yet">Preview</span></div>
+        <h1 id="h-approver" tabindex="-1">Invite a person to approve.</h1>
+        <p class="ob-lede">Some actions can’t be undone: sending an email, publishing, paying. Before one of those, an agent writes an Ask and the job waits. The Ask goes to this person, who sees it under Decisions and approves or rejects it. Once it’s decided, the agent carries on.</p>
+      </div>
+      <form id="ap-form" novalidate class="lm-stack ob-form">
+        <div class="lm-field ob-narrow"><label class="lm-label" for="ap-email">Approver’s email</label><input class="lm-input" id="ap-email" type="email" autocomplete="off" aria-describedby="ap-help"><span class="lm-help" id="ap-help">You can approve yourself to start. Invites aren’t sent yet.</span></div>
+        <div id="ap-status" role="status" aria-live="polite"></div>
+        <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="submit" class="lm-btn lm-btn--secondary">Add approver</button><a href="/app" class="lm-btn lm-btn--primary">Open the app</a></div>
+      </form>
     </section>
   </main>
 </div>
-
-<script>
-(function () {
-  var $ = function (s) { return document.querySelector(s); };
-  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-  var titles = [['Name your space', 'One walled-off memory'], ['Connect your Redis', 'Upstash or redis://'], ['ACMI compatibility', 'Optional'], ['Connect an agent', 'Claude Code, Codex, Cursor…'], ['First entries', 'See the log fill'], ['Second agent', 'Your first handoff']];
-  var step = 1, max = 1, host = 0;
-  function space() { return ($('#sp').value || 'fieldnotes').toLowerCase(); }
-  var hosts = [
-    ['Claude Code', 'Run in a terminal', function () { return 'claude mcp add logmem --scope user \\\n  -e LOGMEM_SPACE=' + space() + ' -e LOGMEM_AGENT=quill \\\n  -e LOGMEM_REST_URL=<your REST URL> -e LOGMEM_REST_TOKEN=<space token> \\\n  -- npx @logmem/mcp'; }],
-    ['Codex', '~/.codex/config.toml', function () { return '[mcp_servers.logmem]\ncommand = "npx"\nargs = ["@logmem/mcp"]\nenv = { LOGMEM_SPACE = "' + space() + '", LOGMEM_AGENT = "quill", LOGMEM_REST_URL = "<your REST URL>", LOGMEM_REST_TOKEN = "<space token>" }'; }],
-    ['Cursor', '.cursor/mcp.json', function () { return '{ "mcpServers": { "logmem": {\n  "command": "npx", "args": ["@logmem/mcp"],\n  "env": { "LOGMEM_SPACE": "' + space() + '", "LOGMEM_AGENT": "quill",\n           "LOGMEM_REST_URL": "<your REST URL>", "LOGMEM_REST_TOKEN": "<space token>" } } } }'; }],
-    ['Claude Web', 'Settings › Connectors › Add custom connector', function () { return location.origin + '/mcp\n\nClaude asks you to sign in to LogMem and pick a space. The connection can only use that space.'; }]
-  ];
-  function render() {
-    $('#count').textContent = 'Step ' + step + ' of 6';
-    $('#steps').innerHTML = titles.map(function (t, i) {
-      var n = i + 1, done = n < step, cur = n === step;
-      return '<li><button type="button" class="step-btn" data-go="' + n + '"' + (cur ? ' aria-current="step"' : '') + (n > max ? ' disabled' : '') + '><span class="dot ' + (done ? 'done' : cur ? 'cur' : '') + '">' + (done ? '✓' : n) + '</span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">' + t[0] + '</span><span style="font-size:12px" class="subtle">' + t[1] + '</span></span></button></li>';
-    }).join('');
-    document.querySelectorAll('[data-step]').forEach(function (s) { s.hidden = Number(s.dataset.step) !== step; });
-    $('#hosts').innerHTML = hosts.map(function (h, i) { return '<button type="button" class="lm-tab" role="tab" aria-selected="' + (i === host) + '" data-host="' + i + '"' + (i === host ? ' style="color:var(--text);border-bottom-color:var(--brand)"' : '') + '>' + h[0] + '</button>'; }).join('');
-    $('#snip-label').textContent = hosts[host][1];
-    $('#snip').textContent = hosts[host][2]();
-    $('#sp-echo').textContent = 'lm:' + space() + ':*';
-  }
-  function go(n) { step = Math.min(6, Math.max(1, n)); max = Math.max(max, step); render(); window.scrollTo(0, 0); }
-  document.addEventListener('click', function (e) {
-    var t = e.target.closest('button,a'); if (!t) return;
-    if (t.hasAttribute('data-next')) go(step + 1);
-    else if (t.hasAttribute('data-back')) go(step - 1);
-    else if (t.dataset.go) go(Number(t.dataset.go));
-    else if (t.dataset.host) { host = Number(t.dataset.host); render(); }
-  });
-  $('#sp').addEventListener('input', render);
-  $('#b-rest').onclick = function () { $('#b-rest').setAttribute('aria-pressed', 'true'); $('#b-tcp').setAttribute('aria-pressed', 'false'); $('#f-rest').hidden = false; $('#f-tcp').hidden = true; };
-  $('#b-tcp').onclick = function () { $('#b-tcp').setAttribute('aria-pressed', 'true'); $('#b-rest').setAttribute('aria-pressed', 'false'); $('#f-rest').hidden = true; $('#f-tcp').hidden = false; };
-  $('#test').onclick = function () { $('#tested').hidden = false; $('#save').disabled = false; };
-  $('#sim').onclick = function () { $('#waiting').hidden = true; $('#connected').hidden = false; $('#c4').disabled = false; };
-  $('#copy').onclick = function () { try { navigator.clipboard.writeText($('#snip').textContent); $('#copied').textContent = 'Copied.'; } catch (e) {} };
-  $('#first').innerHTML = [['08:02', 'system', 'started', 'quill (via claude-code) started a shift (auto)'], ['08:04', 'work', 'assigned', 'New job: Draft newsletter issue 14'], ['08:11', 'work', 'progress', 'Outline done, 6 sections']].map(function (r) {
-    return '<div class="lm-event" data-k="' + r[1] + '"><time class="lm-event-time time">' + r[0] + '</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">' + r[2] + '</span><strong style="font-size:14px">quill</strong><span class="lm-event-summary">' + esc(r[3]) + '</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>';
-  }).join('');
-  render();
-})();
-</script>
 </body>
 </html>

@@ -78,3 +78,68 @@ test("security: scorecard ignores forged checkups and coerces every field", asyn
   assert.equal(card.days[0].pass, false, "pass must be strictly true");
   assert.equal(cleanDay({ date: "2026-10-12", unanswered_24h: "3" }, "madez").unanswered_24h, 3);
 });
+
+test("site: /onboarding has every step, /probe.sh is served, and the probe pairs end to end", async (t) => {
+  const { spawn, execFileSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const port = 40000 + Math.floor(Math.random() * 20000);
+  const child = spawn(process.execPath, ["scripts/dev-site.mjs", "--seed", "--port", String(port)], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  t.after(() => child.kill());
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("dev-site did not start")), 15000);
+    child.stdout.on("data", (d) => { if (String(d).includes("site on")) { clearTimeout(timer); resolve(); } });
+    child.on("exit", (c) => reject(new Error(`dev-site exited ${c}`)));
+  });
+  const base = `http://localhost:${port}`;
+  // The blocking execFileSync calls below can outlast the server's keep-alive
+  // window, so a pooled socket may be reset: retry once on a fresh one.
+  const fetchRetry = (u) => fetch(u).catch(() => fetch(u));
+
+  const page = await fetch(`${base}/onboarding`);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  for (const step of ["choose", "plan", "detect", "waitlist", "space", "redis", "acmi", "connect", "first", "handoff", "approver"]) {
+    assert.ok(html.includes(`data-step="${step}"`), `step ${step}`);
+  }
+  assert.ok(html.includes("Proposed pricing, not final"));
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, "no inline scripts (CSP)");
+  assert.doesNotMatch(html, /\son[a-z]+=/i, "no inline event handlers");
+  assert.doesNotMatch(html, /https?:\/\/(?!logmem\.si)[a-z0-9.-]+\.[a-z]{2,}\/[^"]*\.(?:js|css|woff2?)/i, "no external scripts, styles or fonts");
+  const js = await fetch(`${base}/onboarding.js`);
+  assert.equal(js.status, 200);
+  assert.match(await js.text(), /getRandomValues/);
+
+  const sh = await fetch(`${base}/probe.sh`);
+  assert.equal(sh.status, 200);
+  assert.match(sh.headers.get("content-type"), /^text\/plain/);
+  const script = await sh.text();
+  assert.match(script, /^#!\/bin\/sh/);
+  assert.ok(script.includes("LOGMEM_PAIR"));
+  execFileSync("sh", ["-n", join(root, "public/probe.sh")]);
+
+  // End to end: a fake `claude` on PATH, the real script, the real endpoint.
+  const bin = mkdtempSync(join(tmpdir(), "lm-probe-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "claude"), '#!/bin/sh\necho "2.1.0 (Claude Code)"\n');
+  writeFileSync(join(bin, "codex"), "#!/bin/sh\nexec sleep 10\n"); // never answers: the 3 s limit must cut it off
+  chmodSync(join(bin, "claude"), 0o755);
+  chmodSync(join(bin, "codex"), 0o755);
+  const env = { PATH: `${bin}:/usr/bin:/bin`, LOGMEM_PAIR: "E2E123", LOGMEM_URL: base, HOME: bin };
+  const t0 = Date.now();
+  const out = execFileSync("sh", [join(root, "public/probe.sh")], { env, encoding: "utf8", timeout: 20000 });
+  assert.ok(Date.now() - t0 < 12000, "the hung CLI was timed out");
+  assert.match(out, /found\s+claude\s+2\.1\.0 \(Claude Code\)/);
+  assert.match(out, /Sent\./);
+  const got = await (await fetchRetry(`${base}/api/onboarding/probe?code=E2E123`)).json();
+  rmSync(join(bin, "codex")); // the timeout is proven; keep the next runs fast
+  assert.equal(got.agents.find((a) => a.name === "claude").version, "2.1.0 (Claude Code)");
+  assert.equal(got.agents.find((a) => a.name === "codex").version, "");
+  const again = execFileSync("sh", ["-c", `sh "${join(root, "public/probe.sh")}" || echo EXIT=$?`], { env, encoding: "utf8", timeout: 20000 });
+  assert.match(again, /EXIT=1/, "a used code is refused (409)");
+  const quiet = execFileSync("sh", [join(root, "public/probe.sh")], { env: { ...env, LOGMEM_PAIR: "" }, encoding: "utf8", timeout: 20000 });
+  assert.match(quiet, /Nothing was sent/);
+});
