@@ -731,3 +731,18 @@ test("L3: with two signed settling entries, the Brief and the Decisions page bot
   const page2 = (await buildView(redis, "fieldnotes", "decisions")).decided[0].answer.payload.verdict;
   assert.deepEqual([brief2, page2], ["approve", "approve"]);
 });
+
+// ─── L1: an empty note is normalized the same way for signing and storing ─
+test("L1: note '' (and a whitespace note) sign and store identically; the decision counts", async () => {
+  const { q, store } = await team();
+  const a1 = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  const d1 = await writeDecision(store, a1.trail, { verdict: "approve", by: "human:admin", note: "" });
+  assert.equal("note" in d1.entry.payload, false);
+  assert.equal(verifyDecision(d1.entry, { secret: SECRET, space: "fieldnotes" }), true);
+  const a2 = await sc(q, "logmem_ask", { question: "q2", action: "b", reversible: true });
+  const d2 = await writeDecision(store, a2.trail, { verdict: "reject", by: "human:admin", note: "  " });
+  assert.equal(verifyDecision(d2.entry, { secret: SECRET, space: "fieldnotes" }), true);
+  const b = await sc(q, "logmem_brief", {});
+  assert.deepEqual(b.answered_asks.map((x) => x.trail).sort(), [a1.trail, a2.trail].sort());
+  assert.equal(b.pending_asks.length, 0, "not stuck");
+});

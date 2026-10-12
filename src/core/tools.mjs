@@ -935,6 +935,8 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);
   if (!HUMAN_RE.test(String(by || ""))) throw new DecisionError("bad_request", "by must be 'human:<id>': only a person decides");
   if (note != null && (typeof note !== "string" || note.length > LIMITS.summary)) throw new DecisionError("bad_request", `note must be text of at most ${LIMITS.summary} characters`);
+  // One normalization for signing and storing: an empty note is no note.
+  note = note === "" || note == null ? undefined : note;
   if (askTrail.includes(":")) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
 
   const found = await findAsk(store, askTrail);
@@ -966,7 +968,7 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     trail: makeTrail("decided", asker, t),
     origin: askTrail,
     summary: `${label}: ${note || ask.summary || askTrail}`.slice(0, LIMITS.summary),
-    payload: { verdict, ...(note ? { note } : {}), ask_hash: askHash, sig },
+    payload: { verdict, ...(note !== undefined ? { note } : {}), ask_hash: askHash, sig },
   };
 
   // Set once: the first settling answer (approve/reject) claims the key, and
