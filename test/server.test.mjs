@@ -138,7 +138,8 @@ test("two spaces on one Redis never see each other", async () => {
 
 test("compat mode: acmi_* tools write LogMem shape and read back ACMI shape", async () => {
   const redis = createMemoryRedis();
-  const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "c" });
+  // The writer is this session's agent (codex), never the caller's `source`.
+  const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "c", defaultAgent: "codex" });
   assert.equal(lm.tools.length, 41);
   await call(lm, "acmi_event", { namespace: "thread", id: "agent-coordination", source: "agent:codex", kind: "handoff-ack", summary: "ack", correlationId: "x-1", parentCorrelationId: "p-1" });
   const raw = await redis("ZRANGE", "lm:madez:channel:agent-coordination:log", 0, -1);

@@ -12,7 +12,8 @@ import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
 import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
 import { SLOTS, checkAgentId } from "../core/keys.mjs";
-import { HUMAN_ONLY, ASK_ONLY, isDecidedKind, isAskKind, capEntry, capJson } from "../core/tools.mjs";
+import { HUMAN_ONLY, ASK_ONLY, isDecidedKind, isAskKind, capEntry, capJson, capText, onlyMe, me } from "../core/tools.mjs";
+import { agentRef, byline } from "../core/session.mjs";
 
 /** Rollups are cross-session summaries; they get more room than one entry's payload. */
 const ROLLUP_MAX = 64 * 1024;
@@ -42,9 +43,37 @@ function parseSince(s) {
   return Number(m[1]) * { h: 3600e3, d: 86400e3, m: 60e3 }[m[2]];
 }
 
-/** ACMI event args -> stored LogMem entry */
-async function appendAcmi(store, ns, id, ev) {
-  return store.append(ns, id, entryFromAcmi({ ts: Date.now(), ...ev }));
+/**
+ * ACMI event args -> stored LogMem entry. The writer is always the agent
+ * holding this session's shift: `source` from the caller is never trusted as
+ * `by` (that is how an approval was forged). A claimed source that differs is
+ * kept as `claimed_source` for the audit trail only.
+ */
+async function appendAcmi(ctx, ns, id, ev) {
+  const { source, ...rest } = ev;
+  const agent = me(ctx);
+  const by = agentRef(agent);
+  capText("source", source);
+  const claimed = source != null && String(source) !== by && String(source) !== agent ? { claimed_source: String(source) } : {};
+  return ctx.store.append(ns, id, {
+    ...entryFromAcmi({ ts: Date.now(), ...rest }),
+    by,
+    via: ctx.surface,
+    byline: byline(agent, ctx.surface),
+    shift: ctx.shift.shift,
+    ...claimed,
+  });
+}
+
+/** This connection is bound to one space: a write naming another tenant is refused, not silently redirected. */
+function ownSpace(store, tenant) {
+  if (tenant == null || tenant === "" || tenant === store.space) return null;
+  return { ok: false, error: `this connection is bound to space '${store.space}'; it cannot write to tenant '${String(tenant).slice(0, 60)}'` };
+}
+
+/** acmi_* writes to an agent's own slots go through the same onlyMe rule as logmem_status / logmem_bio. */
+function ownAgent(ctx, ns, id, tool, slot) {
+  return ns === "agent" ? onlyMe(ctx, id, tool, slot) : null;
 }
 
 const toAcmiList = (entries) => entries.map(entryToAcmi);
@@ -73,12 +102,14 @@ export const ACMI_TOOLS = [
       profile: { type: "string", desc: "JSON string of profile data to store" },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ namespace, id, profile }, { store }) {
+    async run({ namespace, id, profile }, ctx) {
+      const { store } = ctx;
       checkEntity(namespace, id);
+      const ns = nsFromAcmi(namespace);
+      const refused = ownAgent(ctx, ns, id, "acmi_profile", "profile");
+      if (refused) return refused;
       validateJson(profile, "profile");
       capJson("profile", profile);
-      const ns = nsFromAcmi(namespace);
       await store.setWho(ns, id, json(profile));
       return { ok: true, key: store.key(ns, id, "who") };
     },
@@ -92,12 +123,14 @@ export const ACMI_TOOLS = [
       signals: { type: "string", desc: "JSON string of signal data to store" },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ namespace, id, signals }, { store }) {
+    async run({ namespace, id, signals }, ctx) {
+      const { store } = ctx;
       checkEntity(namespace, id);
+      const ns = nsFromAcmi(namespace);
+      const refused = ownAgent(ctx, ns, id, "acmi_signal", "signals");
+      if (refused) return refused;
       validateJson(signals, "signals");
       capJson("signals", signals);
-      const ns = nsFromAcmi(namespace);
       await store.replaceNow(ns, id, json(signals));
       return { ok: true, key: store.key(ns, id, "now") };
     },
@@ -108,25 +141,25 @@ export const ACMI_TOOLS = [
     params: params({
       namespace: { type: "string", desc: "ACMI namespace (e.g. 'thread', 'agent', 'work')" },
       id: { type: "string", desc: "Entity ID" },
-      source: { type: "string", desc: "Source of the event (agent name, system, etc.)" },
+      source: { type: "string", desc: "Source of the event. Recorded as claimed_source only: the writer is always this session's agent" },
       summary: { type: "string", desc: "Human-readable event summary" },
-      kind: { type: "string", desc: "Event kind (e.g. 'handoff-complete', 'step-done', 'decision')", optional: true },
+      kind: { type: "string", desc: "Event kind (e.g. 'handoff-complete', 'step-done'). 'decision' is refused: only a person answers an ask", optional: true },
       correlationId: { type: "string", desc: "Correlation ID for tracking across agents/sessions (camelCase)", optional: true },
       parentCorrelationId: { type: "string", desc: "Parent correlation ID for chain tracking (camelCase)", optional: true },
-      tenant: { type: "string", desc: "Ignored: this connection is bound to one space", optional: true },
+      tenant: { type: "string", desc: "Must be this connection's space if given (each connection is bound to one space)", optional: true },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ namespace, id, source, summary, kind, correlationId, parentCorrelationId }, { store, surface }) {
+    async run({ namespace, id, source, summary, kind, correlationId, parentCorrelationId, tenant }, ctx) {
+      const { store } = ctx;
       checkEntity(namespace, id);
-      const refused = guardEvent({ kind, summary, correlationId, parentCorrelationId });
+      const refused = ownSpace(store, tenant) || guardEvent({ kind, summary, correlationId, parentCorrelationId });
       if (refused) return refused;
       const ns = nsFromAcmi(namespace);
-      const ev = { source, summary, via: surface };
+      const ev = { source, summary };
       if (kind) ev.kind = kind;
       if (correlationId) ev.correlationId = correlationId;
       if (parentCorrelationId) ev.parentCorrelationId = parentCorrelationId;
-      const stored = await appendAcmi(store, ns, id, ev);
+      const stored = await appendAcmi(ctx, ns, id, ev);
       return { ok: true, key: store.key(ns, id, "log"), event: entryToAcmi(stored) };
     },
   },
@@ -169,7 +202,6 @@ export const ACMI_TOOLS = [
       profile: { type: "string", desc: "JSON string of work item profile (title, owner, status, etc.)" },
     }),
     annotations: WRITE,
-    skipTouch: true,
     async run({ id, profile }, { store }) {
       validateKeySegments(id);
       validateJson(profile, "profile");
@@ -183,7 +215,7 @@ export const ACMI_TOOLS = [
     description: "Log a progress event on a work item.",
     params: params({
       id: { type: "string", desc: "Work item ID" },
-      source: { type: "string", desc: "Source of the event" },
+      source: { type: "string", desc: "Source of the event. Recorded as claimed_source only: the writer is always this session's agent" },
       summary: { type: "string", desc: "Event summary" },
       kind: { type: "string", desc: "Event kind", optional: true },
       correlationId: { type: "string", desc: "Correlation ID for chain tracking", optional: true },
@@ -191,17 +223,18 @@ export const ACMI_TOOLS = [
       sessionId: { type: "string", desc: "Optional session ID to associate", optional: true },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ id, source, summary, kind, correlationId, parentCorrelationId, sessionId }, { store, surface }) {
+    async run({ id, source, summary, kind, correlationId, parentCorrelationId, sessionId }, ctx) {
+      const { store } = ctx;
       validateKeySegments(id);
       const refused = guardEvent({ kind, summary, correlationId, parentCorrelationId });
       if (refused) return refused;
-      const ev = { source, summary, via: surface };
+      capText("sessionId", sessionId, 200);
+      const ev = { source, summary };
       if (kind) ev.kind = kind;
       if (correlationId) ev.correlationId = correlationId;
       if (parentCorrelationId) ev.parentCorrelationId = parentCorrelationId;
       if (sessionId) ev.session_id = sessionId;
-      const stored = await appendAcmi(store, "job", id, ev);
+      const stored = await appendAcmi(ctx, "job", id, ev);
       if (sessionId) await store.addJobSession(id, sessionId);
       return { ok: true, work_id: id, event: entryToAcmi(stored) };
     },
@@ -214,7 +247,6 @@ export const ACMI_TOOLS = [
       signals: { type: "string", desc: "JSON string of signal data" },
     }),
     annotations: WRITE,
-    skipTouch: true,
     async run({ id, signals }, { store }) {
       validateKeySegments(id);
       validateJson(signals, "signals");
@@ -293,10 +325,14 @@ export const ACMI_TOOLS = [
       modelId: { type: "string", desc: "Model ID used for the session", optional: true },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ agentId, sessionId, modelId }, { store }) {
+    async run({ agentId, sessionId, modelId }, ctx) {
+      const { store } = ctx;
       validateKeySegments(agentId);
       checkAgentId(agentId, "agentId");
+      const refused = onlyMe(ctx, agentId, "acmi_spawn", "spawns");
+      if (refused) return refused;
+      capText("sessionId", sessionId, 200);
+      capText("modelId", modelId, 200);
       await store.addShift(agentId, { ts: Date.now(), session_id: sessionId || "unknown", model_id: modelId || "unknown" });
       return { ok: true, agent_id: agentId };
     },
@@ -347,10 +383,15 @@ export const ACMI_TOOLS = [
       role: { type: "string", desc: "Role in thread (e.g. 'participant', 'lead'). Default: 'participant'", optional: true },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ agentId, action, threadKey, role }, { store }) {
+    async run({ agentId, action, threadKey, role }, ctx) {
+      const { store } = ctx;
       validateKeySegments(agentId);
       checkAgentId(agentId, "agentId");
+      if (action !== "list") {
+        const refused = onlyMe(ctx, agentId, "acmi_active", "active threads");
+        if (refused) return refused;
+        capText("role", role, 200);
+      }
       const ref = threadKey ? (threadKey.includes(":") ? threadKey.replace(/^thread:/, "channel:").replace(/^work:/, "job:") : `channel:${threadKey}`) : null;
       if (action === "add") {
         if (!ref) throw new Error("threadKey is required for 'add' action");
@@ -373,10 +414,12 @@ export const ACMI_TOOLS = [
       rollup: { type: "string", desc: "JSON string of rollup data (cross-session summary, decisions, blockers, etc.)" },
     }),
     annotations: WRITE,
-    skipTouch: true,
-    async run({ agentId, rollup }, { store }) {
+    async run({ agentId, rollup }, ctx) {
+      const { store } = ctx;
       validateKeySegments(agentId);
       checkAgentId(agentId, "agentId");
+      const refused = onlyMe(ctx, agentId, "acmi_rollup_set", "rollup");
+      if (refused) return refused;
       validateJson(rollup, "rollup");
       capJson("rollup", rollup, ROLLUP_MAX);
       await store.setRecap(agentId, json(rollup));
@@ -391,7 +434,6 @@ export const ACMI_TOOLS = [
       confirm: { type: "boolean", desc: "Must be true to actually delete; otherwise returns dry-run preview.", optional: true },
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    skipTouch: true,
     async run({ key, confirm }, { store }) {
       const target = key.startsWith("acmi:") ? acmiKeyToLm(key, store.space) : key;
       if (!target) throw new Error(`cannot map ${key} to a LogMem key; legacy acmi:* keys are never deleted from compat mode`);

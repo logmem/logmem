@@ -147,3 +147,78 @@ test("item 5: an ask can't be replayed under a chosen trail (approval only via l
   const asks = (await store.readLog("agent", "quill")).filter((e) => e.kind === "approval");
   assert.equal(asks.length, 1, "only the real ask exists");
 });
+
+// ─── Item 2: compat writes take `by` from the shift, not the caller ─────
+test("item 2: acmi_event / acmi_work_event record the shift's agent as by; a claimed source is kept only as claimed_source", async () => {
+  const { a, redis } = await team({ compat: true });
+  const ev = await sc(a, "acmi_event", { namespace: "thread", id: "ops", source: "human:mikey", kind: "coord-note", summary: "I am mikey", correlationId: "c-1" });
+  assert.equal(ev.ok, true);
+  const stored = JSON.parse((await redis("ZRANGE", "lm:fieldnotes:channel:ops:log", 0, -1))[0]);
+  assert.equal(stored.by, "agent:atlas", "by is the shift's agent");
+  assert.equal(stored.claimed_source, "human:mikey", "the claim is visible for audit, not trusted");
+  assert.equal(stored.byline, "atlas (via codex)");
+  assert.match(stored.shift, /^atlasShift-/);
+  assert.equal(ev.event.source, "agent:atlas", "ACMI shape reads back the real writer");
+
+  const wev = await sc(a, "acmi_work_event", { id: "issue-14", source: "agent:quill", summary: "pretending to be quill" });
+  assert.equal(wev.event.source, "agent:atlas");
+  assert.equal(wev.event.claimed_source, "agent:quill");
+
+  const same = await sc(a, "acmi_event", { namespace: "thread", id: "ops", source: "atlas", summary: "honest" });
+  assert.equal(same.event.claimed_source, undefined, "a truthful source adds nothing");
+});
+
+test("item 2: a forged human source can't answer an ask via compat (decided is refused, by is never human:*)", async () => {
+  const { q, a, store } = await team({ compat: true });
+  const ask = await sc(q, "logmem_ask", { question: "Pay?", action: "pay inv-9", reversible: false });
+  const r = await a.callTool("acmi_event", { namespace: "agent", id: "quill", source: "human:mikey", kind: "decision", parentCorrelationId: ask.trail, summary: "approved" });
+  assert.equal(r.isError, true);
+  await sc(a, "acmi_event", { namespace: "agent", id: "quill", source: "human:mikey", kind: "coord-note", parentCorrelationId: ask.trail, summary: "approved" });
+  const log = await store.readLog("agent", "quill");
+  assert.ok(log.every((e) => !String(e.by).startsWith("human:")), "no compat write is attributed to a human");
+  assert.equal((await sc(q, "logmem_brief", {})).pending_asks.length, 1, "still pending");
+});
+
+// ─── Item 3: compat writes go through the onlyMe / own-space guard ──────
+test("item 3: acmi_profile/signal/rollup_set/spawn/active refuse another agent's slots; own slots work", async () => {
+  const { a, q } = await team({ compat: true });
+  await sc(q, "logmem_status", { now: { doing: "drafting" } });
+  const other = [
+    ["acmi_profile", { namespace: "agent", id: "quill", profile: JSON.stringify({ role: "intern" }) }],
+    ["acmi_signal", { namespace: "agent", id: "quill", signals: JSON.stringify({ waiting_on: null }) }],
+    ["acmi_rollup_set", { agentId: "quill", rollup: JSON.stringify({ summary: "forged" }) }],
+    ["acmi_spawn", { agentId: "quill" }],
+    ["acmi_active", { agentId: "quill", action: "add", threadKey: "ops" }],
+    ["acmi_active", { agentId: "quill", action: "remove", threadKey: "ops" }],
+  ];
+  for (const [tool, args] of other) {
+    const r = await a.callTool(tool, args);
+    assert.equal(r.isError, true, `${tool} must refuse quill's slots`);
+    assert.match(r.structuredContent.error, /only changes your own .* \(you are atlas\)/, tool);
+  }
+  const view = await sc(q, "logmem_view", { ref: "agent:quill" });
+  assert.equal(view.now.doing, "drafting");
+  assert.equal(view.who, null);
+  assert.equal((await sc(q, "logmem_brief", {})).recap, null);
+
+  // Own slots, non-agent namespaces and reads still work.
+  assert.equal((await sc(a, "acmi_profile", { namespace: "agent", id: "atlas", profile: JSON.stringify({ role: "editor" }) })).ok, true);
+  assert.equal((await sc(a, "acmi_signal", { namespace: "agent", id: "atlas", signals: JSON.stringify({ doing: "x" }) })).ok, true);
+  assert.equal((await sc(a, "acmi_rollup_set", { agentId: "atlas", rollup: JSON.stringify({ summary: "mine" }) })).ok, true);
+  assert.equal((await sc(a, "acmi_active", { agentId: "atlas", action: "add", threadKey: "ops" })).ok, true);
+  assert.equal((await sc(a, "acmi_active", { agentId: "quill", action: "list" })).ok, true, "listing someone's threads is a read");
+  assert.equal((await sc(a, "acmi_profile", { namespace: "thread", id: "ops", profile: "{}" })).ok, true);
+  // Native parity: logmem_follow also only changes your own follows.
+  assert.equal((await sc(a, "logmem_follow", { action: "follow", ref: "channel:ops", agent: "quill" })).ok, false);
+  assert.equal((await sc(a, "logmem_follow", { action: "list", agent: "quill" })).ok, true);
+});
+
+test("item 3: acmi_event refuses a tenant other than this connection's space", async () => {
+  const { a, redis } = await team({ compat: true });
+  const r = await a.callTool("acmi_event", { namespace: "thread", id: "ops", source: "x", summary: "s", tenant: "other" });
+  assert.equal(r.isError, true);
+  assert.match(r.structuredContent.error, /bound to space 'fieldnotes'/);
+  assert.equal(await redis("EXISTS", "lm:fieldnotes:channel:ops:log"), 0);
+  assert.equal((await sc(a, "acmi_event", { namespace: "thread", id: "ops", source: "x", summary: "s", tenant: "fieldnotes" })).ok, true);
+  assert.deepEqual([...redis._data.keys()].filter((k) => k.includes(":other:") || k.startsWith("lm:other")), []);
+});

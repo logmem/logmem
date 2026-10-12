@@ -93,8 +93,12 @@ export function closeMatches(id, roster, n = 3) {
     .map(([r]) => r);
 }
 
-/** An agent may only change its own Who / Now. Returns an error result or null. */
-function onlyMe(ctx, agent, tool, slot) {
+/**
+ * An agent may only change its own Who / Now (and, in compat mode, its own
+ * recap, spawns and follows). Returns an error result or null. Shared by the
+ * native tools and the acmi_* compat tools so both paths enforce one rule.
+ */
+export function onlyMe(ctx, agent, tool, slot) {
   const mine = agentId(me(ctx));
   if (agent == null) return null;
   if (checkAgentId(agent) === mine) return null;
@@ -126,7 +130,7 @@ const camel = (s) =>
  */
 export const makeTrail = (kind, id, ts) => `${camel(`${kind}-${id}`)}-${ts}-${trailNonce()}`;
 
-function me(ctx) {
+export function me(ctx) {
   if (!ctx.shift) throw new Error("no open shift (call logmem_start)");
   return ctx.shift.agent;
 }
@@ -498,12 +502,14 @@ export const TOOLS = [
       action: { enum: ["follow", "unfollow", "list"], desc: "What to do" },
       ref: { type: "string", desc: "'channel:<id>' or 'job:<id>' (needed for follow/unfollow)", optional: true },
       role: { type: "string", desc: "Your role there, e.g. 'owner', 'reviewer' (default participant)", optional: true },
-      agent: { type: "string", desc: "Agent (default: you)", optional: true },
+      agent: { type: "string", desc: "Agent whose follows to list (default: you). Follow/unfollow only changes your own", optional: true },
     }),
     annotations: SET,
     async run({ action, ref, role, agent }, ctx) {
       const a = agent == null ? agentId(me(ctx)) : checkAgentId(agent);
       if (action === "list") return { ok: true, agent: a, follows: await ctx.store.follows(a) };
+      const refused = onlyMe(ctx, a, "logmem_follow", "follows");
+      if (refused) return refused;
       if (!ref) throw new Error("ref is required to follow/unfollow");
       const { ns, id } = parseRef(ref);
       const key = `${ns}:${id}`;
