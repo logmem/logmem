@@ -1,4 +1,8 @@
-// POST /api/decide {space, trail, verdict, note?} — a person answers an ask.
+// POST /api/decide {space, trail, verdict, note?, confirm?} — a person answers an ask.
+//
+// Approving an irreversible ask (anything not marked reversible: true) needs
+// confirm: "approve", the word the person typed in the confirm dialog;
+// without it the answer is 428 and nothing is written.
 //
 // The one write path from the web app. Everything else in /app reads through
 // the read-only guard; this route holds the read-write backend and does one
@@ -27,7 +31,7 @@ import { isAdmin, adminEnabled, viewSpaces } from "../src/http/admin-auth.mjs";
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
 export const INTENT_HEADER = "x-logmem-intent";
-const STATUS = { bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, misconfigured: 503 };
+const STATUS = { bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, confirm_required: 428, misconfigured: 503 };
 
 /** The signed-in person: human:<LOGMEM_ADMIN_ID> (default "admin"). Asks addressed to someone else are refused (403). */
 export const deciderFrom = (env) => `human:${String(env.LOGMEM_ADMIN_ID || "admin")}`;
@@ -71,8 +75,8 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
   }
 
   const b = body(req);
-  if (!b) return res.status(400).json({ error: "JSON body required: {space, trail, verdict, note?}" });
-  const { space, trail, verdict, note } = b;
+  if (!b) return res.status(400).json({ error: "JSON body required: {space, trail, verdict, note?, confirm?}" });
+  const { space, trail, verdict, note, confirm } = b;
   if (typeof space !== "string" || !viewSpaces(env).includes(space)) {
     return res.status(403).json({ error: `space '${String(space)}' is not shown here`, spaces: viewSpaces(env) });
   }
@@ -88,7 +92,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
   }
   try {
     const store = createStore(runner, { space });
-    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", ...(now ? { now } : {}) });
+    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", confirm: confirm === "approve", ...(now ? { now } : {}) });
     return res.status(201).json({ ok: true, space, ...out });
   } catch (e) {
     if (e instanceof DecisionError) return res.status(STATUS[e.code] || 400).json({ error: e.message, code: e.code });

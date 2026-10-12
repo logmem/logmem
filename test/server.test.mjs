@@ -91,7 +91,7 @@ test("clean room: start, note, assign, handoff, accept, ask, decide, stage, reca
   await call(q, "logmem_update", { job: "issue-14", summary: "Draft done" });
   const ask = await call(q, "logmem_ask", { question: "Send to 2,184 subscribers?", action: "POST /v1/campaigns/iss-14/send", reversible: false, where: "job:issue-14" });
   assert.match(ask.instruction, /Do not perform/);
-  await writeDecision(a.store, ask.trail, { verdict: "approve", note: "Approved", by: "human:mikey" });
+  await writeDecision(a.store, ask.trail, { verdict: "approve", note: "Approved", by: "human:mikey", confirm: true });
   await call(q, "logmem_stage", { job: "issue-14", stage: "done", note: "scheduled Tue 9am" });
   const recap = await call(q, "logmem_recap", { notes: "Issue 14 scheduled.", next: ["subject-line test for 15"] });
   assert.equal(recap.recap.mode, "manual");

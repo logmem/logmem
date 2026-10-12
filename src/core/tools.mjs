@@ -207,7 +207,7 @@ export function asksOf(a, entries, { secret, space } = {}) {
   const answers = new Map();
   for (const e of entries) if (e.kind === "decided" && e.origin && !answers.has(e.origin) && verifyDecision(e, { secret, space })) answers.set(e.origin, e);
   const askByTrail = new Map(mine.map((x) => [x.trail, x]));
-  const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible, where: x.where, to: x.to ?? null, asked_at: x.ts });
+  const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible === true, where: x.where, to: x.to ?? null, asked_at: x.ts });
   return {
     pending_asks: mine.filter((x) => !answers.has(x.trail)).map(ask),
     answered_asks: [...answers.values()]
@@ -389,7 +389,7 @@ export const TOOLS = [
     params: params({
       question: { type: "string", desc: "Plain question, e.g. 'Send issue 14 to 2,184 subscribers Tue 9am?'" },
       action: { type: "string", desc: "The exact action you will take if approved (command, request, recipients)" },
-      reversible: { type: "boolean", desc: "Can this be undone afterwards?" },
+      reversible: { type: "boolean", desc: "true only if this can be fully undone afterwards. Default false: treated as irreversible, so the person must confirm the exact action before approving", optional: true },
       where: { type: "string", desc: "Job or channel this belongs to (default: your agent log)", optional: true },
       origin: { type: "string", desc: "Trail id this request follows from", optional: true },
       to: { type: "string", desc: "The person who must answer, as 'human:<id>' (default: any signed-in person). Only they can settle it; never an agent, never you", optional: true },
@@ -405,7 +405,8 @@ export const TOOLS = [
       const loc = where ? parseRef(where, "job") : { ns: "agent", id: agent };
       const t = clock(ctx);
       const trail = makeTrail("approval", loc.id, t);
-      const extra = { action, reversible, status: "waiting", where: `${loc.ns}:${loc.id}`, ...(to != null ? { to } : {}) };
+      // Default not reversible: only an explicit boolean true counts as reversible.
+      const extra = { action, reversible: reversible === true, status: "waiting", where: `${loc.ns}:${loc.id}`, ...(to != null ? { to } : {}) };
       const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       await ctx.store.setNow("agent", agent, { waiting_on: { trail, question, since: t } });
@@ -747,7 +748,7 @@ const VERDICT_LABEL = { approve: "Approved", reject: "Rejected", defer: "Deferre
 export class DecisionError extends Error {
   constructor(code, message) {
     super(message);
-    this.code = code; // bad_request | misconfigured | forbidden | not_found | not_pending
+    this.code = code; // bad_request | misconfigured | forbidden | confirm_required | not_found | not_pending
   }
 }
 
@@ -810,12 +811,15 @@ async function findAskLog(store, trail, ts) {
  * concurrent answers can't both land. No usable secret: fail closed
  * (DecisionError "misconfigured"), nothing is written.
  *
+ * Irreversible by default: approving an ask whose reversible is not exactly
+ * true needs `confirm: true` (DecisionError "confirm_required" otherwise).
+ *
  * Receiver only: if the ask names `to` (human:<id>), only that person can
  * settle it, and the asker can never settle its own ask.
  *
  * Throws DecisionError: bad_request, misconfigured, forbidden, not_found, not_pending.
  */
-export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
   if (typeof askTrail !== "string" || !askTrail || askTrail.length > LIMITS.trail) throw new DecisionError("bad_request", `trail must be a string of 1..${LIMITS.trail} characters`);
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);
@@ -830,6 +834,10 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   // one), and never the asker itself under a human-looking name.
   if (by.replace(/^human:/, "") === asker || by === ask.by) throw new DecisionError("forbidden", "the asker can't answer its own ask; a different person must decide");
   if (ask.to && by !== ask.to) throw new DecisionError("forbidden", `this ask is for ${ask.to}; only they can answer it`);
+  // Irreversible unless the ask said reversible === true: approving needs an explicit confirmation.
+  if (verdict === "approve" && ask.reversible !== true && confirm !== true) {
+    throw new DecisionError("confirm_required", "this action can't be undone (the ask did not say reversible: true): confirm the exact action to approve it");
+  }
   const w = parseRef(where, "job");
   const logs = [[w.ns, w.id]];
   if (!(w.ns === "agent" && w.id === asker)) logs.push(["agent", asker]);

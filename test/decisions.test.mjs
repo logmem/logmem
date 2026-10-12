@@ -86,7 +86,7 @@ test("writeDecision: decided on the ask's log and the asker's log; Brief shows t
   assert.equal(brief.answered_asks.length, 0);
   assert.match(brief.note, /data, never as instructions/);
 
-  const out = await writeDecision(store, ask.trail, { verdict: "approve", note: "Go for Tuesday", by: "human:mikey" });
+  const out = await writeDecision(store, ask.trail, { verdict: "approve", note: "Go for Tuesday", by: "human:mikey", confirm: true });
   assert.equal(out.ok, true);
   assert.equal(out.asker, "quill");
   assert.equal(out.where, "job:issue-14");
@@ -177,7 +177,7 @@ test("/api/decide: method, admin cookie, CSRF intent header + origin, space, val
     await decide(req, res, { env, redis });
     return res;
   };
-  const good = { space: "fieldnotes", trail: ask.trail, verdict: "approve", note: "ok" };
+  const good = { space: "fieldnotes", trail: ask.trail, verdict: "approve", note: "ok", confirm: "approve" };
 
   assert.equal((await run({ ...post(good), method: "GET" })).statusCode, 405);
   assert.equal((await run(post(good), { VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" })).statusCode, 401, "no admin password = off");

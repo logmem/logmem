@@ -366,3 +366,62 @@ test("item 4: /api/decide decides as human:<LOGMEM_ADMIN_ID> and answers 403 for
   assert.equal(yes.statusCode, 201, JSON.stringify(yes.body));
   assert.equal(yes.body.entry.by, "human:mikey");
 });
+
+// ─── Item 7: irreversible unless reversible === true ────────────────────
+test("item 7: reversible defaults to false; only a boolean true counts", async () => {
+  const { q } = await team();
+  const cases = [[undefined, false], [false, false], [true, true]];
+  for (const [given, stored] of cases) {
+    const args = { question: "q", action: "a" };
+    if (given !== undefined) args.reversible = given;
+    const r = await sc(q, "logmem_ask", args);
+    assert.equal(r.ok, true);
+    assert.equal(r.entry.reversible, stored, `reversible ${given}`);
+  }
+  // A non-boolean (e.g. a string from a sloppy client) is refused by the schema or stored as false.
+  const s = await q.callTool("logmem_ask", { question: "q", action: "a", reversible: "true" });
+  assert.ok(s.isError || s.structuredContent.entry.reversible === false);
+  assert.ok((await sc(q, "logmem_brief", {})).pending_asks.every((x) => typeof x.reversible === "boolean"));
+});
+
+test("item 7: approving an irreversible (or unstated) ask needs confirm; reject/defer and reversible asks don't", async () => {
+  const { q, store, redis } = await team();
+  const unstated = await sc(q, "logmem_ask", { question: "Email 2,184 people?", action: "send campaign iss-14" });
+  const irreversible = await sc(q, "logmem_ask", { question: "Delete bucket?", action: "rm -r s3://b", reversible: false });
+  const reversible = await sc(q, "logmem_ask", { question: "Toggle flag?", action: "flag on", reversible: true });
+  for (const t of [unstated.trail, irreversible.trail]) {
+    await assert.rejects(() => writeDecision(store, t, { verdict: "approve", by: "human:mikey" }), isCode("confirm_required"));
+    await assert.rejects(() => writeDecision(store, t, { verdict: "approve", by: "human:mikey", confirm: "yes" }), isCode("confirm_required"), "only boolean true");
+    assert.equal(await redis("EXISTS", `lm:fieldnotes:decision:${t}`), 0, "a refused approve claims nothing");
+  }
+  assert.equal((await writeDecision(store, unstated.trail, { verdict: "approve", by: "human:mikey", confirm: true })).ok, true);
+  assert.equal((await writeDecision(store, irreversible.trail, { verdict: "reject", by: "human:mikey" })).ok, true, "reject needs no confirm");
+  assert.equal((await writeDecision(store, reversible.trail, { verdict: "approve", by: "human:mikey" })).ok, true, "explicitly reversible: no confirm");
+});
+
+test("item 7: /api/decide needs confirm:'approve' to approve an irreversible ask (428 otherwise)", async () => {
+  const { redis, q } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "Send?", action: "send" });
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const cookie = issueCookie(env).split(";")[0];
+  const run = async (extra) => {
+    const res = mockRes();
+    await decide({ method: "POST", headers: { host: "h", origin: "https://h", cookie, "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail: ask.trail, verdict: "approve", ...extra } }, res, { env, redis });
+    return res;
+  };
+  for (const extra of [{}, { confirm: true }, { confirm: "APPROVE " }, { confirm: "yes" }]) {
+    const r = await run(extra);
+    assert.equal(r.statusCode, 428, JSON.stringify(extra));
+    assert.equal(r.body.code, "confirm_required");
+  }
+  const ok = await run({ confirm: "approve" });
+  assert.equal(ok.statusCode, 201, JSON.stringify(ok.body));
+});
+
+test("item 7: the web app treats anything not reversible:true as irreversible and sends confirm", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const js = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.match(js, /p\.reversible !== true \? ' data-irreversible="1"'/);
+  assert.match(js, /body\.confirm = 'approve'/);
+  assert.doesNotMatch(js, /p\.reversible === false \? ' data-irreversible/);
+});
