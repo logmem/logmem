@@ -40,6 +40,7 @@ select{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--bor
 </main>
 <script>
 const $=id=>document.getElementById(id);
+const num=v=>{const n=Number(v);return Number.isFinite(n)?String(n):"0"};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 try{const s=localStorage.getItem("lm-score-space");if(s)$("space").value=s}catch(e){}
 async function load(){
@@ -59,7 +60,7 @@ async function load(){
     $("deliv").textContent=`${d.job}: ${d.stage}`;$("deliv").className="pill "+(d.stage==="done"?"pass":"gap");
     const last=days.slice(-7);
     $("strip").innerHTML=Array.from({length:7},(_,i)=>{const x=last[i-(7-last.length)];if(!x)return`<div class="day gap">—</div>`;return`<div class="day ${x.pass?"pass":"fail"}" title="${esc(x.date)}">${esc(x.date.slice(5))}<br>${x.pass?"PASS":"FAIL"}</div>`}).join("");
-    $("rows").innerHTML=days.slice().reverse().map(x=>`<tr><td>${esc(x.date)}</td><td><span class="pill ${x.pass?"pass":"fail"}">${x.pass?"PASS":x.health_pass?"LOW VOLUME":"FAIL"}</span></td><td>${(x.agents||[]).length}</td><td>${x.entries}</td><td>${x.accepted}/${x.handoffs}</td><td>${x.mirror_checked?x.mirror_mismatches:"n/a"}</td><td>${x.unanswered_24h}</td><td>${x.degraded_sessions}</td></tr>`).join("")||`<tr><td colspan="8" class="sub">No checks yet for this space.</td></tr>`;
+    $("rows").innerHTML=days.slice().reverse().map(x=>`<tr><td>${esc(x.date)}</td><td><span class="pill ${x.pass?"pass":"fail"}">${x.pass?"PASS":x.health_pass?"LOW VOLUME":"FAIL"}</span></td><td>${num((x.agents||[]).length)}</td><td>${num(x.entries)}</td><td>${num(x.accepted)}/${num(x.handoffs)}</td><td>${x.mirror_checked?num(x.mirror_mismatches):"n/a"}</td><td>${num(x.unanswered_24h)}</td><td>${num(x.degraded_sessions)}</td></tr>`).join("")||`<tr><td colspan="8" class="sub">No checks yet for this space.</td></tr>`;
   }catch(e){$("meta").innerHTML=`<span class="err">Could not load: ${esc(e.message)}</span>`}
 }
 $("space").onchange=load;load();

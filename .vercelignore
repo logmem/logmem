@@ -1,0 +1,6 @@
+.admin-password
+.env*
+.claude/
+reference/
+docs/migration/*.json
+test/

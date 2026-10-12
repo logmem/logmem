@@ -53,3 +53,18 @@ test("seen buckets and waiting decisions", () => {
   const d = decisionsFrom([{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "decided", origin: "a" }]);
   assert.deepEqual(d.waiting.map((x) => x.trail), ["b"]);
 });
+
+test("security: scorecard ignores forged checkups and coerces every field", async () => {
+  const { buildScorecard, cleanDay } = await import("../api/scorecard.mjs");
+  const { createStore } = await import("../src/core/store.mjs");
+  const redis = createMemoryRedis();
+  const s = createStore(redis, { space: "madez" });
+  const evil = '<img src=x onerror=alert(1)>';
+  await s.append("job", "logmem-dogfood", { kind: "checkup", by: "agent:mallory", summary: "x", payload: { date: "2026-10-11", entries: evil, pass: true } });
+  await s.append("job", "logmem-dogfood", { kind: "checkup", by: "agent:logmem-check", summary: "y", payload: { date: "2026-10-12", entries: evil, agents: [evil], pass: "yes" } });
+  const card = await buildScorecard(redis, "madez");
+  assert.equal(card.checks, 1, "only the audit's own checkups count");
+  assert.equal(card.days[0].entries, 0, "non-numeric coerced");
+  assert.equal(card.days[0].pass, false, "pass must be strictly true");
+  assert.equal(cleanDay({ date: "2026-10-12", unanswered_24h: "3" }, "madez").unanswered_24h, 3);
+});

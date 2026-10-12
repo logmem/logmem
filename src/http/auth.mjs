@@ -36,6 +36,10 @@ export async function resolveAuth(req, cfg = {}, env = process.env) {
   const defaultSpace = h(req, "x-logmem-space") || cfg.space || cfg.LOGMEM_SPACE || cfg.acmiDefaultTenant || env.LOGMEM_SPACE || "madez";
   const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space });
 
+  // Raw Redis creds in headers or ?config= turn a public deploy into an open
+  // relay to any host. Production accepts only OAuth (and break-glass).
+  const allowRaw = env.VERCEL_ENV !== "production" || env.LOGMEM_ALLOW_RAW_CREDS === "1";
+  if (!allowRaw) return bearerAuth(req, env, out, defaultSpace);
   const uri = h(req, "x-redis-uri");
   if (uri) return out({ kind: "redis", uri }, "header");
   const hu = h(req, "x-logmem-rest-url") || h(req, "x-acmi-bridge-url") || h(req, "x-upstash-url");
@@ -48,6 +52,10 @@ export async function resolveAuth(req, cfg = {}, env = process.env) {
   const ctok = cfg.restToken || cfg.acmiBridgeToken || cfg.upstashRedisRestToken || cfg.UPSTASH_REDIS_REST_TOKEN;
   if (curl && ctok) return out({ url: curl, token: ctok }, "config");
 
+  return bearerAuth(req, env, out, defaultSpace);
+}
+
+async function bearerAuth(req, env, out, defaultSpace) {
   const bearer = bearerOf(req);
   if (bearer) {
     try {
