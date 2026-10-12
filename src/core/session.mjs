@@ -15,6 +15,7 @@
 
 import { lmSessionKey, checkAgentId } from "./keys.mjs";
 import { tryParse } from "./store.mjs";
+import { randomBytes } from "node:crypto";
 
 export const IDLE_MS = 30 * 60 * 1000;
 /** Shift bookkeeping is dropped a week after the last call. */
@@ -93,7 +94,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
   async function startShift(agent, { auto = false, modelId } = {}) {
     const a = checkAgentId(String(agent));
     const ts = now();
-    const shift = `${a}Shift-${ts}`;
+    const shift = `${a}Shift-${ts}-${randomBytes(12).toString("hex")}`;
     const rec = { agent: a, surface, shift, started_at: ts, last_seen: ts, auto };
     await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto });
     await store.append("agent", a, {

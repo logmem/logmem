@@ -13,6 +13,7 @@
 // the admin login). Every write is size-capped (LIMITS) because entry text
 // is shown to other agents and must stay data, not a prompt channel.
 
+import { randomBytes } from "node:crypto";
 import { params } from "./params.mjs";
 import { parseRef } from "./keys.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
@@ -59,6 +60,10 @@ export const HUMAN_ONLY =
 
 /** True for "decided" and its ACMI aliases ("decision", "decision-ratified"), any case. */
 export const isDecidedKind = (kind) => kind != null && normalizeKind(String(kind).trim().toLowerCase()).kind === "decided";
+/** True for "approval" and its ACMI alias ("decision-request"). */
+export const isAskKind = (kind) => kind != null && normalizeKind(String(kind).trim().toLowerCase()).kind === "approval";
+/** Asks only come from logmem_ask, so their trail is always fresh and unguessable (never a reused or chosen one). */
+export const ASK_ONLY = "approval entries are written by logmem_ask, which picks a fresh trail; call logmem_ask instead";
 export const isHuman = (by) => /^human:/.test(String(by || ""));
 
 /** Edit distance, for "did you mean" on agent ids. */
@@ -105,13 +110,21 @@ function parseSince(s) {
   return Number(m[1]) * { m: 60e3, h: 3600e3, d: 86400e3 }[m[2]];
 }
 
+export const NONCE_RE = /^[0-9a-f]{24}$/;
+export const trailNonce = () => randomBytes(12).toString("hex");
+
 const camel = (s) =>
   String(s)
     .replace(/[^a-zA-Z0-9]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ""))
     .replace(/^./, (c) => c.toLowerCase());
 
-/** Default trail: <kind><Id>-<ms>, matching the fleet's camelCase-epoch habit. */
-export const makeTrail = (kind, id, ts) => `${camel(`${kind}-${id}`)}-${ts}`;
+/**
+ * Default trail: <kind><Id>-<ms>-<nonce>. The ms keeps the fleet's
+ * camelCase-epoch habit (and lets findAsk narrow its read); the 96-bit random
+ * nonce makes every trail unique and unguessable, so two asks in the same ms
+ * never share a trail and nobody can predict (or pre-answer) the next one.
+ */
+export const makeTrail = (kind, id, ts) => `${camel(`${kind}-${id}`)}-${ts}-${trailNonce()}`;
 
 function me(ctx) {
   if (!ctx.shift) throw new Error("no open shift (call logmem_start)");
@@ -119,9 +132,10 @@ function me(ctx) {
 }
 
 /** Write one entry, stamped with who/where/which shift. */
-async function write(ctx, ns, id, { kind, summary, trail, origin, payload, ts, extra }) {
+async function write(ctx, ns, id, { kind, summary, trail, origin, payload, ts, extra, ask = false }) {
   const agent = me(ctx);
   if (isDecidedKind(kind)) throw new Error(HUMAN_ONLY);
+  if (isAskKind(kind) && !ask) throw new Error(ASK_ONLY);
   capEntry({ summary, payload, trail, origin });
   const t = ts ?? clock(ctx);
   const k = normalizeKind(kind);
@@ -376,8 +390,8 @@ export const TOOLS = [
       const t = clock(ctx);
       const trail = makeTrail("approval", loc.id, t);
       const extra = { action, reversible, status: "waiting", where: `${loc.ns}:${loc.id}` };
-      const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra });
-      if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra });
+      const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
+      if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       await ctx.store.setNow("agent", agent, { waiting_on: { trail, question, since: t } });
       return {
         ok: true,
@@ -683,8 +697,9 @@ export class DecisionError extends Error {
   }
 }
 
-const trailTs = (trail) => {
-  const m = String(trail).match(/-(\d{10,})$/);
+/** The ms part of a generated trail: <kind><Id>-<ms>-<nonce> (or the older <kind><Id>-<ms>). */
+export const trailTs = (trail) => {
+  const m = String(trail).match(/-(\d{10,})(?:-[0-9a-f]{24})?$/);
   return m ? Number(m[1]) : null;
 };
 

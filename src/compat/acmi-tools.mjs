@@ -12,7 +12,7 @@ import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
 import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
 import { SLOTS, checkAgentId } from "../core/keys.mjs";
-import { HUMAN_ONLY, isDecidedKind, capEntry, capJson } from "../core/tools.mjs";
+import { HUMAN_ONLY, ASK_ONLY, isDecidedKind, isAskKind, capEntry, capJson } from "../core/tools.mjs";
 
 /** Rollups are cross-session summaries; they get more room than one entry's payload. */
 const ROLLUP_MAX = 64 * 1024;
@@ -20,6 +20,7 @@ const ROLLUP_MAX = 64 * 1024;
 /** ACMI events go through the same rules as logmem_note: no agent-written decisions, size caps. */
 function guardEvent({ kind, summary, correlationId, parentCorrelationId }) {
   if (isDecidedKind(kind)) return { ok: false, error: HUMAN_ONLY };
+  if (isAskKind(kind)) return { ok: false, error: ASK_ONLY };
   capEntry({ summary, trail: correlationId, origin: parentCorrelationId });
   return null;
 }

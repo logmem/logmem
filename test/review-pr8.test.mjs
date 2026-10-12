@@ -8,6 +8,7 @@ import { createStore } from "../src/core/store.mjs";
 import { checkAgentId, AGENT_ID_RE } from "../src/core/keys.mjs";
 import { buildView } from "../src/http/view.mjs";
 import inbox from "../api/inbox/[agent].mjs";
+import { makeTrail, trailTs, trailNonce, NONCE_RE, ASK_ONLY } from "../src/core/tools.mjs";
 
 const sc = async (lm, name, args) => (await lm.callTool(name, args)).structuredContent;
 
@@ -107,4 +108,42 @@ test("item 6: /api/inbox and the agent view refuse bad agent ids with 400", asyn
     delete globalThis.__lmDevRedis;
   }
   await assert.rejects(() => buildView(redis, "acme", "agent", { id: "a b" }), (e) => e.code === "bad_agent_id");
+});
+
+// ─── Item 5: every trail carries a nonce ────────────────────────────────
+test("item 5: generated trails end in a 96-bit nonce; two asks in the same ms get different trails", async () => {
+  const now = clock();
+  const { q, a } = await team({ now });
+  const t1 = await sc(q, "logmem_ask", { question: "Send?", action: "send", reversible: false });
+  const t2 = await sc(q, "logmem_ask", { question: "Send?", action: "send", reversible: false });
+  assert.notEqual(t1.trail, t2.trail, "same ms, same where, still distinct");
+  for (const t of [t1.trail, t2.trail]) assert.match(t, /^approvalQuill-1791712800000-[0-9a-f]{24}$/);
+  assert.equal(trailTs(t1.trail), 1791712800000);
+  assert.equal(trailTs("approvalQuill-1791712800000"), 1791712800000, "older trails still parse");
+  assert.equal(makeTrail("x", "y", 5).split("-").pop().length, 24);
+  assert.match(trailNonce(), NONCE_RE);
+
+  const ho = await sc(a, "logmem_handoff", { to: "quill", summary: "s" });
+  assert.match(ho.trail, /-[0-9a-f]{24}$/);
+  const started = (await sc(a, "logmem_view", { ref: "agent:atlas", limit: 50 })).log.find((e) => e.kind === "started");
+  assert.match(started.shift, /^atlasShift-\d+-[0-9a-f]{24}$/, "shift ids carry a nonce too");
+});
+
+test("item 5: an ask can't be replayed under a chosen trail (approval only via logmem_ask)", async () => {
+  const { q, store } = await team({ compat: true });
+  const ask = await sc(q, "logmem_ask", { question: "Old ask", action: "x", reversible: true });
+  const tries = [
+    ["logmem_note", { where: "agent:quill", kind: "approval", trail: ask.trail, summary: "replay" }],
+    ["logmem_note", { where: "job:j", kind: "decision-request", trail: ask.trail, summary: "replay" }],
+    ["logmem_update", { job: "j", kind: "approval", summary: "replay" }],
+    ["acmi_event", { namespace: "agent", id: "quill", source: "agent:quill", kind: "decision-request", correlationId: ask.trail, summary: "replay" }],
+    ["acmi_work_event", { id: "j", source: "agent:quill", kind: "approval", summary: "replay" }],
+  ];
+  for (const [tool, args] of tries) {
+    const r = await q.callTool(tool, args);
+    assert.equal(r.isError, true, tool);
+    assert.equal(r.structuredContent.error, ASK_ONLY);
+  }
+  const asks = (await store.readLog("agent", "quill")).filter((e) => e.kind === "approval");
+  assert.equal(asks.length, 1, "only the real ask exists");
 });
