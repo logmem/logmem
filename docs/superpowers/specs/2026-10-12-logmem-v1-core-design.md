@@ -1,6 +1,7 @@
 # LogMem v1 core: design (Tier 1)
 
-Date: 2026-10-12 (rev 2, after independent critique: "approve with changes") · Status: **DRAFT for owner review**
+Date: 2026-10-12 (rev 3: per-item decisions, trade-offs and migration paths in §9; storage-unit ruling in §1.7;
+§10 Decisions for Mikey) · Status: **DRAFT for owner review**
 · Covers GAPS.md D1–D5, U5, U6, U8 · Once accepted, supersedes "Entry shape" and "Key layout" in `docs/KEYS.md`
 and §3–§4 of `docs/spec/tools.md`. Docs only: nothing here has been built, deployed or run against any Redis.
 
@@ -158,6 +159,23 @@ v1 keys (`lm:{madez}:…`) don't overlap v0 keys (`lm:madez:…`). `scripts/migr
 The ACMI `--apply` (PLAN.md step 2) targets the v1 shape with the same rules. Old history imported **after**
 cutover would get new seqs and sort as new, so v1 does not support late history imports. Any key missed at
 cutover is reported and needs a deliberate decision.
+
+### 1.7 Timestamp unit (fleet ruling)
+
+- **Milliseconds are the LogMem storage unit.** Every `ts` LogMem writes is epoch ms, and so is the ULID time
+  that names the day bucket. This is already true of v0 writes (`store.mjs` `append`; `KEYS.md` "Writes: ms").
+- In v1 the log scores are seqs, not timestamps, so the unit no longer affects ordering. It still matters for
+  `since` windows, day buckets, retention, and the JSONL/Postgres archive.
+- Client-supplied `ts` is dropped from the contract (§3.4), so agents can't write ns or s into v1 at all. Only
+  the import path backdates, and it normalizes first.
+- **The ACMI compat layer normalizes ns, µs and s to ms on read.** It uses the existing `normTs`
+  (`src/core/store.mjs`, with these thresholds: > 1e17 is ns, > 1e14 is µs, 1e9–1e11 is s). Legacy keys are
+  never rewritten in place.
+- The ACMI `--apply` copy (§1.6) writes ms only. The 74 legacy entries that are scored in other units
+  (`docs/migration/PLAN.md`: 69 ns, 3 µs, 2 s) are normalized on the way in.
+- **Open:** a fleet note asserts ns as the unit. It conflicts with this ruling and has not been reconciled.
+  It is flagged as Mikey M2 (§10); this design does not choose between them. If ns were adopted, only §1.7 and
+  the archive column types would change. Seq ordering, cursors and the scripts are unit-independent.
 
 ---
 
@@ -600,7 +618,7 @@ idempotency tests.
 ## 8. Risks
 
 1. **The fleet bridge blocks EVAL**, so `madez` runs sequenced. Claim keys keep the outcome exactly-once, but
-   multi-step writes become visible in pieces until repair completes them. Mitigation: owner Q1.
+   multi-step writes become visible in pieces until repair completes them. Mitigation: Mikey M1.
 2. **Upstash limits** (request size, script billing, Redis version) are unverified. §2.5 must be checked
    before A′ merges.
 3. **One space per shard** is a hard ceiling. That's fine for the fleet (36k entries is about 20 MB); a large
@@ -612,11 +630,197 @@ idempotency tests.
 6. **Shared-credential hosting** puts a single code path between tenants (§4.6).
 7. **Human-only decide** rests on admin auth until U7 (accounts with roles).
 
-## 9. Questions for the owner
 
-1. **Bridge:** will the fleet bridge allow `EVAL`/`EVALSHA`/`SCRIPT LOAD`, `ZPOPMIN` and a pipeline endpoint?
-   If not, is claim-key sequenced mode acceptable for `madez` until the bridge is replaced?
-2. **Storage:** which object store (the JSONL archive, v1.1 first) and which Postgres provider (v1.1 second),
-   and are the defaults right (hot window 30/90 days, history 365 days on free, BYO archive off)?
-3. **Sunset:** are mirror-off 2026-12-01 and compat removal between 2027-01-15 and 2027-03-31 acceptable, and
-   who drives the VM-agent cutover that the 14-day zero-native-writes condition depends on?
+## 9. Critique items: decision, trade-off, migration
+
+**Provenance.** No review was posted on PR #5. This list was **reconstructed from the rev-2 commit message**
+(`53c833e`), which names the ten fixes made after an out-of-band critique. Each item points to the section that
+holds the full design. "Today" means the v0 code on `feat/site-pass-a`:
+- log ZSETs whose member is the entry JSON, led by a `_o` same-ms ordinal and scored by ts in ms;
+- dedupe by check-then-write (`ZRANGEBYSCORE ts ts`, compare, then `ZADD`) in `store.mjs` `append`;
+- one HTTP request per command (`redis-rest.mjs`), and a fixed command switch in `redis-native.mjs`.
+
+Every item has to run on BYO Redis (Upstash REST and TCP) without Postgres.
+
+### C1. Claim-key sequenced mode (§2.4)
+
+- **Decision.** Where scripts are refused, the outcome is decided by one `SET … NX` claim, written before
+  anything entry-related. The claim value carries the full intended write, and `repair` only completes a
+  claimed write; it never picks a winner. This replaces rev 1's "lowest seq wins".
+- **Trade-off.**
+  - In sequenced mode, a multi-step write (entry, then indexes, then open sets) is visible in pieces until it
+    finishes or repair runs. Results say `atomic: false`.
+  - Claim keys cost memory for the hot window plus 7 days.
+  - We take on a repair path (lazy at 60 s, plus nightly) that atomic mode doesn't need.
+- **Migration from today.**
+  - Today, `accept` and `decided` are plain `note` appends with no exclusivity, so two accepts both land.
+  - Phase A′ adds `runner.script()`/`pipeline()`/`caps` and the claim path behind the same store API.
+  - `migrate-v0-v1` writes `claim:accept:{hid}` and `claim:decide:{aid}` for every v0 handoff and ask that
+    already has an `accepted` or `decided` entry. A late duplicate after cutover then gets `already_*`, not a
+    second winner.
+  - `madez` runs in this mode until M1 is answered.
+
+### C2. Checks before writes, with status codes (§2.1–§2.2)
+
+- **Decision.** Every script runs all `TYPE`/membership/body checks before its first write, and uses only
+  can't-fail commands afterwards. It returns a numeric status that maps 1:1 to a coded tool error.
+- **Trade-off.**
+  - There is an extra `TYPE` call per written key.
+  - Scripts get longer and must be tested so that every code is reached (Phase C′).
+  - The status table becomes contract surface: new codes are additive and must not change existing ones.
+- **Migration from today.**
+  - Today a `WRONGTYPE` surfaces mid-write as a thrown error after earlier commands have already applied
+    (`append` does `ZADD` then `index()` then `mirrorWrite`).
+  - v1 turns that case into `−2` with nothing written.
+  - The type faults already present in legacy data (PLAN.md: 45 timeline-as-STRING, 5 spawns-as-STRING,
+    1 profile-as-HASH) are fixed by the migration copy, never by request paths.
+  - Tool errors keep `error` as a string, so v0 readers keep working while gaining `code`.
+
+### C3. Seq cursors, not (ts, id) (§1.3)
+
+- **Decision.** Every log and `activity` is scored by a space-wide `seq`. All cursors are exclusive seq
+  ranges, forward and reverse; `since` filters on `ts` while paging.
+- **Trade-off.**
+  - One `INCR` key per space serializes writes. That's free inside one slot (C8), but it rules out splitting a
+    space.
+  - Scores are no longer times, so a time range needs a paged scan with a ts stop, not one `ZRANGEBYSCORE`.
+  - History imported after cutover sorts as new (Risk 4).
+- **Migration from today.**
+  - Today `readLog` loads the whole ZSET (`ZRANGEBYSCORE -inf +inf`), re-sorts in JS by `(ts, _o, read order)`
+    and slices.
+  - Migration assigns seq in global `(ts, _o)` order across v0 and the ACMI copy, so v1 order equals v0's
+    displayed order.
+  - `sinceMs`/`untilMs` callers move to reverse paging with a ts stop. `_o` is dropped (§1.6 step 2).
+
+### C4. Outbox settle rule (§1.3, §4.4)
+
+- **Decision.** Forward readers and the outbox mark advance only over contiguous seqs.
+  - In sequenced mode, a gap is held for 60 s, then skipped and recorded in `outbox:gaps`.
+  - In atomic mode, checks-first means there are no in-flight gaps, so the rule never waits.
+- **Trade-off.**
+  - In sequenced mode, a forward poller can lag up to 60 s behind a crashed write.
+  - A body that repair writes after its gap was skipped is not re-delivered to pollers that have moved past;
+    it is reached by reverse reads and by the outbox's gap backfill.
+- **Migration from today.**
+  - There is no outbox today: `mirror.mjs` writes the ACMI twin synchronously inside `append`.
+  - v1.0 ships only the hooks (seq, `activity`, marks, `redactions`), and the mirror stays synchronous.
+  - The worker that drains marks arrives in v1.1 (Phase F). Nothing to backfill, because marks start at the
+    cutover seq.
+
+### C5. Day-bucketed entry bodies (§1.2)
+
+- **Decision.** Bodies live once, in `lm:{s}:e:{yyyymmdd}` (HASH id → JSON). The bucket comes from the ULID
+  time, and logs hold ids.
+- **Trade-off.**
+  - A page that spans N days costs N `HMGET`s (pipelined, groups of 100).
+  - A reader must derive the bucket from the id, so ids can't be opaque random strings.
+  - Retention can only drop whole days.
+  - In return, a fan-out is stored once, redaction touches one field, and trimming is an `UNLINK`, not
+    millions of `HDEL`s.
+- **Migration from today.**
+  - Today a fanned-out handoff is a separate JSON member in every log it touched, each with its own `_o`.
+  - Migration groups byte-equal copies into one body (§1.6 step 3), mints its ULID from `ts`, writes it to the
+    day bucket, and puts the id in each log.
+  - v0 keys are untouched, so rollback stays possible (§1.6 step 7).
+
+### C6. Stricter migration (§1.6)
+
+- **Decision.** The migration is built from:
+  - a freeze, or a delta pass that converges;
+  - grouping only when byte-equal, with lookalikes reported;
+  - a field-by-field `--verify`;
+  - cross-source dedupe of `mirrored_from: "lm"` twins;
+  - `migrate-v1-v0` for the 7-day rollback window.
+- **Trade-off.**
+  - About 15 minutes of paused dogfood writes, or repeated delta passes.
+  - Near-duplicate fan-outs that differ by a byte stay separate entries, so v1 can hold a few more entries
+    than the true count.
+  - Rollback after cutover loses v1 writes unless the reverse copy runs.
+- **Migration from today.** This item *is* the migration path. It reads only the `{ns}:list` sets (no SCAN),
+  runs `--dry-run` first with a report hash that `--apply` requires (HITL), and normalizes legacy timestamp
+  units per §1.7.
+
+### C7. Upstash notes (§2.5)
+
+- **Decision.**
+  - The runner probes once per instance for scripts, Redis 6.2/7, `ZPOPMIN` and `/pipeline`, and picks
+    command forms to match.
+  - Pages are capped at 1 MB of bodies as well as by count.
+  - `HMGET` calls are split into groups of 100.
+- **Trade-off.**
+  - More round trips on large pages.
+  - Two Upstash facts are unverified: the request-size cap per plan, and whether a script bills as one command
+    or per `redis.call`. Free-tier budgets assume per-call (about 12 calls per handoff) until confirmed.
+- **Migration from today.**
+  - `redis-rest.mjs` sends one request per command and has no pipeline. v1 adds `/pipeline`.
+  - `redis-native.mjs` has a fixed command switch with no `EVAL`/`EVALSHA`. v1 adds a `default:` passthrough
+    to `sendCommand`.
+  - Both have to be verified against a real Upstash database and a real TCP Redis before Phase A′ merges.
+  - Nothing changes for Polar or the fleet bridge beyond the probe result.
+
+### C8. Slot ceiling (§4.1)
+
+- **Decision.** Keys are `lm:{space}:…`, so a whole space sits in one cluster slot and every script is
+  cluster-legal.
+- **Trade-off.**
+  - One space can't outgrow one shard. Scale-out is across spaces.
+  - A space that outgrows a shard needs a dedicated instance; splitting a space is out of scope.
+  - The fleet (about 36k entries, roughly 20 MB) is far below this.
+- **Migration from today.**
+  - Today's keys are `lm:madez:…` with no braces.
+  - v1 keys `lm:{madez}:…` don't overlap them, so migration is a copy, not a rename, and v0 stays readable for
+    rollback.
+  - On non-cluster BYO Redis the braces are inert.
+
+### C9. Postgres deferred to v1.1, behind a JSONL archive (§4.3)
+
+- **Decision.**
+  - v1.0 has no Postgres.
+  - The first archive (v1.1, Phase F) is JSONL day files in object storage, for export, delete and backup.
+  - Postgres history and FTS follow in v1.1 (Phase G), for hosted spaces and for BYO spaces that opt in.
+- **Trade-off.**
+  - v1.0 recall is keyword-only over the last 2,000 `activity` ids.
+  - No trimming happens until an archive exists, so hot data grows without bound in v1.0. At fleet scale
+    that's acceptable.
+- **Migration from today.**
+  - There's nothing to move: no Postgres exists today.
+  - BYO stays Redis-only end to end, which keeps the requirement that v1 runs on BYO Upstash/TCP before any
+    hosted Postgres.
+  - `keywordRecall`'s full-log loops are replaced by the bounded `activity` read in Phase D′.
+
+### C10. v1.0 re-scoped (§7)
+
+- **Decision.**
+  - v1.0 is A′ (runner), B (entry v1), C′ (workflows), D′ (contract 1.0), E (migration), U3 (web
+    approve/reject) and U1 (install path).
+  - Archive, Postgres, trimmer, registry, webhooks, onboarding probe and sunset hardening move to v1.1.
+  - Prerequisites: O1 (CI gate) and S2 (the T0-b hotfix, PR #8).
+- **Trade-off.**
+  - v1.0 has no export, retention, notifications or hosted provisioning, so it is a BYO and fleet release,
+    not a hosted launch.
+- **Migration from today.**
+  - The v0 server keeps serving `lm:madez:*` through phases A′–D′. They land behind the store API and are
+    exercised against `lm:{probe}`/local Redis.
+  - Cutover happens only at phase E, after the dogfood gate (Oct 21). The key layout doesn't change during the
+    7-day pass window.
+
+## 10. Decisions for Mikey
+
+Only questions this design can't settle on its own:
+
+1. **M1: Bridge scripts.**
+   - Will the fleet bridge allow `EVAL`/`EVALSHA`/`SCRIPT LOAD`, `ZPOPMIN` and a pipeline endpoint?
+   - If not, is claim-key sequenced mode (C1) acceptable for `madez` until S1 replaces the bridge?
+   - This blocks the Phase A′ default for `madez`.
+2. **M2: Timestamp unit.**
+   - The fleet ruling is ms storage with compat normalizing ns and s on read (§1.7), but a fleet note claims ns.
+   - Confirm ms and retire or correct that note, or overrule it.
+   - Until then the design proceeds on ms. The answer changes §1.7 and the archive column types, not ordering.
+3. **M3: Sunset.**
+   - Are mirror-off on 2026-12-01 and compat removal between 2027-01-15 and 2027-03-31 acceptable (§6.2)?
+   - Who drives the VM-agent cutover that the 14-day zero-native-writes condition depends on?
+4. **M4: v1.1 storage (not blocking v1.0).**
+   - Which object store for the JSONL archive, and which Postgres provider?
+   - Are the defaults right: hot window 30 days (free) or 90 days (team, agency), history 365 days on free,
+     BYO archive off?
+   - Needed before Phase F starts.
