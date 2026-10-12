@@ -3,179 +3,362 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LogMem: shared memory for agent teams</title>
-<meta name="description" content="LogMem keeps one log that every agent reads and writes: who did what, what's stuck, what was handed off, and what a person approved.">
+<title>LogMem: shared memory for AI agent teams</title>
+<meta name="description" content="LogMem gives every agent on your team one log to read and write. Shifts start with a Brief, work is written down as it happens, a person approves anything irreversible, and the next agent picks up where the last one stopped.">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/home.css">
+<script src="/home.js" defer></script>
 </head>
-<body class="lm">
+<body class="lm home">
 <a class="skip" href="#top">Skip to content</a>
-<header style="background: var(--surface); border-bottom: 1px solid var(--border);">
-  <div class="wrap" style="padding-top: 14px; padding-bottom: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 24px;">
-    <a href="/" aria-label="LogMem home" style="display: flex;"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height: 32px; width: auto;"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height: 32px; width: auto;"></a>
-    <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 20px; font-size: 14px; font-weight: 500;">
-      <a href="#how" style="color: var(--text-muted); text-decoration: none;">How it works</a>
-      <a href="#decisions" style="color: var(--text-muted); text-decoration: none;">Human decisions</a>
-      <a href="#yours" style="color: var(--text-muted); text-decoration: none;">Your data</a>
-      <a href="#acmi" style="color: var(--text-muted); text-decoration: none;">ACMI</a>
+
+<header class="h-header">
+  <div class="wrap h-header-in">
+    <a href="/" aria-label="LogMem home" class="h-logo"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" width="145" height="32"></a>
+    <nav aria-label="Main" class="h-nav">
+      <a href="#demo">Demo</a>
+      <a href="#how">How it works</a>
+      <a href="#cases">Use cases</a>
+      <a href="#trust">Trust</a>
+      <a href="#acmi">ACMI</a>
     </nav>
-    <span style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap;">
-      <a href="/app" class="lm-btn lm-btn--secondary" style="text-decoration: none;">Sign in</a>
-      <a href="#updates" class="lm-btn lm-btn--primary" style="text-decoration: none;">Get build updates</a>
+    <span class="h-header-cta">
+      <a href="/app" class="lm-btn lm-btn--secondary">Sign in</a>
+      <a href="#updates" class="lm-btn lm-btn--primary">Get build updates</a>
     </span>
   </div>
 </header>
 
 <main id="top">
-<section class="wrap" style="padding-top: 96px; padding-bottom: 64px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center;">
-  <div style="flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 20px;">
-    <span class="lm-eyebrow">In design · running on our own agent team</span>
-    <h1 class="lm-display" style="font-size: 64px; color: var(--text);">Don’t let your agents forget the work.</h1>
-    <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted); max-width: 56ch;">LogMem keeps one log that every agent reads and writes: who did what, what’s stuck, what was handed off, and what a person approved. The next shift starts where the last one stopped.</p>
-    <form id="updates" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; max-width: 480px;">
-      <div class="lm-field" style="flex: 1 1 240px;">
-        <label class="lm-label" for="email">Work email</label>
-        <input class="lm-input" id="email" type="email" placeholder="you@company.com" autocomplete="email" required>
-      </div>
-      <button type="submit" class="lm-btn lm-btn--primary">Get build updates</button>
-    </form>
-    <p id="updates-msg" role="status" style="margin: 0; font-size: 13px; color: var(--text-subtle);">No launch date or pricing yet. One email when there’s something to try.</p>
-    <div aria-hidden="true" style="display: flex; align-items: center; max-width: 480px;">
-      <span style="height: 3px; flex: 1; background: var(--mark-carry); border-radius: 2px;"></span>
-      <span style="width: 10px; height: 10px; border-radius: 50%; background: var(--mark-carry); margin-left: 6px;"></span>
+
+<!-- Hero: promise on the left, connect block on the right -->
+<section class="wrap h-hero" aria-labelledby="hero-title">
+  <div class="h-hero-copy">
+    <span class="lm-eyebrow">Shared memory for AI agent teams</span>
+    <h1 id="hero-title" class="lm-display h-h1">No shift starts from zero.</h1>
+    <p class="h-lede">Every agent on your team reads and writes one log. A shift opens with a Brief, work is written down as it happens, handoffs stay open until someone accepts them, and a person signs off on anything that can’t be undone.</p>
+    <div class="h-cta-row">
+      <a href="#updates" class="lm-btn lm-btn--primary h-btn-lg">Get build updates</a>
+      <a href="/onboarding" class="lm-btn lm-btn--secondary h-btn-lg">See the setup flow</a>
+      <a href="#demo" class="lm-btn lm-btn--ghost h-btn-lg">Watch the demo <i class="lm-i" data-i="arrow-right" aria-hidden="true"></i></a>
     </div>
+    <p class="h-fine">In design. Running on our own agent fleet today. No launch date or pricing yet.</p>
   </div>
 
-  <div class="lm-demo-frame" style="flex: 1 1 480px; min-width: 0;">
-    <div class="lm-panel">
-      <div class="lm-panel-head"><span class="lm-title-3 mono">channel:field-notes</span><span class="lm-spacer"></span><span class="lm-demo">Demo data</span></div>
-      <div style="padding: 8px 20px 16px;">
-        <div class="lm-session"><span class="lm-carry"></span><span class="lm-eyebrow">quill · shift 0412 · carried forward: last Recap</span></div>
-        <div class="lm-events" id="hero-log"></div>
+  <div class="h-connect lm-panel" id="connect">
+    <div class="h-connect-head">
+      <h2 class="lm-title-2">Connect an agent</h2>
+      <p class="h-connect-sub">One snippet per host. Restart the agent; its first call starts a shift.</p>
+    </div>
+    <div class="lm-tabs h-tabs" role="tablist" aria-label="Agent host">
+      <button type="button" class="lm-tab" role="tab" id="tab-cc" aria-controls="panel-cc" aria-selected="true">Claude Code</button>
+      <button type="button" class="lm-tab" role="tab" id="tab-codex" aria-controls="panel-codex" aria-selected="false" tabindex="-1">Codex</button>
+      <button type="button" class="lm-tab" role="tab" id="tab-cursor" aria-controls="panel-cursor" aria-selected="false" tabindex="-1">Cursor</button>
+      <button type="button" class="lm-tab" role="tab" id="tab-web" aria-controls="panel-web" aria-selected="false" tabindex="-1">Claude Web</button>
+    </div>
+
+    <div class="h-tabpanel" role="tabpanel" id="panel-cc" aria-labelledby="tab-cc" tabindex="0">
+      <div class="h-snip-meta"><span class="lm-eyebrow">Run in a terminal</span><span class="lm-badge lm-badge--warning">Coming soon</span></div>
+<pre class="h-code" id="snip-cc">claude mcp add logmem --scope user \
+  -e LOGMEM_SPACE=<span class="h-c-ph">your-space</span> -e LOGMEM_AGENT=quill \
+  -e LOGMEM_REST_URL=<span class="h-c-ph">your-redis-url</span> \
+  -e LOGMEM_REST_TOKEN=<span class="h-c-ph">space-token</span> \
+  -- npx @logmem/mcp</pre>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-cc"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">The <code class="mono">@logmem/mcp</code> package isn’t on npm yet. This is the command it will use.</span></div>
+    </div>
+
+    <div class="h-tabpanel" role="tabpanel" id="panel-codex" aria-labelledby="tab-codex" tabindex="0">
+      <div class="h-snip-meta"><span class="lm-eyebrow">~/.codex/config.toml</span><span class="lm-badge lm-badge--warning">Coming soon</span></div>
+<pre class="h-code" id="snip-codex">[mcp_servers.logmem]
+command = "npx"
+args = ["@logmem/mcp"]
+env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = "atlas",
+        LOGMEM_REST_URL = "<span class="h-c-ph">your-redis-url</span>",
+        LOGMEM_REST_TOKEN = "<span class="h-c-ph">space-token</span>" }</pre>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-codex"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">Needs the npm package, which isn’t published yet.</span></div>
+    </div>
+
+    <div class="h-tabpanel" role="tabpanel" id="panel-cursor" aria-labelledby="tab-cursor" tabindex="0">
+      <div class="h-snip-meta"><span class="lm-eyebrow">.cursor/mcp.json</span><span class="lm-badge lm-badge--warning">Coming soon</span></div>
+<pre class="h-code" id="snip-cursor">{ "mcpServers": { "logmem": {
+  "command": "npx", "args": ["@logmem/mcp"],
+  "env": { "LOGMEM_SPACE": "<span class="h-c-ph">your-space</span>", "LOGMEM_AGENT": "relay",
+           "LOGMEM_REST_URL": "<span class="h-c-ph">your-redis-url</span>",
+           "LOGMEM_REST_TOKEN": "<span class="h-c-ph">space-token</span>" } } } }</pre>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-cursor"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">Needs the npm package, which isn’t published yet.</span></div>
+    </div>
+
+    <div class="h-tabpanel" role="tabpanel" id="panel-web" aria-labelledby="tab-web" tabindex="0">
+      <div class="h-snip-meta"><span class="lm-eyebrow">Settings › Connectors › Add custom connector</span><span class="lm-badge lm-badge--info">Remote MCP</span></div>
+<pre class="h-code" id="snip-web">https://logmem.si/mcp</pre>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-web"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy URL</button><span class="h-note">Claude asks you to sign in to LogMem and pick a space; the connection can only use that space. Spaces aren’t open for sign-up yet.</span></div>
+    </div>
+    <p class="lm-sr" role="status" id="copy-status"></p>
+  </div>
+</section>
+
+<!-- Proof strip: only things we can show -->
+<section class="h-proof" aria-label="What LogMem can show today">
+  <ul class="wrap h-proof-list">
+    <li><i class="lm-i lg" data-i="globe" aria-hidden="true"></i><span><strong>Open protocol (MIT)</strong><span class="h-proof-sub">Implements ACMI, the Agentic Context Memory Interface</span></span></li>
+    <li><i class="lm-i lg" data-i="check" aria-hidden="true"></i><span><strong>Passes the ACMI conformance suite</strong><span class="h-proof-sub">Run against our compatibility adapter</span></span></li>
+    <li><i class="lm-i lg" data-i="timeline" aria-hidden="true"></i><span><strong>Running our own agent fleet: 36,000+ entries</strong><span class="h-proof-sub">Written by our agents doing their actual work</span></span></li>
+  </ul>
+</section>
+
+<!-- Live product demo -->
+<section id="demo" class="h-band" aria-labelledby="demo-title">
+  <div class="wrap h-section">
+    <div class="h-section-head">
+      <span class="lm-eyebrow">Product demo</span>
+      <h2 id="demo-title" class="lm-display h-h2">One working day, as the log sees it.</h2>
+      <p class="h-sub">Field Notes Co. is a made-up newsletter with four agents: quill drafts, atlas fact-checks, relay sends, tally counts. Watch a shift start, change hands, stop for a person, and wrap up.</p>
+    </div>
+
+    <div class="h-demo">
+      <div class="h-beats-col">
+        <ol class="h-beats" aria-label="Demo steps">
+          <li><button type="button" class="h-beat" data-beat="0"><span class="h-beat-n" aria-hidden="true">1</span><span><strong>Start</strong><span class="h-beat-sub">quill opens a shift with a Brief</span></span></button></li>
+          <li><button type="button" class="h-beat" data-beat="1"><span class="h-beat-n" aria-hidden="true">2</span><span><strong>Note</strong><span class="h-beat-sub">progress, written as it happens</span></span></button></li>
+          <li><button type="button" class="h-beat" data-beat="2"><span class="h-beat-n" aria-hidden="true">3</span><span><strong>Handoff</strong><span class="h-beat-sub">quill passes the fact-check to atlas</span></span></button></li>
+          <li><button type="button" class="h-beat" data-beat="3"><span class="h-beat-n" aria-hidden="true">4</span><span><strong>Switch</strong><span class="h-beat-sub"><code class="mono">logmem start atlas</code>, then accept</span></span></button></li>
+          <li><button type="button" class="h-beat" data-beat="4"><span class="h-beat-n" aria-hidden="true">5</span><span><strong>Ask</strong><span class="h-beat-sub">relay waits for a person</span></span></button></li>
+          <li><button type="button" class="h-beat" data-beat="5"><span class="h-beat-n" aria-hidden="true">6</span><span><strong>Recap</strong><span class="h-beat-sub">written after 30 min idle</span></span></button></li>
+        </ol>
+        <div class="h-demo-ctl">
+          <button type="button" class="lm-btn lm-btn--secondary" id="demo-play" aria-controls="demo-log"><i class="lm-i" data-i="pause" aria-hidden="true"></i><span>Pause</span></button>
+          <button type="button" class="lm-btn lm-btn--ghost" id="demo-replay" aria-controls="demo-log"><i class="lm-i" data-i="refresh" aria-hidden="true"></i>Replay</button>
+        </div>
+        <p class="h-beat-caption" id="demo-caption" aria-live="polite"></p>
+      </div>
+
+      <div class="lm-demo-frame h-demo-frame">
+        <div class="lm-panel h-demo-panel">
+          <div class="lm-panel-head">
+            <span class="lm-title-3 mono">job:issue-14</span>
+            <span class="lm-spacer"></span>
+            <span class="lm-demo">Demo data</span>
+          </div>
+          <div class="h-log" id="demo-log" role="log" aria-live="off" aria-label="Demo log for Field Notes Co." tabindex="0">
+            <noscript><p class="h-note h-noscript">The demo needs JavaScript. The setup flow at /onboarding shows the same kind of entries.</p></noscript>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<section id="how" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-  <div class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: flex; flex-direction: column; gap: 48px;">
-    <div style="display: flex; flex-direction: column; gap: 12px; max-width: 68ch;">
-      <span class="lm-eyebrow">How it works</span>
-      <h2 class="lm-display" style="font-size: 44px;">Start. Work. Recap.</h2>
-      <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">Three habits every agent follows, so no shift starts from zero. LogMem keeps them even when an agent forgets.</p>
+<!-- How it works: the words agents use -->
+<section id="how" class="wrap h-section" aria-labelledby="how-title">
+  <div class="h-section-head">
+    <span class="lm-eyebrow">How it works</span>
+    <h2 id="how-title" class="lm-display h-h2">A few plain words, used the same way by every agent.</h2>
+    <p class="h-sub">LogMem is an MCP server. Agents call its tools; people read the result. If an agent forgets a habit, LogMem keeps it for them.</p>
+  </div>
+  <div class="h-phases">
+    <div class="h-phase lm-panel">
+      <span class="lm-eyebrow h-brand">Beginning of a shift</span>
+      <h3 class="lm-title-1">Start, then Brief</h3>
+      <p>The agent becomes who it is and reads its last Recap, what it was doing, recent entries and any handoffs waiting for it. If it skips this, its first call starts the shift anyway.</p>
+      <code class="h-call">logmem_start agent: "quill"</code>
     </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 24px;">
-      <div class="lm-panel" style="padding: 24px; display: flex; flex-direction: column; gap: 12px;">
-        <span class="lm-eyebrow" style="color: var(--brand);">1 · Start</span>
-        <h3 class="lm-display" style="font-size: 28px; font-weight: 600;">Every shift begins with a Brief.</h3>
-        <p style="margin: 0; color: var(--text-muted);">An agent becomes who it is, then reads its last Recap, what it’s doing now, recent entries and any handoffs waiting for it. Skip it and LogMem starts the shift on the first call.</p>
-        <code class="mono" style="font-size: 13px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 8px 10px;">logmem start quill</code>
-      </div>
-      <div class="lm-panel" style="padding: 24px; display: flex; flex-direction: column; gap: 12px;">
-        <span class="lm-eyebrow" style="color: var(--brand);">2 · Work</span>
-        <h3 class="lm-display" style="font-size: 28px; font-weight: 600;">Everything that changes is written down.</h3>
-        <p style="margin: 0; color: var(--text-muted);">Notes on channels, progress on jobs, handoffs between agents. Entries about the same piece of work share a trail; each one names the entry it follows from.</p>
-        <code class="mono" style="font-size: 13px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 8px 10px;">logmem_handoff to: atlas</code>
-      </div>
-      <div class="lm-panel" style="padding: 24px; display: flex; flex-direction: column; gap: 12px;">
-        <span class="lm-eyebrow" style="color: var(--brand);">3 · Recap</span>
-        <h3 class="lm-display" style="font-size: 28px; font-weight: 600;">The next shift picks up mid-thought.</h3>
-        <p style="margin: 0; color: var(--text-muted);">Before stopping, the agent leaves notes for whoever comes next. Idle for 30 minutes? LogMem writes the Recap itself.</p>
-        <code class="mono" style="font-size: 13px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 8px 10px;">logmem_recap notes: "…"</code>
-      </div>
+    <div class="h-phase lm-panel">
+      <span class="lm-eyebrow h-brand">During the work</span>
+      <h3 class="lm-title-1">Note, Handoff, Ask</h3>
+      <p>Notes record what changed. A Handoff passes work to another agent and stays open until they accept it. Ask stops the agent and shows a person the exact action before anything irreversible runs.</p>
+      <code class="h-call">logmem_handoff to: "atlas"</code>
     </div>
-    <div class="lm-panel" style="padding: 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center;">
-      <div style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px;">
-        <h3 class="lm-title-2" style="margin: 0;">Switch who’s working with one line.</h3>
-        <p style="margin: 0; color: var(--text-muted);">Type <code class="mono">logmem start atlas</code> mid-session. LogMem writes quill’s Recap first, then starts atlas with a Brief. Every entry says who wrote it and from where: “atlas (via claude-code)”.</p>
-      </div>
-      <div class="lm-handoff" style="flex: 1 1 360px;">
-        <span class="lm-agent"><span class="lm-avatar" style="background: var(--viz-1);" aria-hidden="true">QU</span><span class="lm-agent-name">quill</span></span>
-        <div class="lm-handoff-arrow"><i class="lm-i" data-i="handoff" aria-hidden="true"></i><span>recap → start</span></div>
-        <span class="lm-agent"><span class="lm-avatar" style="background: var(--viz-2);" aria-hidden="true">AT</span><span class="lm-agent-name">atlas</span></span>
-      </div>
+    <div class="h-phase lm-panel">
+      <span class="lm-eyebrow h-brand">End of a shift</span>
+      <h3 class="lm-title-1">Recap</h3>
+      <p>The agent leaves notes and next steps for whoever comes next. Idle for 30 minutes? LogMem writes the Recap itself, so the next Brief is never empty.</p>
+      <code class="h-call">logmem_recap notes: "…"</code>
+    </div>
+  </div>
+  <div class="h-switch lm-panel">
+    <div class="h-switch-copy">
+      <h3 class="lm-title-1">Switch who’s working with one line.</h3>
+      <p>Type <code class="mono">logmem start atlas</code> in the middle of a session. LogMem writes quill’s Recap, ends that shift and starts atlas with a Brief. Every entry after that is signed “atlas (via claude-code)”.</p>
+    </div>
+    <div class="lm-handoff h-switch-vis">
+      <span class="lm-agent"><span class="lm-avatar h-av-1" aria-hidden="true">QU</span><span class="lm-agent-name">quill</span></span>
+      <div class="lm-handoff-arrow"><i class="lm-i" data-i="handoff" aria-hidden="true"></i><span>recap → start</span></div>
+      <span class="lm-agent"><span class="lm-avatar h-av-2" aria-hidden="true">AT</span><span class="lm-agent-name">atlas</span></span>
     </div>
   </div>
 </section>
 
-<section id="decisions" class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center;">
-  <div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
-    <span class="lm-eyebrow">Human decisions</span>
-    <h2 class="lm-display" style="font-size: 44px;">People decide the things that can’t be undone.</h2>
-    <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">Before anything irreversible, an agent asks. You see the exact action, not a summary of it, and nothing runs until you answer. Approved is not completed: the log shows both.</p>
-  </div>
-  <div class="lm-demo-frame" style="flex: 1 1 460px; min-width: 0;">
-    <section class="lm-approval" aria-label="Decision: relay asks to email issue 14">
-      <div class="lm-approval-head"><i class="lm-i" data-i="decisions" aria-hidden="true"></i><strong>relay asks to email issue 14 to 2,184 subscribers</strong><span style="margin-left: auto;"><span class="lm-decision" data-d="pending"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i>Pending decision</span></span></div>
-      <div class="lm-approval-body">
-        <div class="lm-eyebrow">Exact proposed action</div>
-        <pre class="lm-action">POST /v1/campaigns/iss-14/send
-audience: list:subscribers (2,184)
-schedule: Tue 09:00 -04:00</pre>
-        <dl class="lm-kv"><dt>Target</dt><dd>list:subscribers (2,184 contacts)</dd><dt>Requested by</dt><dd>relay (via codex) · job:issue-14</dd><dt>Reversible</dt><dd>No. Sent email can’t be recalled.</dd></dl>
-      </div>
-      <div class="lm-approval-foot"><button type="button" class="lm-btn lm-btn--primary" disabled><i class="lm-i" data-i="check" aria-hidden="true"></i>Approve send</button><button type="button" class="lm-btn lm-btn--secondary" disabled><i class="lm-i" data-i="x" aria-hidden="true"></i>Reject</button><button type="button" class="lm-btn lm-btn--ghost" disabled><i class="lm-i" data-i="defer" aria-hidden="true"></i>Defer</button></div>
-    </section>
-  </div>
-</section>
-
-<section id="yours" style="background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-  <div class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 32px;">
-    <div style="display: flex; flex-direction: column; gap: 12px;">
-      <span class="lm-eyebrow">Your data</span>
-      <h2 class="lm-display" style="font-size: 44px;">Your memory lives in your Redis.</h2>
-      <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">Point LogMem at Upstash or any Redis you run. Each space is walled off from the others, and nothing leaves your database. Hosted spaces are planned.</p>
+<!-- Use cases -->
+<section id="cases" class="h-band" aria-labelledby="cases-title">
+  <div class="wrap h-section">
+    <div class="h-section-head">
+      <span class="lm-eyebrow">Use cases</span>
+      <h2 id="cases-title" class="lm-display h-h2">Made for work that changes hands.</h2>
     </div>
-    <dl class="lm-kv" style="align-self: center; font-size: 15px; gap: 14px 24px;">
-      <dt>Connects over</dt><dd>MCP: stdio for local agents, Streamable HTTP with OAuth for hosted ones</dd>
-      <dt>Storage</dt><dd>Your Redis: Upstash REST, or redis:// over TCP</dd>
-      <dt>Isolation</dt><dd>One space per connection; no cross-space reads</dd>
-      <dt>Timestamps</dt><dd>Milliseconds everywhere, in order</dd>
-      <dt>Status</dt><dd><span class="lm-badge lm-badge--warning">In design</span> v0 running on our own team</dd>
-    </dl>
+    <div class="h-cases">
+      <article class="h-case lm-panel">
+        <div class="h-case-vis" aria-hidden="true">
+          <span class="lm-avatar h-av-1">QU</span><span class="lm-avatar h-av-2">AT</span><span class="lm-avatar h-av-3">RE</span>
+          <span class="h-space mono">1 space</span>
+        </div>
+        <h3 class="lm-title-1">Solo builder, several agents</h3>
+        <p>Claude Code in one terminal, Codex in another, Cursor in the editor. They share one log, so each knows what the others did and you stop pasting context between them.</p>
+        <ul class="h-ticks">
+          <li>Switch persona mid-session with <code class="mono">logmem start</code></li>
+          <li>Every entry says which host wrote it</li>
+        </ul>
+      </article>
+      <article class="h-case lm-panel">
+        <div class="h-case-vis" aria-hidden="true">
+          <span class="lm-avatar h-av-3">RE</span>
+          <span class="lm-decision" data-d="pending"><i class="lm-i" data-i="hourglass"></i>Pending decision</span>
+          <span class="lm-avatar" data-human="">NO</span>
+        </div>
+        <h3 class="lm-title-1">Small team with a human approver</h3>
+        <p>Agents do the work. One person approves the steps that can’t be taken back: sending, paying, deleting, publishing. They see the exact action and who asked for it.</p>
+        <ul class="h-ticks">
+          <li>Approved and completed are tracked separately</li>
+          <li>Rejections and deferrals stay on the record</li>
+        </ul>
+      </article>
+      <article class="h-case lm-panel">
+        <div class="h-case-vis" aria-hidden="true">
+          <span class="h-space mono">acme</span><span class="h-space mono">birch</span><span class="h-space mono">corvo</span>
+        </div>
+        <h3 class="lm-title-1">Agency with one space per client</h3>
+        <p>Give each client its own space. An agent connected to one space can’t read another, so one client’s memory never shows up in another client’s work.</p>
+        <ul class="h-ticks">
+          <li>The connection sets the space; no tool takes a space argument</li>
+          <li>Each space can live in a different Redis</li>
+        </ul>
+      </article>
+    </div>
   </div>
 </section>
 
-<section id="acmi" class="wrap" style="padding-top: 96px; padding-bottom: 96px; display: flex; flex-direction: column; gap: 20px; max-width: 808px; margin-left: auto; margin-right: auto;">
-  <span class="lm-eyebrow">Built on ACMI</span>
-  <h2 class="lm-display" style="font-size: 44px;">An open protocol underneath.</h2>
-  <p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--text-muted);">LogMem implements ACMI, the MIT-licensed Agentic Context Memory Interface, and passes its conformance suite. Agents already speaking ACMI keep working: compatibility mode reads their history and accepts their calls.</p>
-  <div class="lm-row" style="gap: 12px;">
-    <a href="https://github.com/madezmedia/acmi" class="lm-btn lm-btn--secondary" style="text-decoration: none;">Read the ACMI spec</a>
-    <a href="/onboarding" class="lm-btn lm-btn--ghost" style="text-decoration: none;">See the setup flow</a>
+<!-- Trust -->
+<section id="trust" class="wrap h-section" aria-labelledby="trust-title">
+  <div class="h-section-head">
+    <span class="lm-eyebrow">Trust</span>
+    <h2 id="trust-title" class="lm-display h-h2">Your data, with a name on every line.</h2>
   </div>
+  <div class="h-trust">
+    <div class="h-trust-item">
+      <i class="lm-i lg h-brand" data-i="lock" aria-hidden="true"></i>
+      <h3 class="lm-title-2">Your Redis</h3>
+      <p>Point LogMem at Upstash or any Redis you run. Entries are stored there, under keys you can inspect yourself. Hosted spaces are planned, not live.</p>
+    </div>
+    <div class="h-trust-item">
+      <i class="lm-i lg h-brand" data-i="agents" aria-hidden="true"></i>
+      <h3 class="lm-title-2">Every write attributed</h3>
+      <p>Each entry records who wrote it, through which host, and when, to the millisecond.</p>
+      <p class="h-prov-sample mono"><span>atlas (via claude-code)</span><span>09:40:12.381</span><span>trail handoffIssue14</span></p>
+    </div>
+    <div class="h-trust-item">
+      <i class="lm-i lg h-brand" data-i="decisions" aria-hidden="true"></i>
+      <h3 class="lm-title-2">Approvals before irreversible actions</h3>
+      <p>An agent asks before anything it can’t undo, then waits for an entry that records the decision. In v0 the agent honours the wait; server-side enforcement is planned.</p>
+    </div>
+    <div class="h-trust-item">
+      <i class="lm-i lg h-brand" data-i="eye" aria-hidden="true"></i>
+      <h3 class="lm-title-2">A read-only web app</h3>
+      <p>The app shows the log, jobs and pending decisions. It can’t edit or delete entries, so what you see is what the agents wrote.</p>
+    </div>
+  </div>
+  <dl class="lm-kv h-specs">
+    <dt>Connects over</dt><dd>MCP: stdio for local agents, Streamable HTTP with OAuth for hosted ones</dd>
+    <dt>Storage</dt><dd>Your Redis: Upstash REST, or redis:// over TCP</dd>
+    <dt>Isolation</dt><dd>One space per connection; no cross-space reads</dd>
+    <dt>Timestamps</dt><dd>Milliseconds everywhere, in order</dd>
+    <dt>Status</dt><dd><span class="lm-badge lm-badge--warning">In design</span> v0 running on our own fleet</dd>
+  </dl>
+</section>
+
+<!-- ACMI -->
+<section id="acmi" class="h-band" aria-labelledby="acmi-title">
+  <div class="wrap h-section h-acmi">
+    <div class="h-acmi-copy">
+      <span class="lm-eyebrow">Built on ACMI</span>
+      <h2 id="acmi-title" class="lm-display h-h2">An open protocol underneath.</h2>
+      <p class="h-sub">LogMem implements ACMI, the MIT-licensed Agentic Context Memory Interface, and passes its conformance suite. Agents that already speak ACMI keep working: compatibility mode reads their history and accepts their calls.</p>
+      <div class="h-cta-row">
+        <a href="https://github.com/madezmedia/acmi" class="lm-btn lm-btn--secondary">Read the ACMI spec <i class="lm-i" data-i="external" aria-hidden="true"></i></a>
+        <a href="/onboarding" class="lm-btn lm-btn--ghost">See the setup flow</a>
+      </div>
+    </div>
+    <figure class="h-acmi-fig">
+      <figcaption class="lm-eyebrow">LogMem word → ACMI</figcaption>
+<pre class="h-code">logmem_start   acmi_spawn
+logmem_brief   acmi_bootstrap
+logmem_note    acmi_event
+logmem_recap   acmi_rollup_set
+trail          correlationId
+origin         parentCorrelationId</pre>
+    </figure>
+  </div>
+</section>
+
+<!-- Updates -->
+<section id="updates" class="wrap h-section h-updates" aria-labelledby="updates-title">
+  <div class="h-updates-copy">
+    <h2 id="updates-title" class="lm-display h-h2">Get build updates.</h2>
+    <p class="h-sub">One email when there’s something you can try.</p>
+  </div>
+  <form id="updates-form" class="h-form">
+    <div class="lm-field h-form-field">
+      <label class="lm-label" for="email">Work email</label>
+      <input class="lm-input" id="email" name="email" type="email" placeholder="you@company.com" autocomplete="email" required aria-describedby="updates-msg">
+    </div>
+    <button type="submit" class="lm-btn lm-btn--primary">Get build updates</button>
+    <p id="updates-msg" class="h-form-msg" role="status">Sign-ups aren’t connected yet. Nothing you enter here is sent or saved.</p>
+  </form>
 </section>
 </main>
 
-<footer style="border-top: 1px solid var(--border); background: var(--surface);">
-  <div class="wrap" style="padding-top: 32px; padding-bottom: 32px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; color: var(--text-muted);">
-    <img class="logo-l" src="/ds/logos/logmem-symbol.svg" alt="" style="height: 24px; width: 24px;"><img class="logo-d" src="/ds/logos/logmem-symbol-reversed.svg" alt="" style="height: 24px; width: 24px;">
-    <span>A Mad EZ Media product</span><span aria-hidden="true">·</span>
+<footer class="h-footer">
+  <div class="wrap h-footer-in">
+    <div class="h-footer-brand">
+      <img class="logo-l" src="/ds/logos/logmem-symbol.svg" alt="" width="28" height="28"><img class="logo-d" src="/ds/logos/logmem-symbol-reversed.svg" alt="" width="28" height="28">
+      <p>Shared memory for AI agent teams.<br>A Mad EZ Media product.</p>
+    </div>
+    <nav class="h-footer-cols" aria-label="Footer">
+      <div>
+        <h2 class="lm-eyebrow">Product</h2>
+        <ul>
+          <li><a href="#demo">Demo</a></li>
+          <li><a href="/onboarding">Setup flow</a></li>
+          <li><a href="/app">Sign in</a></li>
+          <li><span class="h-soon">Changelog <em>soon</em></span></li>
+          <li><span class="h-soon">Status <em>soon</em></span></li>
+        </ul>
+      </div>
+      <div>
+        <h2 class="lm-eyebrow">Developers</h2>
+        <ul>
+          <li><a href="https://github.com/madezmedia/acmi">ACMI spec</a></li>
+          <li><a href="#connect">Connect snippets</a></li>
+          <li><span class="h-soon">Docs <em>soon</em></span></li>
+          <li><span class="h-soon">npm package <em>soon</em></span></li>
+        </ul>
+      </div>
+      <div>
+        <h2 class="lm-eyebrow">Company</h2>
+        <ul>
+          <li><a href="#updates">Build updates</a></li>
+          <li><span class="h-soon">About <em>soon</em></span></li>
+          <li><span class="h-soon">Privacy <em>soon</em></span></li>
+          <li><span class="h-soon">Terms <em>soon</em></span></li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap h-footer-base">
     <span>LogMem is a working name; trademark clearance pending.</span>
-    <img class="logo-l" src="/ds/logos/powered-by-acmi.svg" alt="Powered by ACMI" style="height: 18px; width: auto; margin-left: auto;"><img class="logo-d" src="/ds/logos/powered-by-acmi-reversed.svg" alt="Powered by ACMI" style="height: 18px; width: auto; margin-left: auto;">
+    <img class="logo-l" src="/ds/logos/powered-by-acmi.svg" alt="Powered by ACMI" width="103" height="18"><img class="logo-d" src="/ds/logos/powered-by-acmi-reversed.svg" alt="Powered by ACMI" width="103" height="18">
   </div>
 </footer>
-
-<script>
-(function () {
-  var rows = [
-    ['08:02', 'system', 'started', 'quill', 'quill started a shift and caught up on 3 days of notes', 'quillShift-0412', 'claude-code'],
-    ['08:14', 'handoff', 'handoff', 'atlas', 'atlas handed issue 14 to quill', 'handoffIssue14', 'codex'],
-    ['08:15', 'handoff', 'accepted', 'quill', 'quill picked up issue 14', 'acceptedIssue14', 'claude-code'],
-    ['11:07', 'decision', 'approval', 'relay', 'Email issue 14 to 2,184 subscribers Tue 9:00am?', 'approvalIssue14', 'codex'],
-    ['17:30', 'system', 'recap', 'quill', 'Issue 14 scheduled, 2 links fixed. Next: subject-line test for issue 15.', 'quillShift-0412-recap', 'claude-code']
-  ];
-  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-  document.getElementById('hero-log').innerHTML = rows.map(function (r) {
-    return '<div class="lm-event" data-k="' + r[1] + '"><time class="lm-event-time time">' + r[0] + '</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">' + esc(r[2]) + '</span><strong style="font-size:14px">' + esc(r[3]) + '</strong><span class="lm-event-summary">' + esc(r[4]) + '</span></div><div class="lm-prov"><span>trail ' + esc(r[5]) + '</span><span>via ' + esc(r[6]) + '</span></div></div></div>';
-  }).join('');
-  document.getElementById('updates').addEventListener('submit', function (e) {
-    e.preventDefault();
-    document.getElementById('updates-msg').textContent = 'Sign-ups aren’t connected yet, so nothing was sent or saved. Check back soon.';
-  });
-})();
-</script>
 </body>
 </html>
