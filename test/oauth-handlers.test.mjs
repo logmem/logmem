@@ -4,7 +4,16 @@ import { __setRedisForTests, registerClient, saveAuthCode, sha256base64url } fro
 import registerHandler, { validateRegistration } from "../api/oauth/register.mjs";
 import authorizeHandler from "../api/oauth/authorize.mjs";
 import tokenHandler from "../api/oauth/token.mjs";
-import { oauthRedis, withEnv, mockReq, mockRes, TEST_KEK_HEX } from "./oauth-helpers.mjs";
+import { oauthRedis, withEnv, mockReq, mockRes, consentSession, TEST_KEK_HEX } from "./oauth-helpers.mjs";
+
+const AUTH_KEYS = ["client_id", "redirect_uri", "response_type", "code_challenge", "code_challenge_method", "state", "scope"];
+/** POST `body` the way the real consent page would: GET it first for cookie + csrf_token. */
+async function consentPost(res, body, { tamper } = {}) {
+  const q = Object.fromEntries(AUTH_KEYS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
+  const { cookie, csrf_token } = await consentSession(authorizeHandler, q);
+  const b = { ...body, csrf_token, ...(tamper || {}) };
+  await authorizeHandler(mockReq({ method: "POST", url: "/api/oauth/authorize", body: b, headers: { cookie } }), res);
+}
 
 afterEach(() => __setRedisForTests(null));
 
@@ -113,26 +122,14 @@ test("authorize: private REST target is refused before any fetch, with a generic
     try {
       for (const target of ["https://169.254.169.254/latest", "https://10.0.0.5/exec", "https://[::1]/exec", "http://93.184.216.34/exec"]) {
         const res = mockRes();
-        await authorizeHandler(
-          mockReq({
-            method: "POST",
-            body: { client_id: c.client_id, redirect_uri: "https://app.example/cb", response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", action: "approve", space: "acme", backend: "upstash", upstash_url: target, upstash_token: "tok" },
-          }),
-          res,
-        );
+        await consentPost(res, { client_id: c.client_id, redirect_uri: "https://app.example/cb", response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", action: "approve", space: "acme", backend: "upstash", upstash_url: target, upstash_token: "tok" });
         assert.equal(res.statusCode, 400, target);
         assert.equal(res.getHeader("location"), undefined);
         assert.ok(/Could not connect with those credentials|must be https/.test(res.body), target);
       }
       // Private TCP target too
       const res = mockRes();
-      await authorizeHandler(
-        mockReq({
-          method: "POST",
-          body: { client_id: c.client_id, redirect_uri: "https://app.example/cb", response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", action: "approve", space: "acme", backend: "redis", redis_uri: "rediss://:pw@127.0.0.1:6379" },
-        }),
-        res,
-      );
+      await consentPost(res, { client_id: c.client_id, redirect_uri: "https://app.example/cb", response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", action: "approve", space: "acme", backend: "redis", redis_uri: "rediss://:pw@127.0.0.1:6379" });
       assert.equal(res.statusCode, 400);
       assert.match(res.body, /Could not connect with those credentials/);
       assert.equal(fetched, 0);
@@ -149,13 +146,7 @@ test("authorize: production without KEK refuses with 503 before probing", async 
     __setRedisForTests(r);
     const c = await registerClient({ redirect_uris: ["https://app.example/cb"], token_endpoint_auth_method: "none" });
     const res = mockRes();
-    await authorizeHandler(
-      mockReq({
-        method: "POST",
-        body: { client_id: c.client_id, redirect_uri: "https://app.example/cb", response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", action: "approve", space: "acme", backend: "upstash", upstash_url: "https://93.184.216.34/exec", upstash_token: "tok" },
-      }),
-      res,
-    );
+    await consentPost(res, { client_id: c.client_id, redirect_uri: "https://app.example/cb", response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", action: "approve", space: "acme", backend: "upstash", upstash_url: "https://93.184.216.34/exec", upstash_token: "tok" });
     assert.equal(res.statusCode, 503);
     assert.equal(res.getHeader("location"), undefined);
   });

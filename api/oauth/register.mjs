@@ -7,7 +7,7 @@
 // redirect_uris (each <= 2048 chars, https only except http://localhost and
 // http://127.0.0.1, no fragment), client_name <= 100 chars, scope <= 64 chars,
 // token_endpoint_auth_method in {none, client_secret_post}. Client records
-// expire after 30 days without use (see storage.mjs). Rate limiting is a
+// expire after 30 days without a successful token issuance (see storage.mjs). Rate limiting is a
 // platform concern (Vercel Firewall), not handled here.
 
 import { registerClient } from "./_lib/storage.mjs";
@@ -51,7 +51,8 @@ export function validateRegistration(body) {
     } catch {
       return invalid("invalid_redirect_uri", "redirect_uri is not a valid URL");
     }
-    if (parsed.hash) return invalid("invalid_redirect_uri", "redirect_uri must not contain a fragment");
+    // Check the raw string: new URL("https://a/cb#").hash is "" (empty fragment).
+    if (u.includes("#") || parsed.hash) return invalid("invalid_redirect_uri", "redirect_uri must not contain a fragment");
     if (parsed.username || parsed.password) return invalid("invalid_redirect_uri", "redirect_uri must not contain credentials");
     if (parsed.protocol === "https:") continue;
     if (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname)) continue;

@@ -59,6 +59,9 @@ for (const [net, prefix] of [
   ["fec0::", 10], // deprecated site-local
   ["ff00::", 8], // multicast
   ["fd00:ec2::254", 128], // AWS IMDS over IPv6 (also inside fc00::/7)
+  ["2001::", 32], // Teredo (tunnels to arbitrary IPv4)
+  ["64:ff9b:1::", 48], // local-use IPv4/IPv6 translation (RFC 8215)
+  ["::ffff:0:0:0", 96], // SIIT IPv4-translated (::ffff:0:a.b.c.d)
 ]) blocked.addSubnet(net, prefix, "ipv6");
 
 function expandV6(addr) {

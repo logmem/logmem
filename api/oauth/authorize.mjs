@@ -16,14 +16,64 @@
 // (src/http/net-guard.mjs) before any probe, the REST probe does not follow
 // redirects and times out, and probe failures show one generic message —
 // upstream error bodies are never echoed to the page.
+//
+// Clickjacking / CSRF: every HTML response sends frame-ancestors 'none' and
+// X-Frame-Options DENY. The consent form carries a CSRF token =
+// exp.HMAC(key, [nonce, exp, auth-request params]) where nonce lives in a
+// SameSite=Strict HttpOnly cookie set with the form. POST verifies both, so a
+// cross-site page cannot submit (or pre-fill) consent for the user.
 
-import { getClient, saveAuthCode, assertKekReady } from "./_lib/storage.mjs";
+import { getClient, saveAuthCode, assertKekReady, csrfKey, hmacHex, safeEqual, randomToken } from "./_lib/storage.mjs";
 import { restEndpoint } from "../../src/lib/redis-rest.mjs";
 import { validateKeySegments } from "../../src/lib/helpers.mjs";
 import { assertPublicTarget } from "../../src/http/net-guard.mjs";
 
 const PROBE_TIMEOUT_MS = 5000;
 const CONNECT_FAILED = "Could not connect with those credentials";
+const CSRF_COOKIE = "lm_oauth_csrf";
+const CSRF_TTL_S = 600;
+const BOUND_PARAMS = ["client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "response_type"];
+
+function htmlHeaders(res, status) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+}
+
+function readCookie(req, name) {
+  const raw = String(req.headers?.cookie || "");
+  for (const part of raw.split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return null;
+}
+
+function csrfMac(nonce, exp, params) {
+  return hmacHex(csrfKey(), JSON.stringify([nonce, exp, ...BOUND_PARAMS.map((k) => String(params[k] ?? ""))]));
+}
+
+export function issueCsrf(nonce, params, nowS = Math.floor(Date.now() / 1000)) {
+  const exp = nowS + CSRF_TTL_S;
+  return `${exp}.${csrfMac(nonce, exp, params)}`;
+}
+
+export function verifyCsrf(nonce, token, params, nowS = Math.floor(Date.now() / 1000)) {
+  if (!nonce || typeof token !== "string" || !/^[0-9a-f]{32}$/.test(nonce)) return false;
+  const m = token.match(/^(\d{1,12})\.([0-9a-f]{64})$/);
+  if (!m) return false;
+  const exp = Number(m[1]);
+  if (exp < nowS) return false;
+  return safeEqual(m[2], csrfMac(nonce, exp, params));
+}
+
+/** Render the consent form with a CSRF token bound to `nonce` and the request params. */
+function sendConsent(res, status, params, nonce, error) {
+  htmlHeaders(res, status);
+  res.end(renderConsent({ params: { ...params, csrf_token: issueCsrf(nonce, params) }, error }));
+}
 
 export const config = { runtime: "nodejs" };
 
@@ -98,7 +148,7 @@ button:hover{background:var(--accent)}
     <div class="hint">redis:// or rediss:// — include the password in the URI. The server must be reachable from the public internet.</div>
   </div>
 
-  ${["client_id","redirect_uri","code_challenge","code_challenge_method","state","scope","response_type"].map(k=>`<input type="hidden" name="${k}" value="${htmlEscape(params[k]||"")}">`).join("")}
+  ${["client_id","redirect_uri","code_challenge","code_challenge_method","state","scope","response_type","csrf_token"].map(k=>`<input type="hidden" name="${k}" value="${htmlEscape(params[k]||"")}">`).join("")}
 
   <script>
   (function(){
@@ -133,9 +183,7 @@ function renderErrorPage(title, detail) {
 
 /** 400/503 page for errors that must not redirect (unknown client, bad redirect_uri, server config). */
 function sendErrorPage(res, status, title, detail) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
+  htmlHeaders(res, status);
   res.end(renderErrorPage(title, detail));
 }
 
@@ -191,8 +239,9 @@ export default async function handler(req, res) {
       const v = await validateAuthRequest(query);
       if (v.error) return rejectRequest(res, v, query);
       const params = { ...query, client_name: v.client.client_name };
-      res.status(200).setHeader("Content-Type", "text/html; charset=utf-8").end(renderConsent({ params }));
-      return;
+      const nonce = randomToken(16);
+      res.setHeader("Set-Cookie", `${CSRF_COOKIE}=${nonce}; Path=/api/oauth/authorize; Max-Age=${CSRF_TTL_S}; HttpOnly; Secure; SameSite=Strict`);
+      return sendConsent(res, 200, params, nonce);
     }
 
     if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
@@ -200,6 +249,11 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const v = await validateAuthRequest(body);
     if (v.error) return rejectRequest(res, v, body);
+
+    const nonce = readCookie(req, CSRF_COOKIE);
+    if (!verifyCsrf(nonce, body.csrf_token, body)) {
+      return sendErrorPage(res, 403, "This consent form expired or was not opened here", "Go back to the app and start connecting again. Nothing was shared.");
+    }
 
     if (body.action === "deny") {
       return redirectError(res, body.redirect_uri, "access_denied", "user denied consent", body.state);
@@ -218,13 +272,13 @@ export default async function handler(req, res) {
       if (!/^[a-z0-9][a-z0-9_-]*$/.test(space)) throw new Error("letters, numbers, - and _ only");
     } catch (e) {
       const params = { ...body, client_name: v.client.client_name };
-      return res.status(400).setHeader("Content-Type", "text/html; charset=utf-8").end(renderConsent({ params, error: `Space: ${e.message}` }));
+      return sendConsent(res, 400, params, nonce, `Space: ${e.message}`);
     }
 
     const backendKind = body.backend === "redis" ? "redis" : "upstash";
     const fail = (error, extra = {}) => {
       const params = { ...body, client_name: v.client.client_name, ...extra };
-      res.status(400).setHeader("Content-Type", "text/html; charset=utf-8").end(renderConsent({ params, error }));
+      sendConsent(res, 400, params, nonce, error);
     };
 
     let backend;
