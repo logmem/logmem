@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { oauthRedis, mockRes, mockReq } from "./oauth-helpers.mjs";
-import { createHandler as probeHandler, cleanAgents, TTL_S } from "../api/onboarding/probe.mjs";
-import { createHandler as waitlistHandler, normalizeEmail, emailKey } from "../api/onboarding/waitlist.mjs";
+import http from "node:http";
+import { oauthRedis, mockRes, mockReq, withEnv } from "./oauth-helpers.mjs";
+import { createHandler as probeHandler, cleanAgents, TTL_S, PROBE_POST_LIMIT, PROBE_GET_LIMIT } from "../api/onboarding/probe.mjs";
+import { createHandler as waitlistHandler, normalizeEmail, emailKey, WAITLIST_TTL_S } from "../api/onboarding/waitlist.mjs";
 import { createHandler as testHandler, runTest, REFUSED, CONNECT_FAILED } from "../api/onboarding/test.mjs";
 import { clientIp, rateLimit, readJsonBody, KEYS } from "../src/http/onboarding.mjs";
+import { assertPublicTarget } from "../src/http/net-guard.mjs";
+import { pinLookup, pinnedHttpsOptions, pinnedHttpsPost, pinnedNativeOptions, PinError } from "../src/http/pin.mjs";
 
 const quiet = () => {};
 const call = async (handler, opts) => {
@@ -18,8 +21,8 @@ const call = async (handler, opts) => {
 };
 const get = (handler, code) => call(handler, { method: "GET", url: `/api/onboarding/probe?code=${code}` }).then((r) => r);
 
-function probeWith(redis) {
-  const h = probeHandler({ redis: () => redis, log: quiet });
+function probeWith(redis, opts = {}) {
+  const h = probeHandler({ redis: () => redis, log: quiet, ...opts });
   return async (req, res) => {
     // Vercel fills req.query from the URL.
     req.query = Object.fromEntries(new URL(req.url, "http://x").searchParams);
@@ -38,7 +41,7 @@ test("probe: rejects bad codes on POST and GET", async () => {
   }
   assert.equal((await call(h, { method: "GET", url: "/?code=abc123" })).status, 400);
   assert.equal((await call(h, { method: "GET", url: "/?code=" })).status, 400);
-  assert.equal(redis.data.size, 0, "nothing stored");
+  assert.deepEqual([...redis.data.keys()].filter((k) => !k.startsWith("lm:onboard:rl:")), [], "nothing stored but the rate-limit counter");
 });
 
 test("probe: body over 2 KB is refused before anything is stored", async () => {
@@ -48,7 +51,7 @@ test("probe: body over 2 KB is refused before anything is stored", async () => {
   assert.equal((await call(h, { method: "POST", body: big })).status, 413);
   assert.equal((await call(h, { method: "POST", body: JSON.stringify(big) })).status, 413, "raw string body");
   assert.equal((await call(h, { method: "POST", body: { code: "ABC123", agents: [] }, headers: { "content-length": "4096" } })).status, 413, "declared length");
-  assert.equal(redis.data.size, 0);
+  assert.deepEqual([...redis.data.keys()].filter((k) => k.startsWith("lm:onboard:probe:")), [], "the payload was not stored");
 });
 
 test("probe: unknown names dropped, duplicates collapsed, versions cleaned, nothing else stored", async () => {
@@ -116,6 +119,51 @@ test("probe: methods, no backend, and cleanAgents edge cases", async () => {
   assert.equal(cleanAgents(Array.from({ length: 100 }, () => ({ name: "claude", version: "1" }))).length, 1);
 });
 
+test("probe: 10 POSTs and 40 GETs per IP per minute, buckets are separate", async () => {
+  const redis = oauthRedis();
+  const h = probeWith(redis);
+  const post = (code, ip) => call(h, { method: "POST", body: { code, agents: [] }, headers: { "x-forwarded-for": ip } });
+  for (let i = 0; i < PROBE_POST_LIMIT; i++) {
+    assert.equal((await post(`AAA00${i}`, "203.0.113.77")).status, 201);
+  }
+  const blocked = await post("AAA099", "203.0.113.77");
+  assert.equal(blocked.status, 429);
+  assert.equal(blocked.headers["retry-after"], "60");
+  assert.equal(blocked.body.error, "too many requests");
+  assert.equal(redis.data.has(KEYS.probe("AAA099")), false, "the refused POST stored nothing");
+  assert.equal(redis.ttls.get("lm:onboard:rl:probe-post:203.0.113.77"), 60);
+  assert.equal((await post("AAA098", "198.51.100.77")).status, 201, "other IPs have their own window");
+  for (let i = 0; i < PROBE_GET_LIMIT; i++) {
+    assert.equal((await call(h, { method: "GET", url: "/?code=AAA000", headers: { "x-forwarded-for": "203.0.113.77" } })).status, 200);
+  }
+  const getBlocked = await call(h, { method: "GET", url: "/?code=AAA000", headers: { "x-forwarded-for": "203.0.113.77" } });
+  assert.equal(getBlocked.status, 429);
+  assert.equal(getBlocked.headers["retry-after"], "60");
+});
+
+test("probe: global cap on live keys, freed when they expire", async () => {
+  const redis = oauthRedis();
+  let now = 1_700_000_000_000;
+  const h = probeWith(redis, { now: () => now, liveCap: 2 });
+  const post = (code) => call(h, { method: "POST", body: { code, agents: [{ name: "claude", version: "1" }] }, headers: { "x-forwarded-for": "203.0.113.78" } });
+  assert.equal((await post("CAP001")).status, 201);
+  assert.equal((await post("CAP002")).status, 201);
+  const full = await post("CAP003");
+  assert.equal(full.status, 429);
+  assert.equal(full.body.error, "probe capacity reached");
+  assert.equal(full.headers["retry-after"], "600");
+  assert.equal(redis.data.has(KEYS.probe("CAP003")), false);
+  assert.equal((await post("CAP001")).status, 409, "a live code is still write-once, not a capacity error");
+  assert.equal(redis.data.get(KEYS.probeLive).value.size, 2);
+
+  now += TTL_S * 1000;
+  assert.equal((await call(h, { method: "GET", url: "/?code=CAP001", headers: { "x-forwarded-for": "203.0.113.79" } })).status, 404);
+  assert.equal(redis.data.has(KEYS.probe("CAP001")), false, "expired pairing key deleted");
+  assert.equal(redis.data.has(KEYS.probe("CAP002")), false);
+  assert.equal((await post("CAP003")).status, 201, "a slot freed by expiry can be used");
+  assert.equal(redis.data.get(KEYS.probeLive).value.size, 1);
+});
+
 // ---- waitlist ----------------------------------------------------------------
 
 test("waitlist: email shape, hashing by lowercased email, idempotent, only {ok:true}", async () => {
@@ -125,25 +173,31 @@ test("waitlist: email shape, hashing by lowercased email, idempotent, only {ok:t
   for (const email of ["", "nope", "a@b", "a b@c.com", "<x>@y.com", 42, "a@-b.com", `${"a".repeat(250)}@b.com`]) {
     assert.equal((await call(h, { method: "POST", body: { email, agents: 3, plan: "pro" } })).status, 400, String(email));
   }
-  assert.equal(redis.data.has(KEYS.waitlist), false);
+  assert.equal([...redis.data.keys()].some((k) => k.startsWith("lm:onboard:waitlist")), false);
 
   const r1 = await call(h, { method: "POST", body: { email: " Mikey@Example.com ", agents: 4, plan: "pro", extra: "dropped" } });
   assert.equal(r1.status, 200);
   assert.deepEqual(r1.body, { ok: true });
   const field = createHash("sha256").update("mikey@example.com").digest("hex");
   assert.equal(emailKey("mikey@example.com"), field);
-  const hash = redis.data.get(KEYS.waitlist).value;
-  assert.deepEqual(JSON.parse(hash.get(field)), { email: "mikey@example.com", agents: 4, plan: "pro", ts: 1000 });
+  const entryKey = KEYS.waitlistEntry(field);
+  const exp = 1000 + WAITLIST_TTL_S * 1000;
+  assert.deepEqual(JSON.parse(redis.data.get(entryKey).value), { email: "mikey@example.com", hash: field, agents: 4, plan: "pro", ts: 1000, exp });
+  assert.equal(redis.ttls.get(entryKey), WAITLIST_TTL_S, "retention TTL on the entry");
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.get(field), exp / 1000);
 
   t = 5000;
   const r2 = await call(h, { method: "POST", body: { email: "MIKEY@example.COM", agents: 4, plan: "pro" } });
   assert.deepEqual(r2.body, { ok: true }, "a repeat looks the same as a first signup");
-  assert.equal(hash.size, 1, "one record per email");
-  assert.equal(JSON.parse(hash.get(field)).ts, 1000, "first ts kept: same request twice, same record");
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1, "one record per normalized email");
+  const again = JSON.parse(redis.data.get(entryKey).value);
+  assert.equal(again.ts, 1000, "first ts kept: same request twice, same record");
+  assert.equal(again.exp, exp, "a repeat does not extend retention");
+  assert.equal(redis.ttls.get(entryKey), WAITLIST_TTL_S - 4, "TTL counts down from the original expiry");
 
   const r3 = await call(h, { method: "POST", body: { email: "mikey@example.com", agents: "lots", plan: "platinum" }, headers: { "x-forwarded-for": "198.51.100.2" } });
   assert.equal(r3.status, 200, "(10 requests from the first IP used up its minute)");
-  assert.deepEqual(JSON.parse(hash.get(field)), { email: "mikey@example.com", agents: null, plan: null, ts: 1000 }, "bad agents/plan become null");
+  assert.deepEqual(JSON.parse(redis.data.get(entryKey).value), { email: "mikey@example.com", hash: field, agents: null, plan: null, ts: 1000, exp }, "bad agents/plan become null");
   assert.equal(normalizeEmail("x@y.co"), "x@y.co");
 });
 
@@ -159,6 +213,37 @@ test("waitlist: rate limited to 10 per IP per minute; 503 without a backend", as
   assert.equal((await call(h, { ...req(12), headers: { "x-forwarded-for": "198.51.100.7" } })).status, 200, "other IPs unaffected");
   assert.equal((await call(waitlistHandler({ redis: () => null, log: quiet }), req(1))).status, 503);
   assert.equal((await call(h, { method: "GET" })).status, 405);
+});
+
+test("waitlist: size cap, and retention deletes the plaintext email", async () => {
+  const redis = oauthRedis();
+  let now = 10_000;
+  const ttlS = 50;
+  const h = waitlistHandler({ redis: () => redis, now: () => now, maxEntries: 2, ttlS, log: quiet });
+  const post = (email, ip = "203.0.113.40") => call(h, { method: "POST", body: { email, agents: 1, plan: "dev" }, headers: { "x-forwarded-for": ip } });
+  assert.equal((await post("a@example.com")).status, 200);
+  assert.equal((await post("A@Example.com")).status, 200, "normalized duplicate does not take a second slot");
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1);
+  assert.equal((await post("b@example.com")).status, 200);
+  const full = await post("c@example.com");
+  assert.equal(full.status, 503);
+  assert.equal(full.body.error, "waitlist is full");
+  assert.equal([...redis.data.values()].some((e) => e.type === "string" && String(e.value).includes("c@example.com")), false);
+  assert.equal((await post("a@example.com", "203.0.113.41")).status, 200, "an address already on the list can still update");
+
+  const aField = emailKey("a@example.com");
+  const before = JSON.parse(redis.data.get(KEYS.waitlistEntry(aField)).value);
+  now += 40 * 1000;
+  assert.equal((await post("a@example.com", "203.0.113.42")).status, 200);
+  const mid = JSON.parse(redis.data.get(KEYS.waitlistEntry(aField)).value);
+  assert.equal(mid.exp, before.exp, "retention stays anchored to the first signup");
+  assert.equal(redis.ttls.get(KEYS.waitlistEntry(aField)), 10);
+
+  now = before.exp;
+  assert.equal((await post("c@example.com", "203.0.113.43")).status, 200, "expired rows free a slot");
+  const dumped = [...redis.data.entries()].filter(([k]) => k.startsWith("lm:onboard:waitlist:")).map(([, e]) => e.value);
+  assert.equal(dumped.some((v) => String(v).includes("a@example.com") || String(v).includes("b@example.com")), false, "plaintext emails past retention are deleted");
+  assert.equal(JSON.parse(redis.data.get(KEYS.waitlistEntry(emailKey("c@example.com"))).value).email, "c@example.com");
 });
 
 // ---- connection test ----------------------------------------------------------
@@ -264,6 +349,164 @@ test("test endpoint: 10 per IP per minute (INCR + EXPIRE 60), checked before the
   assert.equal(redis.data.get("lm:onboard:rl:203.0.113.50").value, "11");
   assert.equal(redis.ttls.get("lm:onboard:rl:203.0.113.50"), 60);
   assert.equal(redis.calls.filter((c) => c[0] === "EXPIRE").length, 1, "EXPIRE only on the first hit");
+});
+
+test("connection pin: dial the checked address, keep SNI and Host, refuse redis://", async () => {
+  const pin = { protocol: "rediss:", hostname: "redis.example", port: 6380, addresses: ["8.8.4.4", "1.1.1.1"] };
+  const opts = pinnedNativeOptions("rediss://:s3cret@redis.example:6380/0", pin);
+  assert.equal(opts.socket.host, "8.8.4.4", "TCP target is the first checked address");
+  assert.equal(opts.socket.servername, "redis.example", "SNI stays the original name");
+  assert.equal(opts.socket.tls, true);
+  assert.equal(opts.socket.rejectUnauthorized, true);
+  assert.equal(opts.socket.reconnectStrategy, false);
+  assert.equal(opts.password, "s3cret");
+  assert.equal(JSON.stringify(opts.socket).includes("s3cret"), false, "the secret is not on the socket options");
+  assert.equal(opts.database, 0);
+  const all = await new Promise((resolve, reject) => opts.socket.lookup("redis.example", { all: true }, (err, addrs) => (err ? reject(err) : resolve(addrs))));
+  assert.deepEqual(all, [{ address: "8.8.4.4", family: 4 }]);
+  const one = await new Promise((resolve, reject) => opts.socket.lookup("redis.example", (err, addr, fam) => (err ? reject(err) : resolve({ addr, fam }))));
+  assert.deepEqual(one, { addr: "8.8.4.4", fam: 4 });
+  await assert.rejects(new Promise((resolve, reject) => opts.socket.lookup("evil.example", {}, (err, addr) => (err ? reject(err) : resolve(addr)))));
+
+  assert.throws(() => pinnedNativeOptions("redis://:s3cret@93.184.216.34:6379", { protocol: "redis:", hostname: "93.184.216.34", port: 6379, addresses: ["93.184.216.34"] }), (e) => e instanceof PinError && !String(e.message).includes("s3cret"));
+  assert.throws(() => pinnedNativeOptions("rediss://:pw@redis.example:6380", { ...pin, addresses: ["169.254.169.254"] }), PinError);
+  assert.throws(() => pinnedNativeOptions("rediss://:pw@other.example:6380", pin), PinError);
+
+  const httpsOpts = pinnedHttpsOptions("https://eu1.example.upstash.io/path", { protocol: "https:", hostname: "eu1.example.upstash.io", port: 443, addresses: ["1.2.3.4"] });
+  assert.equal(httpsOpts.host, "1.2.3.4");
+  assert.equal(httpsOpts.servername, "eu1.example.upstash.io");
+  assert.equal(httpsOpts.headers.Host, "eu1.example.upstash.io");
+  assert.equal(httpsOpts.path, "/path");
+  assert.equal(httpsOpts.rejectUnauthorized, true);
+  const withPort = pinnedHttpsOptions("https://redis.example:8443/x", { protocol: "https:", hostname: "redis.example", port: 8443, addresses: ["8.8.4.4"] });
+  assert.equal(withPort.headers.Host, "redis.example:8443");
+  assert.equal(withPort.servername, "redis.example");
+  assert.equal(withPort.port, 8443);
+  const literal = pinnedHttpsOptions("https://93.184.216.34/x", { protocol: "https:", hostname: "93.184.216.34", port: 443, addresses: ["93.184.216.34"] });
+  assert.equal(literal.servername, undefined, "an IP literal has no SNI name");
+  assert.equal(literal.headers.Host, "93.184.216.34");
+  assert.throws(() => pinnedHttpsOptions("http://eu1.example.upstash.io/", { protocol: "http:", hostname: "eu1.example.upstash.io", port: 80, addresses: ["1.2.3.4"] }), PinError);
+
+  // The lookup is what Node dials. Host stays the original name.
+  const seen = [];
+  const server = http.createServer((req, res) => { seen.push(req.headers.host); res.end("ok"); });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = server.address().port;
+    await new Promise((resolve, reject) => {
+      const req = http.request({
+        host: "not-a-real-host.example",
+        port,
+        lookup: pinLookup("not-a-real-host.example", "127.0.0.1"),
+        method: "POST",
+        path: "/",
+        headers: { Host: "not-a-real-host.example" },
+      }, (res) => { res.resume(); res.on("end", resolve); });
+      req.on("error", reject);
+      req.end();
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+  assert.deepEqual(seen, ["not-a-real-host.example"]);
+});
+
+test("connection pin: handler uses the guard's address and still refuses plaintext and rebinding", async () => {
+  const redis = oauthRedis();
+  let dnsCalls = 0;
+  const lookup = async () => {
+    dnsCalls++;
+    return [{ address: dnsCalls === 1 ? "8.8.4.4" : "169.254.169.254", family: 4 }];
+  };
+  let nativePin = null;
+  const native = async (uri, pin) => {
+    nativePin = { uri, pin, opts: pinnedNativeOptions(uri, pin) };
+    return Object.assign(async (c) => (c === "PING" ? "PONG" : 0), { close: async () => {} });
+  };
+  const h = testHandler({
+    redis: () => redis,
+    guard: (target) => assertPublicTarget(target, { env: {}, lookup }),
+    fetchImpl: async () => { throw new Error("unpinned fetch"); },
+    native,
+    log: quiet,
+  });
+  const r = await call(h, { method: "POST", body: { kind: "redis", uri: "rediss://:s3cret@redis.example:6380" }, headers: { "x-forwarded-for": "203.0.113.60" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+  assert.equal(dnsCalls, 1, "the connection did not resolve the name again");
+  assert.equal(nativePin.opts.socket.host, "8.8.4.4");
+  assert.equal(nativePin.opts.socket.servername, "redis.example");
+  assert.ok(!r.raw.includes("s3cret") && !r.raw.includes("8.8.4.4"));
+
+  const requests = [];
+  const requestImpl = (options, cb) => {
+    requests.push(options);
+    const res = {
+      statusCode: 200,
+      on(ev, fn) {
+        if (ev === "data") fn(Buffer.from(JSON.stringify({ result: "PONG" })));
+        if (ev === "end") fn();
+        return this;
+      },
+    };
+    return { on() { return this; }, setTimeout() { return this; }, destroy() {}, end() { cb(res); } };
+  };
+  const rest = testHandler({
+    redis: () => redis,
+    guard: async () => ({ protocol: "https:", hostname: "eu1.example.upstash.io", port: 443, addresses: ["1.2.3.4"] }),
+    fetchImpl: async () => { throw new Error("unpinned fetch"); },
+    requestImpl,
+    log: quiet,
+  });
+  const rr = await call(rest, { method: "POST", body: { kind: "rest", url: "https://eu1.example.upstash.io", token: "SECRET-TOKEN" }, headers: { "x-forwarded-for": "203.0.113.61" } });
+  assert.equal(rr.body.reachable, true);
+  assert.equal(requests.length >= 1, true);
+  assert.equal(requests[0].host, "1.2.3.4");
+  assert.equal(requests[0].servername, "eu1.example.upstash.io");
+  assert.equal(requests[0].headers.Host, "eu1.example.upstash.io");
+  assert.equal(requests[0].headers.Authorization, "Bearer SECRET-TOKEN");
+  assert.ok(!rr.raw.includes("SECRET-TOKEN"));
+  const looked = await new Promise((resolve, reject) => requests[0].lookup("eu1.example.upstash.io", { all: true }, (err, a) => (err ? reject(err) : resolve(a))));
+  assert.deepEqual(looked, [{ address: "1.2.3.4", family: 4 }]);
+
+  // A 302 is not followed.
+  let redirects = 0;
+  const once = (options, cb) => {
+    redirects++;
+    const res = { statusCode: 302, on(ev, fn) { if (ev === "end") fn(); return this; } };
+    return { on() { return this; }, setTimeout() { return this; }, destroy() {}, end() { cb(res); } };
+  };
+  const moved = await pinnedHttpsPost("https://eu1.example.upstash.io/", "t", ["PING"], {
+    pin: { protocol: "https:", hostname: "eu1.example.upstash.io", port: 443, addresses: ["1.2.3.4"] },
+    requestImpl: once,
+  });
+  assert.equal(moved.ok, false);
+  assert.equal(redirects, 1);
+
+  await withEnv({ LOGMEM_ALLOW_PLAINTEXT_REDIS: "1" }, async () => {
+    let nativeCalls = 0;
+    const plain = testHandler({
+      redis: () => redis,
+      fetchImpl: async () => { throw new Error("fetch"); },
+      native: async () => { nativeCalls++; return async () => "PONG"; },
+      log: quiet,
+    });
+    const pr = await call(plain, { method: "POST", body: { kind: "redis", uri: "redis://:s3cret@93.184.216.34:6379" }, headers: { "x-forwarded-for": "203.0.113.62" } });
+    assert.equal(pr.status, 400);
+    assert.equal(pr.body.error, REFUSED);
+    assert.equal(nativeCalls, 0);
+    assert.ok(!pr.raw.includes("s3cret"));
+  });
+
+  const mixed = testHandler({
+    redis: () => redis,
+    guard: async () => ({ protocol: "https:", hostname: "ok.example", port: 443, addresses: ["8.8.8.8", "169.254.169.254"] }),
+    fetchImpl: async () => { throw new Error("fetch"); },
+    log: quiet,
+  });
+  const mr = await call(mixed, { method: "POST", body: { kind: "rest", url: "https://ok.example", token: "t" }, headers: { "x-forwarded-for": "203.0.113.63" } });
+  assert.equal(mr.status, 400);
+  assert.equal(mr.body.error, REFUSED);
 });
 
 test("runTest stops after a failed PING", async () => {

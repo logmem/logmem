@@ -9,6 +9,7 @@
 // its socket looks dead (see evictIfDead).
 
 import { createClient } from "redis";
+import { pinnedNativeOptions } from "../http/pin.mjs";
 
 const CONNECT_TIMEOUT_MS = 4000;
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -209,6 +210,32 @@ async function translate(client, command, args) {
 
 export function isRedisUri(s) {
   return /^rediss?:\/\//i.test(String(s || ""));
+}
+
+/**
+ * One-shot rediss:// client dialed at the pinned address. Not cached: the
+ * URI's password must not sit in the warm-instance client map. Reconnect is
+ * off so a drop cannot resolve the name a second time. CLIENT SETINFO is
+ * off so this read-only probe does not write the user's Redis.
+ */
+export async function createPinnedRunner(uri, pin) {
+  let client;
+  try {
+    client = createClient(pinnedNativeOptions(uri, pin));
+    client.on("error", () => {});
+    await client.connect();
+  } catch {
+    try { await client?.disconnect?.(); } catch { /* already gone */ }
+    throw new Error("native redis connect failed");
+  }
+  const run = async (...cmd) => {
+    const [command, ...args] = cmd;
+    return translate(client, command, args.map((a) => (typeof a === "number" ? String(a) : a)));
+  };
+  run.close = async () => {
+    try { await client.disconnect(); } catch { /* already gone */ }
+  };
+  return run;
 }
 
 export async function nativeRedisCall(uri, ...cmd) {

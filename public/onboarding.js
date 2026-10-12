@@ -153,7 +153,7 @@
   }
 
   var POLL_MS = 3000, POLL_FOR_MS = 10 * 60 * 1000;
-  var probe = { code: null, started: 0, timer: null, tick: null, state: 'idle' };
+  var probe = { code: null, started: 0, timer: null, tick: null, state: 'idle', delay: POLL_MS };
 
   function probeCommand(code) {
     var origin = location.origin;
@@ -168,6 +168,7 @@
     probe.code = newCode();
     probe.started = Date.now();
     probe.state = 'waiting';
+    probe.delay = POLL_MS;
     $('#probe-cmd').textContent = probeCommand(probe.code);
     $('#probe-code').textContent = probe.code;
     renderProbeStatus();
@@ -192,14 +193,17 @@
     fetch('/api/onboarding/probe?code=' + encodeURIComponent(code), { cache: 'no-store', headers: { Accept: 'application/json' } })
       .then(function (r) {
         if (code !== probe.code || probe.state !== 'waiting') return null;
-        if (r.status === 200) return r.json().then(function (j) { onProbeResult(Array.isArray(j.agents) ? j.agents : []); });
+        if (r.status === 200) { probe.delay = POLL_MS; return r.json().then(function (j) { onProbeResult(Array.isArray(j.agents) ? j.agents : []); }); }
         if (r.status === 503) { probe.state = 'unavailable'; stopProbe(); renderProbeStatus(); return null; }
-        if (r.status === 404) return null;
+        if (r.status === 404) { probe.delay = POLL_MS; return null; }
+        // A 429 still counts inside the same minute. Wait it out instead of
+        // polling every 3 seconds and keeping the counter hot.
+        if (r.status === 429) { probe.delay = 60000; return null; }
         throw new Error('status ' + r.status);
       })
-      .catch(function () { /* network blip: keep polling until the deadline */ })
+      .catch(function () { probe.delay = POLL_MS; /* network blip: keep polling until the deadline */ })
       .then(function () {
-        if (probe.state === 'waiting' && code === probe.code) probe.timer = setTimeout(poll, POLL_MS);
+        if (probe.state === 'waiting' && code === probe.code) probe.timer = setTimeout(poll, probe.delay || POLL_MS);
       });
   }
 
@@ -461,6 +465,8 @@
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ email: email, agents: Number.isFinite(agents) ? agents : null, plan: plan() })
     }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) { return { status: r.status, body: body || {} }; });
+    }).then(function (r) {
       var box = $('#wl-status');
       if (r.status === 200) {
         show(box, alertBox('success', 'check', [el('strong', { text: 'You’re on the waitlist.' }), ' We’ll email ' + email + ' when LogMem Cloud opens. Nothing is charged and no account was created.']));
@@ -469,6 +475,8 @@
         show(box, null);
       } else if (r.status === 429) {
         show(box, alertBox('warning', 'clock', ['Too many tries from this network. Wait a minute and try again.']));
+      } else if (r.status === 503 && r.body.error === 'waitlist is full') {
+        show(box, alertBox('warning', 'info', [el('strong', { text: 'The waitlist is full right now.' }), ' Nothing was saved.']));
       } else if (r.status === 503) {
         show(box, alertBox('warning', 'unplug', [el('strong', { text: 'The waitlist isn’t open on this deployment.' }), ' Nothing was saved.']));
       } else {

@@ -13,6 +13,10 @@
 // Abuse limits:
 //   - SSRF guard (src/http/net-guard.mjs, the one OAuth uses): https:// or
 //     rediss:// only, allowed ports only, every resolved address public
+//   - the connection dials addresses[0] from that check (src/http/pin.mjs).
+//     SNI and the HTTP Host stay on the original name. A later DNS answer
+//     is never used. redis:// is refused here even if plaintext Redis is
+//     allowed elsewhere.
 //   - REST calls never follow redirects and time out after 5 s
 //   - body at most 4 KB
 //   - 10 requests per IP per minute (INCR + EXPIRE 60 on lm:onboard:rl:{ip},
@@ -20,8 +24,9 @@
 //   - one generic message for every failure; upstream errors are not shown
 
 import { randomBytes } from "node:crypto";
-import { assertPublicTarget } from "../../src/http/net-guard.mjs";
+import { assertPublicTarget, isBlockedIp } from "../../src/http/net-guard.mjs";
 import { restEndpoint } from "../../src/lib/redis-rest.mjs";
+import { pinnedHttpsPost } from "../../src/http/pin.mjs";
 import { serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, UNAVAILABLE } from "../../src/http/onboarding.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
 
@@ -39,16 +44,27 @@ export function testCommands(key = `lm:probe:onboard:${randomBytes(12).toString(
 }
 
 /** One REST command: no redirects, bounded time, no error text kept. */
-export function restRunner(url, token, { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export function restRunner(url, token, { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, pin, requestImpl } = {}) {
   const endpoint = restEndpoint(url);
   return async (...cmd) => {
-    const r = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
-      redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    // A pin dials the checked address. Without one (tests that stub the
+    // guard), fall back to the injected fetch, which never leaves the process.
+    let r;
+    if (pin) {
+      try {
+        r = await pinnedHttpsPost(endpoint, token, cmd, { pin, timeoutMs, requestImpl });
+      } catch {
+        throw new Error("not ok");
+      }
+    } else {
+      r = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(cmd),
+        redirect: "manual",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    }
     if (!r.ok) throw new Error("not ok");
     const j = await r.json();
     if (!j || typeof j !== "object" || j.error) throw new Error("refused");
@@ -56,24 +72,35 @@ export function restRunner(url, token, { fetchImpl = fetch, timeoutMs = TIMEOUT_
   };
 }
 
-/** One native command on a throwaway connection that is closed afterwards. */
-async function nativeRunnerFactory(uri) {
-  const { nativeRedisCall } = await import("../../src/lib/redis-native.mjs");
-  const run = (...cmd) => nativeRedisCall(uri, ...cmd);
-  run.close = async () => {
-    // nativeRedisCall caches clients per URI; drop ours so the URI (and its
-    // password) is not kept in this warm instance.
-    const cache = globalThis.__acmiNativeClients;
-    const pending = cache?.get(uri);
-    cache?.delete(uri);
-    try {
-      const c = await pending;
-      await c?.disconnect?.();
-    } catch {
-      /* already gone */
-    }
-  };
-  return run;
+/** One native command on a throwaway pinned connection, closed afterwards. */
+async function nativeRunnerFactory(uri, pin) {
+  const { createPinnedRunner } = await import("../../src/lib/redis-native.mjs");
+  return createPinnedRunner(uri, pin);
+}
+
+/**
+ * Turn a guard result into a pin, or null when the guard is a test double
+ * that only signals "allowed" by returning undefined. A real
+ * assertPublicTarget result always carries addresses; anything else with a
+ * non-public address or a plaintext scheme is refused.
+ */
+export function pinFromCheck(kind, target, checked) {
+  if (checked === undefined) return null;
+  const addresses = Array.isArray(checked?.addresses) ? checked.addresses : [];
+  const protocol = checked?.protocol;
+  const okProto = kind === "rest" ? protocol === "https:" : protocol === "rediss:";
+  const hostname = String(checked?.hostname || "").replace(/^\[|\]$/g, "");
+  if (!okProto || !hostname || !addresses.length || addresses.some((a) => isBlockedIp(a))) {
+    const err = new Error("refused");
+    err.code = "PIN_REFUSED";
+    throw err;
+  }
+  if (kind === "redis" && !/^rediss:\/\//i.test(target)) {
+    const err = new Error("refused");
+    err.code = "PIN_REFUSED";
+    throw err;
+  }
+  return { protocol, hostname, port: Number(checked.port), addresses: addresses.slice() };
 }
 
 /** Run the read-only commands. PING must answer PONG for the rest to count. */
@@ -117,6 +144,7 @@ export function createHandler({
   guard = assertPublicTarget,
   fetchImpl = fetch,
   native = nativeRunnerFactory,
+  requestImpl,
   log,
 } = {}) {
   return async function handler(req, res) {
@@ -145,15 +173,21 @@ export function createHandler({
       const t = parseTarget(body);
       if (t.error) return done(400, { error: t.error });
 
+      let pin = null;
       try {
-        await guard(t.kind === "rest" ? restEndpoint(t.target) : t.target);
+        pin = pinFromCheck(t.kind, t.target, await guard(t.kind === "rest" ? restEndpoint(t.target) : t.target));
       } catch {
         return done(400, { error: REFUSED });
       }
+      // Plaintext Redis is refused on this route even when the guard's env
+      // opt-in would allow redis:// for other callers.
+      if (t.kind === "redis" && !/^rediss:\/\//i.test(t.target)) return done(400, { error: REFUSED });
 
       let run;
       try {
-        run = t.kind === "rest" ? restRunner(t.target, t.token, { fetchImpl }) : await native(t.target);
+        run = t.kind === "rest"
+          ? restRunner(t.target, t.token, { fetchImpl, pin, requestImpl })
+          : await native(t.target, pin);
       } catch {
         return done(200, { ok: false, reachable: false, results: [{ cmd: "PING", ok: false }], error: CONNECT_FAILED });
       }

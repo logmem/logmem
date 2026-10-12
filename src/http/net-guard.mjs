@@ -8,10 +8,11 @@
 //     loopback, private, link-local, CGNAT, ULA, unspecified, multicast,
 //     reserved, or cloud metadata ranges.
 //
-// Residual risk: the caller connects with its own resolver afterwards, so a
-// DNS-rebinding host can still flip between this check and the connect. The
-// check stops the plain "point the probe at 169.254.169.254 / 10.x" attack;
-// pinning the resolved IP into the connection is a follow-up.
+// The returned `addresses` are the ones that were checked. A caller that
+// connects afterwards must dial one of those addresses (see src/http/pin.mjs):
+// its own resolver can still rebind the name between this check and the
+// connect. The onboarding connection test does that. OAuth re-checks the
+// name on use and does not pin yet.
 //
 // Error messages are generic on purpose. Callers must not echo them verbatim
 // to untrusted pages if they want zero signal; `reason` is for server logs.

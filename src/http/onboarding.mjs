@@ -12,9 +12,28 @@ import { fromDescriptor, descriptorFromEnv } from "../lib/backend.mjs";
 
 export const KEYS = {
   probe: (code) => `lm:onboard:probe:${code}`,
+  // ZSET of live pairing codes. Score is the unix expiry second.
+  probeLive: "lm:onboard:probe:live",
   rate: (ip, bucket = "") => `lm:onboard:rl:${bucket ? `${bucket}:` : ""}${ip}`,
-  waitlist: "lm:onboard:waitlist",
+  // One string per signup, EX the retention window. The index score is the
+  // unix expiry second; the member is sha256(normalized email).
+  waitlistEntry: (field) => `lm:onboard:waitlist:${field}`,
+  waitlistIndex: "lm:onboard:waitlist:index",
 };
+
+/**
+ * Drop index members whose score is <= nowSec (already expired) and return
+ * how many remain. Members come back so the caller can delete the payload
+ * keys; the index itself holds only ids, not emails or probe bodies.
+ */
+export async function sweepIndex(redis, indexKey, nowSec) {
+  const raw = await redis("ZRANGEBYSCORE", indexKey, "-inf", String(nowSec));
+  const members = Array.isArray(raw) ? raw.filter((m) => m != null && m !== "").map(String) : [];
+  for (let i = 0; i < members.length; i += 200) {
+    await redis("ZREM", indexKey, ...members.slice(i, i + 200));
+  }
+  return { expired: members, live: Number(await redis("ZCARD", indexKey)) || 0 };
+}
 
 export const RATE_LIMIT = 10; // requests
 export const RATE_WINDOW_S = 60; // per window
