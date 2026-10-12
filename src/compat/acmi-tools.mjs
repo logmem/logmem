@@ -152,9 +152,10 @@ export const ACMI_TOOLS = [
     async run({ namespace, id, source, summary, kind, correlationId, parentCorrelationId, tenant }, ctx) {
       const { store } = ctx;
       checkEntity(namespace, id);
-      const refused = ownSpace(store, tenant) || guardEvent({ kind, summary, correlationId, parentCorrelationId });
-      if (refused) return refused;
       const ns = nsFromAcmi(namespace);
+      // Another agent's log is that agent's own slot: same rule as acmi_profile / acmi_signal.
+      const refused = ownSpace(store, tenant) || ownAgent(ctx, ns, id, "acmi_event", "log") || guardEvent({ kind, summary, correlationId, parentCorrelationId });
+      if (refused) return refused;
       const ev = { source, summary };
       if (kind) ev.kind = kind;
       if (correlationId) ev.correlationId = correlationId;
@@ -434,10 +435,11 @@ export const ACMI_TOOLS = [
       confirm: { type: "boolean", desc: "Must be true to actually delete; otherwise returns dry-run preview.", optional: true },
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    async run({ key, confirm }, { store }) {
+    async run({ key, confirm }, ctx) {
+      const { store } = ctx;
       const target = key.startsWith("acmi:") ? acmiKeyToLm(key, store.space) : key;
       if (!target) throw new Error(`cannot map ${key} to a LogMem key; legacy acmi:* keys are never deleted from compat mode`);
-      const r = await store.remove(target, { confirm: confirm === true });
+      const r = await store.remove(target, { confirm: confirm === true, actor: me(ctx) });
       return { ok: true, requested: key, ...r, deleted: r.removed };
     },
   },

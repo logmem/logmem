@@ -270,8 +270,14 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     },
 
     // ─── Remove ─────────────────────────────────────────────────────────
-    /** Dry-run unless confirm. Only keys inside this space; never protected. */
-    async remove(key, { confirm = false } = {}) {
+    /**
+     * Dry-run unless confirm. Only keys inside this space; never protected.
+     * With `actor` (the agent calling logmem_remove / acmi_delete) the same
+     * own-agent rule as every other agent write applies: another agent's
+     * keys and the roster indexes are refused, and so is any log that holds
+     * asks or decisions (agents can never delete those).
+     */
+    async remove(key, { confirm = false, actor } = {}) {
       const own = `lm:${space}:`;
       if (!String(key).startsWith(own)) {
         throw new Error(`refused: key must start with '${own}' (this space only)`);
@@ -281,6 +287,21 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       }
       const exists = Number(await redis("EXISTS", key)) === 1;
       const type = exists ? await typeOf(redis, key) : null;
+      if (actor != null) {
+        const rest = String(key).slice(own.length).split(":");
+        if (rest[0] === "agent" && rest.length > 2 && rest[1] !== actor) {
+          throw new Error(`refused: ${key} belongs to agent ${rest[1]}; you (${actor}) can only remove your own agent's keys`);
+        }
+        if (rest.length === 2 && rest[1] === "list") throw new Error(`refused: ${key} is a roster index; agents can't remove it`);
+        if (exists && type === "zset" && rest.at(-1) === "log") {
+          const held = (await redis("ZRANGE", key, 0, -1)).some((m) => {
+            const e = asEntry(tryParse(m));
+            const k = e && typeof e === "object" ? normalizeKind(e.kind).kind : null;
+            return k === "approval" || k === "decided";
+          });
+          if (held) throw new Error(`refused: ${key} holds asks or decisions; agents can never delete those`);
+        }
+      }
       if (!confirm) return { dry_run: true, key, exists, type, hint: "pass confirm=true to remove" };
       if (!exists) return { dry_run: false, key, removed: false, reason: "key did not exist" };
       const n = Number(await redis("DEL", key));

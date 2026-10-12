@@ -665,14 +665,14 @@ export const TOOLS = [
     name: "logmem_remove",
     title: "Remove",
     description:
-      "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed.",
+      "Delete one key in this space. Always a dry run first; only call again with confirm=true after a human has seen exactly what goes. Protected keys are never removed. You can only remove your own agent's keys, never another agent's, a roster index, or any log that holds asks or decisions.",
     params: params({
       key: { type: "string", desc: "Full key, e.g. 'lm:<space>:channel:x:log'" },
       confirm: { type: "boolean", desc: "true to actually remove (default false = preview)", optional: true },
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async run({ key, confirm }, ctx) {
-      const r = await ctx.store.remove(key, { confirm: confirm === true });
+      const r = await ctx.store.remove(key, { confirm: confirm === true, actor: agentId(me(ctx)) });
       if (r.removed) {
         await write(ctx, "agent", me(ctx), { kind: "fix", summary: `Removed ${key}` });
       }
