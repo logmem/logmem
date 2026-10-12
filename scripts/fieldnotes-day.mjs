@@ -35,7 +35,7 @@ export async function runDay(redis, { space = "fieldnotes", mirror, log = () => 
   const ask = await call("relay", "logmem_ask", { question: "Email issue 14 to 2,184 subscribers Tue 9:00am?", action: "POST /v1/campaigns/iss-14/send audience=list:subscribers(2184) schedule=2026-10-13T09:00-04:00", reversible: false, where: `job:${job}`, origin: draft.entry.trail }, "11:07 Ask first");
   // Only a person decides. In production that is the Decisions page (/api/decide);
   // the sandbox calls the same store helper as a stand-in for You.
-  const dec = await writeDecision(A.atlas.store, ask.trail, { verdict: "approve", note: "Approved the send (sandbox stand-in for You)", by: "human:you", via: "fieldnotes-script" });
+  const dec = await writeDecision(A.atlas.store, ask.trail, { verdict: "approve", note: "Approved the send (sandbox stand-in for You)", by: "human:you", via: "fieldnotes-script", confirm: true });
   steps.push({ step: "11:15 Decided", agent: "human:you", tool: "writeDecision", ok: dec.ok });
   log("ok   11:15 Decided (human:you writeDecision)");
   await call("relay", "logmem_stage", { job, stage: "done", note: "Issue 14 scheduled for Tue 9:00am" }, "11:20 Ship it");

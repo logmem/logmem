@@ -122,7 +122,8 @@ async function translate(client, command, args) {
   switch (String(command).toUpperCase()) {
     case "PING": return await client.ping();
     case "GET": return await client.get(args[0]);
-    case "SET": return await client.set(args[0], args[1]);
+    // Options (NX, EX, ...) must reach Redis: SET NX is how a decision is set once.
+    case "SET": return args.length > 2 ? await client.sendCommand(["SET", ...args.map(String)]) : await client.set(args[0], args[1]);
     case "DEL": return await client.del(args);
     case "EXISTS": return await client.exists(args[0]);
     case "TYPE": return await client.type(args[0]);

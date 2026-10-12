@@ -1,9 +1,13 @@
 import { test } from "node:test";
+import { signDecision } from "../src/core/tools.mjs";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { issueCookie, isAdmin, checkPassword, mayRead } from "../src/http/admin-auth.mjs";
 import { buildView, seen, decisionsFrom } from "../src/http/view.mjs";
 import { runDay } from "../scripts/fieldnotes-day.mjs";
+
+// Test-only HMAC key for human decisions (writeDecision fails closed without one).
+process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
 
 const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production" };
 const req = (cookie) => ({ headers: cookie ? { cookie } : {} });
@@ -50,8 +54,13 @@ test("seen buckets and waiting decisions", () => {
   assert.equal(seen(now - 60 * 60e3, now).state, "idle");
   assert.equal(seen(now - 5 * 3600e3, now).state, "offline");
   assert.equal(seen(null).state, "unknown");
-  const d = decisionsFrom([{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "decided", origin: "a", by: "human:you" }, { kind: "decided", origin: "b", by: "agent:mallory" }]);
-  assert.deepEqual(d.waiting.map((x) => x.trail), ["b"], "an agent-written decided never closes an ask");
+  const secret = process.env.LOGMEM_DECIDE_SECRET;
+  const signed = (origin, by) => ({ kind: "decided", origin, by, ts: 1, payload: { verdict: "approve", sig: signDecision({ space: "s", origin, verdict: "approve", by, ts: 1 }, secret) } });
+  const entries = [{ kind: "approval", trail: "a" }, { kind: "approval", trail: "b" }, { kind: "approval", trail: "c" }, signed("a", "human:you"), { kind: "decided", origin: "b", by: "agent:mallory" }, { kind: "decided", origin: "c", by: "human:you", payload: { verdict: "approve" } }];
+  const d = decisionsFrom(entries, { secret, space: "s" });
+  assert.deepEqual(d.waiting.map((x) => x.trail), ["b", "c"], "an agent-written or unsigned decided never closes an ask");
+  assert.deepEqual(decisionsFrom(entries, { secret, space: "other" }).waiting.length, 3, "a signature is bound to its space");
+  assert.deepEqual(decisionsFrom(entries, {}).waiting.length, 3, "no secret: nothing counts as decided");
 });
 
 test("security: scorecard ignores forged checkups and coerces every field", async () => {

@@ -179,13 +179,13 @@
   var VERDICT = { approve: 'approved', reject: 'rejected', defer: 'deferred' };
   function askCard(a) {
     var p = a.payload || {};
-    var foot = '<div class="lm-approval-foot" data-ask="' + esc(a.trail) + '"' + (p.reversible === false ? ' data-irreversible="1"' : '') + '>' +
+    var foot = '<div class="lm-approval-foot" data-ask="' + esc(a.trail) + '"' + (p.reversible !== true ? ' data-irreversible="1"' : '') + '>' +
       '<input class="lm-input" name="note" maxlength="1000" autocomplete="off" placeholder="Note for the agent (optional)" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">' +
       '<button type="button" class="lm-btn lm-btn--primary" data-verdict="approve">Approve</button>' +
       '<button type="button" class="lm-btn lm-btn--danger" data-verdict="reject">Reject</button>' +
       '<button type="button" class="lm-btn lm-btn--secondary" data-verdict="defer">Defer</button>' +
       '<span class="lm-decide-msg" role="status" style="flex-basis:100%;font-size:13px"></span></div>';
-    return '<section class="lm-approval" aria-label="Decision"><div class="lm-approval-head">' + icon('decisions') + '<strong>' + esc(agentName(a.by)) + ' asks: ' + esc(a.summary) + '</strong><span style="margin-left:auto">' + decision('pending') + '</span></div><div class="lm-approval-body"><div class="lm-eyebrow">Exact proposed action</div><pre class="lm-action">' + esc(p.action || '(not given)') + '</pre><dl class="lm-kv"><dt>Where</dt><dd>' + esc(a.where) + '</dd><dt>Asked</dt><dd>' + ago(a.ts) + ' via ' + esc(a.via || '') + '</dd><dt>Reversible</dt><dd>' + (p.reversible === false ? 'No' : p.reversible === true ? 'Yes' : 'Not stated') + '</dd><dt>trail</dt><dd class="mono">' + esc(a.trail) + '</dd></dl></div>' + foot + '</section>';
+    return '<section class="lm-approval" aria-label="Decision"><div class="lm-approval-head">' + icon('decisions') + '<strong>' + esc(agentName(a.by)) + ' asks: ' + esc(a.summary) + '</strong><span style="margin-left:auto">' + (a.deferred ? decision('deferred') : decision('pending')) + '</span></div><div class="lm-approval-body"><div class="lm-eyebrow">Exact proposed action</div><pre class="lm-action">' + esc(p.action || '(not given)') + '</pre><dl class="lm-kv"><dt>Where</dt><dd>' + esc(a.where) + '</dd><dt>Asked</dt><dd>' + ago(a.ts) + ' via ' + esc(a.via || '') + '</dd><dt>Reversible</dt><dd>' + (p.reversible === true ? 'Yes' : p.reversible === false ? 'No' : 'Not stated (treated as no)') + '</dd><dt>trail</dt><dd class="mono">' + esc(a.trail) + '</dd>' + (a.deferred ? '<dt>Deferred</dt><dd>' + ago(a.deferred.at) + ' by ' + esc(String(a.deferred.by || '').replace(/^human:/, '')) + (a.deferred.note ? ': ' + esc(a.deferred.note) : '') + ' (still open)</dd>' : '') + '</dl></div>' + foot + '</section>';
   }
 
   // ─── answering an ask (the web app's one write) ──────────────────
@@ -198,9 +198,10 @@
     var verdict = btn.getAttribute('data-verdict');
     var noteEl = foot.querySelector('input[name="note"]');
     var note = noteEl ? noteEl.value.trim().slice(0, 1000) : '';
-    var go = function () { sendDecision(foot, btn, trail, verdict, note); };
-    if (verdict === 'approve' && foot.getAttribute('data-irreversible') === '1') confirmIrreversible(foot, go);
-    else go();
+    var go = function (confirmed) { sendDecision(foot, btn, trail, verdict, note, confirmed); };
+    // Anything not explicitly reversible needs the typed confirmation (the server enforces it too).
+    if (verdict === 'approve' && foot.getAttribute('data-irreversible') === '1') confirmIrreversible(foot, function () { go(true); });
+    else go(false);
   }
   // Irreversible asks: show the exact action again and require typing "approve".
   function confirmIrreversible(foot, go) {
@@ -228,7 +229,7 @@
     document.body.appendChild(scrim);
     input.focus();
   }
-  function sendDecision(foot, btn, trail, verdict, note) {
+  function sendDecision(foot, btn, trail, verdict, note, confirmed) {
     var btns = foot.querySelectorAll('button');
     var msg = foot.querySelector('.lm-decide-msg');
     var busy = function (on) { for (var i = 0; i < btns.length; i++) btns[i].disabled = on; if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy'); };
@@ -236,6 +237,7 @@
     busy(true);
     var body = { space: state.space, trail: trail, verdict: verdict };
     if (note) body.note = note;
+    if (confirmed) body.confirm = 'approve';
     fetch('/api/decide', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': 'decide' }, body: JSON.stringify(body) })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (j) {

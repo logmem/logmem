@@ -70,6 +70,8 @@ export function createLogmem({
   idleMs,
   now,
   mirror: mirrorCfg = { enabled: false, spaces: [] },
+  // Key that verifies human decisions in the Brief. Default: LOGMEM_DECIDE_SECRET, read at call time.
+  decideSecret,
 } = {}) {
   if (!redis && !live) throw new Error("createLogmem: redis runner required");
   const scope = live ? new AsyncLocalStorage() : null;
@@ -94,6 +96,7 @@ export function createLogmem({
     shift: null,
     now: now || Date.now,
     recall: recall || ((q, n) => keywordRecall(store, q, n)),
+    get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
   const byName = new Map(tools.map((t) => [t.name, t]));

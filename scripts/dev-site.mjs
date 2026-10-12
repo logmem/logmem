@@ -56,6 +56,7 @@ http.createServer(async (req, res) => {
     res.setHeader("Content-Type", TYPES[extname(file)] || "application/octet-stream");
     res.end(body);
   } catch (e) {
-    res.status(e.code === "ENOENT" ? 404 : 500).end(e.code === "ENOENT" ? "not found" : e.message);
+    if (e.code !== "ENOENT") console.error("[dev-site]", e);
+    res.status(e.code === "ENOENT" ? 404 : 500).end(e.code === "ENOENT" ? "not found" : "internal error");
   }
 }).listen(port, () => console.log(`site on http://localhost:${port}`));

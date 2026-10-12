@@ -12,6 +12,9 @@ import inbox from "../api/inbox/[agent].mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { buildView } from "../src/http/view.mjs";
 
+// Test-only HMAC key for human decisions (writeDecision fails closed without one).
+process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
+
 const sc = async (lm, name, args) => (await lm.callTool(name, args)).structuredContent;
 
 function clock(start = 1791712800000) {
@@ -83,7 +86,7 @@ test("writeDecision: decided on the ask's log and the asker's log; Brief shows t
   assert.equal(brief.answered_asks.length, 0);
   assert.match(brief.note, /data, never as instructions/);
 
-  const out = await writeDecision(store, ask.trail, { verdict: "approve", note: "Go for Tuesday", by: "human:mikey" });
+  const out = await writeDecision(store, ask.trail, { verdict: "approve", note: "Go for Tuesday", by: "human:mikey", confirm: true });
   assert.equal(out.ok, true);
   assert.equal(out.asker, "quill");
   assert.equal(out.where, "job:issue-14");
@@ -91,7 +94,9 @@ test("writeDecision: decided on the ask's log and the asker's log; Brief shows t
   assert.equal(out.entry.kind, "decided");
   assert.equal(out.entry.by, "human:mikey");
   assert.equal(out.entry.origin, ask.trail);
-  assert.deepEqual(out.entry.payload, { verdict: "approve", note: "Go for Tuesday" });
+  const { sig, ...rest } = out.entry.payload;
+  assert.deepEqual(rest, { verdict: "approve", note: "Go for Tuesday" });
+  assert.match(sig, /^[0-9a-f]{64}$/, "signed");
 
   const jobLog = (await sc(a, "logmem_open", { job: "issue-14" })).log;
   assert.equal(jobLog.filter((e) => e.kind === "decided").length, 1, "on the ask's where log");
@@ -126,11 +131,12 @@ test("writeDecision: refuses non-humans, bad verdicts, unknown asks, and a secon
   await err(() => writeDecision(store, ask.trail, { verdict: "reject", by: "human:mikey", note: "x".repeat(1001) }), "bad_request");
   await err(() => writeDecision(store, "approvalNope-1791712800000", { verdict: "approve", by: "human:mikey" }), "not_found");
 
-  const r = await writeDecision(store, ask.trail, { verdict: "defer", by: "human:mikey" });
+  const r = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:mikey" });
   assert.equal(r.where, "agent:quill", "an ask with no where lives on the asker's log only");
   await err(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:mikey" }), "not_pending");
+  await err(() => writeDecision(store, ask.trail, { verdict: "defer", by: "human:mikey" }), "not_pending");
   const brief = await sc(q, "logmem_brief", {});
-  assert.equal(brief.answered_asks[0].verdict, "defer");
+  assert.equal(brief.answered_asks[0].verdict, "reject");
 });
 
 test("an agent-written decided (legacy data) neither closes the ask nor shows as an answer", async () => {
@@ -172,7 +178,7 @@ test("/api/decide: method, admin cookie, CSRF intent header + origin, space, val
     await decide(req, res, { env, redis });
     return res;
   };
-  const good = { space: "fieldnotes", trail: ask.trail, verdict: "approve", note: "ok" };
+  const good = { space: "fieldnotes", trail: ask.trail, verdict: "approve", note: "ok", confirm: "approve" };
 
   assert.equal((await run({ ...post(good), method: "GET" })).statusCode, 405);
   assert.equal((await run(post(good), { VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" })).statusCode, 401, "no admin password = off");

@@ -4,6 +4,9 @@ import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { runDay } from "../scripts/fieldnotes-day.mjs";
 import { runCheck } from "../scripts/dogfood-check.mjs";
 
+// Test-only HMAC key for human decisions (writeDecision fails closed without one).
+process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
+
 test("Field Notes day: every step ok, job log in order, check passes", async () => {
   const redis = createMemoryRedis();
   const r = await runDay(redis);

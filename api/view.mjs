@@ -4,6 +4,7 @@
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { buildView } from "../src/http/view.mjs";
 import { mayRead, viewSpaces, adminEnabled } from "../src/http/admin-auth.mjs";
+import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
@@ -19,6 +20,7 @@ export default async function handler(req, res) {
     const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), { id: q.id, q: q.q, where: q.where });
     res.status(200).json({ ok: true, space, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });
+    sendServerError(res, "/api/view", e);
   }
 }
