@@ -331,19 +331,57 @@
   if (playBtn) playBtn.addEventListener('click', function () { if (playing) stop(); else play(); });
   if (replayBtn) replayBtn.addEventListener('click', function () { reset(); play(); });
 
+  var ctl = $('#demo-ctl');
+  if (ctl) ctl.hidden = false;
+
+  // The first step (session + Start entry) ships in the HTML so the panel is
+  // never blank. Count those static nodes as already rendered.
+  idx = Math.min(log.querySelectorAll('[data-static]').length, SCRIPT.length);
+  if (idx > 0) setBeat(0, false);
+
   if (reduced) {
     // No motion: show the whole day at once; Play steps through without animation.
     jumpTo(SCRIPT[SCRIPT.length - 1].b);
     log.scrollTop = 0;
-  } else if ('IntersectionObserver' in window) {
-    setPlayLabel();
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting && !started) { io.disconnect(); play(); }
-      });
-    }, { threshold: 0.35 });
-    io.observe(log);
   } else {
-    play();
+    setPlayLabel();
+    var armTimer = null, io = null;
+    var cleanup = function () {
+      if (io) io.disconnect();
+      if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+      window.removeEventListener('scroll', check);
+      window.removeEventListener('resize', check);
+    };
+    var autoStart = function () {
+      cleanup();
+      if (started) return; // the visitor already pressed Play or a step
+      started = true;
+      playing = true;
+      setPlayLabel();
+      timer = setTimeout(step, 600);
+    };
+    var inView = function () {
+      var r = log.getBoundingClientRect();
+      var vh = window.innerHeight || document.documentElement.clientHeight;
+      var visible = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+      return visible > Math.min(140, r.height * 0.25);
+    };
+    // Fallback for hosts where the observer doesn't fire: start once the
+    // panel has stayed visible for about 800ms.
+    var check = function () {
+      if (started) { cleanup(); return; }
+      if (inView()) {
+        if (!armTimer) armTimer = setTimeout(function () { armTimer = null; if (inView()) autoStart(); else check(); }, 800);
+      } else if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+    };
+    if ('IntersectionObserver' in window) {
+      io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) { if (en.isIntersecting) autoStart(); });
+      }, { threshold: 0.25, rootMargin: '0px 0px -10% 0px' });
+      io.observe(log);
+    }
+    window.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check, { passive: true });
+    check(); // panel already in view on load
   }
 })();

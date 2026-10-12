@@ -128,8 +128,8 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
           <li><button type="button" class="h-beat" data-beat="4"><span class="h-beat-n" aria-hidden="true">5</span><span><strong>Ask</strong><span class="h-beat-sub">relay waits for a person</span></span></button></li>
           <li><button type="button" class="h-beat" data-beat="5"><span class="h-beat-n" aria-hidden="true">6</span><span><strong>Recap</strong><span class="h-beat-sub">written after 30 min idle</span></span></button></li>
         </ol>
-        <div class="h-demo-ctl">
-          <button type="button" class="lm-btn lm-btn--secondary" id="demo-play" aria-controls="demo-log"><i class="lm-i" data-i="pause" aria-hidden="true"></i><span>Pause</span></button>
+        <div class="h-demo-ctl" id="demo-ctl" hidden>
+          <button type="button" class="lm-btn lm-btn--secondary" id="demo-play" aria-controls="demo-log"><i class="lm-i" data-i="arrow-right" aria-hidden="true"></i><span>Play</span></button>
           <button type="button" class="lm-btn lm-btn--ghost" id="demo-replay" aria-controls="demo-log"><i class="lm-i" data-i="refresh" aria-hidden="true"></i>Replay</button>
         </div>
         <p class="h-beat-caption" id="demo-caption" aria-live="polite"></p>
@@ -143,7 +143,9 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
             <span class="lm-demo">Demo data</span>
           </div>
           <div class="h-log" id="demo-log" role="log" aria-live="off" aria-label="Demo log for Field Notes Co." tabindex="0">
-            <noscript><p class="h-note h-noscript">The demo needs JavaScript. The setup flow at /onboarding shows the same kind of entries.</p></noscript>
+            <div class="lm-session" data-static=""><span class="lm-carry" aria-hidden="true"></span><span class="lm-eyebrow">quill · shift 0412 · carried forward: last Recap</span></div>
+            <div class="lm-event" data-k="system" data-static=""><time class="lm-event-time time">08:02</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">started</span><strong>quill <span class="h-by">(via claude-code)</span></strong><span class="lm-event-summary">Started a shift. Brief: last Recap, 2 open jobs, nothing waiting.</span></div><div class="lm-prov"><span>shift quillShift-0412</span></div></div></div>
+            <noscript><p class="h-note h-noscript">The rest of the demo plays with JavaScript on. The setup flow at /onboarding shows more entries.</p></noscript>
           </div>
         </div>
       </div>
