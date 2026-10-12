@@ -7,10 +7,23 @@
 //   form-encoded — issues auth code, redirects to redirect_uri with ?code=...&state=...
 //
 // PKCE is REQUIRED. We accept S256 only (per MCP spec). plain is rejected.
+//
+// Redirect safety: client_id and redirect_uri are validated (client exists,
+// redirect_uri exactly registered) BEFORE anything can redirect. Failures there
+// render a 400 page and never 302, so this endpoint is not an open redirect.
+//
+// SSRF safety: user-supplied backend targets pass assertPublicTarget
+// (src/http/net-guard.mjs) before any probe, the REST probe does not follow
+// redirects and times out, and probe failures show one generic message —
+// upstream error bodies are never echoed to the page.
 
-import { getClient, saveAuthCode } from "./_lib/storage.mjs";
+import { getClient, saveAuthCode, assertKekReady } from "./_lib/storage.mjs";
 import { restEndpoint } from "../../src/lib/redis-rest.mjs";
 import { validateKeySegments } from "../../src/lib/helpers.mjs";
+import { assertPublicTarget } from "../../src/http/net-guard.mjs";
+
+const PROBE_TIMEOUT_MS = 5000;
+const CONNECT_FAILED = "Could not connect with those credentials";
 
 export const config = { runtime: "nodejs" };
 
@@ -103,10 +116,27 @@ button:hover{background:var(--accent)}
   <button type="submit" name="action" value="approve">Authorize</button>
   <button type="submit" name="action" value="deny" class="deny">Deny</button>
 
-  <div class="foot">Your Redis credentials are stored on this server, bound to this access token (v0: not yet encrypted at rest), and dropped when the token expires. Rotate your Redis password or Upstash token any time to revoke out-of-band.</div>
+  <div class="foot">Your Redis credentials are stored on this server encrypted at rest, bound to this access token, and dropped when the token expires. Rotate your Redis password or Upstash token any time to revoke out-of-band.</div>
 </form>
 </body>
 </html>`;
+}
+
+function renderErrorPage(title, detail) {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect LogMem</title>
+<style>body{margin:0;font-family:Georgia,serif;background:#faf8f3;color:#1a1a1a;min-height:100vh;display:grid;place-items:center;padding:24px}
+.card{max-width:480px;background:#fff;border:1px solid #e5e1d6;border-radius:6px;padding:32px}h1{margin:0 0 8px;font-size:22px;font-weight:400}p{color:#666;font-size:14px}</style>
+</head><body><div class="card"><h1>${htmlEscape(title)}</h1><p>${htmlEscape(detail)}</p></div></body></html>`;
+}
+
+/** 400/503 page for errors that must not redirect (unknown client, bad redirect_uri, server config). */
+function sendErrorPage(res, status, title, detail) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.end(renderErrorPage(title, detail));
 }
 
 function redirectError(res, redirect_uri, error, error_description, state) {
@@ -119,20 +149,36 @@ function redirectError(res, redirect_uri, error, error_description, state) {
   res.end();
 }
 
-async function validateAuthRequest(query) {
-  const required = ["response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method"];
-  for (const k of required) {
-    if (!query[k]) return { error: "invalid_request", description: `missing ${k}` };
-  }
-  if (query.response_type !== "code") return { error: "unsupported_response_type", description: "only 'code' supported" };
-  if (query.code_challenge_method !== "S256") return { error: "invalid_request", description: "code_challenge_method must be S256" };
+/**
+ * Two phases. Phase 1 (client_id + redirect_uri) failures set `noRedirect`:
+ * the caller must render a 400 page. Only after phase 1 passes is the
+ * redirect_uri trusted enough to carry phase-2 errors back via 302.
+ */
+export async function validateAuthRequest(query) {
+  const client_id = typeof query.client_id === "string" ? query.client_id : "";
+  const redirect_uri = typeof query.redirect_uri === "string" ? query.redirect_uri : "";
+  if (!client_id) return { noRedirect: true, error: "invalid_request", description: "missing client_id" };
+  if (!redirect_uri) return { noRedirect: true, error: "invalid_request", description: "missing redirect_uri" };
 
-  const client = await getClient(query.client_id);
-  if (!client) return { error: "invalid_client", description: "unknown client_id" };
-  if (!client.redirect_uris.includes(query.redirect_uri)) {
-    return { error: "invalid_redirect_uri", description: "redirect_uri not registered for client" };
+  const client = await getClient(client_id);
+  if (!client) return { noRedirect: true, error: "invalid_client", description: "unknown client_id" };
+  if (!Array.isArray(client.redirect_uris) || !client.redirect_uris.includes(redirect_uri)) {
+    return { noRedirect: true, error: "invalid_redirect_uri", description: "redirect_uri not registered for client" };
   }
+
+  for (const k of ["response_type", "code_challenge", "code_challenge_method"]) {
+    if (!query[k]) return { client, error: "invalid_request", description: `missing ${k}` };
+  }
+  if (query.response_type !== "code") return { client, error: "unsupported_response_type", description: "only 'code' supported" };
+  if (query.code_challenge_method !== "S256") return { client, error: "invalid_request", description: "code_challenge_method must be S256" };
   return { client };
+}
+
+function rejectRequest(res, v, source) {
+  if (v.noRedirect) {
+    return sendErrorPage(res, 400, "This app's sign-in request is invalid", `${v.error}: ${v.description}. Nothing was shared.`);
+  }
+  return redirectError(res, source.redirect_uri, v.error, v.description, source.state);
 }
 
 export default async function handler(req, res) {
@@ -143,13 +189,7 @@ export default async function handler(req, res) {
       const url = new URL(req.url, `https://${req.headers.host}`);
       const query = Object.fromEntries(url.searchParams);
       const v = await validateAuthRequest(query);
-      if (v.error) {
-        // pre-redirect_uri-validation errors render directly; post errors redirect.
-        if (v.error === "invalid_redirect_uri" || v.error === "invalid_client") {
-          return res.status(400).json({ error: v.error, error_description: v.description });
-        }
-        return redirectError(res, query.redirect_uri, v.error, v.description, query.state);
-      }
+      if (v.error) return rejectRequest(res, v, query);
       const params = { ...query, client_name: v.client.client_name };
       res.status(200).setHeader("Content-Type", "text/html; charset=utf-8").end(renderConsent({ params }));
       return;
@@ -159,15 +199,17 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
     const v = await validateAuthRequest(body);
-    if (v.error) {
-      if (v.error === "invalid_redirect_uri" || v.error === "invalid_client") {
-        return res.status(400).json({ error: v.error, error_description: v.description });
-      }
-      return redirectError(res, body.redirect_uri, v.error, v.description, body.state);
-    }
+    if (v.error) return rejectRequest(res, v, body);
 
     if (body.action === "deny") {
       return redirectError(res, body.redirect_uri, "access_denied", "user denied consent", body.state);
+    }
+
+    // Production without LOGMEM_OAUTH_KEK: refuse before touching user creds.
+    try {
+      assertKekReady();
+    } catch {
+      return sendErrorPage(res, 503, "Connections are temporarily unavailable", "This server is not configured to store credentials securely yet. Nothing was saved.");
     }
 
     const space = String(body.space || "").trim().toLowerCase();
@@ -194,7 +236,7 @@ export default async function handler(req, res) {
       const redis_uri = String(body.redis_uri || "").trim();
       if (!redis_uri) return fail("Redis URI is required.");
       if (!/^rediss?:\/\/\S+$/i.test(redis_uri)) {
-        return fail("Redis URI must start with redis:// or rediss://");
+        return fail("Redis URI must start with rediss:// (redis:// only where plaintext is enabled)");
       }
       let host;
       try {
@@ -202,12 +244,18 @@ export default async function handler(req, res) {
       } catch {
         return fail("Redis URI is not a valid URI.");
       }
-      // Probe before issuing code so user gets immediate feedback.
+      // SSRF guard, then probe before issuing a code so the user gets feedback.
+      try {
+        await assertPublicTarget(redis_uri);
+      } catch (e) {
+        console.warn(`[oauth/authorize] redis target refused: ${e?.reason || e?.name}`);
+        return fail(`${CONNECT_FAILED}. Use a rediss:// URI on a public host and port 6379/6380.`);
+      }
       try {
         const { probeNativeRedis } = await import("../../src/lib/redis-native.mjs");
         await probeNativeRedis(redis_uri);
-      } catch (e) {
-        return fail(`Could not connect to Redis: ${e.message}`);
+      } catch {
+        return fail(`${CONNECT_FAILED}.`);
       }
       backend = { kind: "redis", uri: redis_uri };
       sub = `redis:${host}`;
@@ -226,35 +274,54 @@ export default async function handler(req, res) {
       if (parsed.protocol !== "https:") {
         return fail("REST URL must be https://", { upstash_url_prefill: upstash_url });
       }
-      // Probe creds before issuing code so user gets immediate feedback on bad token.
+      // SSRF guard, then probe creds before issuing a code. The probe never
+      // follows redirects (a 30x could point at an internal host) and its
+      // error body is never shown.
+      try {
+        await assertPublicTarget(restEndpoint(upstash_url));
+      } catch (e) {
+        console.warn(`[oauth/authorize] rest target refused: ${e?.reason || e?.name}`);
+        return fail(`${CONNECT_FAILED}. Use an https:// URL on a public host.`, { upstash_url_prefill: upstash_url });
+      }
       try {
         const probe = await fetch(restEndpoint(upstash_url), {
           method: "POST",
           headers: { Authorization: `Bearer ${upstash_token}`, "Content-Type": "application/json" },
           body: JSON.stringify(["PING"]),
+          redirect: "manual",
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         });
+        if (!probe.ok) throw new Error("probe not ok");
         const j = await probe.json();
-        if (j.error || j.result !== "PONG") throw new Error(j.error || "PING did not return PONG");
-      } catch (e) {
-        return fail(`Could not authenticate to Redis REST: ${e.message}`, { upstash_url_prefill: upstash_url });
+        if (j.error || j.result !== "PONG") throw new Error("probe not PONG");
+      } catch {
+        return fail(`${CONNECT_FAILED}.`, { upstash_url_prefill: upstash_url });
       }
       upstash_url = restEndpoint(upstash_url);
       backend = { kind: "upstash", url: upstash_url, token: upstash_token };
       sub = `rest:${parsed.hostname}`;
     }
 
-    const code = await saveAuthCode({
-      client_id: body.client_id,
-      redirect_uri: body.redirect_uri,
-      code_challenge: body.code_challenge,
-      code_challenge_method: body.code_challenge_method,
-      scope: body.scope || "mcp",
-      upstash_url,
-      upstash_token,
-      backend,
-      sub,
-      space,
-    });
+    let code;
+    try {
+      code = await saveAuthCode({
+        client_id: body.client_id,
+        redirect_uri: body.redirect_uri,
+        code_challenge: body.code_challenge,
+        code_challenge_method: body.code_challenge_method,
+        scope: body.scope || "mcp",
+        upstash_url,
+        upstash_token,
+        backend,
+        sub,
+        space,
+      });
+    } catch (e) {
+      if (e && e.status === 503) {
+        return sendErrorPage(res, 503, "Connections are temporarily unavailable", "This server is not configured to store credentials securely yet. Nothing was saved.");
+      }
+      throw e;
+    }
 
     const u = new URL(body.redirect_uri);
     u.searchParams.set("code", code);
@@ -263,6 +330,7 @@ export default async function handler(req, res) {
     res.setHeader("Location", u.toString());
     res.end();
   } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: "server_error", error_description: e.message });
+    console.error(`[oauth/authorize] ${e?.name || "Error"}`);
+    if (!res.headersSent) sendErrorPage(res, e && e.status === 503 ? 503 : 500, "Something went wrong", "Please try connecting again.");
   }
 }
