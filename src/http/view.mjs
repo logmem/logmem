@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -117,8 +117,8 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const [who, nowSlot, log, recap, follows, shifts] = await Promise.all([
       store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 50 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);
-    // Accepted and declined both settle a handoff (same rule as the Brief).
-    const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined))).map((e) => e.origin));
+    // Accepted and declined both settle a handoff (same rule as the Brief: boolean true only).
+    const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin));
     const slimLog = log.map((e) => slim(e, `agent:${id}`));
     return { id, who, now: nowSlot, recap, follows, shifts, log: await annotate(slimLog), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
   }

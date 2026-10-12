@@ -125,7 +125,7 @@
     {
       "name": "logmem_note",
       "title": "Note",
-      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined is refused too. Limits: summary 1000 characters, payload 16 KB.",
+      "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined true is refused too, and payload.declined must be a boolean. Limits: summary 1000 characters, payload 16 KB.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -12,7 +12,7 @@ import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
 import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
 import { SLOTS, checkAgentId } from "../core/keys.mjs";
-import { HUMAN_ONLY, ASK_ONLY, HANDOFF_ONLY, HANDOFF_WRITE_ONLY, isDecidedKind, isAskKind, isHandoffKind, handoffSettlement, capEntry, capJson, capText, onlyMe, me } from "../core/tools.mjs";
+import { HUMAN_ONLY, ASK_ONLY, HANDOFF_ONLY, HANDOFF_WRITE_ONLY, isDecidedKind, isAskKind, isHandoffKind, handoffSettlement, assertDeclinedType, capEntry, capJson, capText, onlyMe, me } from "../core/tools.mjs";
 import { agentRef, byline } from "../core/session.mjs";
 
 /** Rollups are cross-session summaries; they get more room than one entry's payload. */
@@ -23,6 +23,11 @@ function guardEvent({ kind, summary, correlationId, parentCorrelationId, payload
   if (isDecidedKind(kind)) return { ok: false, error: HUMAN_ONLY };
   if (isAskKind(kind)) return { ok: false, error: ASK_ONLY };
   if (isHandoffKind(kind)) return { ok: false, error: HANDOFF_WRITE_ONLY };
+  try {
+    assertDeclinedType(payload);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
   if (handoffSettlement(kind, payload)) return { ok: false, error: HANDOFF_ONLY };
   capEntry({ summary, trail: correlationId, origin: parentCorrelationId });
   return null;

@@ -71,11 +71,31 @@ export const HANDOFF_ONLY =
   "accepted entries and declined feedback are written by logmem_accept (pass decline=true to refuse a handoff); call logmem_accept";
 export const HANDOFF_WRITE_ONLY = "handoff entries are written by logmem_handoff; call logmem_handoff";
 
+/**
+ * A decline is the boolean true and nothing else.
+ * 1, [], "yes", and the string "true" are not declines: readers and the write
+ * guard share this so a truthy non-boolean cannot clear handoffs_to_me.
+ */
+export function isDeclined(payload) {
+  return payload != null && payload.declined === true;
+}
+
+/** Shown when a write carries payload.declined that is not a boolean. */
+export const DECLINED_TYPE =
+  "payload.declined must be a boolean; only true declines a handoff, and only logmem_accept (decline=true) can write that";
+
+/** Refuse a non-boolean payload.declined so it is never stored for a reader to misread. */
+export function assertDeclinedType(payload) {
+  if (payload == null || typeof payload !== "object") return;
+  if (!Object.hasOwn(payload, "declined")) return;
+  if (typeof payload.declined !== "boolean") throw new Error(DECLINED_TYPE);
+}
+
 /** True when this kind/payload would settle a handoff (accepted, or feedback marked declined). */
 export function handoffSettlement(kind, payload) {
   const word = normalizeKind(kind == null || String(kind).trim() === "" ? "memo" : String(kind).trim().toLowerCase()).kind;
   if (word === "accepted") return true;
-  if (word === "feedback" && payload && payload.declined === true) return true;
+  if (word === "feedback" && isDeclined(payload)) return true;
   return false;
 }
 
@@ -160,6 +180,7 @@ export function me(ctx) {
 /** Write one entry, stamped with who/where/which shift. */
 async function write(ctx, ns, id, { kind, summary, trail, origin, payload, ts, extra, ask = false, settle = false, handoff = false }) {
   const agent = me(ctx);
+  assertDeclinedType(payload);
   if (isDecidedKind(kind)) throw new Error(HUMAN_ONLY);
   if (isAskKind(kind) && !ask) throw new Error(ASK_ONLY);
   if (!handoff && isHandoffKind(kind)) throw new Error(HANDOFF_WRITE_ONLY);
@@ -199,7 +220,7 @@ async function brief(ctx, agent) {
     s.readLog("agent", a, { reverse: true, sinceMs: clock(ctx) - WEEK_MS, limit: 2000 }),
   ]);
   const settled = new Set(
-    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined))).map((e) => e.origin),
+    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin),
   );
   const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
   const verify = { secret: decideSecret(ctx), space: s.space };
@@ -306,7 +327,7 @@ export const TOOLS = [
     name: "logmem_note",
     title: "Note",
     description:
-      "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined is refused too. Limits: summary 1000 characters, payload 16 KB.",
+      "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined true is refused too, and payload.declined must be a boolean. Limits: summary 1000 characters, payload 16 KB.",
     params: params({
       where: { type: "string", desc: "Which log: 'channel:<id>', 'job:<id>' or 'agent:<id>' (bare id = channel)" },
       summary: { type: "string", desc: "One line, plain language" },
@@ -386,7 +407,7 @@ export const TOOLS = [
       const log = await ctx.store.readLog("agent", a, { reverse: true, limit: 500 });
       const ho = log.find((e) => e.kind === "handoff" && e.trail === trail && e.to === agentRef(a));
       if (!ho) return { ok: false, error: `no handoff with trail '${trail}' was passed to ${a}; check handoffs_to_me in your Brief` };
-      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && e.payload?.declined)));
+      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload))));
       if (done) return { ok: false, error: `you already ${done.kind === "accepted" ? "accepted" : "declined"} this handoff`, entry: done };
 
       const where = ho.job ? parseRef(ho.job) : null;
