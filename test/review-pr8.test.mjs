@@ -790,3 +790,29 @@ test("M2: acmi_event into another agent's log is refused (own-agent rule); own l
   assert.equal((await sc(q, "acmi_event", { namespace: "agent", id: "quill", source: "x", summary: "mine" })).ok, true);
   assert.equal((await sc(q, "acmi_event", { namespace: "thread", id: "ops", source: "x", summary: "channel" })).ok, true);
 });
+
+// ─── L2: agent ids can't collide with the decider ───────────────────────
+test("L2: agent ids equal to LOGMEM_ADMIN_ID (default admin) or 'human' are refused everywhere; human:* never passes", async () => {
+  for (const id of ["admin", "Admin", "agent:admin", "human", "HUMAN", "human:mikey", "agent:human:x"]) {
+    assert.throws(() => checkAgentId(id), (e) => e.code === "bad_agent_id", id);
+  }
+  assert.throws(() => checkAgentId("mikey", "agent", { LOGMEM_ADMIN_ID: "mikey" }), /reserved/);
+  assert.equal(checkAgentId("admin", "agent", { LOGMEM_ADMIN_ID: "mikey" }), "admin", "only the configured id is reserved");
+  assert.equal(checkAgentId("administrator"), "administrator");
+
+  const redis = createMemoryRedis();
+  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  const r = await lm.callTool("logmem_start", { agent: "admin" });
+  assert.equal(r.isError, true);
+  assert.match(r.structuredContent.error, /reserved for the person who answers asks/);
+  const { a } = await team();
+  assert.equal((await a.callTool("logmem_handoff", { to: "admin", summary: "s", create_agent: true })).isError, true);
+  const bad = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "d", defaultAgent: "admin" });
+  assert.equal((await bad.callTool("logmem_brief", {})).isError, true, "not even as the default agent");
+
+  // And whatever an agent is called, a person can still answer its ask.
+  const ok = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "o" });
+  await sc(ok, "logmem_start", { agent: "admin-bot" });
+  const ask = await sc(ok, "logmem_ask", { question: "q", action: "a", reversible: true });
+  assert.equal((await writeDecision(createStore(redis, { space: "fieldnotes" }), ask.trail, { verdict: "approve", by: "human:admin" })).ok, true);
+});

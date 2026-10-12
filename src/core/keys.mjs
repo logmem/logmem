@@ -59,12 +59,22 @@ export class AgentIdError extends Error {
   }
 }
 
+/**
+ * Ids an agent can't take: the web decider's id (LOGMEM_ADMIN_ID, default
+ * "admin") and "human", so an agent can never share a name with the person
+ * who answers its asks. ("human:<x>" is already refused by the charset.)
+ */
+export const reservedAgentIds = (env = process.env) => new Set([String(env.LOGMEM_ADMIN_ID || "admin").toLowerCase(), "human"]);
+
 /** Validate an agent id ("quill" or "agent:quill"); returns the bare id or throws AgentIdError. */
-export function checkAgentId(agent, field = "agent") {
+export function checkAgentId(agent, field = "agent", env = process.env) {
   if (typeof agent !== "string") throw new AgentIdError(`${field} must be a string agent id`);
   const id = agent.replace(/^agent:/, "");
   if (!AGENT_ID_RE.test(id)) {
     throw new AgentIdError(`${field} must be 1-64 characters: letters, digits, '.', '_' or '-', starting with a letter or digit (got ${id.length} characters)`);
+  }
+  if (reservedAgentIds(env).has(id.toLowerCase())) {
+    throw new AgentIdError(`${field} '${id}' is reserved for the person who answers asks; pick another agent id`);
   }
   return id;
 }
