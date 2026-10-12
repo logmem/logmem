@@ -16,8 +16,15 @@ import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { RESULT_SCHEMA } from "./core/params.mjs";
 import { validateKeySegments } from "./lib/helpers.mjs";
+import pkg from "../package.json" with { type: "json" };
 
-export const SERVER_INFO = { name: "logmem", version: "0.1.0" };
+/** package.json version, plus "+<sha7>" build metadata on Vercel builds. */
+export function versionString(env = process.env, base = pkg.version) {
+  const sha = String(env?.VERCEL_GIT_COMMIT_SHA || "").trim().slice(0, 7);
+  return sha ? `${base}+${sha}` : base;
+}
+
+export const SERVER_INFO = { name: "logmem", version: versionString() };
 export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
@@ -34,7 +41,8 @@ export function toResult(data) {
 
 export function createLogmem({
   redis,
-  backend = "unknown",
+  backend = "unknown", // string, or () => string for a backend that can switch (stdio)
+  isDegraded, // () => boolean; when true, every tool result carries degraded:true
   space,
   spaces,
   compat = false,
@@ -59,7 +67,7 @@ export function createLogmem({
     store,
     shifts,
     surface,
-    backend,
+    get backend() { return typeof backend === "function" ? backend() : backend; },
     spaces: allowed,
     shift: null,
     now: now || Date.now,
@@ -68,9 +76,14 @@ export function createLogmem({
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
   const byName = new Map(tools.map((t) => [t.name, t]));
 
+  function degradedMark(result) {
+    if (!isDegraded?.()) return result;
+    return toResult({ ...result.structuredContent, degraded: true });
+  }
+
   async function callTool(name, args = {}) {
     const tool = byName.get(name);
-    if (!tool) return toResult({ ok: false, error: `unknown tool: ${name}` });
+    if (!tool) return degradedMark(toResult({ ok: false, error: `unknown tool: ${name}` }));
     try {
       let events = [];
       if (!tool.skipTouch) {
@@ -85,9 +98,9 @@ export function createLogmem({
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
       }
-      return toResult(out);
+      return degradedMark(toResult(out));
     } catch (e) {
-      return toResult({ ok: false, error: e.message, tool: name });
+      return degradedMark(toResult({ ok: false, error: e.message, tool: name }));
     }
   }
 

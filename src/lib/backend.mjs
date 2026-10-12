@@ -50,3 +50,92 @@ export async function backendFromEnv(env = process.env, log = () => {}) {
   }
   return { kind: "memory", redis: createMemoryRedis() };
 }
+
+// ---- stdio degraded mode ----------------------------------------------------
+//
+// When the configured backend is unreachable at startup, stdio falls back to an
+// in-memory store so the MCP client still gets a working tool list. That is a
+// data-loss risk: anything written while degraded lives only in this process
+// and is NOT replayed to the real backend when it comes back (or when the
+// process exits). Three mitigations:
+//
+//   LOGMEM_REQUIRE_BACKEND=1  refuse to start without a reachable backend
+//                             (BackendRequiredError; stdio exits 1).
+//   re-probe                  every 60 s, PING the configured backend and
+//                             switch to it as soon as it answers.
+//   degraded:true             every tool result carries it while in memory
+//                             mode, so agents can tell their writes are
+//                             not durable (see createLogmem({ isDegraded })).
+
+export const REPROBE_MS = 60_000;
+
+export class BackendRequiredError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BackendRequiredError";
+  }
+}
+
+export const requireBackendFromEnv = (env = process.env) =>
+  ["1", "true", "yes"].includes(String(env.LOGMEM_REQUIRE_BACKEND || "").toLowerCase());
+
+/**
+ * Backend for long-lived stdio processes. Returns a stable handle whose
+ * `redis` runner delegates to whichever backend is current, so the store
+ * built on it switches over transparently when the real backend returns.
+ *
+ *   { redis, kind (getter), degraded(), probeNow(), stop() }
+ */
+export async function resilientBackendFromEnv(env = process.env, log = () => {}, {
+  reprobeMs = REPROBE_MS,
+  resolve = (e) => { const d = descriptorFromEnv(e); return d && fromDescriptor(d); },
+} = {}) {
+  const required = requireBackendFromEnv(env);
+  const configured = resolve(env);
+  let current = null;
+  let reason = "no backend configured";
+  if (configured) {
+    try {
+      await configured.redis("PING");
+      current = configured;
+    } catch (e) {
+      reason = `backend ${configured.kind} unreachable (${e.message})`;
+    }
+  }
+  if (!current && required) {
+    throw new BackendRequiredError(`${reason}; LOGMEM_REQUIRE_BACKEND=1 so refusing to start in degraded (in-memory) mode`);
+  }
+
+  let timer = null;
+  if (!current) {
+    log(`${reason}; using in-memory (degraded). Writes are NOT durable and are not replayed when the backend returns.`);
+    current = { kind: "memory", redis: createMemoryRedis() };
+  }
+
+  async function probeNow() {
+    if (!configured || current === configured) return current.kind !== "memory";
+    try {
+      await configured.redis("PING");
+    } catch {
+      return false;
+    }
+    current = configured;
+    if (timer) clearInterval(timer);
+    timer = null;
+    log(`backend ${configured.kind} reachable again; switched over from in-memory. Writes made while degraded were not copied.`);
+    return true;
+  }
+
+  if (current.kind === "memory" && configured && reprobeMs > 0) {
+    timer = setInterval(() => { probeNow().catch(() => {}); }, reprobeMs);
+    timer.unref?.();
+  }
+
+  return {
+    redis: (...cmd) => current.redis(...cmd),
+    get kind() { return current.kind; },
+    degraded: () => current.kind === "memory",
+    probeNow,
+    stop() { if (timer) clearInterval(timer); timer = null; },
+  };
+}

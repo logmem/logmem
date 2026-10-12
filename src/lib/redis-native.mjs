@@ -9,6 +9,29 @@
 import { createClient } from "redis";
 
 const CONNECT_TIMEOUT_MS = 4000;
+const DEFAULT_TIMEOUT_MS = 5000;
+
+/** Same budget as the REST client: LOGMEM_REDIS_TIMEOUT_MS, default 5000. */
+export function nativeTimeoutMs(env = process.env) {
+  const n = Number(env?.LOGMEM_REDIS_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * Race a promise against a timer. On timeout, rejects with an error naming
+ * `label` (the command) and runs `onTimeout` (used to evict the client).
+ * The timer is always cleared so it never holds the event loop open.
+ */
+export function withTimeout(promise, ms, label, onTimeout) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      try { onTimeout?.(); } catch { /* best effort */ }
+      reject(new Error(`native redis ${label}: timed out after ${ms}ms`));
+    }, ms);
+  });
+  return Promise.race([Promise.resolve(promise), timeout]).finally(() => clearTimeout(timer));
+}
 
 function clientCache() {
   if (!globalThis.__acmiNativeClients) globalThis.__acmiNativeClients = new Map();
@@ -152,9 +175,21 @@ export function isRedisUri(s) {
 }
 
 export async function nativeRedisCall(uri, ...cmd) {
-  const client = await getNativeClient(uri);
   const [command, ...args] = cmd;
-  return await translate(client, command, args.map((a) => (typeof a === "number" ? String(a) : a)));
+  const name = String(command ?? "?").toUpperCase();
+  const run = async () => {
+    const client = await getNativeClient(uri);
+    return await translate(client, command, args.map((a) => (typeof a === "number" ? String(a) : a)));
+  };
+  // A hung command usually means a dead socket: evict so the next call reconnects.
+  return withTimeout(run(), nativeTimeoutMs(), name, () => evictClient(uri));
+}
+
+function evictClient(uri) {
+  const cache = clientCache();
+  const pending = cache.get(uri);
+  cache.delete(uri);
+  pending?.then((c) => c.disconnect?.().catch?.(() => {})).catch(() => {});
 }
 
 export async function probeNativeRedis(uri) {
