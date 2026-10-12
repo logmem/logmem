@@ -16,10 +16,23 @@ import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { RESULT_SCHEMA } from "./core/params.mjs";
 import { validateKeySegments } from "./lib/helpers.mjs";
-import pkg from "../package.json" with { type: "json" };
+import { readFileSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+/** package.json version, read at load time. readFileSync(new URL(...)) is traced by Vercel's bundler. */
+function readPkgVersion() {
+  try {
+    const v = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+    return typeof v === "string" && v ? v : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+export const PKG_VERSION = readPkgVersion();
 
 /** package.json version, plus "+<sha7>" build metadata on Vercel builds. */
-export function versionString(env = process.env, base = pkg.version) {
+export function versionString(env = process.env, base = PKG_VERSION) {
   const sha = String(env?.VERCEL_GIT_COMMIT_SHA || "").trim().slice(0, 7);
   return sha ? `${base}+${sha}` : base;
 }
@@ -41,8 +54,12 @@ export function toResult(data) {
 
 export function createLogmem({
   redis,
-  backend = "unknown", // string, or () => string for a backend that can switch (stdio)
-  isDegraded, // () => boolean; when true, every tool result carries degraded:true
+  backend = "unknown",
+  // Switchable backend (stdio degraded mode): { current() -> { kind, redis } }.
+  // One snapshot of current() is taken per tool call and used for every command
+  // in that call, so a call never mixes the in-memory store and the real
+  // backend. While the snapshot is "memory", results carry degraded:true.
+  live,
   space,
   spaces,
   compat = false,
@@ -54,7 +71,12 @@ export function createLogmem({
   now,
   mirror: mirrorCfg = { enabled: false, spaces: [] },
 } = {}) {
-  if (!redis) throw new Error("createLogmem: redis runner required");
+  if (!redis && !live) throw new Error("createLogmem: redis runner required");
+  const scope = live ? new AsyncLocalStorage() : null;
+  const snapshot = () => scope.getStore() ?? live.current();
+  if (live) redis = (...cmd) => snapshot().redis(...cmd);
+  /** Run fn with one backend snapshot for all of its commands (no-op without `live`). */
+  const inScope = (fn) => (live ? scope.run(live.current(), fn) : fn());
   validateKeySegments(space);
   const allowed = spaces && spaces.length ? spaces : [space];
   if (!allowed.includes(space)) throw new Error(`space '${space}' is not in the allowed list`);
@@ -67,7 +89,7 @@ export function createLogmem({
     store,
     shifts,
     surface,
-    get backend() { return typeof backend === "function" ? backend() : backend; },
+    get backend() { return live ? snapshot().kind : backend; },
     spaces: allowed,
     shift: null,
     now: now || Date.now,
@@ -77,11 +99,15 @@ export function createLogmem({
   const byName = new Map(tools.map((t) => [t.name, t]));
 
   function degradedMark(result) {
-    if (!isDegraded?.()) return result;
+    if (!live || snapshot().kind !== "memory") return result;
     return toResult({ ...result.structuredContent, degraded: true });
   }
 
-  async function callTool(name, args = {}) {
+  function callTool(name, args = {}) {
+    return inScope(() => runTool(name, args));
+  }
+
+  async function runTool(name, args = {}) {
     const tool = byName.get(name);
     if (!tool) return degradedMark(toResult({ ok: false, error: `unknown tool: ${name}` }));
     try {
@@ -126,5 +152,5 @@ export function createLogmem({
     return mcp;
   }
 
-  return { store, shifts, ctx, tools, callTool, listTools, attach, instructions: INSTRUCTIONS };
+  return { store, shifts, ctx, tools, callTool, listTools, attach, inScope, instructions: INSTRUCTIONS };
 }

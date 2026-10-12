@@ -49,9 +49,7 @@ function instance() {
   if (lm) return lm;
   const client = mcp.server.getClientVersion?.();
   lm = createLogmem({
-    redis: backend.redis,
-    backend: () => backend.kind,
-    isDegraded: backend.degraded,
+    live: backend,
     space,
     spaces,
     compat: compatFromEnv(env),
@@ -75,7 +73,7 @@ for (const t of shape.tools) {
 
 // Idle sweep: write the 30-min auto Recap even if no further call arrives.
 setInterval(() => {
-  if (lm) lm.shifts.sweep().catch((e) => log(`sweep failed: ${e.message}`));
+  if (lm) lm.inScope(() => lm.shifts.sweep()).catch((e) => log(`sweep failed: ${e.message}`));
 }, 60_000).unref();
 
 await mcp.connect(new StdioServerTransport());

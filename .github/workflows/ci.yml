@@ -1,6 +1,7 @@
 name: ci
 
-# Gate for every PR and for pushes to main and feature branches.
+# Gate for every PR, and for pushes to main. Feature branches are covered by
+# their PR, so pushes there do not trigger a second run.
 # Offline only: in-memory backend, no secrets, no deploys.
 
 on:
@@ -8,7 +9,6 @@ on:
   push:
     branches:
       - main
-      - "feat/**"
 
 permissions:
   contents: read

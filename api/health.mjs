@@ -6,13 +6,25 @@
 // One PING through descriptorFromEnv() with a 3 s budget. Never returns
 // backend URLs, tokens or raw error text (which can carry hostnames).
 
-import pkg from "../package.json" with { type: "json" };
+import { readFileSync } from "node:fs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { logRequest } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 10 };
 
 export const HEALTH_TIMEOUT_MS = 3000;
+
+/** package.json version, read at load time. readFileSync(new URL(...)) is traced by Vercel's bundler. */
+function readPkgVersion() {
+  try {
+    const v = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+    return typeof v === "string" && v ? v : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const PKG_VERSION = readPkgVersion();
 
 function ping(redis, ms) {
   let timer;
@@ -30,7 +42,7 @@ export async function healthCheck({
   clock = () => performance.now(),
 } = {}) {
   const base = {
-    version: pkg.version,
+    version: PKG_VERSION,
     commit: String(env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || null,
     region: env.VERCEL_REGION || null,
   };

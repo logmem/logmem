@@ -4,7 +4,9 @@
 // so callers can't tell which backend they're on.
 //
 // Clients are cached per-URI across warm invocations; a failed client is
-// evicted so the next call reconnects.
+// evicted so the next call reconnects. Every command is bounded by
+// LOGMEM_REDIS_TIMEOUT_MS (default 5000); a timeout evicts the client only if
+// its socket looks dead (see evictIfDead).
 
 import { createClient } from "redis";
 
@@ -19,7 +21,7 @@ export function nativeTimeoutMs(env = process.env) {
 
 /**
  * Race a promise against a timer. On timeout, rejects with an error naming
- * `label` (the command) and runs `onTimeout` (used to evict the client).
+ * `label` (the command) and runs `onTimeout` (used to evict a dead client).
  * The timer is always cleared so it never holds the event loop open.
  */
 export function withTimeout(promise, ms, label, onTimeout) {
@@ -38,17 +40,26 @@ function clientCache() {
   return globalThis.__acmiNativeClients;
 }
 
-async function getNativeClient(uri) {
+/**
+ * Return a connected client for `uri`. `used`, when given, records which
+ * cache entry (`used.pending`) and client (`used.client`) this call ended up
+ * on, so a timeout can tell whether it is still looking at the same client.
+ */
+async function getNativeClient(uri, used = {}) {
   const cache = clientCache();
   const existing = cache.get(uri);
   if (existing) {
+    used.pending = existing;
     try {
       const client = await existing;
-      if (client.isOpen) return client;
+      if (client.isOpen) {
+        used.client = client;
+        return client;
+      }
     } catch {
       // fall through to reconnect
     }
-    cache.delete(uri);
+    if (cache.get(uri) === existing) cache.delete(uri);
   }
   const pending = (async () => {
     const client = createClient({
@@ -56,18 +67,43 @@ async function getNativeClient(uri) {
       socket: { connectTimeout: CONNECT_TIMEOUT_MS, reconnectStrategy: false },
     });
     client.on("error", () => {
-      cache.delete(uri);
+      // Only drop our own entry; a newer client may already be cached.
+      if (cache.get(uri) === pending) cache.delete(uri);
     });
     await client.connect();
     return client;
   })();
   cache.set(uri, pending);
+  used.pending = pending;
+  used.client = undefined;
   try {
-    return await pending;
+    const client = await pending;
+    used.client = client;
+    return client;
   } catch (e) {
-    cache.delete(uri);
+    if (cache.get(uri) === pending) cache.delete(uri);
     throw new Error(`native redis connect failed: ${e.message}`);
   }
+}
+
+/**
+ * Called when a command times out. Evicts the cached client only when
+ *   - the cache still holds the exact entry this call used (never a newer one), and
+ *   - the client shows socket-level failure: connect never finished, or it is
+ *     no longer open/ready.
+ * A merely slow command on a healthy socket leaves the shared client alone, so
+ * other in-flight commands on it are not cut off.
+ * Returns true when it evicted.
+ */
+export function evictIfDead(uri, used, cache = clientCache()) {
+  if (!used?.pending || cache.get(uri) !== used.pending) return false;
+  const c = used.client;
+  const dead = !c || c.isOpen === false || c.isReady === false;
+  if (!dead) return false;
+  cache.delete(uri);
+  if (c) Promise.resolve().then(() => c.disconnect?.()).catch(() => {});
+  else Promise.resolve(used.pending).then((late) => late?.disconnect?.()).catch(() => {});
+  return true;
 }
 
 function flattenWithScores(items) {
@@ -177,19 +213,12 @@ export function isRedisUri(s) {
 export async function nativeRedisCall(uri, ...cmd) {
   const [command, ...args] = cmd;
   const name = String(command ?? "?").toUpperCase();
+  const used = {};
   const run = async () => {
-    const client = await getNativeClient(uri);
+    const client = await getNativeClient(uri, used);
     return await translate(client, command, args.map((a) => (typeof a === "number" ? String(a) : a)));
   };
-  // A hung command usually means a dead socket: evict so the next call reconnects.
-  return withTimeout(run(), nativeTimeoutMs(), name, () => evictClient(uri));
-}
-
-function evictClient(uri) {
-  const cache = clientCache();
-  const pending = cache.get(uri);
-  cache.delete(uri);
-  pending?.then((c) => c.disconnect?.().catch?.(() => {})).catch(() => {});
+  return withTimeout(run(), nativeTimeoutMs(), name, () => evictIfDead(uri, used));
 }
 
 export async function probeNativeRedis(uri) {

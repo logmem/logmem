@@ -68,7 +68,8 @@ export function restEndpoint(url) {
 
 export const READ_COMMANDS = new Set([
   "GET", "HGET", "HGETALL", "SMEMBERS", "LRANGE", "ZRANGE", "ZREVRANGE",
-  "ZRANGEBYSCORE", "ZCARD", "TYPE", "EXISTS", "SCAN", "PING", "TTL", "DBSIZE",
+  "ZRANGEBYSCORE", "ZCARD", "ZSCORE", "HMGET", "LLEN", "TYPE", "EXISTS", "SCAN",
+  "PING", "TTL", "DBSIZE",
 ]);
 
 export const DEFAULT_REDIS_TIMEOUT_MS = 5000;
@@ -80,6 +81,12 @@ export function redisTimeoutMs(env = process.env) {
 
 export function isReadCommand(cmd) {
   return READ_COMMANDS.has(String(cmd ?? "").toUpperCase());
+}
+
+/** Low-level socket error code (ECONNREFUSED, ENOTFOUND, ...) only; never the message, which can carry the host. */
+function causeCode(e) {
+  const code = e?.cause?.code ?? e?.code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{1,40}$/.test(code) ? code : null;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -108,7 +115,9 @@ async function restAttempt(endpoint, token, cmd, name, timeoutMs) {
   } catch (e) {
     const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
     throw new RedisRestError(
-      timedOut ? `Redis REST ${name}: timed out after ${timeoutMs}ms` : `Redis REST ${name}: network error`,
+      timedOut
+        ? `Redis REST ${name}: timed out after ${timeoutMs}ms`
+        : `Redis REST ${name}: network error${causeCode(e) ? ` (${causeCode(e)})` : ""}`,
       { transient: true },
     );
   }

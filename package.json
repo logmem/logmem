@@ -10,7 +10,7 @@
     "logmem-mcp": "src/stdio/index.mjs"
   },
   "engines": {
-    "node": "22.x"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/stdio/index.mjs",

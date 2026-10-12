@@ -5,13 +5,15 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createRedis, redis as instanceRedis, READ_COMMANDS, redisTimeoutMs } from "../src/lib/redis-rest.mjs";
-import { withTimeout, nativeTimeoutMs } from "../src/lib/redis-native.mjs";
+import { withTimeout, nativeTimeoutMs, evictIfDead } from "../src/lib/redis-native.mjs";
 import { resilientBackendFromEnv, BackendRequiredError, requireBackendFromEnv } from "../src/lib/backend.mjs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createLogmem, versionString, SERVER_INFO } from "../src/server.mjs";
 import { healthCheck, createHandler } from "../api/health.mjs";
 import { requestRecord, logRequest } from "../src/http/log.mjs";
-import pkg from "../package.json" with { type: "json" };
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 const URL_ = "https://bridge.example.test/bridge/exec";
 const TOKEN = "s3cret-token-value";
@@ -93,9 +95,17 @@ test("REST: a read that fails transiently once succeeds on the retry", async () 
 
 test("REST: network errors retry reads; 4xx and Redis errors never retry", async () => {
   let n = 0;
-  globalThis.fetch = async () => { n++; throw new TypeError(`fetch failed for ${URL_}`); };
+  globalThis.fetch = async () => {
+    n++;
+    const cause = Object.assign(new Error(`connect ECONNREFUSED bridge.example.test:443 ${TOKEN}`), { code: "ECONNREFUSED" });
+    throw new TypeError(`fetch failed for ${URL_}`, { cause });
+  };
   const r = createRedis({ url: URL_, token: TOKEN });
-  await assert.rejects(r("HGETALL", "h"), (e) => { assert.match(e.message, /HGETALL: network error/); assertNoSecrets(e); return true; });
+  await assert.rejects(r("HGETALL", "h"), (e) => {
+    assert.match(e.message, /^Redis REST HGETALL: network error \(ECONNREFUSED\)$/);
+    assertNoSecrets(e);
+    return true;
+  });
   assert.equal(n, 2);
 
   n = 0;
@@ -123,7 +133,8 @@ test("REST: instance-based redis() shares the same timeout path", async () => {
 });
 
 test("REST: read command list matches the ops contract", () => {
-  assert.deepEqual([...READ_COMMANDS].sort(), ["DBSIZE", "EXISTS", "GET", "HGET", "HGETALL", "LRANGE", "PING", "SCAN", "SMEMBERS", "TTL", "TYPE", "ZCARD", "ZRANGE", "ZRANGEBYSCORE", "ZREVRANGE"]);
+  assert.deepEqual([...READ_COMMANDS].sort(), ["DBSIZE", "EXISTS", "GET", "HGET", "HGETALL", "HMGET", "LLEN", "LRANGE", "PING", "SCAN", "SMEMBERS", "TTL", "TYPE", "ZCARD", "ZRANGE", "ZRANGEBYSCORE", "ZREVRANGE", "ZSCORE"]);
+  assert.equal(READ_COMMANDS.has("KEYS"), false);
 });
 
 test("native: per-command timeout via Promise.race with the same budget", async () => {
@@ -133,6 +144,46 @@ test("native: per-command timeout via Promise.race with the same budget", async 
   await assert.rejects(withTimeout(new Promise(() => {}), 30, "ZADD", () => { evicted = true; }), /native redis ZADD: timed out after 30ms/);
   assert.equal(evicted, true, "timed-out client is evicted");
   assert.equal(await withTimeout(Promise.resolve("PONG"), 30, "PING"), "PONG");
+});
+
+function fakeClient({ open = true, ready = true } = {}) {
+  return { isOpen: open, isReady: ready, disconnects: 0, async disconnect() { this.disconnects++; this.isOpen = false; } };
+}
+const tick = () => new Promise((r) => setImmediate(r));
+
+test("native: a timeout on an old client never evicts or disconnects a newer cached client", async () => {
+  const uri = "redis://cache.test:6379";
+  const oldClient = fakeClient({ open: false, ready: false }); // dead socket
+  const oldPending = Promise.resolve(oldClient);
+  const newClient = fakeClient();
+  const newPending = Promise.resolve(newClient);
+  const cache = new Map([[uri, newPending]]); // someone already reconnected
+  assert.equal(evictIfDead(uri, { pending: oldPending, client: oldClient }, cache), false);
+  await tick();
+  assert.equal(cache.get(uri), newPending, "newer entry kept");
+  assert.equal(newClient.disconnects, 0, "newer client not disconnected");
+});
+
+test("native: a slow command on a healthy shared client does not evict it; a dead socket does", async () => {
+  const uri = "redis://cache.test:6379";
+  const healthy = fakeClient();
+  const pending = Promise.resolve(healthy);
+  const cache = new Map([[uri, pending]]);
+  assert.equal(evictIfDead(uri, { pending, client: healthy }, cache), false, "slow but open+ready");
+  await tick();
+  assert.equal(cache.get(uri), pending);
+  assert.equal(healthy.disconnects, 0);
+
+  healthy.isReady = false; // socket dropped
+  assert.equal(evictIfDead(uri, { pending, client: healthy }, cache), true);
+  await tick();
+  assert.equal(cache.has(uri), false);
+  assert.equal(healthy.disconnects, 1);
+
+  const hung = new Promise(() => {}); // connect never finished
+  cache.set(uri, hung);
+  assert.equal(evictIfDead(uri, { pending: hung, client: undefined }, cache), true);
+  assert.equal(cache.has(uri), false);
 });
 
 test("health: happy path returns ok, version, commit, redis_ms, region with no secrets", async () => {
@@ -245,7 +296,7 @@ test("degraded: memory fallback marks every tool result, re-probe switches to th
   assert.equal(b.degraded(), true);
   assert.match(logs[0], /NOT durable/);
 
-  const lm = createLogmem({ redis: b.redis, backend: () => b.kind, isDegraded: b.degraded, space: "opsdeg", sessionId: "s1", defaultAgent: "agent:test" });
+  const lm = createLogmem({ live: b, space: "opsdeg", sessionId: "s1", defaultAgent: "agent:test" });
   const conn = await lm.callTool("logmem_connection", {});
   assert.equal(conn.structuredContent.degraded, true);
   assert.equal(conn.structuredContent.backend, "memory");
@@ -268,7 +319,65 @@ test("degraded: memory fallback marks every tool result, re-probe switches to th
   b.stop();
 });
 
-test("degraded: results without isDegraded are unchanged", async () => {
+test("degraded: bad backend config degrades instead of crashing; probes are single-flight", async () => {
+  const logs = [];
+  const bad = await resilientBackendFromEnv({}, (m) => logs.push(m), { resolve: () => { throw new Error("Invalid URL"); }, reprobeMs: 0 });
+  assert.equal(bad.kind, "memory");
+  assert.match(logs[0], /backend config invalid \(Invalid URL\)/);
+  await assert.rejects(
+    resilientBackendFromEnv({ LOGMEM_REQUIRE_BACKEND: "1" }, () => {}, { resolve: () => { throw new Error("Invalid URL"); } }),
+    BackendRequiredError,
+  );
+
+  let pings = 0;
+  let alive = false;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const b = await resilientBackendFromEnv({}, () => {}, {
+    reprobeMs: 0,
+    resolve: () => ({ kind: "rest", redis: async () => { pings++; if (!alive) throw new Error("down"); await gate; return "PONG"; } }),
+  });
+  assert.equal(pings, 1);
+  alive = true;
+  const p1 = b.probeNow();
+  const p2 = b.probeNow();
+  assert.equal(p1, p2, "second probe joins the in-flight one");
+  release();
+  assert.deepEqual(await Promise.all([p1, p2]), [true, true]);
+  assert.equal(pings, 2, "only one PING for two concurrent probes");
+  assert.equal(b.kind, "rest");
+});
+
+test("degraded: one tool call uses one backend snapshot even if the backend switches mid-call", async () => {
+  const mem = { kind: "memory", redis: createMemoryRedis(), seen: 0 };
+  const realStore = createMemoryRedis();
+  const real = { kind: "rest", redis: realStore, seen: 0 };
+  let active = mem;
+  const count = (h) => async (...cmd) => {
+    h.seen++;
+    if (h === mem && mem.seen === 2) active = real; // backend comes back mid-call
+    return h === mem ? mem.redis(...cmd) : realStore(...cmd);
+  };
+  const live = { current: () => (active === mem ? { kind: "memory", redis: count(mem) } : { kind: "rest", redis: count(real) }) };
+  const lm = createLogmem({ live, space: "opssnap", sessionId: "s3", defaultAgent: "agent:test" });
+
+  const first = await lm.callTool("logmem_note", { where: "channel:ops", summary: "written while degraded" });
+  assert.equal(first.structuredContent.ok, true, JSON.stringify(first.structuredContent));
+  assert.ok(mem.seen > 2, "the call kept issuing commands after the switch");
+  assert.equal(real.seen, 0, "no command of the first call reached the real backend");
+  assert.equal(first.structuredContent.degraded, true);
+  assert.equal(active, real);
+
+  const before = real.seen;
+  const memBefore = mem.seen;
+  const second = await lm.callTool("logmem_connection", {});
+  assert.ok(real.seen > before, "next call uses the real backend");
+  assert.equal(mem.seen, memBefore, "and never touches memory");
+  assert.equal(second.structuredContent.backend, "rest");
+  assert.equal(second.structuredContent.degraded, false);
+});
+
+test("degraded: results without a live backend are unchanged", async () => {
   const lm = createLogmem({ redis: createMemoryRedis(), backend: "rest", space: "opsplain", sessionId: "s2" });
   const r = await lm.callTool("logmem_connection", {});
   assert.equal(r.structuredContent.degraded, false);

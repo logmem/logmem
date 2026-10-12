@@ -80,20 +80,30 @@ export const requireBackendFromEnv = (env = process.env) =>
   ["1", "true", "yes"].includes(String(env.LOGMEM_REQUIRE_BACKEND || "").toLowerCase());
 
 /**
- * Backend for long-lived stdio processes. Returns a stable handle whose
- * `redis` runner delegates to whichever backend is current, so the store
- * built on it switches over transparently when the real backend returns.
+ * Backend for long-lived stdio processes.
  *
- *   { redis, kind (getter), degraded(), probeNow(), stop() }
+ *   { current(), redis, kind (getter), degraded(), probeNow(), stop() }
+ *
+ * current() returns the active { kind, redis } pair. Callers that run several
+ * commands as one unit (createLogmem's callTool) must take ONE snapshot of
+ * current() and use it for the whole unit, so a single tool call never mixes
+ * the in-memory store and the real backend. `redis` delegates per command and
+ * is only for one-off calls.
  */
 export async function resilientBackendFromEnv(env = process.env, log = () => {}, {
   reprobeMs = REPROBE_MS,
   resolve = (e) => { const d = descriptorFromEnv(e); return d && fromDescriptor(d); },
 } = {}) {
   const required = requireBackendFromEnv(env);
-  const configured = resolve(env);
-  let current = null;
+  let configured = null;
   let reason = "no backend configured";
+  try {
+    configured = resolve(env) || null;
+  } catch (e) {
+    // A malformed URI/URL must degrade, not crash the stdio process.
+    reason = `backend config invalid (${e.message})`;
+  }
+  let current = null;
   if (configured) {
     try {
       await configured.redis("PING");
@@ -112,18 +122,23 @@ export async function resilientBackendFromEnv(env = process.env, log = () => {},
     current = { kind: "memory", redis: createMemoryRedis() };
   }
 
-  async function probeNow() {
-    if (!configured || current === configured) return current.kind !== "memory";
-    try {
-      await configured.redis("PING");
-    } catch {
-      return false;
-    }
-    current = configured;
-    if (timer) clearInterval(timer);
-    timer = null;
-    log(`backend ${configured.kind} reachable again; switched over from in-memory. Writes made while degraded were not copied.`);
-    return true;
+  let probing = null;
+  function probeNow() {
+    if (!configured || current === configured) return Promise.resolve(current.kind !== "memory");
+    if (probing) return probing; // one PING in flight at a time
+    probing = (async () => {
+      try {
+        await configured.redis("PING");
+      } catch {
+        return false;
+      }
+      current = configured;
+      if (timer) clearInterval(timer);
+      timer = null;
+      log(`backend ${configured.kind} reachable again; switched over from in-memory. Writes made while degraded were not copied.`);
+      return true;
+    })().finally(() => { probing = null; });
+    return probing;
   }
 
   if (current.kind === "memory" && configured && reprobeMs > 0) {
@@ -132,6 +147,7 @@ export async function resilientBackendFromEnv(env = process.env, log = () => {},
   }
 
   return {
+    current: () => current,
     redis: (...cmd) => current.redis(...cmd),
     get kind() { return current.kind; },
     degraded: () => current.kind === "memory",
