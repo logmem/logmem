@@ -131,11 +131,12 @@ test("writeDecision: refuses non-humans, bad verdicts, unknown asks, and a secon
   await err(() => writeDecision(store, ask.trail, { verdict: "reject", by: "human:mikey", note: "x".repeat(1001) }), "bad_request");
   await err(() => writeDecision(store, "approvalNope-1791712800000", { verdict: "approve", by: "human:mikey" }), "not_found");
 
-  const r = await writeDecision(store, ask.trail, { verdict: "defer", by: "human:mikey" });
+  const r = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:mikey" });
   assert.equal(r.where, "agent:quill", "an ask with no where lives on the asker's log only");
   await err(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:mikey" }), "not_pending");
+  await err(() => writeDecision(store, ask.trail, { verdict: "defer", by: "human:mikey" }), "not_pending");
   const brief = await sc(q, "logmem_brief", {});
-  assert.equal(brief.answered_asks[0].verdict, "defer");
+  assert.equal(brief.answered_asks[0].verdict, "reject");
 });
 
 test("an agent-written decided (legacy data) neither closes the ask nor shows as an answer", async () => {

@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, verifyDecision } from "../core/tools.mjs";
+import { keywordRecall, verifyDecision, SETTLES } from "../core/tools.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -160,10 +160,18 @@ async function jobsView(store) {
  * legacy ACMI row claiming a human source, does not close an ask.
  */
 export function decisionsFrom(entries, { secret, space } = {}) {
-  const decided = new Map(entries.filter((e) => e.kind === "decided" && verifyDecision(e, { secret, space })).map((e) => [e.origin, e]));
+  const signed = entries.filter((e) => e.kind === "decided" && verifyDecision(e, { secret, space }));
+  // Approve / reject settle an ask. Defer does not: the ask stays waiting (and visible), marked deferred.
+  const decided = new Map(signed.filter((e) => SETTLES.includes(e.payload?.verdict)).map((e) => [e.origin, e]));
+  const deferred = new Map();
+  for (const e of [...signed].sort((x, y) => y.ts - x.ts)) if (e.payload?.verdict === "defer" && !deferred.has(e.origin)) deferred.set(e.origin, e);
   const asks = entries.filter((e) => e.kind === "approval");
+  const mark = (a) => {
+    const d = deferred.get(a.trail);
+    return d ? { ...a, deferred: { by: d.by, note: d.payload?.note ?? null, at: d.ts } } : a;
+  };
   return {
-    waiting: asks.filter((a) => !decided.has(a.trail)),
+    waiting: asks.filter((a) => !decided.has(a.trail)).map(mark),
     decided: asks.filter((a) => decided.has(a.trail)).map((a) => ({ ask: a, answer: decided.get(a.trail) })),
   };
 }

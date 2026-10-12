@@ -425,3 +425,42 @@ test("item 7: the web app treats anything not reversible:true as irreversible an
   assert.match(js, /body\.confirm = 'approve'/);
   assert.doesNotMatch(js, /p\.reversible === false \? ' data-irreversible/);
 });
+
+// ─── Item 8: a deferred ask stays open and visible ──────────────────────
+test("item 8: defer keeps the ask pending (Brief + Decisions page), keeps waiting_on, and can be answered later", async () => {
+  const { q, store, redis } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "Launch Tue?", action: "schedule launch", reversible: true });
+  const d = await writeDecision(store, ask.trail, { verdict: "defer", note: "ask me Monday", by: "human:mikey" });
+  assert.equal(d.ok, true);
+  assert.equal(d.settled, false);
+  assert.equal(d.waiting_on_cleared, false);
+  assert.equal(d.entry.payload.verdict, "defer");
+  assert.equal(await redis("EXISTS", `lm:fieldnotes:decision:${ask.trail}`), 0, "a defer claims no settlement key");
+
+  let b = await sc(q, "logmem_brief", {});
+  assert.deepEqual(b.pending_asks.map((x) => x.trail), [ask.trail], "still pending");
+  assert.deepEqual(b.pending_asks[0].deferred, { note: "ask me Monday", by: "human:mikey", at: d.entry.ts });
+  assert.equal(b.answered_asks.length, 0, "a defer is not an answer");
+  assert.equal(b.now.waiting_on.trail, ask.trail, "the agent keeps waiting");
+
+  let view = await buildView(redis, "fieldnotes", "decisions");
+  assert.deepEqual(view.waiting.map((x) => x.trail), [ask.trail], "visible on the Decisions page");
+  assert.equal(view.waiting[0].deferred.note, "ask me Monday");
+  assert.equal(view.decided.length, 0);
+  assert.equal((await buildView(redis, "fieldnotes", "overview")).stats.waiting, 1);
+
+  // Defer again, then settle.
+  assert.equal((await writeDecision(store, ask.trail, { verdict: "defer", note: "Tuesday then", by: "human:mikey" })).ok, true);
+  assert.equal((await sc(q, "logmem_brief", {})).pending_asks[0].deferred.note, "Tuesday then", "latest deferral shown");
+  const ok = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:mikey" });
+  assert.equal(ok.settled, true);
+  assert.equal(ok.waiting_on_cleared, true);
+  b = await sc(q, "logmem_brief", {});
+  assert.equal(b.pending_asks.length, 0);
+  assert.equal(b.answered_asks[0].verdict, "approve");
+  view = await buildView(redis, "fieldnotes", "decisions");
+  assert.equal(view.waiting.length, 0);
+  assert.equal(view.decided[0].answer.payload.verdict, "approve");
+  // Settled: no more defers.
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "defer", by: "human:mikey" }), isCode("not_pending"));
+});

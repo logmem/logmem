@@ -205,11 +205,22 @@ async function brief(ctx, agent) {
 export function asksOf(a, entries, { secret, space } = {}) {
   const mine = entries.filter((e) => e.kind === "approval" && e.by === agentRef(a));
   const answers = new Map();
-  for (const e of entries) if (e.kind === "decided" && e.origin && !answers.has(e.origin) && verifyDecision(e, { secret, space })) answers.set(e.origin, e);
+  const deferrals = new Map(); // newest defer per ask (entries are newest first)
+  for (const e of entries) {
+    if (e.kind !== "decided" || !e.origin || !verifyDecision(e, { secret, space })) continue;
+    if (SETTLES.includes(e.payload?.verdict)) {
+      if (!answers.has(e.origin)) answers.set(e.origin, e);
+    } else if (!deferrals.has(e.origin)) deferrals.set(e.origin, e);
+  }
   const askByTrail = new Map(mine.map((x) => [x.trail, x]));
+  const deferred = (t) => {
+    const d = deferrals.get(t);
+    return d ? { deferred: { note: d.payload?.note ?? null, by: d.by, at: d.ts } } : {};
+  };
   const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible === true, where: x.where, to: x.to ?? null, asked_at: x.ts });
   return {
-    pending_asks: mine.filter((x) => !answers.has(x.trail)).map(ask),
+    // A deferred ask stays pending (defer = "not yet"), with the latest deferral attached.
+    pending_asks: mine.filter((x) => !answers.has(x.trail)).map((x) => ({ ...ask(x), ...deferred(x.trail) })),
     answered_asks: [...answers.values()]
       .filter((d) => askByTrail.has(d.origin))
       .map((d) => ({
@@ -385,7 +396,7 @@ export const TOOLS = [
     name: "logmem_ask",
     title: "Ask",
     description:
-      "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. A person answers on the Decisions page; the answer shows in your Brief under answered_asks with verdict approve, reject or defer. Do the action only on approve.",
+      "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. A person answers on the Decisions page; the answer shows in your Brief under answered_asks with verdict approve or reject. A deferred ask stays in pending_asks (with deferred: note, by, at): keep waiting. Do the action only on approve.",
     params: params({
       question: { type: "string", desc: "Plain question, e.g. 'Send issue 14 to 2,184 subscribers Tue 9am?'" },
       action: { type: "string", desc: "The exact action you will take if approved (command, request, recipients)" },
@@ -707,6 +718,12 @@ export const TOOLS = [
 
 // ─── Human decisions ─────────────────────────────────────────────────────
 export const VERDICTS = ["approve", "reject", "defer"];
+/**
+ * Verdicts that settle an ask. "defer" does not: it means "not yet", so the
+ * ask stays open and visible (pending in the Brief, waiting on the Decisions
+ * page) and a person can still approve or reject it later.
+ */
+export const SETTLES = ["approve", "reject"];
 
 /** Minimum length for LOGMEM_DECIDE_SECRET (32 characters, e.g. `openssl rand -hex 32`). */
 export const DECIDE_SECRET_MIN = 32;
@@ -811,6 +828,10 @@ async function findAskLog(store, trail, ts) {
  * concurrent answers can't both land. No usable secret: fail closed
  * (DecisionError "misconfigured"), nothing is written.
  *
+ * Defer is "not yet": it writes a signed decided entry (verdict defer) but
+ * does not claim the settlement key or clear waiting_on, so the ask stays
+ * pending and can still be approved or rejected.
+ *
  * Irreversible by default: approving an ask whose reversible is not exactly
  * true needs `confirm: true` (DecisionError "confirm_required" otherwise).
  *
@@ -858,32 +879,41 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     payload: { verdict, ...(note ? { note } : {}), sig },
   };
 
-  // Set once: the first answer claims the key; any later (or concurrent) one gets not_pending.
+  // Set once: the first settling answer (approve/reject) claims the key; any
+  // later or concurrent one gets not_pending. A defer claims nothing (the ask
+  // stays open) but is refused once the ask is settled.
   const key = lmDecisionKey(store.space, askTrail);
-  const claimed = await store.redis("SET", key, JSON.stringify({ origin: askTrail, verdict, by, ts: t, sig }), "NX");
-  if (claimed == null) {
+  const settles = SETTLES.includes(verdict);
+  const alreadyDecided = async () => {
     let prior = null;
     try {
       prior = JSON.parse(await store.redis("GET", key));
     } catch {
       prior = null;
     }
-    throw new DecisionError("not_pending", `already decided: ${prior?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
+    return new DecisionError("not_pending", `already decided: ${prior?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
+  };
+  if (settles) {
+    const claimed = await store.redis("SET", key, JSON.stringify({ origin: askTrail, verdict, by, ts: t, sig }), "NX");
+    if (claimed == null) throw await alreadyDecided();
+  } else if (Number(await store.redis("EXISTS", key)) > 0) {
+    throw await alreadyDecided();
   }
 
   const written = [];
   try {
     for (const [ns, id] of logs) written.push(await store.append(ns, id, entry));
   } catch (e) {
-    // Nothing (or only part) landed: release the claim so a person can answer again.
-    if (!written.length) await store.redis("DEL", key).catch(() => {});
+    // Nothing landed: release the claim so a person can answer again.
+    if (settles && !written.length) await store.redis("DEL", key).catch(() => {});
     throw e;
   }
 
+  // Only a settling answer clears waiting_on; after a defer the agent keeps waiting.
   const cur = await store.getNow("agent", asker);
-  const cleared = cur?.waiting_on?.trail === askTrail;
+  const cleared = settles && cur?.waiting_on?.trail === askTrail;
   if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: t } });
-  return { ok: true, entry: written[0], asker, where: `${w.ns}:${w.id}`, waiting_on_cleared: cleared };
+  return { ok: true, entry: written[0], asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared };
 }
 
 /** Keyword recall over this space's logs. Bounded; used when no index is attached. */
