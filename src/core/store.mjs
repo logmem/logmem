@@ -85,7 +85,7 @@ async function readIds(redis, key) {
   return [];
 }
 
-export function createStore(redis, { space, compat = false } = {}) {
+export function createStore(redis, { space, compat = false, mirror = null } = {}) {
   if (!space) throw new Error("createStore: space required");
   const k = (ns, id, slot) => lmKey(space, ns, id, slot);
   const legacy = (ns, id, slot) => acmiKey(space, ns, id, slot);
@@ -94,11 +94,20 @@ export function createStore(redis, { space, compat = false } = {}) {
     await redis("SADD", lmIndexKey(space, ns), id);
   }
 
+  /** Dogfood mirror: write the ACMI twin; record ok/failed for the caller. */
+  async function mirrorWrite(op) {
+    if (!mirror) return;
+    store.mirrorEvents.push(await mirror.write(op));
+  }
+
   const store = {
     space,
     compat,
     redis,
     key: k,
+    mirror,
+    /** "ok" | "failed" per mirrored write since the last reset (server resets per tool call). */
+    mirrorEvents: [],
 
     // ─── Who ────────────────────────────────────────────────────────────
     async getWho(ns, id) {
@@ -109,6 +118,7 @@ export function createStore(redis, { space, compat = false } = {}) {
     async setWho(ns, id, doc) {
       await redis("SET", k(ns, id, "who"), JSON.stringify(doc));
       await index(ns, id);
+      await mirrorWrite({ slot: "who", ns, id, doc });
       return doc;
     },
     async mergeWho(ns, id, partial) {
@@ -130,6 +140,7 @@ export function createStore(redis, { space, compat = false } = {}) {
       const pairs = Object.entries(fields).flatMap(([f, v]) => [f, JSON.stringify(v)]);
       if (pairs.length) await redis("HSET", k(ns, id, "now"), ...pairs);
       await index(ns, id);
+      await mirrorWrite({ slot: "now", ns, id, fields });
       return store.getNow(ns, id);
     },
     /** ACMI semantics: signals are replaced wholesale, not merged. */
@@ -168,6 +179,7 @@ export function createStore(redis, { space, compat = false } = {}) {
       const ordinal = String((same || []).length).padStart(6, "0");
       await redis("ZADD", key, ts, stableJson({ _o: ordinal, ...full }));
       await index(ns, id);
+      await mirrorWrite({ slot: "log", ns, id, entry: full });
       return full;
     },
     async readLog(ns, id, { limit, reverse = false, sinceMs, untilMs } = {}) {

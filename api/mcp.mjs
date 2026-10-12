@@ -10,7 +10,7 @@
 // auto Recap / persona switch) survive across stateless invocations.
 
 import { randomUUID, createHash } from "node:crypto";
-import { createLogmem, compatFromEnv, toResult, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
+import { createLogmem, compatFromEnv, mirrorConfigFromEnv, toResult, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
 import { fromDescriptor } from "../src/lib/backend.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate, bearerOf } from "../src/http/auth.mjs";
 
@@ -64,6 +64,7 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     surface: surfaceFromSession(sessionId) || "http",
     sessionId,
     defaultAgent: env.LOGMEM_AGENT,
+    mirror: mirrorConfigFromEnv(env),
   });
 }
 
