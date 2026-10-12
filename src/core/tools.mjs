@@ -701,8 +701,8 @@ export const TOOLS = [
       let ping = null;
       try {
         ping = await ctx.store.redis("PING");
-      } catch (e) {
-        ping = `error: ${e.message}`;
+      } catch {
+        ping = "error: backend unreachable"; // detail stays server-side
       }
       return {
         ok: true,

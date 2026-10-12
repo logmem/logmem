@@ -816,3 +816,58 @@ test("L2: agent ids equal to LOGMEM_ADMIN_ID (default admin) or 'human' are refu
   const ask = await sc(ok, "logmem_ask", { question: "q", action: "a", reversible: true });
   assert.equal((await writeDecision(createStore(redis, { space: "fieldnotes" }), ask.trail, { verdict: "approve", by: "human:admin" })).ok, true);
 });
+
+// ─── Nit: tool errors are generic for unexpected failures ───────────────
+test("nit: a backend failure inside a tool returns 'internal error' + ref; the detail is only logged", async () => {
+  const base = createMemoryRedis();
+  let broken = false;
+  const redis = async (cmd, ...args) => {
+    if (broken && cmd !== "GET" && cmd !== "SET" && cmd !== "EXPIRE") throw new Error(LEAK);
+    return base(cmd, ...args);
+  };
+  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  await sc(lm, "logmem_start", { agent: "quill" });
+  broken = true;
+  let r;
+  const logs = await captureLogs(async () => {
+    r = await lm.callTool("logmem_note", { where: "channel:ops", summary: "x" });
+  });
+  assert.equal(r.isError, true);
+  assert.equal(r.structuredContent.error, GENERIC_ERROR);
+  assert.match(r.structuredContent.ref, /^[0-9a-f]{12}$/);
+  assert.ok(!r.content[0].text.includes("WRONGTYPE") && !r.content[0].text.includes("fake-token"), "nothing leaks to the client");
+  const rec = logs.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((x) => x?.ref === r.structuredContent.ref);
+  assert.equal(rec.tool, "logmem_note");
+  assert.match(rec.err, /WRONGTYPE/, "the detail is in the server log");
+
+  broken = false;
+  // Expected refusals keep their specific text.
+  const v = await lm.callTool("logmem_note", { where: "channel:ops", summary: "x".repeat(1001) });
+  assert.match(v.structuredContent.error, /summary is 1001 characters/);
+  const ping = createLogmem({ redis: async (c) => { if (c === "PING") throw new Error(LEAK); return base(c); }, space: "fieldnotes", sessionId: "p" });
+  const pc = await ping.callTool("logmem_connection", {});
+  assert.equal(pc.structuredContent.ping, "error: backend unreachable");
+});
+
+test("nit: toolError keeps expected messages and hides unexpected ones", async () => {
+  const { toolError } = await import("../src/server.mjs");
+  assert.deepEqual(toolError(new Error("agent must be 1-64 characters"), "t"), { ok: false, error: "agent must be 1-64 characters", tool: "t" });
+  const lines = [];
+  for (const e of [new TypeError("cannot read x of undefined at /srv/app.mjs"), Object.defineProperty(new Error(LEAK), "backend", { value: true }), "a string"]) {
+    const out = toolError(e, "t", { sink: (l) => lines.push(l) });
+    assert.equal(out.error, GENERIC_ERROR);
+  }
+  assert.equal(lines.length, 3);
+});
+
+test("nit: /api/mcp tools/call never echoes a server-build failure", async () => {
+  const { dispatch } = await import("../api/mcp.mjs");
+  let reply;
+  const logs = await captureLogs(async () => {
+    reply = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_brief", arguments: {} } }, { toolDefs: () => [], lmFactory: async () => { throw new Error(LEAK); } });
+  });
+  const res = reply.result.structuredContent;
+  assert.equal(res.error, GENERIC_ERROR);
+  assert.ok(!JSON.stringify(reply).includes("WRONGTYPE"));
+  assert.ok(logs.some((l) => l.includes(res.ref) && l.includes("WRONGTYPE")));
+});
