@@ -29,8 +29,7 @@ function clock(start = 1791712800000) {
 }
 
 /** Two agents in one space: atlas (a) and quill (q), both started. */
-async function team({ compat = false, now } = {}) {
-  const redis = createMemoryRedis();
+async function team({ compat = false, now, redis = createMemoryRedis() } = {}) {
   const mk = (sid) => createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: sid, compat, ...(now ? { now } : {}) });
   const a = mk("atlas-s");
   const q = mk("quill-s");
@@ -289,10 +288,10 @@ test("item 1: the decision key is set once with SET NX; a second or concurrent a
   assert.ok(isCode("not_pending")(results.find((r) => r.status === "rejected").reason));
   const key = JSON.parse(await redis("GET", `lm:fieldnotes:decision:${ask.trail}`));
   assert.equal(key.origin, ask.trail);
-  assert.match(key.sig, /^[0-9a-f]{64}$/);
+  assert.match(key.payload.sig, /^[0-9a-f]{64}$/, "the claim holds the full signed entry");
   const decided = (await store.readLog("agent", "quill")).filter((e) => e.kind === "decided");
   assert.equal(decided.length, 1, "only one decided entry landed");
-  assert.equal(decided[0].payload.verdict, key.verdict);
+  assert.equal(decided[0].payload.verdict, key.payload.verdict);
   // logmem_remove can't clear the claim to allow a second answer.
   const rm = await sc(q, "logmem_remove", { key: `lm:fieldnotes:decision:${ask.trail}`, confirm: true });
   assert.notEqual(rm.removed, true);
@@ -650,4 +649,85 @@ test("H1: a second ask on an existing trail is refused (the registry is SET NX) 
   const rm = await q.callTool("logmem_remove", { key, confirm: true });
   assert.equal(rm.isError, true, "the registry is protected");
   assert.equal(await base("EXISTS", key), 1);
+});
+
+// ─── M1: a settle that partly fails still counts, and a retry repairs it ─
+function flaky() {
+  const base = createMemoryRedis();
+  const fail = new Set(); // log keys whose next ZADD throws
+  const redis = async (cmd, ...args) => {
+    if (cmd === "ZADD" && fail.has(String(args[0]))) {
+      fail.delete(String(args[0]));
+      throw new Error("network blip");
+    }
+    return base(cmd, ...args);
+  };
+  redis._data = base._data;
+  return { redis, fail };
+}
+
+test("M1: the asker's log is written first; if it fails nothing is claimed and a retry succeeds", async () => {
+  const { redis, fail } = flaky();
+  const { q, a } = await team({ redis });
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true, where: "job:j1" });
+  const store = createStore(redis, { space: "fieldnotes" });
+  fail.add("lm:fieldnotes:agent:quill:log");
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }), /network blip/);
+  assert.equal(await redis("EXISTS", `lm:fieldnotes:decision:${ask.trail}`), 0, "claim released");
+  assert.equal((await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).map((m) => JSON.parse(m).kind).includes("decided"), false, "nothing half-written");
+  const ok = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" });
+  assert.equal(ok.ok, true);
+  assert.equal((await sc(q, "logmem_brief", {})).answered_asks[0].verdict, "approve");
+});
+
+test("M1: if one log write lands the decision counts everywhere, and an identical retry fills the gap (idempotent)", async () => {
+  const { redis, fail } = flaky();
+  const { q, a } = await team({ redis });
+  await sc(a, "logmem_assign", { job: "j1", title: "t" });
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true, where: "job:j1" });
+  const store = createStore(redis, { space: "fieldnotes" });
+  fail.add("lm:fieldnotes:job:j1:log"); // the second write fails
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }));
+  assert.equal((await sc(q, "logmem_brief", {})).answered_asks[0]?.verdict, "approve", "the Brief already counts it");
+  assert.equal((await buildView(redis, "fieldnotes", "decisions")).decided.length, 1, "so does the page (the claim holds it)");
+
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" }), isCode("not_pending"), "a different answer is still refused");
+  const retry = await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" });
+  assert.equal(retry.ok, true);
+  assert.equal(retry.reconciled, true);
+  const jobDecided = (await redis("ZRANGE", "lm:fieldnotes:job:j1:log", 0, -1)).map((m) => JSON.parse(m)).filter((e) => e.kind === "decided");
+  assert.equal(jobDecided.length, 1, "the missing log now has it");
+  assert.equal(jobDecided[0].payload.sig, retry.entry.payload.sig, "the same signed entry, not a new one");
+  await assert.rejects(() => writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin" }), isCode("not_pending"), "nothing left to repair: not_pending");
+  assert.equal((await store.readLog("agent", "quill")).filter((e) => e.kind === "decided").length, 1, "no duplicate entries");
+});
+
+test("M1: a claim whose log writes all vanished still answers the ask (claim-first)", async () => {
+  const { q, store, redis } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  const d = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" });
+  await redis("ZREM", "lm:fieldnotes:agent:quill:log", ...(await redis("ZRANGE", "lm:fieldnotes:agent:quill:log", 0, -1)).filter((m) => JSON.parse(m).kind === "decided"));
+  assert.equal((await sc(q, "logmem_brief", {})).answered_asks[0].verdict, "reject");
+  const again = await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin" });
+  assert.equal(again.reconciled, true, "and an identical retry restores the entry");
+  assert.equal(again.entry.payload.sig, d.entry.payload.sig);
+});
+
+// ─── L3: the Brief and the page agree; the claim holder wins ────────────
+test("L3: with two signed settling entries, the Brief and the Decisions page both report the claim holder", async () => {
+  const { q, store, redis } = await team();
+  const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
+  await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin", now: () => 2e12 });
+  await redis("DEL", `lm:fieldnotes:decision:${ask.trail}`);
+  await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin", now: () => 2e12 + 5 });
+  const brief = (await sc(q, "logmem_brief", {})).answered_asks.find((x) => x.trail === ask.trail).verdict;
+  const page = (await buildView(redis, "fieldnotes", "decisions")).decided.find((x) => x.ask.trail === ask.trail).answer.payload.verdict;
+  assert.equal(brief, "reject");
+  assert.equal(page, "reject");
+  // Without any claim, both fall back to the earliest signed settling entry.
+  await redis("DEL", `lm:fieldnotes:decision:${ask.trail}`);
+  const brief2 = (await sc(q, "logmem_brief", {})).answered_asks[0].verdict;
+  const page2 = (await buildView(redis, "fieldnotes", "decisions")).decided[0].answer.payload.verdict;
+  assert.deepEqual([brief2, page2], ["approve", "approve"]);
 });

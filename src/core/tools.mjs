@@ -949,8 +949,9 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     throw new DecisionError("confirm_required", "this action can't be undone (the ask did not say reversible: true): confirm the exact action to approve it");
   }
   const w = parseRef(where, "job");
-  const logs = [[w.ns, w.id]];
-  if (!(w.ns === "agent" && w.id === asker)) logs.push(["agent", asker]);
+  // The asker's own log first: it is what the agent's Brief reads.
+  const logs = [["agent", asker]];
+  if (!(w.ns === "agent" && w.id === asker)) logs.push([w.ns, w.id]);
 
   const t = typeof now === "function" ? now() : now;
   const label = VERDICT_LABEL[verdict];
@@ -968,41 +969,61 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     payload: { verdict, ...(note ? { note } : {}), ask_hash: askHash, sig },
   };
 
-  // Set once: the first settling answer (approve/reject) claims the key; any
-  // later or concurrent one gets not_pending. A defer claims nothing (the ask
+  // Set once: the first settling answer (approve/reject) claims the key, and
+  // the claim holds the full signed entry, so the decision counts as soon as
+  // it is claimed (readers take the claim first). A later or concurrent
+  // answer gets not_pending, except an identical retry, which repairs any log
+  // the first attempt missed (idempotent). A defer claims nothing (the ask
   // stays open) but is refused once the ask is settled.
   const key = lmDecisionKey(store.space, askTrail);
   const settles = SETTLES.includes(verdict);
-  const alreadyDecided = async () => {
-    let prior = null;
-    try {
-      prior = JSON.parse(await store.redis("GET", key));
-    } catch {
-      prior = null;
+  const validClaim = (c) => c && c.kind === "decided" && c.origin === askTrail && c.payload?.ask_hash === askHash && verifyDecision(c, { secret, space: store.space });
+  const alreadyDecided = (prior) =>
+    new DecisionError("not_pending", `already decided: ${prior?.payload?.verdict || prior?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
+  const missingLogs = async (d) => {
+    const out = [];
+    for (const [ns, id] of logs) {
+      const have = (await store.readLog(ns, id, { sinceMs: d.ts, untilMs: d.ts })).some((e) => e.kind === "decided" && e.trail === d.trail);
+      if (!have) out.push([ns, id]);
     }
-    return new DecisionError("not_pending", `already decided: ${prior?.verdict || "answered"}${prior?.by ? ` by ${String(prior.by).replace(/^human:/, "")}` : ""}`);
+    return out;
   };
+
+  let final = entry;
+  let reconciled = false;
   if (settles) {
-    const claimed = await store.redis("SET", key, JSON.stringify({ origin: askTrail, verdict, by, ts: t, sig }), "NX");
-    if (claimed == null) throw await alreadyDecided();
+    const claimed = await store.redis("SET", key, JSON.stringify(entry), "NX");
+    if (claimed == null) {
+      const prior = parse(await store.redis("GET", key));
+      if (!validClaim(prior) || prior.payload.verdict !== verdict || prior.by !== by) throw alreadyDecided(prior);
+      const missing = await missingLogs(prior);
+      if (!missing.length) throw alreadyDecided(prior);
+      for (const [ns, id] of missing) await store.append(ns, id, prior);
+      final = prior;
+      reconciled = true;
+    }
   } else if (Number(await store.redis("EXISTS", key)) > 0) {
-    throw await alreadyDecided();
+    throw alreadyDecided(parse(await store.redis("GET", key)));
   }
 
   const written = [];
-  try {
-    for (const [ns, id] of logs) written.push(await store.append(ns, id, entry));
-  } catch (e) {
-    // Nothing landed: release the claim so a person can answer again.
-    if (settles && !written.length) await store.redis("DEL", key).catch(() => {});
-    throw e;
+  if (!reconciled) {
+    try {
+      for (const [ns, id] of logs) written.push(await store.append(ns, id, entry));
+    } catch (e) {
+      // Nothing landed: release the claim so a person can answer again. If any
+      // log write landed, the decision counts (the claim holds it) and a retry
+      // with the same answer fills in the missing log.
+      if (settles && !written.length) await store.redis("DEL", key).catch(() => {});
+      throw e;
+    }
   }
 
   // Only a settling answer clears waiting_on; after a defer the agent keeps waiting.
   const cur = await store.getNow("agent", asker);
   const cleared = settles && cur?.waiting_on?.trail === askTrail;
-  if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: t } });
-  return { ok: true, entry: written[0], asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared };
+  if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: final.ts } });
+  return { ok: true, entry: final, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, ...(reconciled ? { reconciled: true } : {}) };
 }
 
 /** Keyword recall over this space's logs. Bounded; used when no index is attached. */
