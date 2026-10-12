@@ -1,6 +1,7 @@
 # LogMem pricing (proposal, 2026-10-12)
 
-Status: proposed by Mikey and claude-code, not published. It replaces the flat $49/$99/$199 draft in the LogMem
+Status: proposed by Mikey and claude-code, not published. Consistent with Decision 3 (MIT open core) and Decision 4
+(hosted SaaS is the v1 product, self-host fully supported), both approved 2026-10-10. It replaces the flat $49/$99/$199 draft in the LogMem
 Cloud PRD. Hosted plans need hosted spaces, quotas and billing (GAPS D4, P4), and the public release waits on the
 trademark knockout (Oct 15). Until both land, the only live offer is open source on your own Redis, plus a hosted waitlist.
 
@@ -13,14 +14,15 @@ structure, not their unit. The competitor scan from 2026-10-12 is the source for
 Three rules:
 
 1. **One meter: entries written per month.** Reads, Briefs, recall and the admin app are not metered.
-2. **Audit trail and approvals on every plan.** Competitors gate audit logs behind Enterprise. For LogMem they are
-   the product.
+2. **The attributed log and approvals on every plan.** Competitors gate audit logs behind Enterprise. For LogMem the
+   attributed entry log is the product. Admin audit logs (who viewed or changed settings), SSO/SAML and RBAC stay
+   commercial, per Decision 3 (Open-Core Boundary, approved 2026-10-10).
 3. **Never drop a write silently.** Agents coordinate through LogMem, so a lost entry looks like LogMem lost their
    work (see "Caps" below).
 
 ## Plans
 
-| | Open source | Free | **Dev** | **Pro** | **Team** | **Agency** | Enterprise |
+| | Open source (MIT) | Free | **Dev** | **Pro** | **Team** | **Agency** | Enterprise |
 |---|---|---|---|---|---|---|---|
 | Price / month | $0 | $0 | **$19** | **$49** | **$99** | **$199** | Contact sales |
 | Hosting | your Redis | hosted | hosted | hosted | hosted | hosted | hosted, BYOC or on-prem |
@@ -67,5 +69,7 @@ On paid plans the overage is billed and nothing is refused.
 ## Open questions for Mikey
 
 1. Approve this ladder, or keep the PRD's flat $49/$99/$199.
-2. Whether the open-source tier ships under Apache-2.0 or MIT. Every competitor uses one of the two.
+2. Sequencing. Decision 4 (2026-10-10) makes hosted the v1 product. The 2026-10-11 design ruling was "bring your own
+   Redis first, then hosted". Confirm the order: the open-source tier and a waitlist first, then hosted plans when quotas
+   and billing exist.
 3. Whether the Agency tier launches with v1, or after the first agency customer.
