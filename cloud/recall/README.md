@@ -53,11 +53,19 @@ await enqueue(redis, tenant, { ref: logRef(key, score, member), kind: entry.kind
 - **Failures:** a failed item is retried with exponential backoff (`backoffMs * 2^(n-1)`). The retry state is in
   `acmi:t-{tenant}:outbox:retry`.
 - **Dead letters:** after `maxAttempts` failures (5 by default), the item goes to `acmi:t-{tenant}:outbox:dlq` as
-  `{ref, kind, ts, attempts, error}`. `error` is a short code, never a message.
+  `{ref, kind, ts, attempts, error}`. `error` is a short code, never a message. The DLQ is trimmed to the newest
+  10,000 items (`dlqMax`).
+- **Untrusted outbox items:** the indexer re-checks every popped item with the same rules as `enqueue`. A bad `kind`
+  or `ts` becomes `null`. A ref that is oversized, secret-shaped or outside the tenant is stored in the DLQ only as
+  `ref_sha256`.
+- **Redaction then cap:** the text is redacted first and only then capped at 32 KiB, so a cut can't leave part of a
+  secret behind.
 
 ## Running against a real Qdrant
 
-The secrets are `QDRANT_URL` and `QDRANT_API_KEY`. They live in Infisical (open question 6) and reach the process only
+The secrets are `QDRANT_URL` and `QDRANT_API_KEY`. With an api key, `createQdrant` requires an `https://` URL. Plain
+`http://` is accepted only for loopback hosts, or with `insecureHttp: true` for a private network you control, such
+as the compose network on the VM. They live in Infisical (open question 6) and reach the process only
 through env. Never put them in a file in the repo, a command line, a log or an ACMI event.
 
 ```bash
@@ -101,7 +109,9 @@ while ((await indexOnce({ redis, qdrant, embed, tenant })).popped) {}
 ```
 
 Rebuild walks `lm:t-{t}:*:log`, `acmi:t-{t}:*:timeline` and the string doc slots with `SCAN`. After a migration copy, an
-entry can exist under both `lm:` and `acmi:`. In that case both are indexed, under different refs.
+entry can exist under both `lm:` and `acmi:`. The `lm:` copy is canonical: rebuild and the indexer skip an `acmi:`
+entry whose `lm:` twin (same trail or correlationId, same ms) exists. Recall also collapses results by trail + ts,
+or by `content_hash` when there is no trail.
 
 ## Embedder
 
@@ -121,4 +131,5 @@ dimension mismatch.
 - **Hydration:** each hit is hydrated from Redis. Refs that are missing or deleted are dropped. The response is
   `{results: [{ref, kind, ts, score, entry}]}`.
 - **Metering:** `meter(redis, tenant, "recall", 1)` from slice A runs only after a successful recall.
+- **No collection yet:** before the collection exists, recall returns `{results: []}`, not an error.
 - **Errors** are generic codes: `unauthorized`, `bad_request`, `method_not_allowed`, `internal_error`.

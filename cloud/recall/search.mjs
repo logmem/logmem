@@ -9,7 +9,7 @@
 import { checkTenant, refInTenant, RecallError } from "./outbox.mjs";
 import { loadEntry as defaultLoadEntry } from "./refs.mjs";
 import { normTs } from "../../src/core/store.mjs";
-import { COLLECTION, tenantFilter } from "./indexer.mjs";
+import { COLLECTION, tenantFilter, errCode } from "./indexer.mjs";
 
 export const MAX_LIMIT = 50;
 export const MAX_QUERY = 2000;
@@ -60,16 +60,26 @@ export async function recall({ redis, qdrant, embed, tenant, query, limit = 10, 
   const q = validateQuery({ query, limit, kinds, since });
   const [vector] = await embed([q.query]);
   // Several chunks of one entry can hit; over-fetch, then keep the best per ref.
-  const hits = await qdrant.search(collection, vector, { filter: buildFilter(tenant, q), limit: Math.min(q.limit * 3, 150) });
+  let hits;
+  try {
+    hits = await qdrant.search(collection, vector, { filter: buildFilter(tenant, q), limit: Math.min(q.limit * 3, 150) });
+  } catch (e) {
+    // No collection yet (fresh deployment, or the volume was lost and not rebuilt): nothing indexed, nothing to recall.
+    if (e?.status === 404) return [];
+    throw e;
+  }
   const best = new Map();
   for (const h of hits) {
     const p = h.payload || {};
     if (p.tenant_id !== tenant || !refInTenant(tenant, p.ref)) continue; // defence in depth
     const cur = best.get(p.ref);
-    if (!cur || h.score > cur.score) best.set(p.ref, { ref: p.ref, score: h.score });
+    if (!cur || h.score > cur.score) best.set(p.ref, { ref: p.ref, score: h.score, content_hash: p.content_hash });
   }
-  const ranked = [...best.values()].sort((a, b) => b.score - a.score);
+  // Highest score first; on a tie the canonical lm: copy beats a legacy acmi: twin.
+  const lmFirst = (r) => (r.startsWith("lm:") ? 0 : 1);
+  const ranked = [...best.values()].sort((a, b) => b.score - a.score || lmFirst(a.ref) - lmFirst(b.ref));
   const out = [];
+  const seen = new Set();
   for (const h of ranked) {
     if (out.length >= q.limit) break;
     let loaded = null;
@@ -79,6 +89,12 @@ export async function recall({ redis, qdrant, embed, tenant, query, limit = 10, 
       loaded = null;
     }
     if (!loaded) continue; // deleted or missing in Redis: Redis wins
+    // One result per entry: an entry copied to both acmi: and lm: has two refs.
+    const e = loaded.entry && typeof loaded.entry === "object" ? loaded.entry : {};
+    const id = e.trail ?? e.correlationId;
+    const dedupe = typeof id === "string" && id ? `id|${id}|${loaded.ts_ms}` : `hash|${h.content_hash ?? h.ref}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
     out.push({ ref: h.ref, kind: loaded.kind, ts: loaded.ts_ms, score: h.score, entry: loaded.entry });
   }
   return out;
@@ -159,7 +175,7 @@ export function createRecallHandler({ redis, qdrant, embed, verifyKey, meter, co
       results = await recall({ redis, qdrant, embed, tenant, query: q.query, limit: q.limit, kinds: q.kinds, since: q.sinceMs, collection, loadEntry });
       await meter(redis, tenant, "recall", 1);
     } catch (e) {
-      log({ event: "recall_error", tenant, error: typeof e?.code === "string" ? e.code : "internal" });
+      log({ event: "recall_error", tenant, error: errCode(e) });
       return json(500, { error: "internal_error" });
     }
     return json(200, { results });

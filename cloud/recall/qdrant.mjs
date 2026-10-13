@@ -28,8 +28,26 @@ class QdrantError extends RecallError {
   }
 }
 
-export function createQdrant({ url, apiKey, fetch = globalThis.fetch, timeoutMs = 10_000 } = {}) {
-  if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new RecallError("bad_config", "qdrant url must be http(s)");
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const isLoopback = (host) => LOOPBACK.has(host) || host.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+$/.test(host);
+
+/**
+ * With an api key, the URL must be https:// (the key travels in a header).
+ * Plain http:// is allowed with a key only for loopback hosts, or when the
+ * caller passes insecureHttp: true for a private network it controls (e.g.
+ * the compose network between the indexer and Qdrant on one VM).
+ */
+export function createQdrant({ url, apiKey, fetch = globalThis.fetch, timeoutMs = 10_000, insecureHttp = false } = {}) {
+  let parsed;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    throw new RecallError("bad_config", "qdrant url must be http(s)");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new RecallError("bad_config", "qdrant url must be http(s)");
+  if (apiKey && parsed.protocol === "http:" && !isLoopback(parsed.hostname) && insecureHttp !== true) {
+    throw new RecallError("bad_config", "qdrant url must be https when an api key is set");
+  }
   if (typeof fetch !== "function") throw new RecallError("bad_config", "fetch is not available");
   const base = url.replace(/\/+$/, "");
   const headers = { "content-type": "application/json" };

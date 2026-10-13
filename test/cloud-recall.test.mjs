@@ -7,8 +7,8 @@ import { redact, REDACTED } from "../cloud/recall/redact.mjs";
 import { createQdrant, createMemoryQdrant, filterMatches } from "../cloud/recall/qdrant.mjs";
 import { fakeEmbedder } from "../cloud/recall/embed.mjs";
 import { chunkText } from "../cloud/recall/chunk.mjs";
-import { loadEntry, logRef, parseRef } from "../cloud/recall/refs.mjs";
-import { indexOnce, rebuild, pointId, COLLECTION } from "../cloud/recall/indexer.mjs";
+import { loadEntry, logRef, parseRef, lmTwinRef, MAX_TEXT } from "../cloud/recall/refs.mjs";
+import { indexOnce, rebuild, pointId, prepareText, COLLECTION } from "../cloud/recall/indexer.mjs";
 import { recall, createRecallHandler } from "../cloud/recall/search.mjs";
 
 // memory-redis has no LPOP; add it (with the optional count) over its data map.
@@ -26,6 +26,17 @@ function redisWithLists() {
       return n == null ? (out[0] ?? null) : out.length ? out : null;
     }
     if (c === "LLEN") return base._data.get(String(args[0]))?.value.length ?? 0;
+    if (c === "LTRIM") {
+      const e = base._data.get(String(args[0]));
+      if (!e) return "OK";
+      const len = e.value.length;
+      let [s0, t0] = [Number(args[1]), Number(args[2])];
+      if (s0 < 0) s0 = Math.max(len + s0, 0);
+      if (t0 < 0) t0 = len + t0;
+      e.value = s0 > t0 ? [] : e.value.slice(s0, t0 + 1);
+      if (!e.value.length) base._data.delete(String(args[0]));
+      return "OK";
+    }
     return base(cmd, ...args);
   };
   r._data = base._data;
@@ -93,6 +104,7 @@ test("redact: every secret shape from the scan is replaced", () => {
   assert.equal(redact(`secret=${"Q".repeat(40)}`), `secret=${REDACTED}`);
   // Ordinary text is left alone.
   const plain = "deploy the bridge at 10am; token budget is 32 items; see sk-learn docs";
+  assert.ok(redact("x" + "ghp_" + "a".repeat(36)).endsWith(REDACTED), "a prefix glued to text is still caught");
   assert.equal(redact(plain), plain);
   assert.equal(redact(null), "");
 });
@@ -383,7 +395,7 @@ test("rebuild: after the Qdrant double is wiped, the index comes back from Redis
   assert.equal((await recall({ redis, qdrant, embed, tenant: "acme", query: "kafka consumer lag alert" }))[0].ref, a1.ref);
 
   qdrant.wipe();
-  await assert.rejects(recall({ redis, qdrant, embed, tenant: "acme", query: "kafka" }));
+  assert.deepEqual(await recall({ redis, qdrant, embed, tenant: "acme", query: "kafka" }), [], "no collection: nothing to recall");
 
   const r = await rebuild({ redis, qdrant, embed, tenant: "acme" });
   assert.equal(r.enqueued, 4);
@@ -623,4 +635,199 @@ test("fakeEmbedder: deterministic, unit length, similar text scores higher", asy
   const [q] = await e(["deploy bridge"]);
   assert.ok(dot(q, a) > dot(q, b));
   assert.equal(e.dim, 32);
+});
+
+// ─── review follow-ups (PR #29) ──────────────────────────────────────────
+
+// M1: shapes the review found leaking. Each must now be redacted whole.
+const REVIEW_SHAPES = {
+  jwt_bare: ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", ["eyJhbGci", "SflKxwRJ", "eyJzdWIi"]],
+  jwt_after_token_eq: ["token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", ["eyJ", "SflKxwRJ"]],
+  redis_url_no_user: ["redis://:s3cretRedisPassw0rd@redis.internal:6379", ["s3cretRedisPassw0rd"]],
+  amqp_url_no_user: ["amqp://:Rabb1tPassw0rd@mq:5672/vh", ["Rabb1tPassw0rd"]],
+  basic_auth: ["Authorization: Basic YWRtaW46aHVudGVyMnB3ZA==", ["YWRtaW46"]],
+  bearer_header: ["authorization: Bearer abcdefgh.ijklmnop.qrstuvwx", ["abcdefgh"]],
+  basic_bare: ["curl -H 'basic YWRtaW46aHVudGVyMnB3ZA=='", ["YWRtaW46"]],
+  short_password: ["password=Sup3r$ecret!2026", ["Sup3r$ecret"]],
+  mm_token_env: ["MM_TOKEN_OPENCODE=8fj3k2l1m0n9b8v7c6x5z4a3s2", ["8fj3k2l1m0n9"]],
+  token_26_chars: ["token=8fj3k2l1m0n9b8v7c6x5z4a3s2", ["8fj3k2l1m0n9"]],
+  db_pass_env: ["DB_PASS: Hunter2Hunter2Hunter2", ["Hunter2Hunter2"]],
+  json_password: ['{"password":"correct-horse-battery"}', ["correct-horse"]],
+  npm: [`npm_${"A1b2".repeat(9)}`, ["A1b2A1b2"]],
+  hf: [`hf_${"aBcD".repeat(9)}`, ["aBcDaBcD"]],
+  sendgrid: [`SG.${"a".repeat(22)}.${"b".repeat(43)}`, ["aaaaaaaaaa", "bbbbbbbbbb"]],
+  slack_webhook: ["https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX", ["T00000000", "XXXXXXXX"]],
+  discord_webhook: ["https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp_qrstuv", ["AbCdEfGh"]],
+};
+
+test("redact (review M1): JWTs, empty-user URLs, Basic/Bearer headers, short assigned secrets, npm_/hf_/SG./webhooks", () => {
+  for (const [name, [s, fragments]] of Object.entries(REVIEW_SHAPES)) {
+    const out = redact(`x ${s} y`);
+    assert.ok(out.includes(REDACTED), `${name} not redacted`);
+    for (const f of fragments) assert.ok(!out.includes(f), `${name} leaks ${f.slice(0, 4)}`);
+    assert.match(out, /^x .* y$/, `${name} ate the surrounding text`);
+  }
+  assert.equal(redact("redis://:pw0rd1234@h:6379/0"), `redis://${REDACTED}@h:6379/0`);
+  assert.equal(redact("Authorization: Basic YWRtaW46aHVudGVyMnB3ZA=="), `Authorization: Basic ${REDACTED}`);
+  assert.equal(redact("MM_TOKEN_OPENCODE=8fj3k2l1m0n9b8v7c6x5z4a3s2 next"), `MM_TOKEN_OPENCODE=${REDACTED} next`);
+  // Ordinary prose and short values are untouched.
+  for (const plain of ["a basic understanding of the plan", "token=abc123", "password: hunter2", "pass the salt", "the bearer of good news", "eyJ is how JWTs start"]) {
+    assert.equal(redact(plain), plain);
+  }
+});
+
+test("redact (review M1): raw base64 key material without PEM armour is a known limitation", () => {
+  // Documented, not asserted as redacted: a regex can't tell key bytes from other base64.
+  const s = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7";
+  assert.equal(typeof redact(s), "string");
+});
+
+test("redact (review L1): a secret straddling the 32 KiB cap leaves no fragment (redact runs before the cap)", async () => {
+  const ctx = await setup();
+  const { redis, qdrant } = ctx;
+  const tok = "ghp_" + "Kx7".repeat(12);
+  const key = "lm:t-acme:channel:x:log";
+  const prefixLen = MAX_TEXT - "summary: ".length - 19; // an early cap would keep 19 chars of the token
+  const member = JSON.stringify({ ts: 9, trail: "cap1", summary: "a".repeat(prefixLen) + tok });
+  await redis("ZADD", key, 9, member);
+  await enqueue(redis, "acme", { ref: logRef(key, 9, member) });
+  await drain(ctx, "acme");
+  const blob = JSON.stringify(qdrant.points(COLLECTION).map((p) => p.payload));
+  assert.ok(qdrant.points(COLLECTION).length > 0);
+  assert.ok(!blob.includes("ghp_Kx7") && !blob.includes("Kx7Kx7"));
+  // Over the raw bound, the cut goes back to whitespace, so a straddling token is dropped whole.
+  const huge = "w ".repeat(512 * 1024 - 5) + "x " + tok;
+  const prepared = prepareText(huge);
+  assert.ok(prepared.length <= MAX_TEXT && !prepared.includes("Kx7"));
+  const unspaced = prepareText("a".repeat(1024 * 1024 - 10) + tok);
+  assert.ok(!unspaced.includes("Kx7"));
+});
+
+test("search (review L2): the handler logs only allowlisted error codes", async () => {
+  const redis = redisWithLists();
+  const tok = "ghp_" + "Lg4".repeat(12);
+  const logs = [];
+  const h = createRecallHandler({
+    redis,
+    qdrant: { search: async () => { throw Object.assign(new Error(`down ${tok}`), { code: `ECONN ${tok}` }); } },
+    embed,
+    verifyKey: async () => ({ tenant: "acme", keyid: "k1" }),
+    meter: async () => {},
+    log: (e) => logs.push(e),
+  });
+  const r = await h.handle({ method: "POST", headers: { authorization: "Bearer k" }, body: { query: "x" } });
+  assert.equal(r.status, 500);
+  assert.deepEqual(logs, [{ event: "recall_error", tenant: "acme", error: "index_failed" }]);
+  const ok = createRecallHandler({ redis, qdrant: { search: async () => { throw Object.assign(new Error("x"), { code: "qdrant_error" }); } }, embed, verifyKey: async () => ({ tenant: "acme" }), meter: async () => {}, log: (e) => logs.push(e) });
+  await ok.handle({ method: "POST", headers: { authorization: "Bearer k" }, body: { query: "x" } });
+  assert.equal(logs.at(-1).error, "qdrant_error");
+});
+
+test("outbox (review L3): forged kind/ts are dropped, oversized or secret refs are hashed, the DLQ is bounded", async () => {
+  const ctx = await setup();
+  const { redis, qdrant } = ctx;
+  const secretKind = "ghp_" + "Pp1".repeat(12);
+  const hugeRef = "lm:t-acme:channel:x:log@1#" + "z".repeat(2_000_000);
+  const secretRef = "lm:t-acme:channel:" + "ghp_" + "Qq2".repeat(12) + ":log@1#a";
+  await redis("RPUSH", outboxKey("acme"), JSON.stringify({ ref: "lm:t-beta:c:x:log@1#a", kind: secretKind, ts: { evil: true } }));
+  await redis("RPUSH", outboxKey("acme"), JSON.stringify({ ref: hugeRef, kind: "memo", ts: 1 }));
+  await redis("RPUSH", outboxKey("acme"), JSON.stringify({ ref: secretRef, kind: "x".repeat(65), ts: "1" }));
+  const s = await indexOnce({ redis, qdrant, embed, tenant: "acme" });
+  assert.equal(s.dead, 3);
+  const raw = (await redis("LRANGE", dlqKey("acme"), 0, -1)).join("\n");
+  assert.ok(!raw.includes(secretKind) && !raw.includes("Qq2Qq2") && !raw.includes("evil"));
+  assert.ok(raw.length < 2000, "a 2 MB ref is not copied into the DLQ");
+  for (const d of raw.split("\n").map((x) => JSON.parse(x))) {
+    assert.equal(d.ref, null);
+    assert.match(d.ref_sha256, /^[0-9a-f]{12}$/);
+    assert.equal(d.error, "bad_ref");
+    assert.ok(d.kind === null || d.kind === "memo");
+    assert.ok(d.ts === null || d.ts === 1);
+  }
+  // Bounded: only the newest dlqMax entries are kept.
+  for (let i = 0; i < 7; i++) await redis("RPUSH", outboxKey("acme"), `bad-${i}`);
+  await indexOnce({ redis, qdrant, embed, tenant: "acme", dlqMax: 5 });
+  const dlq = await redis("LRANGE", dlqKey("acme"), 0, -1);
+  assert.equal(dlq.length, 5);
+  assert.ok(dlq.every((d) => JSON.parse(d).error === "bad_item"));
+});
+
+test("dedupe (review L4): an entry under both acmi: and lm: is indexed once, as lm:, and returned once", async () => {
+  const ctx = await setup();
+  const { redis, qdrant, acme } = ctx;
+  // A legacy ACMI timeline entry, migrated to lm: (ns thread -> channel, s -> ms).
+  const acmiKey = "acmi:t-acme:thread:retro:timeline";
+  const acmiMember = JSON.stringify({ ts: 1791731538, source: "agent:x", kind: "coord-note", correlationId: "dupCid-1", summary: "migrated falcon launch retro notes" });
+  await redis("ZADD", acmiKey, 1791731538, acmiMember);
+  const lm = await acme.append("channel", "retro", { ts: 1791731538000, by: "agent:x", kind: "memo", trail: "dupCid-1", summary: "migrated falcon launch retro notes" });
+  const lmKeyName = acme.key("channel", "retro", "log");
+  const acmiRef = logRef(acmiKey, 1791731538, acmiMember);
+  const lmRef = `${lmKeyName}@${lm.ts}#dupCid-1`;
+  assert.equal(await lmTwinRef(redis, "acme", acmiRef), lmRef);
+  assert.equal(await lmTwinRef(redis, "acme", lmRef), null);
+
+  // Rebuild skips the acmi: twin.
+  const r = await rebuild({ redis, qdrant, embed, tenant: "acme" });
+  assert.equal(r.enqueued, 1);
+  await drain(ctx, "acme");
+  assert.deepEqual([...new Set(qdrant.points(COLLECTION).map((p) => p.payload.ref))], [lmRef]);
+
+  // The indexer also refuses to index the twin directly, and clears any old points for it.
+  await enqueue(redis, "acme", { ref: acmiRef });
+  const s = await indexOnce({ redis, qdrant, embed, tenant: "acme" });
+  assert.equal(s.removed, 1);
+  assert.deepEqual([...new Set(qdrant.points(COLLECTION).map((p) => p.payload.ref))], [lmRef]);
+
+  const out = await recall({ redis, qdrant, embed, tenant: "acme", query: "falcon launch retro notes", limit: 5 });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].ref, lmRef);
+});
+
+test("dedupe (review L4): recall collapses twins by trail + ts even if both were indexed (same-ns copy)", async () => {
+  const ctx = await setup();
+  const { redis, qdrant } = ctx;
+  const e = { correlationId: "dupCid-2", kind: "coord-note", summary: "migrated heron launch retro notes" };
+  const put = async (key) => {
+    const m = JSON.stringify({ ts: 1791731538000, ...e });
+    await redis("ZADD", key, 1791731538000, m);
+    return logRef(key, 1791731538000, m);
+  };
+  const aRef = await put("acmi:t-acme:thread:retro2:timeline");
+  const lRef = await put("lm:t-acme:thread:retro2:log");
+  // Index both directly, bypassing the twin check, as an older indexer would have.
+  const { indexRef } = await import("../cloud/recall/indexer.mjs");
+  await indexOnce({ redis, qdrant, embed, tenant: "acme" }); // creates the collection
+  await indexRef({ redis, qdrant, embed, tenant: "acme", ref: aRef, loadEntry });
+  await indexRef({ redis, qdrant, embed, tenant: "acme", ref: lRef, loadEntry });
+  // aRef is skipped as a twin of lRef, so plant its points by hand to simulate legacy data.
+  const [lp] = qdrant.points(COLLECTION).filter((p) => p.payload.ref === lRef);
+  await qdrant.upsert(COLLECTION, [{ id: pointId("acme", aRef, 0), vector: lp.vector, payload: { ...lp.payload, ref: aRef } }]);
+  const out = await recall({ redis, qdrant, embed, tenant: "acme", query: "heron launch retro notes", limit: 2 });
+  assert.equal(out.length, 1, "one result per entry");
+  assert.equal(out[0].ref, lRef, "the lm: copy wins the tie");
+});
+
+test("search (review L5): recall before the collection exists returns [] and the handler answers 200", async () => {
+  const redis = redisWithLists();
+  const qdrant = createMemoryQdrant();
+  assert.deepEqual(await recall({ redis, qdrant, embed, tenant: "acme", query: "anything" }), []);
+  const metered = [];
+  const h = createRecallHandler({ redis, qdrant, embed, verifyKey: async () => ({ tenant: "acme", keyid: "k1" }), meter: async (...a) => metered.push(a) });
+  const r = await h.handle({ method: "POST", headers: { authorization: "Bearer k" }, body: { query: "x" } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { results: [] });
+  assert.equal(metered.length, 1);
+  // Other Qdrant failures are still errors.
+  await assert.rejects(recall({ redis, qdrant: { search: async () => { throw Object.assign(new Error("x"), { status: 503 }); } }, embed, tenant: "acme", query: "x" }));
+});
+
+test("qdrant (review info): http:// with an api key is refused except on loopback or an explicit private-network opt-in", () => {
+  const fetch = async () => ({});
+  assert.throws(() => createQdrant({ url: "http://qdrant.public.example:6333", apiKey: "k", fetch }), { code: "bad_config" });
+  for (const url of ["http://localhost:6333", "http://127.0.0.1:6333", "http://[::1]:6333", "http://qdrant.localhost:6333", "https://qdrant.public.example:6333"]) {
+    assert.doesNotThrow(() => createQdrant({ url, apiKey: "k", fetch }), url);
+  }
+  assert.doesNotThrow(() => createQdrant({ url: "http://qdrant:6333", apiKey: "k", fetch, insecureHttp: true }));
+  assert.doesNotThrow(() => createQdrant({ url: "http://qdrant:6333", fetch }), "no key, nothing to leak");
+  assert.throws(() => createQdrant({ url: "not a url", fetch }), { code: "bad_config" });
 });

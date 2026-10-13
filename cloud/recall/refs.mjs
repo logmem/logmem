@@ -26,15 +26,20 @@
 
 import { createHash } from "node:crypto";
 import { stableJson, tryParse, normTs } from "../../src/core/store.mjs";
-import { asEntry } from "../../src/core/vocab.mjs";
+import { asEntry, nsFromAcmi } from "../../src/core/vocab.mjs";
 import { RecallError, refInTenant, checkTenant, tenantNs, MAX_REF } from "./outbox.mjs";
 import { hasSecret } from "./redact.mjs";
 
 const LOG_REF_RE = /^(.+:(?:log|timeline))@(-?\d+(?:\.\d+)?)#(.+)$/;
 const DOC_SUFFIXES = [":who", ":recap", ":profile", ":rollup:latest"];
 // Keys that are never recall material, even if a suffix happens to match.
+// Only the namespace's top-level segment is checked: protected data lives at
+// lm:t-{id}:{session|registry|ask|decision|oauth}:..., never deeper. A deeper
+// segment named "oauth" (lm:t-{id}:agent:oauth:log) is an ordinary entity id.
 const DENY_RE = /^(?:lm|acmi):[^:]+:(?:session|registry|ask|decision|oauth|outbox|cloud)(?::|$)/;
 
+// MAX_TEXT bounds what is embedded; it is applied by the indexer AFTER redaction
+// (prepareText in indexer.mjs), so a cut can never leave a secret fragment.
 export const MAX_TEXT = 32 * 1024;
 
 /** The stable id of one log member. */
@@ -70,16 +75,12 @@ export function parseRef(tenant, ref) {
   throw new RecallError("bad_ref", "invalid ref");
 }
 
-function cap(s) {
-  return s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) : s;
-}
-
-/** Text the indexer embeds for one log entry (before redaction). */
+/** Text the indexer embeds for one log entry (before redaction; uncapped). */
 export function entryText(e) {
   const parts = [];
   for (const f of ["kind", "summary", "question", "action"]) if (e[f] != null && e[f] !== "") parts.push(`${f}: ${typeof e[f] === "string" ? e[f] : JSON.stringify(e[f])}`);
   if (e.payload !== undefined) parts.push(`payload: ${typeof e.payload === "string" ? e.payload : JSON.stringify(e.payload)}`);
-  return cap(parts.join("\n"));
+  return parts.join("\n");
 }
 
 const docKind = (key) => (key.endsWith(":rollup:latest") ? "recap" : key.endsWith(":profile") ? "who" : key.slice(key.lastIndexOf(":") + 1));
@@ -110,7 +111,34 @@ export async function loadEntry(redis, tenant, ref) {
   if (raw == null) return null;
   const doc = tryParse(raw);
   const ts = doc && typeof doc === "object" ? normTs(doc.updated_at ?? doc.ts ?? 0) : 0;
-  return { kind: docKind(r.key), ts_ms: ts, text: cap(typeof doc === "string" ? doc : JSON.stringify(doc)), entry: doc };
+  return { kind: docKind(r.key), ts_ms: ts, text: typeof doc === "string" ? doc : JSON.stringify(doc), entry: doc };
+}
+
+/**
+ * For a legacy acmi:t-{id}:{ns}:{eid}:timeline ref: the ref of the lm: copy of
+ * the same entry (same id, same ms) if the migration made one, else null.
+ * The lm: copy is canonical; the indexer and rebuild skip the acmi: twin.
+ */
+export async function lmTwinRef(redis, tenant, ref) {
+  let r;
+  try {
+    r = parseRef(tenant, ref);
+  } catch {
+    return null;
+  }
+  if (r.type !== "log" || !r.key.startsWith("acmi:")) return null;
+  const m = /^acmi:([^:]+):([^:]+):(.+):timeline$/.exec(r.key);
+  if (!m) return null;
+  const [, space, ens, eid] = m;
+  const ts = normTs(r.score);
+  for (const lns of new Set([nsFromAcmi(ens), ens])) {
+    const key = `lm:${space}:${lns}:${eid}:log`;
+    if (String((await redis("TYPE", key)) || "none").toLowerCase() !== "zset") continue;
+    for (const member of (await redis("ZRANGEBYSCORE", key, ts, ts)) || []) {
+      if (entryId(member) === r.id) return `${key}@${ts}#${r.id}`;
+    }
+  }
+  return null;
 }
 
 /** Every canonical key pattern rebuild walks for a tenant. */
