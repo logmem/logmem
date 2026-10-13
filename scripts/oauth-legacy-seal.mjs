@@ -24,6 +24,13 @@
 // sealing legacy records under it would lock those users out too), and the
 // CLI exits non-zero. Deleting only ever happens with an explicit --delete.
 //
+// A raw access token and raw refresh token minted together share client_id,
+// space, sub, scope, and issued_at. Seal mode joins that 1:1 pair into one
+// grant family (fid on both, sibling_at on the refresh, fam:<fid> set) so a
+// later reuse inside the grace window revokes the pre-migration access token
+// along with the rotated pair. Ambiguous groups (not exactly one of each)
+// are sealed without a family rather than cross-linked.
+//
 // Legacy records are sealed with a TTL clamped to min(remaining TTL, the
 // kind's TTL, expires_at - now); expires_at itself is never changed.
 //
@@ -37,7 +44,7 @@
 //   node scripts/oauth-legacy-seal.mjs --apply      # do it
 
 import { pathToFileURL } from "node:url";
-import { KEY, TTL, LEGACY_CUTOFF_MS, deployRedis, loadKek, parse, sealRecord, sha256hex, isV1Sealed, canOpenRecord, storageNow } from "../api/oauth/_lib/storage.mjs";
+import { KEY, TTL, LEGACY_CUTOFF_MS, deployRedis, loadKek, parse, sealRecord, sha256hex, randomToken, isV1Sealed, canOpenRecord, storageNow } from "../api/oauth/_lib/storage.mjs";
 
 const KINDS = [
   { kind: "access", prefix: "lm:oauth:token:", dest: KEY.access, ttl: TTL.access },
@@ -49,6 +56,40 @@ const HASHED_KINDS = [
   { kind: "access", prefix: "lm:oauth:at:", ttl: TTL.access },
   { kind: "refresh", prefix: "lm:oauth:rt:", ttl: TTL.refresh },
 ];
+
+/** Identity of one grant at mint time. null when the record cannot be paired safely. */
+function pairKey(rec) {
+  if (!rec || typeof rec.client_id !== "string" || rec.client_id.length === 0) return null;
+  if (typeof rec.issued_at !== "number" || !Number.isFinite(rec.issued_at)) return null;
+  return [rec.client_id, rec.space ?? "", rec.sub ?? "", rec.scope ?? "", String(rec.issued_at)].join("\0");
+}
+
+/**
+ * Give each unambiguous raw access/refresh pair one family id. The refresh
+ * record's sibling_at is the hash the sealed access token will be stored under,
+ * which is what reuse detection deletes.
+ */
+function assignGrantFamilies(items) {
+  const groups = new Map();
+  for (const item of items) {
+    if (item.action !== "seal") continue;
+    const pk = pairKey(item.rec);
+    if (!pk) continue;
+    let g = groups.get(pk);
+    if (!g) groups.set(pk, (g = { access: [], refresh: [] }));
+    if (item.k.kind === "access" || item.k.kind === "refresh") g[item.k.kind].push(item);
+  }
+  for (const g of groups.values()) {
+    if (g.access.length !== 1 || g.refresh.length !== 1) continue;
+    const fid = randomToken(16);
+    const at = g.access[0];
+    const rt = g.refresh[0];
+    at.rec = { ...at.rec, fid };
+    rt.rec = { ...rt.rec, fid, sibling_at: sha256hex(at.raw) };
+    at.fid = fid;
+    rt.fid = fid;
+  }
+}
 
 async function scanAll(r, pattern) {
   const keys = [];
@@ -107,6 +148,7 @@ export async function migrateLegacy(r, { apply = false, mode = "seal", log = () 
   // 2. Legacy raw-key records.
   // expires_at is wall-clock seconds; the storage clock only drives the legacy cutoff.
   const nowS = Math.floor(Date.now() / 1000);
+  const legacy = [];
   for (const k of KINDS) {
     for (const key of await scanAll(r, `${k.prefix}*`)) {
       const raw = key.slice(k.prefix.length);
@@ -121,18 +163,27 @@ export async function migrateLegacy(r, { apply = false, mode = "seal", log = () 
       let ttl = remaining > 0 ? Math.min(remaining, k.ttl) : k.ttl;
       if (Number.isFinite(rec.expires_at)) ttl = Math.min(ttl, Math.floor(rec.expires_at) - nowS);
       const action = mode === "seal" && k.dest && ttl > 0 ? "seal" : "delete";
-      report.actions.push({ kind: k.kind, key: short, action });
-      log(`${apply ? "" : "[dry-run] "}${action} ${k.kind} ${short}…`);
-      if (!apply) continue;
-      if (action === "seal") {
-        const h = sha256hex(raw);
-        await r("SET", k.dest(h), JSON.stringify(sealRecord(rec, k.kind, h)), "EX", String(ttl));
-        report.sealed++;
-      } else {
-        report.deleted++;
-      }
-      await r("DEL", key);
+      legacy.push({ k, key, raw, rec, short, ttl, action });
     }
+  }
+  if (mode === "seal") assignGrantFamilies(legacy);
+  for (const item of legacy) {
+    report.actions.push({ kind: item.k.kind, key: item.short, action: item.action });
+    log(`${apply ? "" : "[dry-run] "}${item.action} ${item.k.kind} ${item.short}…`);
+    if (!apply) continue;
+    if (item.action === "seal") {
+      const h = sha256hex(item.raw);
+      await r("SET", item.k.dest(h), JSON.stringify(sealRecord(item.rec, item.k.kind, h)), "EX", String(item.ttl));
+      if (item.fid) {
+        const member = item.k.kind === "access" ? `at:${h}` : `rt:${h}`;
+        await r("SADD", KEY.family(item.fid), member);
+        await r("EXPIRE", KEY.family(item.fid), String(TTL.refresh));
+      }
+      report.sealed++;
+    } else {
+      report.deleted++;
+    }
+    await r("DEL", item.key);
   }
 
   // 3. --delete only: v1 hashed records.

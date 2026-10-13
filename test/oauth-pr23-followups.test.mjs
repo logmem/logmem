@@ -13,6 +13,7 @@ import {
   sha256hex,
 } from "../api/oauth/_lib/storage.mjs";
 import tokenHandler from "../api/oauth/token.mjs";
+import { migrateLegacy } from "../scripts/oauth-legacy-seal.mjs";
 import { oauthRedis, withEnv, mockReq, mockRes, TEST_KEK_HEX } from "./oauth-helpers.mjs";
 
 afterEach(() => {
@@ -101,5 +102,75 @@ test("pr23: a v1 refresh token and auth code spliced under an attacker key mint 
     } finally {
       console.warn = warn;
     }
+  });
+});
+
+test("pr23: a migrated raw refresh/access pair joins one grant family, and reuse revokes the pre-migration access token", async () => {
+  await withEnv(KEK, async () => {
+    const r = oauthRedis();
+    __setRedisForTests(r);
+    const c = await registerClient({ redirect_uris: ["https://app.example/cb"], token_endpoint_auth_method: "none" });
+    const issued_at = 1_700_000_000;
+    const common = {
+      client_id: c.client_id,
+      scope: "mcp",
+      sub: "rest:e.example",
+      space: "acme",
+      issued_at,
+      upstash_url: "https://x.example/exec",
+      upstash_token: "SECRET-PAIR",
+      backend: { kind: "upstash", url: "https://x.example/exec", token: "SECRET-PAIR" },
+    };
+    const rawA = "a".repeat(64);
+    const rawR = "b".repeat(64);
+    const rawOther = "d".repeat(64);
+    put(r, `lm:oauth:token:${rawA}`, { ...common, expires_at: 9e9 });
+    put(r, `lm:oauth:refresh:${rawR}`, { ...common });
+    // Same client, different issued_at: not this grant, must survive a reuse.
+    put(r, `lm:oauth:token:${rawOther}`, { ...common, issued_at: issued_at + 50, expires_at: 9e9, upstash_token: "SECRET-OTHER" });
+    r.ttls.set(`lm:oauth:token:${rawA}`, 4000);
+    r.ttls.set(`lm:oauth:refresh:${rawR}`, 8000);
+    r.ttls.set(`lm:oauth:token:${rawOther}`, 4000);
+    const before = JSON.stringify([...r.data.entries()]);
+
+    const dry = await migrateLegacy(r, { apply: false });
+    assert.equal(JSON.stringify([...r.data.entries()]), before, "dry run writes nothing");
+    assert.equal(dry.sealed, 0);
+    assert.ok(![...r.data.keys()].some((k) => k.startsWith("lm:oauth:fam:")));
+
+    const done = await migrateLegacy(r, { apply: true, confirmUnverifiedKek: true });
+    assert.equal(done.sealed, 3);
+    const atRec = JSON.parse(r.data.get(KEY.access(sha256hex(rawA))).value);
+    const rtRec = JSON.parse(r.data.get(KEY.refresh(sha256hex(rawR))).value);
+    const otherRec = JSON.parse(r.data.get(KEY.access(sha256hex(rawOther))).value);
+    assert.match(atRec.fid, /^[0-9a-f]{32}$/);
+    assert.equal(rtRec.fid, atRec.fid);
+    assert.equal(rtRec.sibling_at, sha256hex(rawA));
+    assert.equal(otherRec.fid, undefined, "an unmatched access token is not pulled into the pair");
+    const members = await r("SMEMBERS", KEY.family(atRec.fid));
+    assert.deepEqual([...members].sort(), [`at:${sha256hex(rawA)}`, `rt:${sha256hex(rawR)}`].sort());
+
+    assert.equal((await lookupAccessToken(rawA)).upstash_token, "SECRET-PAIR");
+    const res = mockRes();
+    await tokenHandler(mockReq({ method: "POST", body: { grant_type: "refresh_token", refresh_token: rawR, client_id: c.client_id } }), res);
+    assert.equal(res.statusCode, 200, res.body);
+    const rotated = JSON.parse(res.body);
+    assert.ok(await lookupAccessToken(rotated.access_token));
+    assert.ok(await lookupAccessToken(rawA), "pre-migration access token stays live until reuse");
+
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const replay = mockRes();
+      await tokenHandler(mockReq({ method: "POST", body: { grant_type: "refresh_token", refresh_token: rawR, client_id: c.client_id } }), replay);
+      assert.equal(replay.statusCode, 400);
+      assert.equal(JSON.parse(replay.body).error, "invalid_grant");
+    } finally {
+      console.warn = warn;
+    }
+    assert.equal(await lookupAccessToken(rawA), null, "reuse revokes the pre-migration access token");
+    assert.equal(await lookupAccessToken(rotated.access_token), null, "reuse revokes the rotated access token");
+    assert.equal(r.data.has(KEY.refresh(sha256hex(rotated.refresh_token))), false);
+    assert.equal((await lookupAccessToken(rawOther)).upstash_token, "SECRET-OTHER");
   });
 });
