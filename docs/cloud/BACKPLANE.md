@@ -14,7 +14,11 @@ packages, env vars, API paths, headers, error messages and docs. Internal code i
    `tenant_id` in the payload (Decision 0004).
 3. **Meter operations, not seats.** Adds, reads and recalls, per tenant per month, enforced against plan quotas.
 4. **Isolate tenants twice:** by Redis key namespace and by Qdrant payload filter. A tenant credential can never
-   name another tenant's namespace.
+   name another tenant's namespace. **Tenant namespace = `t-{id}`**: keys live under `acmi:t-{id}:` and `lm:t-{id}:`,
+   and the Qdrant `tenant_id` is the bare `{id}`. The `t-` segment is never used by fleet or system keys (verified
+   against live Redis on 2026-10-13), so no tenant id can land on `acmi:agent:`, `acmi:work:`, `lm:oauth:` and
+   similar trees (review of PR #28, finding M1). Use `namespaceFor(id)` from cloud/tenants; never build the prefix
+   by hand.
 5. **One bridge binary per tenant.** Each tenant gets its own `acmi-bridge` process with its own token. It can only
    touch its own namespace.
 6. **No secrets in events, signals or timeline entries.** Tokens and keys live in Infisical and process env only.
@@ -24,12 +28,12 @@ packages, env vars, API paths, headers, error messages and docs. Internal code i
 
 ```
 customer agents ──MCP/HTTP──▶ acmi-bridge (one per tenant, token T_t)
-                                 │  jail: keys must start with acmi:{tenant}:  (and lm:{tenant}:)
+                                 │  jail: keys must start with acmi:t-{tenant}:  (and lm:t-{tenant}:)
                                  │  command allowlist, size caps, rate limit
                                  │  meter: INCR acmi:cloud:meter:{tenant}:{yyyymm}:{op}
                                  ▼
                            Redis/Valkey (shared VM, canonical)
-                                 │  outbox: acmi:{tenant}:outbox (stream/list)
+                                 │  outbox: acmi:t-{tenant}:outbox (stream/list)
                                  ▼
                            acmi-indexer ──embed──▶ Qdrant collection acmi_memory_v1
                                                     payload: tenant_id, ref, kind, ts…
@@ -38,7 +42,9 @@ control plane (acmi-cloud CLI + API): tenants, plans, keys, provisioning, quotas
 
 ### 1. Tenant registry (control plane, `cloud/tenants`)
 - `acmi:cloud:tenant:{id}` hash holds `id, name, plan, status, created_at, namespace, bridge_port, key_ids`. Tenant
-  ids are `^[a-z][a-z0-9-]{2,30}$`. `madez`, `cloud`, `probe`, `admin` and `system` are reserved.
+  ids are `^[a-z][a-z0-9-]{2,30}$`. Reserved, as defence in depth on top of the `t-` namespace: `madez`, `cloud`,
+  `probe`, `admin`, `system`, `agent`, `work`, `thread`, `bus`, `user`, `oauth`, `onboard`, `fieldnotes`,
+  `registry`, `tenant`, `inbox`, `relay`, `acmi`, `lm`, `logmem`, `mcp`, `api`, `www`, `t`.
 - **API keys.**
   - Format: `acmi_live_<keyid>_<secret>`.
   - The registry stores only `sha256(secret)` and metadata, keyed by `keyid`.
@@ -64,7 +70,7 @@ control plane (acmi-cloud CLI + API): tenants, plans, keys, provisioning, quotas
   - `ACMI_REDIS_URL` (internal network)
   - `ACMI_BRIDGE_PORT`, `ACMI_PLAN_QUOTAS`
 - **Jail:**
-  - Every key argument (resolved per command from a table) must start with `acmi:{tenant}:` or `lm:{tenant}:`.
+  - Every key argument (resolved per command from a table) must start with `acmi:t-{tenant}:` or `lm:t-{tenant}:`.
   - Cross-key commands (`RENAME`, `SMOVE`, `ZUNIONSTORE`…) check every key.
   - `SCAN` and `KEYS` get a forced `MATCH` prefix.
   - Not allowed: `EVAL`, `SCRIPT`, `FLUSH*`, `CONFIG`, `CLIENT`, `MODULE`, `MONITOR`, `SELECT`, `MIGRATE`,
@@ -78,7 +84,7 @@ control plane (acmi-cloud CLI + API): tenants, plans, keys, provisioning, quotas
   control plane.
 
 ### 4. Recall (`cloud/recall`)
-- **Outbox:** the bridge (or the server) appends `{ref, tenant, kind, ts, text_hash}` to `acmi:{tenant}:outbox`.
+- **Outbox:** the bridge (or the server) appends `{ref, tenant, kind, ts, text_hash}` to `acmi:t-{tenant}:outbox`.
   Only refs and hashes go in, never secret-bearing payloads.
 - **Indexer:**
   - Reads the outbox, loads the canonical entry from Redis, then redacts secret-shaped strings (same patterns as the
