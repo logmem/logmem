@@ -17,8 +17,8 @@
 // redirects and times out, and probe failures show one generic message —
 // upstream error bodies are never echoed to the page.
 //
-// Clickjacking / CSRF: every HTML response sends frame-ancestors 'none' and
-// X-Frame-Options DENY. The consent form carries a CSRF token =
+// Clickjacking / CSRF: every HTML response sends one full CSP (frame-ancestors
+// 'none'; see consentCsp) and X-Frame-Options DENY. The consent form carries a CSRF token =
 // exp.HMAC(key, [nonce, exp, auth-request params]) where nonce lives in a
 // SameSite=Strict HttpOnly cookie set with the form. POST verifies both, so a
 // cross-site page cannot submit (or pre-fill) consent for the user.
@@ -34,12 +34,45 @@ const CSRF_COOKIE = "lm_oauth_csrf";
 const CSRF_TTL_S = 600;
 const BOUND_PARAMS = ["client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "response_type"];
 
-function htmlHeaders(res, status) {
+// vercel.json excludes this path from the site-wide CSP, so this function
+// sends the ONLY Content-Security-Policy header here. BASE_CSP must stay
+// identical to the global policy in vercel.json apart from form-action
+// (test/oauth-csp.test.mjs checks this). form-action has to name the client's
+// redirect_uri origin: Chromium enforces the consent document's form-action on
+// every hop of the form navigation, including our 302 to the client callback.
+const BASE_CSP = [
+  "default-src 'self'",
+  "img-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline'",
+  "connect-src 'self'",
+  "font-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+];
+const SAFE_ORIGIN = /^https?:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?$|^https?:\/\/\[[0-9A-Fa-f:.]+\](?::\d{1,5})?$/;
+
+/** CSP for the consent page: form-action 'self' plus the (already validated) redirect_uri origin. */
+export function consentCsp(redirect_uri) {
+  let origin = null;
+  try {
+    origin = new URL(redirect_uri).origin;
+  } catch {
+    // unreachable for a validated redirect_uri; fall back to 'self' only
+  }
+  const formAction = origin && SAFE_ORIGIN.test(origin) ? `form-action 'self' ${origin}` : "form-action 'self'";
+  return [...BASE_CSP, formAction].join("; ");
+}
+
+/** CSP for error pages: they hold no form, so nothing may be submitted. */
+export const ERROR_CSP = [...BASE_CSP, "form-action 'none'"].join("; ");
+
+function htmlHeaders(res, status, csp) {
   res.statusCode = status;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+  res.setHeader("Content-Security-Policy", csp);
 }
 
 function readCookie(req, name) {
@@ -71,7 +104,7 @@ export function verifyCsrf(nonce, token, params, nowS = Math.floor(Date.now() / 
 
 /** Render the consent form with a CSRF token bound to `nonce` and the request params. */
 function sendConsent(res, status, params, nonce, error) {
-  htmlHeaders(res, status);
+  htmlHeaders(res, status, consentCsp(params.redirect_uri));
   res.end(renderConsent({ params: { ...params, csrf_token: issueCsrf(nonce, params) }, error }));
 }
 
@@ -183,7 +216,7 @@ function renderErrorPage(title, detail) {
 
 /** 400/503 page for errors that must not redirect (unknown client, bad redirect_uri, server config). */
 function sendErrorPage(res, status, title, detail) {
-  htmlHeaders(res, status);
+  htmlHeaders(res, status, ERROR_CSP);
   res.end(renderErrorPage(title, detail));
 }
 
