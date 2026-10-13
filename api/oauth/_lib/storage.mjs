@@ -1,7 +1,10 @@
 // OAuth storage on the deploy-owner Redis (LOGMEM_DEPLOY_REST_URL/_TOKEN).
-// In production (VERCEL_ENV=production) those are required: there is no
-// fallback to UPSTASH_REDIS_REST_URL, so OAuth records never land in a shared
-// user-data Redis by accident. Elsewhere the UPSTASH_* fallback stays for dev.
+// Fail closed by default: those are required, and there is no fallback to
+// UPSTASH_REDIS_REST_URL, so OAuth records never land in a shared user-data
+// Redis by accident. The UPSTASH_* fallback and plaintext creds (no KEK) are
+// allowed only in local dev: VERCEL_ENV unset or "development", or
+// LOGMEM_OAUTH_ALLOW_INSECURE=1. Preview deployments fail closed like
+// production, and production ignores the opt-in flag.
 //
 // Keys (all under lm:oauth:, outside every space). Secrets are never key
 // material: every token/code key is sha256(value) in hex, and hashed records
@@ -30,8 +33,9 @@
 // redirect_uri, code_challenge, ...). So a sealed blob copied under another
 // key, or next to edited plaintext fields, fails to open. Envelopes without
 // `v` were sealed with the constant v1 AAD; they open only until
-// LEGACY_CUTOFF_MS (scripts/oauth-legacy-seal.mjs re-seals them as v2). Without a KEK, production refuses to
-// mint (KekMissingError -> 503); other envs store {enc:"none", warning, data}.
+// LEGACY_CUTOFF_MS (scripts/oauth-legacy-seal.mjs re-seals them as v2).
+// Without a KEK, minting is refused (KekMissingError -> 503) unless
+// insecureAllowed(); local dev then stores {enc:"none", warning, data}.
 //
 // Token contents bind a backend AND a space: the MCP route restores the
 // user's Redis creds and pins the connection to that one space.
@@ -71,7 +75,7 @@ const GCM_TAG_BYTES = 16;
 
 export class KekMissingError extends Error {
   constructor() {
-    super("LOGMEM_OAUTH_KEK is not configured; refusing to store credentials in production");
+    super("LOGMEM_OAUTH_KEK is not configured; refusing to store credentials (set it, or LOGMEM_OAUTH_ALLOW_INSECURE=1 for local dev)");
     this.name = "KekMissingError";
     this.status = 503;
   }
@@ -86,6 +90,16 @@ export class StorageConfigError extends Error {
 }
 
 const isProd = (env = process.env) => env.VERCEL_ENV === "production";
+
+/**
+ * Plaintext creds and the UPSTASH_* storage fallback are local-dev only:
+ * VERCEL_ENV unset or "development", or LOGMEM_OAUTH_ALLOW_INSECURE=1.
+ * Never in production, whatever the flag says. Preview fails closed.
+ */
+export function insecureAllowed(env = process.env) {
+  if (isProd(env)) return false;
+  return !env.VERCEL_ENV || env.VERCEL_ENV === "development" || env.LOGMEM_OAUTH_ALLOW_INSECURE === "1";
+}
 
 // ───── Test seams ─────
 
@@ -110,15 +124,16 @@ export function deployRedis() {
   const env = process.env;
   let url = env.LOGMEM_DEPLOY_REST_URL;
   let token = env.LOGMEM_DEPLOY_REST_TOKEN;
-  if (!isProd(env)) {
+  const fallback = insecureAllowed(env);
+  if (fallback) {
     url = url || env.UPSTASH_REDIS_REST_URL;
     token = token || env.UPSTASH_REDIS_REST_TOKEN;
   }
   if (!url || !token) {
     throw new StorageConfigError(
-      isProd(env)
-        ? "production requires LOGMEM_DEPLOY_REST_URL/_TOKEN for OAuth storage"
-        : "deploy missing LOGMEM_DEPLOY_REST_URL/_TOKEN",
+      fallback
+        ? "deploy missing LOGMEM_DEPLOY_REST_URL/_TOKEN"
+        : `${env.VERCEL_ENV} requires LOGMEM_DEPLOY_REST_URL/_TOKEN for OAuth storage`,
     );
   }
   return async (...cmd) => {
@@ -185,15 +200,15 @@ export function loadKek(env = process.env) {
   return buf;
 }
 
-/** Throws KekMissingError when tokens cannot be minted (production without a KEK). */
+/** Throws KekMissingError when tokens cannot be minted (no KEK outside local dev). */
 export function assertKekReady(env = process.env) {
-  if (!loadKek(env) && isProd(env)) throw new KekMissingError();
+  if (!loadKek(env) && !insecureAllowed(env)) throw new KekMissingError();
 }
 
 let ephemeralCsrfKey = null;
 /**
  * HMAC key for consent-page CSRF tokens: HKDF(KEK, "logmem-oauth-csrf-v1").
- * Without a KEK (non-production only; production refuses earlier) a
+ * Without a KEK (local dev only; everything else refuses earlier) a
  * per-process random key is used.
  */
 export function csrfKey(env = process.env) {
@@ -230,13 +245,13 @@ export function recordAad(kind, keyHash, plain) {
   return Buffer.from(`logmem-oauth-creds-v2|${kind}|${keyHash}|${canonical(plain)}`, "utf8");
 }
 
-/** Seal the credential blob under `aad` (see recordAad). Throws KekMissingError in production without a KEK. */
+/** Seal the credential blob under `aad` (see recordAad). Throws KekMissingError without a KEK outside local dev. */
 export function sealCreds(creds, aad, env = process.env) {
   if (!Buffer.isBuffer(aad) || aad.length === 0) throw new Error("sealCreds requires record-bound AAD");
   const kek = loadKek(env);
   if (!kek) {
-    if (isProd(env)) throw new KekMissingError();
-    return { enc: "none", warning: "LOGMEM_OAUTH_KEK unset: credentials stored unencrypted (non-production only)", data: creds };
+    if (!insecureAllowed(env)) throw new KekMissingError();
+    return { enc: "none", warning: "LOGMEM_OAUTH_KEK unset: credentials stored unencrypted (local dev only)", data: creds };
   }
   const iv = randomBytes(GCM_IV_BYTES);
   const cipher = createCipheriv("aes-256-gcm", kek, iv, { authTagLength: GCM_TAG_BYTES });
@@ -253,7 +268,7 @@ export function sealCreds(creds, aad, env = process.env) {
 export function openCreds(envelope, aad, env = process.env) {
   if (!envelope || typeof envelope !== "object") throw new Error("no credential envelope");
   if (envelope.enc === "none") {
-    if (isProd(env)) throw new KekMissingError();
+    if (!insecureAllowed(env)) throw new KekMissingError();
     return envelope.data;
   }
   if (envelope.enc !== "aes-256-gcm") throw new Error("unknown credential envelope");

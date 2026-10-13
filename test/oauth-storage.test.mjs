@@ -184,7 +184,7 @@ test("oauth storage: stored token record has {enc,iv,tag,ct} and no plaintext cr
   });
 });
 
-test("oauth storage: production without KEK refuses to mint; dev stores plaintext with warning", async () => {
+test("oauth storage: production without KEK refuses to mint; local dev stores plaintext with warning", async () => {
   await withEnv({ LOGMEM_OAUTH_KEK: undefined, VERCEL_ENV: "production" }, async () => {
     const r = oauthRedis();
     __setRedisForTests(r);
@@ -192,7 +192,7 @@ test("oauth storage: production without KEK refuses to mint; dev stores plaintex
     await assert.rejects(() => saveAuthCode(creds()), KekMissingError);
     assert.equal(r.data.size, 0, "nothing written");
   });
-  await withEnv({ LOGMEM_OAUTH_KEK: undefined, VERCEL_ENV: "preview" }, async () => {
+  await withEnv({ LOGMEM_OAUTH_KEK: undefined, VERCEL_ENV: "development" }, async () => {
     const r = oauthRedis();
     __setRedisForTests(r);
     const t = await mintTokens(creds());
