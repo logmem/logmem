@@ -65,6 +65,11 @@
     });
     $('#count').textContent = 'Step ' + (state.i + 1) + ' of ' + list.length;
     $('#rail-now').textContent = STEPS[current()][0];
+    // P1-4: on phones the rail is one scrolling row; keep the current dot in view.
+    var cur = ol.children[state.i];
+    if (cur && ol.scrollWidth > ol.clientWidth) {
+      ol.scrollLeft = Math.max(0, ol.scrollLeft + cur.getBoundingClientRect().left - ol.getBoundingClientRect().left - (ol.clientWidth - cur.offsetWidth) / 2);
+    }
   }
 
   function go(n, opts) {
@@ -273,6 +278,15 @@
     return ok;
   }
   $('#sp').addEventListener('input', checkSpace);
+  function checkWorkspace() {
+    var ok = $('#ws').value.trim() !== '';
+    $('#ws').setAttribute('aria-invalid', ok ? 'false' : 'true');
+    var err = $('#ws-err');
+    err.hidden = ok;
+    err.textContent = ok ? '' : 'Enter a workspace name.';
+    return ok;
+  }
+  $('#ws').addEventListener('input', function () { if ($('#ws').getAttribute('aria-invalid') === 'true') checkWorkspace(); });
 
   // ---- Redis + real connection test ----------------------------------------------
   var backend = 'rest';
@@ -504,7 +518,10 @@
     if (!t || t.disabled) return;
     if (t.hasAttribute('data-choose')) choose(t.getAttribute('data-choose'));
     else if (t.hasAttribute('data-next')) {
-      if (current() === 'space' && !checkSpace()) return;
+      if (current() === 'space') {
+        var wsOk = checkWorkspace(), spOk = checkSpace();
+        if (!wsOk || !spOk) { $(wsOk ? '#sp' : '#ws').focus(); return; }
+      }
       go(state.i + 1);
     }
     else if (t.hasAttribute('data-back')) go(state.i - 1);
