@@ -658,6 +658,8 @@ const REVIEW_SHAPES = {
   sendgrid: [`SG.${"a".repeat(22)}.${"b".repeat(43)}`, ["aaaaaaaaaa", "bbbbbbbbbb"]],
   slack_webhook: ["https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX", ["T00000000", "XXXXXXXX"]],
   discord_webhook: ["https://discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp_qrstuv", ["AbCdEfGh"]],
+  slack_webhook_no_scheme: ["hooks.slack.com/services/T0001/B0002/abcdefghijklmnopqrstuvwx", ["T0001", "abcdefgh"]],
+  discord_webhook_no_scheme: ["discord.com/api/webhooks/123456789012345678/AbCdEfGhIjKlMnOp_qrstuv", ["AbCdEfGh"]],
 };
 
 test("redact (review M1): JWTs, empty-user URLs, Basic/Bearer headers, short assigned secrets, npm_/hf_/SG./webhooks", () => {
@@ -668,6 +670,8 @@ test("redact (review M1): JWTs, empty-user URLs, Basic/Bearer headers, short ass
     assert.match(out, /^x .* y$/, `${name} ate the surrounding text`);
   }
   assert.equal(redact("redis://:pw0rd1234@h:6379/0"), `redis://${REDACTED}@h:6379/0`);
+  assert.equal(redact("url hooks.slack.com/services/T0001/B0002/abcdefghijklmnopqrstuvwx ok"), `url ${REDACTED} ok`);
+  assert.equal(redact("url https://hooks.slack.com/services/T0001/B0002/abcdefghijklmnopqrstuvwx ok"), `url ${REDACTED} ok`);
   assert.equal(redact("Authorization: Basic YWRtaW46aHVudGVyMnB3ZA=="), `Authorization: Basic ${REDACTED}`);
   assert.equal(redact("MM_TOKEN_OPENCODE=8fj3k2l1m0n9b8v7c6x5z4a3s2 next"), `MM_TOKEN_OPENCODE=${REDACTED} next`);
   // Ordinary prose and short values are untouched.

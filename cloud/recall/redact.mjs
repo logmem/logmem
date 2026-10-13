@@ -15,9 +15,9 @@ export const REDACTED = "[REDACTED]";
 export const PATTERNS = [
   // PEM private key blocks (RSA, EC, OPENSSH, PGP, plain). An unterminated block redacts to the end.
   { name: "private_key", re: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g },
-  // Webhook URLs: the path is the credential.
-  { name: "slack_webhook", re: /\bhttps?:\/\/hooks\.slack\.com\/(?:services|workflows|triggers)\/[A-Za-z0-9_/-]+/gi },
-  { name: "discord_webhook", re: /\bhttps?:\/\/(?:[a-z]+\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi },
+  // Webhook URLs: the path is the credential. The scheme is optional (prose, config).
+  { name: "slack_webhook", re: /(?:\bhttps?:\/\/)?\bhooks\.slack\.com\/(?:services|workflows|triggers)\/[A-Za-z0-9_/-]+/gi },
+  { name: "discord_webhook", re: /(?:\bhttps?:\/\/)?\b(?:[a-z]+\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi },
   // Credentials embedded in a URL: scheme://user:pass@host, including an empty user (redis://:pw@host).
   { name: "url_creds", re: /\b([a-z][a-z0-9+.-]*:\/\/)[^\s:/@]*:[^\s@/]+@/gi, replace: (_m, scheme) => `${scheme}${REDACTED}@` },
   // JWTs (header.payload.signature, base64url). Before the assigned-secret rule so the whole token goes.
