@@ -221,7 +221,7 @@ for (const getdel of [true, false]) {
     });
   });
 
-  test(`oauth storage: refresh is single-use with one 60s grace reuse that revokes the children (${label})`, async () => {
+  test(`oauth storage: refresh is single-use; reuse inside the 60s window revokes the whole family (${label})`, async () => {
     await withEnv({ LOGMEM_OAUTH_KEK: TEST_KEK_HEX, VERCEL_ENV: undefined }, async () => {
       const r = oauthRedis({ getdel });
       __setRedisForTests(r);
@@ -232,32 +232,32 @@ for (const getdel of [true, false]) {
       assert.ok(r.data.has(`lm:oauth:rt:${sha256hex(t.refresh_token)}`), "victim token not burned");
 
       const first = await consumeRefresh(t.refresh_token, "cli_x");
-      assert.equal(first.grace, false);
+      assert.equal(first.reuse, undefined);
       assert.equal(first.rec.space, "acme");
       assert.equal(r.ttls.get(`lm:oauth:rtg:${sha256hex(t.refresh_token)}`), 60);
       const children = await mintTokens(creds());
-      await linkRefreshChildren(t.refresh_token, children);
+      assert.deepEqual(await linkRefreshChildren(t.refresh_token, children), { revoked: false });
 
-      assert.deepEqual(await consumeRefresh(t.refresh_token, "cli_evil"), { mismatch: true }, "grace also client-checked");
+      assert.deepEqual(await consumeRefresh(t.refresh_token, "cli_evil"), { mismatch: true }, "reuse path also client-checked");
 
       const warn = console.warn;
       const logged = [];
       console.warn = (m) => logged.push(m);
-      let grace;
+      let again;
       try {
-        grace = await consumeRefresh(t.refresh_token, "cli_x");
+        again = await consumeRefresh(t.refresh_token, "cli_x");
       } finally {
         console.warn = warn;
       }
-      assert.equal(grace.grace, true, "one retry inside the grace window");
+      assert.deepEqual(again, { reuse: true }, "a replay gets no record to mint from");
+      assert.equal(await lookupAccessToken(t.access_token), null, "original access token revoked");
       assert.equal(await lookupAccessToken(children.access_token), null, "first-use access token revoked");
       assert.equal(r.data.has(`lm:oauth:rt:${sha256hex(children.refresh_token)}`), false, "first-use refresh token revoked");
-      const ev = JSON.parse(logged.find((l) => String(l).includes("refresh_grace_used")));
-      assert.equal(ev.event, "refresh_grace_used");
-      assert.equal(ev.children_revoked, 2);
+      const ev = JSON.parse(logged.find((l) => String(l).includes("refresh_reuse_detected")));
+      assert.equal(ev.tokens_revoked, 3);
       assert.ok(!JSON.stringify(ev).includes(SECRET));
 
-      assert.equal(await consumeRefresh(t.refresh_token, "cli_x"), null, "third use refused");
+      assert.equal(await consumeRefresh(t.refresh_token, "cli_x"), null, "later uses just fail");
     });
   });
 }

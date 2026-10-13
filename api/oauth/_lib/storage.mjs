@@ -14,10 +14,15 @@
 //   lm:oauth:code:<sha256(code)>    — pending auth code (TTL 600s)
 //   lm:oauth:at:<sha256(access)>    — access token (TTL 12h)
 //   lm:oauth:rt:<sha256(refresh)>   — refresh token (TTL 30d)
-//   lm:oauth:rtg:<sha256(refresh)>  — just-rotated refresh token: reusable once
-//                                     within 60s; carries the hashes of the
-//                                     tokens minted from the first use, which a
-//                                     grace use revokes
+//   lm:oauth:rtg:<sha256(refresh)>  — just-rotated refresh token (60s reuse-
+//                                     detection window): carries the hashes of
+//                                     the tokens minted from the first use. A
+//                                     second presentation inside the window is
+//                                     reuse (RFC 9700 4.14): the whole family is
+//                                     revoked and invalid_grant returned
+//   lm:oauth:rtg:<sha256(refresh)>:revoked — family-revoked marker (60s), so a
+//                                     first use still in flight discards its
+//                                     freshly minted tokens
 //   <key>:used                      — consume lock when GETDEL is unavailable
 //
 // Legacy (pre-hash) keys, read-only until LEGACY_CUTOFF_MS, and only for
@@ -49,6 +54,7 @@ export const KEY = {
   access: (h) => `lm:oauth:at:${h}`,
   refresh: (h) => `lm:oauth:rt:${h}`,
   refreshGrace: (h) => `lm:oauth:rtg:${h}`,
+  refreshRevoked: (h) => `lm:oauth:rtg:${h}:revoked`,
   // TODO(remove after LEGACY_CUTOFF_MS): pre-hash raw-token keys.
   legacyAccess: (t) => `lm:oauth:token:${t}`,
   legacyRefresh: (t) => `lm:oauth:refresh:${t}`,
@@ -59,7 +65,7 @@ export const TTL = {
   access: 60 * 60 * 12, // 12 hr — 1 hr caused re-auth churn when clients missed a refresh
   refresh: 60 * 60 * 24 * 30, // 30 d
   client: 60 * 60 * 24 * 30, // 30 d, slid on every successful token issuance
-  refreshGrace: 60, // previous refresh token reusable once within 60s
+  refreshGrace: 60, // reuse-detection window for a just-rotated refresh token
 };
 
 /** Legacy raw-key reads stop at this instant (2026-10-26T00:00:00Z). */
@@ -458,7 +464,8 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   const hAt = sha256hex(access);
   const hRt = sha256hex(refresh);
   const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access }, "access", hAt);
-  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at }, "refresh", hRt);
+  // sibling_at lets reuse detection revoke the access token minted alongside.
+  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt }, "refresh", hRt);
 
   await r("SET", KEY.access(hAt), JSON.stringify(accessRecord), "EX", String(TTL.access));
   await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
@@ -481,14 +488,46 @@ export async function lookupAccessToken(access_token) {
   return null;
 }
 
+const MAX_FAMILY_HOPS = 8;
+
+/**
+ * Revoke a refresh-token family starting at the just-rotated token `h`: the
+ * access token minted alongside it, everything minted from its first use, and
+ * onward along any further rotations still inside their grace window. Sets a
+ * revoked marker on every hop first, so a first use still in flight discards
+ * what it mints (see linkRefreshChildren). Returns how many tokens were deleted.
+ */
+async function revokeFamily(r, h) {
+  let deleted = 0;
+  let cur = h;
+  for (let hop = 0; cur && hop < MAX_FAMILY_HOPS; hop++) {
+    await r("SET", KEY.refreshRevoked(cur), "1", "EX", String(TTL.refreshGrace));
+    const g = parse(await r("GET", KEY.refreshGrace(cur)));
+    await r("DEL", KEY.refreshGrace(cur));
+    if (!g) break;
+    const prev = parse(g.rec);
+    if (prev && /^[0-9a-f]{64}$/.test(String(prev.sibling_at))) deleted += Number(await r("DEL", KEY.access(prev.sibling_at))) || 0;
+    const ch = g.children || {};
+    if (ch.at) deleted += Number(await r("DEL", KEY.access(ch.at))) || 0;
+    if (ch.rt) {
+      deleted += Number(await r("DEL", KEY.refresh(ch.rt))) || 0;
+      await r("SET", KEY.refreshRevoked(ch.rt), "1", "EX", String(TTL.refreshGrace));
+    }
+    cur = ch.rt;
+  }
+  return deleted;
+}
+
 /**
  * Single-use refresh, checked against `client_id` BEFORE anything is
  * consumed so a mismatched client cannot burn someone else's token.
  *
- * Returns null (invalid/used), { mismatch: true }, or
- * { rec, grace } where grace=true means this was the one allowed reuse inside
- * the 60s window; in that case the tokens minted from the first use have
- * already been revoked and a "refresh_grace_used" event logged.
+ * Returns null (invalid/used), { mismatch: true }, { reuse: true }, or
+ * { rec }. reuse means the token was already rotated within the last 60s:
+ * per RFC 9700 4.14 the whole family (the original access token and every
+ * token minted from the first use) has been revoked, a
+ * "refresh_reuse_detected" event logged, and the caller must answer
+ * invalid_grant. Nobody gets fresh tokens from a replay.
  */
 export async function consumeRefresh(refresh_token, client_id) {
   if (!refresh_token || typeof refresh_token !== "string") return null;
@@ -503,25 +542,18 @@ export async function consumeRefresh(refresh_token, client_id) {
     const rec = openSealed(parse(raw), "refresh", h);
     if (rec) {
       await r("SET", KEY.refreshGrace(h), JSON.stringify({ rec: raw, children: null }), "EX", String(TTL.refreshGrace));
-      return { rec, grace: false };
+      return { rec };
     }
   }
 
-  // 2. Grace reuse of a just-rotated token.
+  // 2. Reuse of a just-rotated token: revoke the family and refuse.
   const gpeek = parse(await r("GET", KEY.refreshGrace(h)));
   if (gpeek) {
     const graceRec = parse(gpeek.rec);
     if (!graceRec || graceRec.client_id !== client_id) return { mismatch: true };
-    const g = parse(await consumeOnce(r, KEY.refreshGrace(h), TTL.refreshGrace));
-    const rec = g && openSealed(parse(g.rec), "refresh", h);
-    if (rec) {
-      let revoked = 0;
-      const ch = g.children || {};
-      if (ch.at) revoked += Number(await r("DEL", KEY.access(ch.at))) || 0;
-      if (ch.rt) revoked += Number(await r("DEL", KEY.refresh(ch.rt))) || 0;
-      console.warn(JSON.stringify({ event: "refresh_grace_used", client_id: rec.client_id, sub: rec.sub ?? null, space: rec.space ?? null, children_revoked: revoked, ts: new Date().toISOString() }));
-      return { rec, grace: true };
-    }
+    const revoked = await revokeFamily(r, h);
+    console.warn(JSON.stringify({ event: "refresh_reuse_detected", client_id, sub: graceRec.sub ?? null, space: graceRec.space ?? null, tokens_revoked: revoked, ts: new Date().toISOString() }));
+    return { reuse: true };
   }
 
   // 3. Legacy raw-keyed refresh token (unsealed records only, until the cutoff).
@@ -531,7 +563,7 @@ export async function consumeRefresh(refresh_token, client_id) {
     if (lpeek) {
       if (lpeek.client_id !== client_id) return { mismatch: true };
       const rec = openLegacy(parse(await consumeOnce(r, KEY.legacyRefresh(refresh_token), TTL.refresh)));
-      if (rec) return { rec, grace: false };
+      if (rec) return { rec };
     }
   }
   return null;
@@ -539,16 +571,31 @@ export async function consumeRefresh(refresh_token, client_id) {
 
 /**
  * After minting from a refresh token, record the new tokens' hashes on its
- * grace record so a later grace reuse can revoke them.
+ * grace record so reuse detection can revoke them. Then check the revoked
+ * marker: if reuse was detected while this request was in flight, the tokens
+ * just minted are deleted and { revoked: true } is returned (the caller
+ * answers invalid_grant). Writing children before reading the marker, while
+ * revokeFamily sets the marker before reading children, means at least one
+ * side always sees the other.
  */
 export async function linkRefreshChildren(refresh_token, minted) {
   const r = deployRedis();
-  const gk = KEY.refreshGrace(sha256hex(refresh_token));
+  const h = sha256hex(refresh_token);
+  const gk = KEY.refreshGrace(h);
   const g = parse(await r("GET", gk));
-  if (!g) return;
-  const ttl = Number(await r("TTL", gk));
-  g.children = { at: sha256hex(minted.access_token), rt: sha256hex(minted.refresh_token) };
-  await r("SET", gk, JSON.stringify(g), "EX", String(ttl > 0 ? ttl : TTL.refreshGrace));
+  const at = sha256hex(minted.access_token);
+  const rt = sha256hex(minted.refresh_token);
+  if (g) {
+    const ttl = Number(await r("TTL", gk));
+    g.children = { at, rt };
+    await r("SET", gk, JSON.stringify(g), "EX", String(ttl > 0 ? ttl : TTL.refreshGrace));
+  }
+  if (await r("GET", KEY.refreshRevoked(h))) {
+    await r("DEL", KEY.access(at));
+    await r("DEL", KEY.refresh(rt));
+    return { revoked: true };
+  }
+  return { revoked: false };
 }
 
 export async function revokeAccessToken(access_token) {
