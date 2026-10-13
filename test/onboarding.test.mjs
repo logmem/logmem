@@ -6,10 +6,10 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { oauthRedis, mockRes, mockReq, withEnv } from "./oauth-helpers.mjs";
-import { createHandler as probeHandler, cleanAgents, TTL_S, PROBE_POST_LIMIT, PROBE_GET_LIMIT } from "../api/onboarding/probe.mjs";
-import { createHandler as waitlistHandler, normalizeEmail, emailKey, WAITLIST_TTL_S } from "../api/onboarding/waitlist.mjs";
+import { createHandler as probeHandler, cleanAgents, TTL_S, PROBE_POST_LIMIT, PROBE_GET_LIMIT, config as probeConfig } from "../api/onboarding/probe.mjs";
+import { createHandler as waitlistHandler, normalizeEmail, emailKey, WAITLIST_TTL_S, config as waitlistConfig } from "../api/onboarding/waitlist.mjs";
 import { createHandler as testHandler, runTest, REFUSED, CONNECT_FAILED } from "../api/onboarding/test.mjs";
-import { clientIp, rateLimit, readJsonBody, KEYS } from "../src/http/onboarding.mjs";
+import { clientIp, rateLimit, readJsonBody, KEYS, withStoreLock, StoreLockError, LOCK_BUSY_ERROR, LOCK_TTL_S, LOCK_WAIT_MS, ROUTE_MAX_DURATION_S } from "../src/http/onboarding.mjs";
 import { assertPublicTarget } from "../src/http/net-guard.mjs";
 import { pinLookup, pinnedHttpsOptions, pinnedHttpsPost, pinnedNativeOptions, PinError } from "../src/http/pin.mjs";
 
@@ -215,6 +215,40 @@ test("probe: a parallel burst never stores more than the live cap", async () => 
   assert.equal(stored(), cap, "a follow-up does not open another slot");
 });
 
+test("probe: a busy lock is 429 store busy, separate from the rate limit", async () => {
+  const raw = oauthRedis();
+  raw.data.set(KEYS.probeLock, { type: "string", value: "holder-token" });
+  const h = probeWith(raw, { lockWaitMs: 80 });
+  const t0 = Date.now();
+  const r = await call(h, { method: "POST", body: { code: "BUS111", agents: [] }, headers: { "x-forwarded-for": "203.0.113.80" } });
+  assert.ok(Date.now() - t0 >= 80, "waiter backs off until the deadline");
+  assert.ok(Date.now() - t0 < 2000, "waiter does not sit for the route budget");
+  assert.equal(r.status, 429);
+  assert.equal(r.body.error, LOCK_BUSY_ERROR);
+  assert.notEqual(r.body.error, "too many requests");
+  assert.equal(r.headers["retry-after"], "1");
+  assert.equal(raw.data.has(KEYS.probe("BUS111")), false, "nothing stored");
+  assert.equal(raw.data.get(KEYS.probeLock).value, "holder-token", "a busy waiter does not delete the holder");
+  const sets = raw.calls.filter((c) => c[0] === "SET" && c[1] === KEYS.probeLock);
+  assert.ok(sets.length >= 1 && sets.length < 40, `backoff, not a spin (${sets.length} SET NX)`);
+});
+
+test("probe: a lock that expires before the insert does not store a code", async () => {
+  const raw = oauthRedis();
+  const redis = async (cmd, ...args) => {
+    const result = await raw(cmd, ...args);
+    if (String(cmd).toUpperCase() === "GET" && args[0] === KEYS.probe("EXP001")) raw.data.delete(KEYS.probeLock);
+    return result;
+  };
+  const h = probeWith(redis, { lockWaitMs: 200 });
+  const r = await call(h, { method: "POST", body: { code: "EXP001", agents: [{ name: "claude", version: "1" }] }, headers: { "x-forwarded-for": "203.0.113.81" } });
+  assert.equal(r.status, 429);
+  assert.equal(r.body.error, LOCK_BUSY_ERROR);
+  assert.equal(r.headers["retry-after"], "1");
+  assert.equal(raw.data.has(KEYS.probe("EXP001")), false);
+  assert.equal(raw.data.get(KEYS.probeLive)?.value.size ?? 0, 0);
+});
+
 // ---- waitlist ----------------------------------------------------------------
 
 test("waitlist: email shape, hashing by lowercased email, idempotent, only {ok:true}", async () => {
@@ -331,6 +365,109 @@ test("waitlist: a parallel burst never stores more than the size cap", async () 
   assert.deepEqual(again.body, { ok: true });
   assert.equal(stored(), cap, "the update does not take another slot");
   assert.ok(redis.high() <= cap);
+});
+
+test("waitlist: a busy lock is 429 store busy, separate from the rate limit", async () => {
+  const raw = oauthRedis();
+  raw.data.set(KEYS.waitlistLock, { type: "string", value: "holder-token" });
+  const h = waitlistHandler({ redis: () => raw, lockWaitMs: 80, log: quiet });
+  const r = await call(h, { method: "POST", body: { email: "busy@example.com" }, headers: { "x-forwarded-for": "203.0.113.82" } });
+  assert.equal(r.status, 429);
+  assert.equal(r.body.error, LOCK_BUSY_ERROR);
+  assert.notEqual(r.body.error, "too many requests");
+  assert.equal(r.headers["retry-after"], "1");
+  assert.equal([...raw.data.keys()].some((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)), false);
+  assert.equal(raw.data.get(KEYS.waitlistLock).value, "holder-token");
+});
+
+test("waitlist: a lock that expires before the insert does not store the email", async () => {
+  const raw = oauthRedis();
+  let zcards = 0;
+  const redis = async (cmd, ...args) => {
+    const result = await raw(cmd, ...args);
+    if (String(cmd).toUpperCase() === "ZCARD" && args[0] === KEYS.waitlistIndex && ++zcards >= 2) raw.data.delete(KEYS.waitlistLock);
+    return result;
+  };
+  const h = waitlistHandler({ redis: () => redis, lockWaitMs: 200, log: quiet });
+  const r = await call(h, { method: "POST", body: { email: "expired-lock@example.com", agents: 1, plan: "dev" }, headers: { "x-forwarded-for": "203.0.113.83" } });
+  assert.equal(r.status, 429);
+  assert.equal(r.body.error, LOCK_BUSY_ERROR);
+  assert.equal([...raw.data.keys()].some((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)), false);
+  assert.equal(raw.data.get(KEYS.waitlistIndex)?.value.size ?? 0, 0);
+});
+
+test("waitlist: unparseable JSON takes the cap path", async () => {
+  const redis = oauthRedis();
+  const h = waitlistHandler({ redis: () => redis, maxEntries: 1, log: quiet });
+  const post = (email, ip) => call(h, { method: "POST", body: { email, agents: 1, plan: "dev" }, headers: { "x-forwarded-for": ip } });
+  const field = emailKey("a@example.com");
+  redis.data.set(KEYS.waitlistEntry(field), { type: "string", value: "{not-json" });
+  assert.equal((await post("a@example.com", "203.0.113.70")).status, 200, "under the cap, a corrupt row is replaced");
+  assert.equal(JSON.parse(redis.data.get(KEYS.waitlistEntry(field)).value).email, "a@example.com");
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1);
+
+  const other = emailKey("b@example.com");
+  redis.data.set(KEYS.waitlistEntry(other), { type: "string", value: "not json either" });
+  const full = await post("b@example.com", "203.0.113.71");
+  assert.equal(full.status, 503);
+  assert.equal(full.body.error, "waitlist is full");
+  assert.equal(redis.data.has(KEYS.waitlistEntry(other)), false, "the corrupt row is removed and the cap still refuses the signup");
+  assert.equal([...redis.data.values()].some((e) => e.type === "string" && String(e.value).includes("b@example.com")), false);
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1);
+});
+
+test("store lock: ttl outlives the route, a landed SET that throws is deleted only when the token matches", async () => {
+  assert.equal(probeConfig.maxDuration, ROUTE_MAX_DURATION_S);
+  assert.equal(waitlistConfig.maxDuration, ROUTE_MAX_DURATION_S);
+  assert.ok(LOCK_TTL_S > ROUTE_MAX_DURATION_S);
+  assert.equal(LOCK_WAIT_MS, 2000);
+  assert.ok(LOCK_WAIT_MS < ROUTE_MAX_DURATION_S * 1000);
+
+  const raw = oauthRedis();
+  await withStoreLock(raw, KEYS.probeLock, async (lock) => {
+    await lock.requireHeld();
+  });
+  const set = raw.calls.find((c) => c[0] === "SET" && c[1] === KEYS.probeLock);
+  assert.deepEqual(set.slice(3), ["NX", "EX", String(LOCK_TTL_S)]);
+  assert.ok(!raw.calls.some((c) => c[0] === "EVAL"), "release does not depend on EVAL");
+  assert.equal(raw.data.has(KEYS.probeLock), false, "matching token released");
+
+  await withStoreLock(raw, KEYS.probeLock, async () => {
+    raw.data.set(KEYS.probeLock, { type: "string", value: "newer-holder" });
+  });
+  assert.equal(raw.data.get(KEYS.probeLock).value, "newer-holder", "release does not delete a replaced token");
+
+  const landed = oauthRedis();
+  let ran = false;
+  const throwing = (key, replace) => async (cmd, ...args) => {
+    if (String(cmd).toUpperCase() === "SET" && args[0] === key && args[2] === "NX") {
+      await landed(cmd, ...args);
+      if (replace) landed.data.set(key, { type: "string", value: "newer-holder" });
+      throw new Error("SET landed then failed");
+    }
+    return landed(cmd, ...args);
+  };
+  await assert.rejects(withStoreLock(throwing(KEYS.probeLock, false), KEYS.probeLock, async () => { ran = true; }), /SET landed then failed/);
+  assert.equal(ran, false, "fn does not run after a failed acquire");
+  assert.equal(landed.data.has(KEYS.probeLock), false, "a token that landed and then threw is deleted");
+
+  await assert.rejects(withStoreLock(throwing(KEYS.waitlistLock, true), KEYS.waitlistLock, async () => { ran = true; }), /SET landed then failed/);
+  assert.equal(ran, false);
+  assert.equal(landed.data.get(KEYS.waitlistLock).value, "newer-holder", "a different token is left in place");
+
+  const times = [];
+  const busy = async (cmd) => {
+    assert.equal(String(cmd).toUpperCase(), "SET");
+    times.push(Date.now());
+    return null;
+  };
+  const t0 = Date.now();
+  await assert.rejects(withStoreLock(busy, "lm:onboard:lock:test", async () => { ran = true; }, { waitMs: 220 }), (e) => e instanceof StoreLockError && e.message === LOCK_BUSY_ERROR);
+  const elapsed = Date.now() - t0;
+  assert.equal(ran, false);
+  assert.ok(elapsed >= 220 && elapsed < 800, `deadline ${elapsed}ms`);
+  assert.ok(times.length >= 2 && times.length <= 30, `backoff attempts ${times.length}, not 800`);
+  assert.ok(times[1] - times[0] >= 5, "the retry waits instead of spinning");
 });
 
 // ---- connection test ----------------------------------------------------------
