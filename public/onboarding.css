@@ -98,8 +98,10 @@
 @media (max-width:767px){
   .ob-layout{gap:16px;padding-top:20px;padding-bottom:40px}
   .ob-rail{max-width:none;flex-basis:100%}
-  .ob-steps{flex-direction:row;flex-wrap:wrap;gap:6px}
-  .ob-step{width:auto;padding:4px;border-radius:50%}
+  /* P1-4: keep the step dots on one row; scroll sideways if they don't fit */
+  .ob-steps{position:relative;flex-direction:row;flex-wrap:nowrap;gap:4px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;scrollbar-width:thin;-webkit-overflow-scrolling:touch;padding:2px;margin:-2px}
+  .ob-steps>li{flex:none;scroll-snap-align:center}
+  .ob-step{position:relative;width:auto;padding:4px;border-radius:50%}
   .ob-step-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .ob-rail-now{display:block}
   .ob-card{padding:20px 16px}

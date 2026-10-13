@@ -65,6 +65,11 @@
     });
     $('#count').textContent = 'Step ' + (state.i + 1) + ' of ' + list.length;
     $('#rail-now').textContent = STEPS[current()][0];
+    // P1-4: on phones the rail is one scrolling row; keep the current dot in view.
+    var cur = ol.children[state.i];
+    if (cur && ol.scrollWidth > ol.clientWidth) {
+      ol.scrollLeft = Math.max(0, ol.scrollLeft + cur.getBoundingClientRect().left - ol.getBoundingClientRect().left - (ol.clientWidth - cur.offsetWidth) / 2);
+    }
   }
 
   function go(n, opts) {
