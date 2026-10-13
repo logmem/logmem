@@ -142,6 +142,10 @@ test("errors: generic 500 with a ref, no detail leaked; bad config; no backend -
   assert.throws(() => dogfoodSpaces({ LOGMEM_DOGFOOD_SPACES: "a:b" }));
   assert.deepEqual(dogfoodSpaces({}), ["madez", "fieldnotes"]);
 
+  const none = await call(createHandler({ env: ENV, resolveRedis: () => null, sink: quiet }), AUTH);
+  assert.equal(none.status, 503);
+});
+
 test("blank LOGMEM_DOGFOOD_SPACES is unset and checks the default spaces", async () => {
   for (const v of ["", "   ", "\n\t", " , , "]) {
     assert.deepEqual(dogfoodSpaces({ LOGMEM_DOGFOOD_SPACES: v }), ["madez", "fieldnotes"], JSON.stringify(v));
@@ -159,10 +163,6 @@ test("blank LOGMEM_DOGFOOD_SPACES is unset and checks the default spaces", async
   assert.deepEqual(r.body.results.map((x) => x.space), ["madez", "fieldnotes"]);
   assert.equal(r.body.results.every((x) => x.date === D(0)), true);
   for (const space of ["madez", "fieldnotes"]) assert.equal((await checkups(redis, space)).length, 1);
-});
-
-  const none = await call(createHandler({ env: ENV, resolveRedis: () => null, sink: quiet }), AUTH);
-  assert.equal(none.status, 503);
 });
 
 test("scorecard read path: Redis first, trust rule kept, gate recomputed, checkups fallback", async () => {
