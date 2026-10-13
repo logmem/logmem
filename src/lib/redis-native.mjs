@@ -119,8 +119,15 @@ function kvPairs(args, start) {
   return obj;
 }
 
-async function translate(client, command, args) {
-  switch (String(command).toUpperCase()) {
+// Sent verbatim: the reply shape already matches Upstash REST. EVAL/EVALSHA serve
+// the ACMI Cloud control plane (atomic tenant create, quota reserve).
+const PASSTHROUGH = new Set(["INCRBY", "DECRBY", "HSETNX", "SISMEMBER", "EVAL", "EVALSHA"]);
+const ZADD_FLAGS = new Set(["NX", "XX", "LT", "GT", "CH"]);
+
+export async function translate(client, command, args) {
+  const upper = String(command).toUpperCase();
+  if (PASSTHROUGH.has(upper)) return await client.sendCommand([upper, ...args.map(String)]);
+  switch (upper) {
     case "PING": return await client.ping();
     case "GET": return await client.get(args[0]);
     // Options (NX, EX, ...) must reach Redis: SET NX is how a decision is set once.
@@ -158,6 +165,8 @@ async function translate(client, command, args) {
     case "RPUSH": return await client.rPush(args[0], args.slice(1));
     case "LRANGE": return await client.lRange(args[0], parseInt(args[1]), parseInt(args[2]));
     case "ZADD": {
+      // Flags (LT = write-if-lower for rotate grace) must reach Redis untouched.
+      if (ZADD_FLAGS.has(String(args[1]).toUpperCase())) return await client.sendCommand(["ZADD", ...args.map(String)]);
       const members = [];
       for (let i = 1; i < args.length; i += 2) {
         members.push({ score: parseFloat(args[i]), value: String(args[i + 1]) });

@@ -5,7 +5,7 @@
 //
 // Keys:
 //   acmi:cloud:tenants              SET of tenant ids
-//   acmi:cloud:tenant:{id}          HASH claim, id, name, plan, status, created_at, namespace, key_ids (JSON),
+//   acmi:cloud:tenant:{id}          HASH id, name, plan, status, created_at, namespace, key_ids (JSON),
 //                                   updated_at, deleted_at (write-once; present = deleted, whatever status says)
 //   acmi:cloud:tenant:{id}:keys     SET of key ids (authoritative; key_ids mirrors it)
 //   acmi:cloud:key:{keyid}          HASH keyid, tenant, label, hash, created_at, expires_at, revoked_at, rotated_to
@@ -21,6 +21,7 @@
 
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
+import { registerEvalScript } from "../../src/lib/memory-redis.mjs";
 
 // Defence in depth on top of the t- namespace (BACKPLANE.md §1, PR #28 review M1).
 export const RESERVED = [
@@ -36,7 +37,6 @@ const KEY_PREFIX = "acmi_live_";
 const MAX_KEY_LEN = KEY_PREFIX.length + 16 + 1 + 43;
 const MAX_GRACE_MS = 30 * 86400000;
 export const MAX_LIVE_KEYS = 20; // active + in-grace keys per tenant
-const CLAIM_STALE_MS = 30000; // a create claim older than this with no record is abandoned
 
 const TENANTS_SET = "acmi:cloud:tenants";
 const tenantKey = (id) => `acmi:cloud:tenant:${id}`;
@@ -145,8 +145,8 @@ export function planFor(tenant) {
 // ---------- tenants ----------
 
 function toTenant(h) {
-  // id and status are written by one HSET; a record without both is an unfinished create.
-  if (!h || !h.id || !h.status) return null;
+  // A half-written record (no status) reads as suspended: fail closed until createTenant completes it.
+  if (!h || !h.id) return null;
   let keyIds = [];
   try {
     const v = JSON.parse(h.key_ids || "[]");
@@ -169,12 +169,88 @@ function toTenant(h) {
   return t;
 }
 
-/**
- * Create a tenant once. A second create of a live or finished id fails with
- * tenant_exists and changes nothing. Claim-then-complete: an atomic HSETNX
- * claim, then one HSET writes the whole record. If a create died between the
- * two, a retry after CLAIM_STALE_MS takes the claim over and completes it.
- */
+// One Redis EVAL. A crash cannot leave a claimed id with the rest of the hash
+// unwritten: the script either creates the whole record, fills fields that a
+// crashed create never wrote (without overwriting ones it did), or reports
+// that a complete tenant already exists. A missing status still reads as
+// suspended, so verify stays fail-closed until this script finishes.
+export const CREATE_TENANT_LUA = `
+local key = KEYS[1]
+local setkey = KEYS[2]
+local id = ARGV[1]
+local name = ARGV[2]
+local plan = ARGV[3]
+local now = ARGV[4]
+local namespace = ARGV[5]
+local function field(f)
+  local v = redis.call("HGET", key, f)
+  if v == false or v == "" then return nil end
+  return v
+end
+local existing = field("id")
+if not existing then
+  redis.call("HSET", key, "id", id, "name", name, "plan", plan, "status", "active", "created_at", now, "namespace", namespace, "key_ids", "[]")
+  redis.call("SADD", setkey, id)
+  return "created"
+end
+if existing ~= id then return "exists" end
+local half = (not field("name")) or (not field("plan")) or (not field("status")) or (not field("created_at")) or (not field("namespace")) or (not field("key_ids"))
+local inset = redis.call("SISMEMBER", setkey, id) == 1
+if not half then
+  if (not inset) and field("status") == "active" then
+    redis.call("SADD", setkey, id)
+    return "repaired"
+  end
+  return "exists"
+end
+if not field("name") then redis.call("HSET", key, "name", name) end
+if not field("plan") then redis.call("HSET", key, "plan", plan) end
+if not field("status") then redis.call("HSET", key, "status", "active") end
+if not field("created_at") then redis.call("HSET", key, "created_at", now) end
+if not field("namespace") then redis.call("HSET", key, "namespace", namespace) end
+if not field("key_ids") then redis.call("HSET", key, "key_ids", "[]") end
+redis.call("SADD", setkey, id)
+return "repaired"
+`;
+
+// Same steps as CREATE_TENANT_LUA. memory-redis runs this; a real Redis runs the script.
+function applyCreateTenant(call, keys, argv) {
+  const [key, setkey] = keys;
+  const [id, name, plan, now, namespace] = argv;
+  const field = (f) => {
+    const v = call("HGET", key, f);
+    if (v == null || v === false || v === "") return null;
+    return String(v);
+  };
+  const existing = field("id");
+  if (!existing) {
+    call("HSET", key, "id", id, "name", name, "plan", plan, "status", "active", "created_at", now, "namespace", namespace, "key_ids", "[]");
+    call("SADD", setkey, id);
+    return "created";
+  }
+  if (existing !== id) return "exists";
+  const half = ["name", "plan", "status", "created_at", "namespace", "key_ids"].some((f) => !field(f));
+  const inset = Number(call("SISMEMBER", setkey, id)) === 1;
+  if (!half) {
+    if (!inset && field("status") === "active") {
+      call("SADD", setkey, id);
+      return "repaired";
+    }
+    return "exists";
+  }
+  if (!field("name")) call("HSET", key, "name", name);
+  if (!field("plan")) call("HSET", key, "plan", plan);
+  if (!field("status")) call("HSET", key, "status", "active");
+  if (!field("created_at")) call("HSET", key, "created_at", now);
+  if (!field("namespace")) call("HSET", key, "namespace", namespace);
+  if (!field("key_ids")) call("HSET", key, "key_ids", "[]");
+  call("SADD", setkey, id);
+  return "repaired";
+}
+
+registerEvalScript(CREATE_TENANT_LUA, applyCreateTenant);
+
+/** Create a tenant once. A second create of a complete tenant fails and changes nothing. A half-written tenant is completed without overwriting fields already stored. */
 export async function createTenant(redis, { id, name, plan } = {}) {
   if (!validTenantId(id)) throw fail("invalid_tenant");
   const planId = resolvePlanId(plan ?? loadPlans().default);
@@ -183,41 +259,15 @@ export async function createTenant(redis, { id, name, plan } = {}) {
   if (typeof display !== "string" || display.length < 1 || display.length > 100 || /[\u0000-\u001f\u007f]/.test(display)) {
     throw fail("invalid_name");
   }
-  const key = tenantKey(id);
-  const now = Date.now();
-  const claim = `${now}:${crypto.randomBytes(8).toString("hex")}`;
-  if (Number(await redis("HSETNX", key, "claim", claim)) !== 1) {
-    const h = hashToObj(await redis("HGETALL", key));
-    if (h.status) {
-      await redis("SADD", TENANTS_SET, id); // repair: a create that died before SADD
-      throw fail("tenant_exists");
-    }
-    const claimedAt = Number(String(h.claim || "0").split(":")[0]);
-    if (h.claim && now - claimedAt < CLAIM_STALE_MS) throw fail("tenant_exists"); // in flight
-    await redis("HSET", key, "claim", claim); // take over the abandoned claim
-    if ((await redis("HGET", key, "claim")) !== claim) throw fail("tenant_exists");
-  }
-  const tenant = {
-    id,
-    name: display,
-    plan: planId,
-    status: "active",
-    created_at: now,
-    namespace: namespaceFor(id),
-    key_ids: [],
-  };
-  await redis(
-    "HSET", key,
-    "id", id,
-    "name", tenant.name,
-    "plan", tenant.plan,
-    "status", tenant.status,
-    "created_at", String(tenant.created_at),
-    "namespace", tenant.namespace,
-    "key_ids", "[]",
+  const result = await redis(
+    "EVAL", CREATE_TENANT_LUA, 2,
+    tenantKey(id), TENANTS_SET,
+    id, display, planId, String(Date.now()), namespaceFor(id),
   );
-  await redis("SADD", TENANTS_SET, id);
-  return tenant;
+  if (result !== "created" && result !== "repaired") throw fail("tenant_exists");
+  const stored = await getTenant(redis, id);
+  if (!stored) throw fail("tenant_exists");
+  return stored;
 }
 
 export async function getTenant(redis, id) {
@@ -343,6 +393,7 @@ export async function createKey(redis, tenant, { label = "" } = {}) {
   if (!validLabel(label)) throw fail("invalid_label");
   const t = await getTenant(redis, tenant);
   if (!t || t.status === "deleted") throw fail("not_found");
+  if (t.status !== "active") throw fail("tenant_suspended");
   return mintKey(redis, tenant, label);
 }
 
@@ -389,6 +440,7 @@ export async function rotateKey(redis, tenant, keyid, { graceMs = 86400000 } = {
   if (keyState(old) !== "active") throw fail("not_found");
   const t = await getTenant(redis, tenant);
   if (!t || t.status === "deleted") throw fail("not_found");
+  if (t.status !== "active") throw fail("tenant_suspended");
   const next = await mintKey(redis, tenant, old.label ?? "", { excluding: keyid });
   const until = Date.now() + graceMs;
   // Write-if-lower: ZADD LT can only shorten the grace, whatever the interleaving.

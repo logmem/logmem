@@ -109,6 +109,49 @@ test("createTenant: duplicate create does not overwrite", async () => {
   assert.equal(r.filter((x) => x.status === "fulfilled").length, 1);
 });
 
+test("createTenant: a half-written tenant is completed without overwriting; verify stays fail-closed until then", async () => {
+  const redis = createMemoryRedis();
+  const keyid = "ab".repeat(8);
+  const secret = "A".repeat(43);
+  const hash = crypto.createHash("sha256").update(secret).digest("hex");
+  await redis("HSET", "acmi:cloud:tenant:acme", "id", "acme", "name", "Original", "plan", "pro");
+  await redis("HSET", `acmi:cloud:key:${keyid}`, "keyid", keyid, "tenant", "acme", "hash", hash, "created_at", "1");
+  await redis("SADD", "acmi:cloud:tenant:acme:keys", keyid); // verifyKey also requires key-set membership (L2)
+  const presented = `acmi_live_${keyid}_${secret}`;
+  assert.equal((await getTenant(redis, "acme")).status, "suspended", "missing status reads as suspended");
+  assert.equal(await verifyKey(redis, presented), null, "verify fail-closed on a half tenant");
+
+  const repaired = await createTenant(redis, { id: "acme", name: "Hijack", plan: "free" });
+  assert.equal(repaired.name, "Original", "a stored name is not overwritten");
+  assert.equal(repaired.plan, "pro", "a stored plan is not overwritten");
+  assert.equal(repaired.status, "active");
+  assert.equal(repaired.namespace, "t-acme", "a missing namespace is filled with t-{id}");
+  assert.deepEqual(repaired.key_ids, []);
+  assert.deepEqual(await redis("SMEMBERS", "acmi:cloud:tenants"), ["acme"]);
+  assert.deepEqual(await verifyKey(redis, presented), { tenant: "acme", keyid });
+  await assert.rejects(createTenant(redis, { id: "acme", name: "Hijack", plan: "free" }), { code: "tenant_exists" });
+  assert.equal((await getTenant(redis, "acme")).name, "Original");
+
+  // Claim only: the retry supplies the fields that were never written.
+  await redis("HSET", "acmi:cloud:tenant:beta", "id", "beta");
+  const beta = await createTenant(redis, { id: "beta", name: "Beta Co", plan: "dev" });
+  assert.equal(beta.name, "Beta Co");
+  assert.equal(beta.plan, "dev");
+  assert.equal(beta.status, "active");
+  assert.ok(beta.created_at > 0);
+
+  // Complete record missing only the set membership: rejoin, do not rewrite.
+  await redis("SREM", "acmi:cloud:tenants", "acme");
+  const again = await createTenant(redis, { id: "acme", name: "Hijack", plan: "free" });
+  assert.equal(again.name, "Original");
+  assert.equal(again.created_at, repaired.created_at);
+  assert.deepEqual(await redis("SMEMBERS", "acmi:cloud:tenants"), ["acme", "beta"]);
+
+  await setStatus(redis, "beta", "deleted");
+  await assert.rejects(createTenant(redis, { id: "beta", name: "Back", plan: "free" }), { code: "tenant_exists" });
+  assert.equal((await getTenant(redis, "beta")).status, "deleted", "a deleted tenant is not repaired back to active");
+});
+
 test("getTenant / setStatus: validation, transitions, deleted is terminal", async () => {
   const redis = await withTenant();
   assert.equal(await getTenant(redis, "nope"), null);
@@ -309,6 +352,23 @@ test("verifyKey: suspended and deleted tenants are refused; resume restores", as
   await setStatus(redis, "acme", "deleted");
   assert.equal(await verifyKey(redis, key), null);
   await assert.rejects(createKey(redis, "acme"), { code: "not_found" });
+  await assert.rejects(rotateKey(redis, "acme", keyid), { code: "not_found" });
+});
+
+test("createKey / rotateKey: a suspended tenant is refused", async () => {
+  const redis = await withTenant();
+  const { key, keyid } = await createKey(redis, "acme");
+  await setStatus(redis, "acme", "suspended");
+  const created = await createKey(redis, "acme").catch((e) => e);
+  const rotated = await rotateKey(redis, "acme", keyid).catch((e) => e);
+  assert.equal(created.code, "tenant_suspended");
+  assert.equal(rotated.code, "tenant_suspended");
+  assert.equal(created.message, "tenant_suspended", "fixed code, no tenant id in the message");
+  assert.ok(!created.message.includes("acme") && !rotated.message.includes("acme"));
+  assert.equal(await verifyKey(redis, key), null);
+  await setStatus(redis, "acme", "active");
+  const next = await rotateKey(redis, "acme", keyid, { graceMs: 0 });
+  assert.match(next.key, KEY_RE);
 });
 
 test("verifyKey: a key record pointing at a reserved or missing tenant is refused", async () => {
@@ -444,32 +504,19 @@ test("L2: verifyKey requires keyid membership in the tenant's key set", async ()
   assert.equal(await verifyKey(redis, a.key), null, "removed from own set");
 });
 
-test("L4: a half-written create fails closed, then a retry completes it", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 13) });
+test("L4: a crash after the claim fails closed, and a plain retry completes it", async () => {
   const redis = createMemoryRedis();
-  // Crash after the claim, before the record write.
-  await redis("HSETNX", "acmi:cloud:tenant:zombie", "claim", `${Date.now()}:deadbeef`);
-  assert.equal(await getTenant(redis, "zombie"), null, "unfinished record is not a tenant");
-  await assert.rejects(createKey(redis, "zombie"), { code: "not_found" });
-  await assert.rejects(createTenant(redis, { id: "zombie" }), { code: "tenant_exists" }, "claim still fresh: maybe in flight");
-  t.mock.timers.tick(30001);
+  await redis("HSETNX", "acmi:cloud:tenant:zombie", "id", "zombie"); // old two-step create died after its claim
+  assert.equal((await getTenant(redis, "zombie")).status, "suspended", "fail closed");
+  await assert.rejects(createKey(redis, "zombie"), { code: "tenant_suspended" });
   const z = await createTenant(redis, { id: "zombie", name: "Zombie", plan: "pro" });
   assert.equal(z.status, "active");
+  assert.equal(z.namespace, "t-zombie");
   assert.deepEqual(await getTenant(redis, "zombie"), z);
   assert.deepEqual((await listTenants(redis)).map((x) => x.id), ["zombie"]);
   await assert.rejects(createTenant(redis, { id: "zombie" }), { code: "tenant_exists" }, "complete now");
-
-  // Legacy shape from the old claim field (id only, no status) is also recoverable.
-  await redis("HSETNX", "acmi:cloud:tenant:legacy", "id", "legacy");
-  assert.equal(await getTenant(redis, "legacy"), null);
-  assert.equal((await createTenant(redis, { id: "legacy" })).status, "active");
-
-  // Crash after the record write, before SADD: retry repairs the index, still no overwrite.
-  await createTenant(redis, { id: "orphan", name: "Orig" });
-  await redis("SREM", "acmi:cloud:tenants", "orphan");
-  await assert.rejects(createTenant(redis, { id: "orphan", name: "New" }), { code: "tenant_exists" });
-  assert.ok((await listTenants(redis)).some((x) => x.id === "orphan"));
-  assert.equal((await getTenant(redis, "orphan")).name, "Orig");
+  // Retrying a create that never wrote anything is just a create.
+  assert.equal((await createTenant(redis, { id: "fresh" })).namespace, "t-fresh");
 });
 
 test("L4: concurrent creates still yield exactly one winner whose record sticks", async () => {
