@@ -691,15 +691,26 @@ export const TOOLS = [
   {
     name: "logmem_jobs",
     title: "Jobs",
-    description: "List every job in this space, optionally only those at one stage. Read only.",
-    params: params({ stage: { enum: STAGES, desc: "Only jobs at this stage", optional: true } }),
+    description: "List the jobs in this space. Done jobs are hidden unless include_done is true or stage is 'done'. Optionally only those at one stage. Read only.",
+    params: params({
+      stage: { enum: STAGES, desc: "Only jobs at this stage", optional: true },
+      include_done: { type: "boolean", desc: "Also list done jobs (default false)", optional: true },
+    }),
     annotations: READ,
-    async run({ stage }, ctx) {
+    async run({ stage, include_done }, ctx) {
       const ids = await ctx.store.list("job");
-      if (!stage) return { ok: true, jobs: ids };
-      const out = [];
-      for (const id of ids) if ((await ctx.store.getNow("job", id)).stage === stage) out.push(id);
-      return { ok: true, stage, jobs: out };
+      // Read stages in small parallel batches, not one round trip per job:
+      // the per-key cascade is what produced ACMI's "fetch failed" warnings.
+      const stages = new Map();
+      for (let i = 0; i < ids.length; i += 25) {
+        const batch = ids.slice(i, i + 25);
+        const nows = await Promise.all(batch.map((id) => ctx.store.getNow("job", id).catch(() => ({}))));
+        batch.forEach((id, j) => stages.set(id, nows[j]?.stage));
+      }
+      if (stage) return { ok: true, stage, jobs: ids.filter((id) => stages.get(id) === stage) };
+      if (include_done) return { ok: true, jobs: ids };
+      const jobs = ids.filter((id) => stages.get(id) !== "done");
+      return { ok: true, jobs, hidden_done: ids.length - jobs.length };
     },
   },
 

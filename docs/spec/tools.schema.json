@@ -789,7 +789,7 @@
     {
       "name": "logmem_jobs",
       "title": "Jobs",
-      "description": "List every job in this space, optionally only those at one stage. Read only.",
+      "description": "List the jobs in this space. Done jobs are hidden unless include_done is true or stage is 'done'. Optionally only those at one stage. Read only.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -802,6 +802,10 @@
               "done"
             ],
             "description": "Only jobs at this stage"
+          },
+          "include_done": {
+            "type": "boolean",
+            "description": "Also list done jobs (default false)"
           }
         },
         "additionalProperties": false

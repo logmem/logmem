@@ -101,3 +101,46 @@ test("acmi_cat compat: a WRONGTYPE timeline no longer fails the whole merge", as
   assert.deepEqual(r.events.map((e) => e.summary).sort(), ["good", "stringy"]);
   assert.deepEqual(r.read_warnings?.map((w) => w.key).sort(), ["work:broken", "work:undefined"]);
 });
+
+// ─── A1: legacy ACMI status -> LogMem stage (decision 2026-10-13) ────────
+test("A1: legacy job status maps to stage on compat read; LogMem stage wins; status kept", async () => {
+  const redis = createMemoryRedis();
+  const sig = (id, status) => redis("HSET", `acmi:${S}:work:${id}:signals`, "status", status);
+  await sig("culled", "archived");
+  await sig("merged-dup", "merged");
+  await sig("shipped", "completed");
+  await sig("stuck", "stalled");
+  await sig("waiting", "pending");
+  await sig("weird", "acknowledged-ish");
+  await sig("overridden", "archived");
+  await redis("HSET", `lm:${S}:job:overridden:now`, "stage", JSON.stringify("active"));
+  const st = createStore(redis, { space: S, compat: true });
+  const stage = async (id) => (await st.getNow("job", id)).stage;
+  assert.equal(await stage("culled"), "done");
+  assert.equal(await stage("merged-dup"), "done");
+  assert.equal(await stage("shipped"), "done");
+  assert.equal(await stage("stuck"), "blocked");
+  assert.equal(await stage("waiting"), "open");
+  assert.equal(await stage("weird"), undefined, "unknown statuses map to nothing");
+  assert.equal(await stage("overridden"), "active", "a LogMem stage wins over the legacy status");
+  assert.equal((await st.getNow("job", "culled")).status, "archived", "original status kept");
+  assert.equal(await redis("HGET", `acmi:${S}:work:culled:signals`, "status"), "archived", "acmi:* untouched");
+  // Channels and agents never get a derived stage.
+  await redis("HSET", `acmi:${S}:thread:t1:signals`, "status", "archived");
+  assert.equal((await st.getNow("channel", "t1")).stage, undefined);
+});
+
+test("A1: logmem_jobs hides done by default; include_done and stage=done show them", async () => {
+  const redis = createMemoryRedis();
+  for (const [id, status] of [["a", "archived"], ["b", "pending"], ["c", "completed"], ["d", "stalled"]]) {
+    await redis("SADD", `acmi:${S}:work:list`, id);
+    await redis("HSET", `acmi:${S}:work:${id}:signals`, "status", status);
+  }
+  const lm = createLogmem({ redis, space: S, surface: "test", sessionId: "s1", defaultAgent: "relay", compat: true });
+  const def = await call(lm, "logmem_jobs", {});
+  assert.deepEqual(def.jobs, ["b", "d"]);
+  assert.equal(def.hidden_done, 2);
+  assert.deepEqual((await call(lm, "logmem_jobs", { include_done: true })).jobs, ["a", "b", "c", "d"]);
+  assert.deepEqual((await call(lm, "logmem_jobs", { stage: "done" })).jobs, ["a", "c"]);
+  assert.deepEqual((await call(lm, "logmem_jobs", { stage: "blocked" })).jobs, ["d"]);
+});

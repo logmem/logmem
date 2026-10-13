@@ -8,7 +8,7 @@
 // in seconds / microseconds / nanoseconds are normalised to ms (normTs).
 
 import { lmKey, lmIndexKey, acmiKey, acmiIndexKey, PROTECTED } from "./keys.mjs";
-import { asEntry, normalizeKind } from "./vocab.mjs";
+import { asEntry, normalizeKind, stageFromStatus } from "./vocab.mjs";
 import { isProtectedKey } from "../lib/helpers.mjs";
 
 export function normTs(n) {
@@ -120,6 +120,17 @@ async function readLegacyLog(redis, key) {
     });
 }
 
+/**
+ * A legacy job with only an ACMI `status` gets the LogMem `stage` it maps
+ * to (vocab STAGE_FROM_STATUS). A stage written in LogMem always wins, and
+ * `status` itself is kept as-is.
+ */
+function legacyStage(ns, old) {
+  if (ns !== "job" || old.stage != null) return {};
+  const stage = stageFromStatus(old.status);
+  return stage ? { stage, stage_from: "acmi_status" } : {};
+}
+
 /** A ZSET member that carries nothing (an empty or whitespace-only string). */
 const isBlankMember = (m) => m == null || (typeof m === "string" && m.trim() === "");
 
@@ -185,7 +196,8 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       const own = await readObject(redis, k(ns, id, "now"));
       if (!compat) return own;
       const old = await readObject(redis, legacy(ns, id, "now"));
-      return { ...old, ...own };
+      const merged = { ...old, ...legacyStage(ns, old), ...own };
+      return merged;
     },
     async setNow(ns, id, fields) {
       const pairs = Object.entries(fields).flatMap(([f, v]) => [f, JSON.stringify(v)]);

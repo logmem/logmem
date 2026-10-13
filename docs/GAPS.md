@@ -43,7 +43,7 @@ Still open:
 
 | # | Gap | Fix |
 |---|---|---|
-| A1 | ACMI `signals.status` (`completed`, `merged`, `archived`, `stalled`, `pending`) does not map to `stage` (`open/active/blocked/done`). After cutover, `logmem_jobs` shows every legacy job as un-staged, including the 56 closed in the 2026-10-13 cull (`workListCull-1791918000000`) | Map legacy status → stage on compat read (completed/merged/archived → done, stalled → blocked, pending → open) and have `logmem_jobs` hide `done` unless asked. Contract decision: tool-contract spec (2026-10-14) |
+| A1 | ACMI `signals.status` did not map to `stage`, so culled jobs showed as un-staged | **Done (2026-10-13, Mikey GO, cid `logmemStatusToStageDecision-1791921700000`).** Compat read maps status → stage (`vocab.STAGE_FROM_STATUS`); `logmem_jobs` hides done unless `include_done`; stage reads batched 25 at a time |
 | A2 | The dry run leaves 1,108 keys unmapped as `id-has-colon`, including `acmi:madez:agent:agent:bentley:timeline` (the CLI namespace footgun) | Migration maps `agent:agent:<id>` → `agent:<id>` and reports the rest; otherwise that history is invisible after cutover |
 | A3 | `logmem_jobs stage=…` reads every job's Now one at a time (704 jobs, 2 keys each in compat): the per-key cascade that produced ACMI's "fetch failed" warnings | Pipeline the reads (U8) or keep a stage index set |
 | A4 | Compat reads load the whole legacy ZSET on every call (`thread:agent-coordination` is 1,400+ entries); large responses are what returned REST 500s on ACMI | U8: `ZRANGE … REV LIMIT` on lm keys; cap legacy reads to the requested window once scores are rescored by the migration |
