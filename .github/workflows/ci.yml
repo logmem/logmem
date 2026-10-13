@@ -1,7 +1,10 @@
 name: ci
 
-# Gate for every PR, and for pushes to main. Feature branches are covered by
-# their PR, so pushes there do not trigger a second run.
+# Gate for every PR, and for pushes to main and feat/**.
+# A feat/** branch that also has an open PR runs this workflow twice: once
+# on push (refs/heads/feat/...) and once on pull_request (refs/pull/N/merge).
+# Those refs are different concurrency groups, so the two runs do not cancel
+# each other. fix/**, cursor/**, and ci/** stay on pull_request alone.
 # Offline only: in-memory backend, no secrets, no deploys.
 
 on:
