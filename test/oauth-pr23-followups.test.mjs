@@ -8,6 +8,7 @@ import {
   LEGACY_CUTOFF_MS,
   KEY,
   lookupAccessToken,
+  mintTokens,
   registerClient,
   sha256base64url,
   sha256hex,
@@ -172,5 +173,106 @@ test("pr23: a migrated raw refresh/access pair joins one grant family, and reuse
     assert.equal(await lookupAccessToken(rotated.access_token), null, "reuse revokes the rotated access token");
     assert.equal(r.data.has(KEY.refresh(sha256hex(rotated.refresh_token))), false);
     assert.equal((await lookupAccessToken(rawOther)).upstash_token, "SECRET-OTHER");
+  });
+});
+
+test("pr23: seal --apply refuses an unverified KEK; dry-run stays the default and writes nothing", async () => {
+  const raw = "9".repeat(64);
+  const key = `lm:oauth:token:${raw}`;
+  const plant = () => {
+    const r = oauthRedis();
+    put(r, key, { client_id: "c", space: "s", upstash_token: "PLAINTEXT", expires_at: 9e9 });
+    r.ttls.set(key, 100);
+    return r;
+  };
+
+  // A mistyped KEK has nothing sealed to fail against, so the unopenable count stays 0.
+  await withEnv({ LOGMEM_OAUTH_KEK: "ff".repeat(32), VERCEL_ENV: undefined }, async () => {
+    const r = plant();
+    const before = JSON.stringify([...r.data.entries()]);
+    const dry = await migrateLegacy(r);
+    assert.equal(dry.apply, false);
+    assert.equal(dry.aborted, false);
+    assert.equal(dry.kekUnverified, true);
+    assert.equal(dry.sealed, 0);
+    assert.equal(dry.actions.some((a) => a.action === "seal"), true);
+    assert.equal(JSON.stringify([...r.data.entries()]), before, "dry-run writes nothing");
+
+    const logs = [];
+    const refused = await migrateLegacy(r, { apply: true, log: (m) => logs.push(m) });
+    assert.equal(refused.aborted, true);
+    assert.equal(refused.kekUnverified, true);
+    assert.equal(refused.sealed, 0);
+    assert.equal(refused.deleted, 0);
+    assert.equal(JSON.stringify([...r.data.entries()]), before, "plaintext survives --apply with a mistyped KEK");
+    assert.match(logs.join("\n"), /unverified/);
+    assert.ok(!logs.join("\n").includes("PLAINTEXT"));
+  });
+
+  // The configured KEK is just as unverified until some sealed record opens with it.
+  await withEnv(KEK, async () => {
+    const r = plant();
+    const before = JSON.stringify([...r.data.entries()]);
+    const refused = await migrateLegacy(r, { apply: true });
+    assert.equal(refused.aborted, true);
+    assert.equal(refused.kekUnverified, true);
+    assert.equal(refused.sealed, 0);
+    assert.equal(JSON.stringify([...r.data.entries()]), before);
+
+    const ok = await migrateLegacy(r, { apply: true, confirmUnverifiedKek: true });
+    assert.equal(ok.aborted, false);
+    assert.equal(ok.kekUnverified, true);
+    assert.equal(ok.sealed, 1);
+    assert.equal(r.data.has(key), false);
+    const sealed = JSON.parse(r.data.get(KEY.access(sha256hex(raw))).value);
+    assert.equal(sealed.creds.v, 2);
+    assert.ok(!JSON.stringify(sealed).includes("PLAINTEXT"));
+  });
+});
+
+test("pr23: an openable sealed record verifies the KEK; a record that does not open still aborts --apply", async () => {
+  await withEnv(KEK, async () => {
+    const r = oauthRedis();
+    __setRedisForTests(r);
+    await mintTokens({ client_id: "cli_x", scope: "mcp", space: "s", backend: { kind: "redis", uri: "rediss://h" } });
+    __setRedisForTests(null);
+    const raw = "7".repeat(64);
+    const key = `lm:oauth:token:${raw}`;
+    put(r, key, { client_id: "c", space: "s", upstash_token: "T", expires_at: 9e9 });
+    r.ttls.set(key, 50);
+    const rep = await migrateLegacy(r, { apply: true });
+    assert.equal(rep.kekUnverified, false);
+    assert.equal(rep.aborted, false);
+    assert.equal(rep.sealed, 1);
+    assert.equal(r.data.has(key), false);
+  });
+
+  // --confirm-unverified-kek must not override a sealed record the KEK cannot open.
+  const r = oauthRedis();
+  put(r, KEY.access(sha256hex("1".repeat(64))), {
+    client_id: "cli_old",
+    scope: "mcp",
+    sub: "rest:old.example",
+    space: "old",
+    issued_at: 1,
+    expires_at: 9e9,
+    creds: sealV1({
+      backend: { kind: "upstash", url: "https://old.example/exec", token: "OLD" },
+      upstash_url: "https://old.example/exec",
+      upstash_token: "OLD",
+    }),
+  });
+  const rawKey = `lm:oauth:token:${"8".repeat(64)}`;
+  put(r, rawKey, { client_id: "c", space: "s", upstash_token: "PLAIN", expires_at: 9e9 });
+  __setClockForTests(() => LEGACY_CUTOFF_MS - 1000);
+  const before = JSON.stringify([...r.data.entries()]);
+  await withEnv({ LOGMEM_OAUTH_KEK: "ff".repeat(32), VERCEL_ENV: undefined }, async () => {
+    const rep = await migrateLegacy(r, { apply: true, confirmUnverifiedKek: true });
+    assert.equal(rep.aborted, true);
+    assert.ok(rep.unopenable >= 1);
+    assert.equal(rep.sealed, 0);
+    assert.equal(rep.deleted, 0);
+    assert.equal(JSON.stringify([...r.data.entries()]), before);
+    assert.equal(r.data.has(rawKey), true);
   });
 });

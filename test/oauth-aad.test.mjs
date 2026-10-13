@@ -185,6 +185,8 @@ test("aad: oauth-legacy-seal CLI exits non-zero when records were skipped", asyn
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../scripts/oauth-legacy-seal.mjs", import.meta.url), "utf8");
   assert.match(src, /report\.unopenable > 0[\s\S]*process\.exitCode = 2/);
+  assert.match(src, /--confirm-unverified-kek/);
+  assert.match(src, /report\.kekUnverified && report\.aborted[\s\S]*process\.exitCode = 2/);
 });
 
 test("aad: legacy raw records are sealed with a clamped TTL; expires_at is never extended", async () => {
@@ -197,7 +199,8 @@ test("aad: legacy raw records are sealed with a clamped TTL; expires_at is never
     const expired = "6".repeat(64);
     put(r, `lm:oauth:token:${expired}`, { client_id: "c", space: "s", upstash_token: "T", expires_at: nowS - 5 });
     r.ttls.set(`lm:oauth:token:${expired}`, 500);
-    const rep = await migrateLegacy(r, { apply: true });
+    // Raw-only keyspace: nothing sealed can prove the KEK, so --apply needs the confirm flag.
+    const rep = await migrateLegacy(r, { apply: true, confirmUnverifiedKek: true });
     const k = KEY.access(sha256hex(raw));
     assert.ok(r.ttls.get(k) <= 100 && r.ttls.get(k) > 90, `ttl ${r.ttls.get(k)}`);
     assert.equal(get(r, k).expires_at, nowS + 100);
