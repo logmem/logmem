@@ -32,6 +32,7 @@ const PROBE_TIMEOUT_MS = 5000;
 const CONNECT_FAILED = "Could not connect with those credentials";
 const CSRF_COOKIE = "lm_oauth_csrf";
 const CSRF_TTL_S = 600;
+const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{43,128}$/;
 const BOUND_PARAMS = ["client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "response_type"];
 
 // vercel.json excludes this path from the site-wide CSP, so this function
@@ -252,6 +253,10 @@ export async function validateAuthRequest(query) {
   }
   if (query.response_type !== "code") return { client, error: "unsupported_response_type", description: "only 'code' supported" };
   if (query.code_challenge_method !== "S256") return { client, error: "invalid_request", description: "code_challenge_method must be S256" };
+  // RFC 7636 4.2: BASE64URL(SHA256(verifier)) is 43 chars; allow the spec's 43-128 range.
+  if (typeof query.code_challenge !== "string" || !CODE_CHALLENGE_RE.test(query.code_challenge)) {
+    return { client, error: "invalid_request", description: "code_challenge must be 43-128 base64url characters" };
+  }
   return { client };
 }
 
@@ -262,9 +267,9 @@ function rejectRequest(res, v, source) {
   return redirectError(res, source.redirect_uri, v.error, v.description, source.state);
 }
 
+// No CORS headers: /authorize is a top-level browser navigation, never a
+// cross-origin fetch.
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-
   try {
     if (req.method === "GET") {
       const url = new URL(req.url, `https://${req.headers.host}`);

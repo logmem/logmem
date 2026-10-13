@@ -110,3 +110,39 @@ test("csp: consent page sends exactly one CSP with the right form-action; error 
     assert.equal(err.getHeader("content-security-policy"), ERROR_CSP);
   });
 });
+
+// ───── PR #6 re-verification INFO items ─────
+
+test("info: code_challenge must be 43-128 base64url chars (redirects invalid_request otherwise)", async () => {
+  await withEnv(KEK, async () => {
+    __setRedisForTests(oauthRedis());
+    const c = await registerClient({ redirect_uris: ["https://app.example/cb"], token_endpoint_auth_method: "none" });
+    const q = (code_challenge) => ({ response_type: "code", client_id: c.client_id, redirect_uri: "https://app.example/cb", code_challenge, code_challenge_method: "S256", state: "st" });
+    for (const bad of ["c", "x".repeat(42), "x".repeat(129), "a".repeat(42) + "=", "a".repeat(42) + "+", "a".repeat(42) + "/", "a b".repeat(20)]) {
+      const res = mockRes();
+      await authorizeHandler(mockReq({ url: "/api/oauth/authorize?" + new URLSearchParams(q(bad)) }), res);
+      assert.equal(res.statusCode, 302, bad);
+      const loc = new URL(res.getHeader("location"));
+      assert.equal(loc.origin, "https://app.example");
+      assert.equal(loc.searchParams.get("error"), "invalid_request");
+      assert.match(loc.searchParams.get("error_description"), /code_challenge/);
+    }
+    for (const good of ["x".repeat(43), "A-_z9".repeat(20) + "abc", "y".repeat(128)]) {
+      const res = mockRes();
+      await authorizeHandler(mockReq({ url: "/api/oauth/authorize?" + new URLSearchParams(q(good)) }), res);
+      assert.equal(res.statusCode, 200, good);
+    }
+  });
+});
+
+test("info: /authorize sends no Access-Control-Allow-Origin", async () => {
+  await withEnv(KEK, async () => {
+    __setRedisForTests(oauthRedis());
+    const c = await registerClient({ redirect_uris: ["https://app.example/cb"], token_endpoint_auth_method: "none" });
+    const { res } = await consentSession(authorizeHandler, { response_type: "code", client_id: c.client_id, redirect_uri: "https://app.example/cb", code_challenge: "x".repeat(43), code_challenge_method: "S256" });
+    assert.equal(res.getHeader("access-control-allow-origin"), undefined);
+    const err = mockRes();
+    await authorizeHandler(mockReq({ url: "/api/oauth/authorize?client_id=nope&redirect_uri=https://x.example" }), err);
+    assert.equal(err.getHeader("access-control-allow-origin"), undefined);
+  });
+});
