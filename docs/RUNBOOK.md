@@ -15,6 +15,7 @@ the procedure.
 | stdio logs | the MCP client's stderr for the `logmem-mcp` process, prefixed `[logmem]` |
 | CI | `.github/workflows/ci.yml`: `npm ci`, `npm test`, `npm run spec:check`, `npm run conformance` on Node 22 |
 | Redis timeout | `LOGMEM_REDIS_TIMEOUT_MS` (default 5000) per command, REST and native |
+| Dogfood daily check | Vercel Cron, `GET /api/cron/dogfood-check` at 13:00 UTC; scorecard at `lm:{space}:dogfood:scorecard`. See section 7 |
 
 ## 1. Deploy and rollback
 
@@ -174,3 +175,88 @@ redis-cli ZRANGE lm:madez:mirror:retry 0 4            # oldest five, with the er
   Never pass tokens, URLs, headers or bodies to it.
 - **SLO target (GAPS O4):** 99.5% of `/api/health` checks green per 30 days; p95 MCP call under 1.5 s.
   Point an external uptime checker at `/api/health` (**TODO (infra):** which one, who gets paged).
+
+## 7. Dogfood daily check (Vercel Cron)
+
+The Phase 2 audit (pass bar: 7 consecutive passing days, 3 or more agents, at least
+one accepted handoff, 0 mirror mismatches, 0 degraded, 0 unanswered handoffs over 24h,
+and job `logmem-v0-ship` at stage `done`) runs inside the app on Vercel Cron. The
+GitHub Actions workflow `.github/workflows/dogfood-check.yml` is a fallback only:
+Actions fails with `startup_failure` on this account (billing).
+
+| What | Where |
+|---|---|
+| Schedule | `vercel.json` `crons`: `/api/cron/dogfood-check`, `0 13 * * *` (13:00 UTC) |
+| Handler | `api/cron/dogfood-check.mjs` (runs `runDaily` from `scripts/dogfood-check.mjs`) |
+| Writes | one `checkup` entry per space per UTC day on `job:logmem-dogfood`, as `agent:logmem-check`; `stuck` entries for handoffs unanswered over 24h; the scorecard JSON at `lm:{space}:dogfood:scorecard` |
+| Reads | `GET /api/scorecard?space=madez` (and the page `/scorecard`) |
+| Rerun same day | replaces that day's checkup and scorecard row; never duplicates |
+
+Vercel runs crons **only on the production deployment**, and only on the code in the
+production branch. The cron does nothing until this code is merged to the production
+branch and deployed. On the Hobby plan Vercel may fire a daily cron at any minute
+inside the 13:00 hour.
+
+### Env vars (Vercel, Production)
+
+| Var | Required | Value |
+|---|---|---|
+| `CRON_SECRET` | yes | 32+ random characters (below). Unset or shorter: the endpoint answers 503 and runs nothing |
+| `LOGMEM_REST_URL`, `LOGMEM_REST_TOKEN` | yes | the bridge (or `LOGMEM_REDIS_URI`). The check writes, so these must be read-write |
+| `LOGMEM_DOGFOOD_SPACES` | no | default `madez,fieldnotes` |
+| `LOGMEM_DOGFOOD_MIRROR_SPACES` | no | spaces with ACMI parity checked; default `madez` |
+
+The bridge creds were approved for **preview only** in the dogfood design. Running the
+check on Vercel Cron needs them in **Production** too. That is the operator's call;
+note the decision in the log before setting them. With `VERCEL_ENV=production`,
+`/api/scorecard` requires the admin login (`LOGMEM_ADMIN_PASSWORD`).
+
+### Set CRON_SECRET
+
+The secret is made and typed by the operator. Never paste it into chat, an issue, a
+commit, or an agent prompt.
+
+1. Generate it in your own terminal: `openssl rand -hex 32`
+2. Vercel dashboard, Project, Settings, Environment Variables: add `CRON_SECRET`,
+   environment **Production** only, paste the value, save. (Or `vercel env add CRON_SECRET production`
+   and paste at the prompt; do not pass it as a command argument.)
+3. Redeploy production so the function sees it (`vercel redeploy <prod-url>` or push a commit).
+   Vercel then sends `Authorization: Bearer <CRON_SECRET>` on every cron call.
+
+Rotate: repeat with a new value and redeploy. The old value stops working at once.
+
+### Trigger a run by hand
+
+The same request Vercel sends. Read the secret into a variable without echoing it, so
+it does not land in shell history or on screen:
+
+```sh
+read -rs CRON_SECRET   # paste, Enter
+curl -sS -H "Authorization: Bearer $CRON_SECRET" https://<prod-domain>/api/cron/dogfood-check | jq
+unset CRON_SECRET
+```
+
+`200 {ok, ran_at, results: [{space, date, pass, replaced, gate}]}`. `401`: wrong or
+missing secret. `503`: `CRON_SECRET` or the backend env is not set. `500 {error:"internal error", ref}`:
+look up `ref` in the runtime logs (filter `"route":"/api/cron/dogfood-check"`). A space shows
+`skipped: "locked"` when another run for it started less than 10 minutes ago.
+
+Vercel dashboard, Project, Settings, Cron Jobs also has a **Run** button for the same job.
+
+Without Vercel (from a laptop with the bridge creds in env), one space at a time:
+
+```sh
+node scripts/dogfood-check.mjs --space madez        # writes the checkup + Redis scorecard
+node scripts/dogfood-check.mjs --space madez --dry  # computes and prints; writes nothing
+```
+
+Running either way more than once on a UTC day is safe: the later run replaces the day.
+
+### Read the scorecard
+
+- Page: `https://<domain>/scorecard` (admin login in production).
+- API: `GET /api/scorecard?space=madez` returns `{space, days[], gate, deliverable, checks, source}`.
+  `source` is `redis` when the stored scorecard was used, `checkups` when it fell back to the
+  checkup entries. `gate.pass` is the Phase 2 verdict; it is always recomputed, never stored.
+- Raw: `GET lm:madez:dogfood:scorecard` (JSON). Only rows backed by a checkup written by
+  `agent:logmem-check` are shown by the API.
