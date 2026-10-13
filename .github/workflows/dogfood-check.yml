@@ -3,6 +3,18 @@ name: dogfood-check
 # Daily LogMem dogfood audit (design: docs/superpowers/specs/2026-10-11-logmem-dogfood-design.md).
 # Runs the check against the live bridge, writes the checkup entry, and commits
 # scorecard.json to the dogfood/scorecard branch. Never touches main.
+#
+# SECONDARY PATH (2026-10-13). Actions fails with startup_failure on every run
+# (account billing), so this workflow has never completed. The primary path is
+# now Vercel Cron inside the LogMem app: vercel.json "crons" ->
+# api/cron/dogfood-check.mjs at the same 13:00 UTC, scorecard stored in Redis at
+# lm:{space}:dogfood:scorecard. See docs/RUNBOOK.md "Dogfood daily check".
+# Kept as a fallback only. This job checks out feat/dogfood-phase0, which
+# appends a checkup and does not replace one the cron already wrote. If both
+# run on the same UTC day, the log can hold two checkups for that day.
+# Same-day replacement is the cron handler (and a manual run of
+# scripts/dogfood-check.mjs on that code). Manual run without Actions:
+#   node scripts/dogfood-check.mjs --space madez
 
 on:
   schedule:

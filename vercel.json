@@ -15,6 +15,12 @@
     }
   ],
   "cleanUrls": true,
+  "crons": [
+    {
+      "path": "/api/cron/dogfood-check",
+      "schedule": "0 13 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

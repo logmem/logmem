@@ -11,10 +11,11 @@ import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 
 export async function probe(redis) {
   const p = `lm:probe:${Date.now()}`;
-  const s = `${p}:set`, h = `${p}:hash`, z = `${p}:zset`, str = `${p}:str`;
+  const s = `${p}:set`, h = `${p}:hash`, z = `${p}:zset`, str = `${p}:str`, lock = `${p}:lock`;
   const steps = [
     ["PING"],
     ["SET", str, "v"], ["GET", str], ["TYPE", str], ["EXISTS", str], ["EXPIRE", str, "60"],
+    ["SET", lock, "t", "NX", "EX", "60"], // the dogfood check's run lock
     ["SADD", s, "a", "b"], ["SMEMBERS", s], ["SREM", s, "b"],
     ["HSET", h, "f", "1", "g", "2"], ["HGETALL", h], ["HDEL", h, "g"],
     ["ZADD", z, "1791700000000", "m1"], ["ZADD", z, "1791700000001", "m2"],
@@ -35,7 +36,7 @@ export async function probe(redis) {
     }
   } finally {
     try {
-      await redis("DEL", str, s, h, z);
+      await redis("DEL", str, s, h, z, lock);
       results.push({ cmd: "DEL", ok: true });
     } catch (e) {
       results.push({ cmd: "DEL", ok: false, error: e.message });
