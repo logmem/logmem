@@ -102,6 +102,9 @@ export default async function handler(req, res) {
       const got = await consumeRefresh(refresh_token, client_id);
       if (!got) return bad(res, 400, "invalid_grant", "refresh token invalid or already used");
       if (got.mismatch) return bad(res, 400, "invalid_grant", "refresh/client mismatch");
+      // RFC 9700 4.14: a rotated refresh token presented again. The family is
+      // already revoked; the presenter (legitimate or not) gets nothing.
+      if (got.reuse) return bad(res, 400, "invalid_grant", "refresh token reuse detected; all tokens for this grant were revoked");
       const rec = got.rec;
 
       const tokens = await mintTokens({
@@ -112,8 +115,13 @@ export default async function handler(req, res) {
         upstash_token: rec.upstash_token,
         backend: rec.backend,
         space: rec.space,
+        fid: rec.fid, // same grant: rotation stays in the family
       });
-      if (!got.grace) await linkRefreshChildren(refresh_token, tokens);
+      // Reuse may have been detected while this request was in flight; if so
+      // the tokens just minted were deleted and must not be handed out.
+      if ((await linkRefreshChildren(refresh_token, tokens, rec.fid)).revoked) {
+        return bad(res, 400, "invalid_grant", "refresh token reuse detected; all tokens for this grant were revoked");
+      }
       await touchClient(client_id);
       res.status(200).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
       res.end(JSON.stringify(tokens));

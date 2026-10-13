@@ -9,22 +9,50 @@
 //   - stuck:    handoffs older than 24h with no accept -> writes one "stuck" entry each (once)
 //   - degraded: self-reported (kind problem/alert with payload.degraded=true); in-memory
 //               sessions never reach Redis, so self-report is the only signal
-// Writes one "checkup" entry on job:logmem-dogfood and upserts the day into scorecard.json.
+// Writes one "checkup" entry on job:logmem-dogfood per UTC day (a rerun the same
+// day replaces it) and upserts the day into the scorecard at
+// lm:{space}:dogfood:scorecard (JSON in Redis). Optionally also into a file.
 //
-//   LOGMEM_REST_URL=... LOGMEM_REST_TOKEN=... node scripts/dogfood-check.mjs \
-//     --space madez --scorecard docs/dogfood/scorecard.json [--mirror-spaces madez] [--dry]
+// Primary path: Vercel Cron -> api/cron/dogfood-check.mjs (13:00 UTC daily).
+// Manual run of one day, against the backend in env:
+//
+//   LOGMEM_REST_URL=... LOGMEM_REST_TOKEN=... node scripts/dogfood-check.mjs --space madez
+//     [--mirror-spaces madez] [--scorecard path/to/scorecard.json] [--dry]
+//
+// --dry computes the day and prints it; it writes nothing (no checkup, no scorecard).
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import { createStore, tryParse, normTs } from "../src/core/store.mjs";
 import { createMirror } from "../src/core/mirror.mjs";
 import { acmiKey } from "../src/core/keys.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
+import { validateKeySegments } from "../src/lib/helpers.mjs";
 
 export const DAY_MS = 24 * 3600 * 1000;
 export const CHECK_JOB = "logmem-dogfood";
 export const DELIVERABLE_JOB = "logmem-v0-ship";
-const BY = "agent:logmem-check";
+export const CHECK_BY = "agent:logmem-check";
+const BY = CHECK_BY;
+
+/** Where the scorecard lives (JSON string). Written only by the check. */
+export function scorecardKey(space) {
+  validateKeySegments(space);
+  return `lm:${space}:dogfood:scorecard`;
+}
+const lockKey = (space) => `lm:${space}:dogfood:lock`;
+
+/** ACMI twins of one mirrored checkup (same ts, same trail, written by the mirror). */
+async function removeAcmiTwins(redis, space, entry) {
+  const key = acmiKey(space, "job", CHECK_JOB, "log");
+  let n = 0;
+  for (const m of (await redis("ZRANGEBYSCORE", key, entry.ts, entry.ts)) || []) {
+    const t = tryParse(m);
+    if (t && t.source === BY && t.correlationId === entry.trail && t.mirrored_from === "lm") n += Number(await redis("ZREM", key, m)) || 0;
+  }
+  return n;
+}
 
 async function scan(redis, pattern) {
   let cursor = "0";
@@ -125,6 +153,7 @@ export async function runCheck(redis, {
     links: ((await store.getWho("job", DELIVERABLE_JOB)) || {}).links || [],
   };
 
+  let replaced = 0;
   if (write) {
     const writer = createStore(redis, { space, mirror: mirrored ? createMirror(redis, space) : null });
     for (const { trail, h } of stuckToWrite) {
@@ -135,13 +164,53 @@ export async function runCheck(redis, {
       });
       day.stuck_written++;
     }
+    // One checkup per UTC day: earlier checkups for this date (same trail,
+    // written by the check) are replaced. Append first, then remove, so a
+    // failed write never leaves the day without a checkup.
+    const trail = `dogfoodCheck-${day.date}`;
+    const dayStart = Date.parse(`${day.date}T00:00:00Z`);
+    const priors = (await writer.readLog("job", CHECK_JOB, { sinceMs: dayStart, untilMs: dayStart + DAY_MS - 1 }))
+      .filter((e) => e.kind === "checkup" && e.by === BY && e.trail === trail && e.ts !== now);
     await writer.append("job", CHECK_JOB, {
       ts: now, kind: "checkup", by: BY, via: "dogfood-check", byline: "logmem-check (via dogfood-check)",
-      trail: `dogfoodCheck-${day.date}`, summary: `${day.date} ${day.pass ? "PASS" : "FAIL"}: ${day.agents.length} agents, ${day.entries} entries, ${day.handoffs} handoffs (${day.accepted} accepted), ${day.mirror_mismatches} mirror mismatches, ${day.unanswered_24h} unanswered >24h, ${day.degraded_sessions} degraded`,
+      trail, summary: `${day.date} ${day.pass ? "PASS" : "FAIL"}: ${day.agents.length} agents, ${day.entries} entries, ${day.handoffs} handoffs (${day.accepted} accepted), ${day.mirror_mismatches} mirror mismatches, ${day.unanswered_24h} unanswered >24h, ${day.degraded_sessions} degraded`,
       payload: day,
     });
+    for (const p of priors) {
+      replaced += await writer.removeEntry("job", CHECK_JOB, p);
+      if (mirrored) await removeAcmiTwins(redis, space, p);
+    }
   }
-  return { day, deliverable };
+  return { day, deliverable, replaced };
+}
+
+/**
+ * One scheduled run for one space: the check (writes the checkup) plus the
+ * scorecard upsert in Redis. A short lock (SET NX EX) keeps two overlapping
+ * runs (Vercel may deliver a cron event twice) from racing on the same day.
+ * Returns { space, skipped: "locked" } when another run holds the lock.
+ */
+export async function runDaily(redis, { space, mirrorSpaces = ["madez"], now = Date.now(), lockTtlS = 600 } = {}) {
+  const key = scorecardKey(space);
+  const lock = lockKey(space);
+  const token = randomUUID();
+  if ((await redis("SET", lock, token, "NX", "EX", String(lockTtlS))) == null) return { space, skipped: "locked" };
+  try {
+    const res = await runCheck(redis, { space, mirrorSpaces, now, write: true });
+    const prev = tryParse(await redis("GET", key));
+    const usable = prev && typeof prev === "object" && prev.space === space && Array.isArray(prev.days) ? prev : null;
+    const card = updateScorecard(usable, res, new Date(now).toISOString());
+    card.gate = gate(card);
+    card.by = BY;
+    await redis("SET", key, JSON.stringify(card));
+    return { space, date: res.day.date, pass: res.day.pass, replaced: res.replaced, res, card };
+  } finally {
+    try {
+      if ((await redis("GET", lock)) === token) await redis("DEL", lock);
+    } catch {
+      // the lock expires on its own (EX)
+    }
+  }
 }
 
 /** Upsert a day into scorecard JSON (keeps the newest 30 days). */
@@ -165,16 +234,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const arg = (n, d) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1] : d);
   const space = arg("space", "madez");
   const path = arg("scorecard", null);
+  const mirrorSpaces = arg("mirror-spaces", "madez").split(",").map((x) => x.trim()).filter(Boolean);
+  const dry = argv.includes("--dry");
   const d = descriptorFromEnv();
   if (!d) {
     console.error("set LOGMEM_REDIS_URI or LOGMEM_REST_URL + LOGMEM_REST_TOKEN");
     process.exit(1);
   }
-  const res = await runCheck(fromDescriptor(d).redis, {
-    space,
-    mirrorSpaces: arg("mirror-spaces", "madez").split(","),
-    write: !argv.includes("--dry"),
-  });
+  const redis = fromDescriptor(d).redis;
+  let res;
+  if (dry) {
+    res = await runCheck(redis, { space, mirrorSpaces, write: false });
+  } else {
+    const out = await runDaily(redis, { space, mirrorSpaces });
+    if (out.skipped) {
+      console.error(`${space}: another check run holds the lock; try again in a few minutes`);
+      process.exit(2);
+    }
+    res = out.res;
+    console.error(`${space} ${out.date} ${out.pass ? "PASS" : "FAIL"}; scorecard written to ${scorecardKey(space)}${out.replaced ? ` (replaced ${out.replaced} earlier checkup today)` : ""}`);
+  }
   if (path) {
     const prev = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
     const card = updateScorecard(prev?.space === space ? prev : null, res);

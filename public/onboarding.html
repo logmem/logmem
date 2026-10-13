@@ -128,8 +128,8 @@
     <section class="lm-panel ob-card" data-step="space" aria-labelledby="h-space" hidden>
       <div><h1 id="h-space" tabindex="-1">Name your space.</h1><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
       <div class="ob-grid2">
-        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" value="Field Notes Co." autocomplete="organization"></div>
-        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" value="fieldnotes" maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:fieldnotes:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
+        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Field Notes Co." required autocomplete="organization" aria-describedby="ws-err"><span class="lm-error" id="ws-err" hidden></span></div>
+        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" placeholder="fieldnotes" required maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:…:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
       </div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="sp-next">Continue</button></div>
     </section>
@@ -150,7 +150,7 @@
 
     <!-- BYO: ACMI -->
     <section class="lm-panel ob-card" data-step="acmi" aria-labelledby="h-acmi" hidden>
-      <div><h1 id="h-acmi" tabindex="-1">Already running ACMI agents?</h1><p class="ob-lede">Compatibility mode lets agents keep their acmi_* tools and shows their existing history in LogMem. Turn it off if you’re starting fresh.</p></div>
+      <div><h1 id="h-acmi" tabindex="-1">Bring your existing agent history?</h1><p class="ob-lede">Compatibility mode lets agents keep their acmi_* tools and shows their existing history in LogMem. Turn it off if you’re starting fresh.</p></div>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="compat" checked><span class="ob-toggle-text"><strong class="lm-title-3">ACMI compatibility</strong><span class="muted ob-small">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*. Sets <code class="mono">LOGMEM_ACMI_COMPAT=1</code>.</span></span></label>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="mirror"><span class="ob-toggle-text"><strong class="lm-title-3">Mirror writes back to ACMI</strong><span class="muted ob-small">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it. Sets <code class="mono">LOGMEM_MIRROR_ACMI=1</code> for this space.</span></span></label>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
@@ -168,7 +168,7 @@
       </div>
       <div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="info" aria-hidden="true"></i><div>The <code class="mono">@logmem/mcp</code> package isn’t published on npm yet; this is the command it will use. In the real flow your space token appears here in place of <code class="mono">&lt;space token&gt;</code>.</div></div>
       <div class="lm-alert lm-alert--info" id="waiting"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i><div>This page doesn’t watch for the first call yet. After the restart, the agent shows up in the app under Agents. <button type="button" class="ob-linkbtn" id="sim">Show what success looks like</button></div></div>
-      <div class="lm-alert lm-alert--success" id="connected" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><span class="lm-demo">Demo</span> <strong>quill connected</strong> from <span id="sim-host">Claude Code</span>. Its first call started a shift automatically.</div></div>
+      <div class="lm-alert lm-alert--success lm-demo-frame" id="connected" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><span class="lm-demo">Demo data</span> <strong>quill connected</strong> from <span id="sim-host">Claude Code</span>. Its first call started a shift automatically.</div></div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
     </section>
 
@@ -178,9 +178,9 @@
       <div class="lm-panel lm-demo-frame ob-events">
         <div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div>
         <div class="lm-events">
-          <div class="lm-event" data-k="system"><time class="lm-event-time">08:02</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">started</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">quill (via claude-code) started a shift (auto)</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
-          <div class="lm-event" data-k="work"><time class="lm-event-time">08:04</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">assigned</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">New job: Draft newsletter issue 14</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
-          <div class="lm-event" data-k="work"><time class="lm-event-time">08:11</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">progress</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">Outline done, 6 sections</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
+          <div class="lm-event" data-k="system"><time class="lm-event-time" datetime="2026-10-12T08:02:00Z">08:02 UTC</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">started</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">quill (via claude-code) started a shift (auto)</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
+          <div class="lm-event" data-k="work"><time class="lm-event-time" datetime="2026-10-12T08:04:00Z">08:04 UTC</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">assigned</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">New job: Draft newsletter issue 14</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
+          <div class="lm-event" data-k="work"><time class="lm-event-time" datetime="2026-10-12T08:11:00Z">08:11 UTC</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">progress</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">Outline done, 6 sections</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
         </div>
       </div>
       <p class="ob-note">At the end of the shift the agent writes a Recap. Its next Start opens with a Brief built from it, so the next shift doesn’t start cold.</p>

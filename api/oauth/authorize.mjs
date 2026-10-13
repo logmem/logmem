@@ -17,8 +17,8 @@
 // redirects and times out, and probe failures show one generic message —
 // upstream error bodies are never echoed to the page.
 //
-// Clickjacking / CSRF: every HTML response sends frame-ancestors 'none' and
-// X-Frame-Options DENY. The consent form carries a CSRF token =
+// Clickjacking / CSRF: every HTML response sends one full CSP (frame-ancestors
+// 'none'; see consentCsp) and X-Frame-Options DENY. The consent form carries a CSRF token =
 // exp.HMAC(key, [nonce, exp, auth-request params]) where nonce lives in a
 // SameSite=Strict HttpOnly cookie set with the form. POST verifies both, so a
 // cross-site page cannot submit (or pre-fill) consent for the user.
@@ -32,14 +32,48 @@ const PROBE_TIMEOUT_MS = 5000;
 const CONNECT_FAILED = "Could not connect with those credentials";
 const CSRF_COOKIE = "lm_oauth_csrf";
 const CSRF_TTL_S = 600;
+const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{43,128}$/;
 const BOUND_PARAMS = ["client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "response_type"];
 
-function htmlHeaders(res, status) {
+// vercel.json excludes this path from the site-wide CSP, so this function
+// sends the ONLY Content-Security-Policy header here. BASE_CSP must stay
+// identical to the global policy in vercel.json apart from form-action
+// (test/oauth-csp.test.mjs checks this). form-action has to name the client's
+// redirect_uri origin: Chromium enforces the consent document's form-action on
+// every hop of the form navigation, including our 302 to the client callback.
+const BASE_CSP = [
+  "default-src 'self'",
+  "img-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline'",
+  "connect-src 'self'",
+  "font-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+];
+const SAFE_ORIGIN = /^https?:\/\/[A-Za-z0-9._-]+(?::\d{1,5})?$|^https?:\/\/\[[0-9A-Fa-f:.]+\](?::\d{1,5})?$/;
+
+/** CSP for the consent page: form-action 'self' plus the (already validated) redirect_uri origin. */
+export function consentCsp(redirect_uri) {
+  let origin = null;
+  try {
+    origin = new URL(redirect_uri).origin;
+  } catch {
+    // unreachable for a validated redirect_uri; fall back to 'self' only
+  }
+  const formAction = origin && SAFE_ORIGIN.test(origin) ? `form-action 'self' ${origin}` : "form-action 'self'";
+  return [...BASE_CSP, formAction].join("; ");
+}
+
+/** CSP for error pages: they hold no form, so nothing may be submitted. */
+export const ERROR_CSP = [...BASE_CSP, "form-action 'none'"].join("; ");
+
+function htmlHeaders(res, status, csp) {
   res.statusCode = status;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+  res.setHeader("Content-Security-Policy", csp);
 }
 
 function readCookie(req, name) {
@@ -71,7 +105,7 @@ export function verifyCsrf(nonce, token, params, nowS = Math.floor(Date.now() / 
 
 /** Render the consent form with a CSRF token bound to `nonce` and the request params. */
 function sendConsent(res, status, params, nonce, error) {
-  htmlHeaders(res, status);
+  htmlHeaders(res, status, consentCsp(params.redirect_uri));
   res.end(renderConsent({ params: { ...params, csrf_token: issueCsrf(nonce, params) }, error }));
 }
 
@@ -183,7 +217,7 @@ function renderErrorPage(title, detail) {
 
 /** 400/503 page for errors that must not redirect (unknown client, bad redirect_uri, server config). */
 function sendErrorPage(res, status, title, detail) {
-  htmlHeaders(res, status);
+  htmlHeaders(res, status, ERROR_CSP);
   res.end(renderErrorPage(title, detail));
 }
 
@@ -219,6 +253,10 @@ export async function validateAuthRequest(query) {
   }
   if (query.response_type !== "code") return { client, error: "unsupported_response_type", description: "only 'code' supported" };
   if (query.code_challenge_method !== "S256") return { client, error: "invalid_request", description: "code_challenge_method must be S256" };
+  // RFC 7636 4.2: BASE64URL(SHA256(verifier)) is 43 chars; allow the spec's 43-128 range.
+  if (typeof query.code_challenge !== "string" || !CODE_CHALLENGE_RE.test(query.code_challenge)) {
+    return { client, error: "invalid_request", description: "code_challenge must be 43-128 base64url characters" };
+  }
   return { client };
 }
 
@@ -229,9 +267,9 @@ function rejectRequest(res, v, source) {
   return redirectError(res, source.redirect_uri, v.error, v.description, source.state);
 }
 
+// No CORS headers: /authorize is a top-level browser navigation, never a
+// cross-origin fetch.
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-
   try {
     if (req.method === "GET") {
       const url = new URL(req.url, `https://${req.headers.host}`);
@@ -244,7 +282,12 @@ export default async function handler(req, res) {
       return sendConsent(res, 200, params, nonce);
     }
 
-    if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
+    if (req.method !== "POST") {
+      res.setHeader("Content-Security-Policy", ERROR_CSP);
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Allow", "GET, POST");
+      return res.status(405).json({ error: "method_not_allowed" });
+    }
 
     const body = req.body || {};
     const v = await validateAuthRequest(body);
