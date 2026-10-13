@@ -87,7 +87,7 @@
 .ob-seg{align-self:flex-start;max-width:100%}
 .ob-small{font-size:13px}
 .ob-legend-sub{font-weight:400}
-.ob-card .lm-help,.ob-legend-sub{font-size:13px;line-height:18px}
+.ob-card .lm-help,.ob-card .lm-error,.ob-legend-sub{font-size:13px;line-height:18px}
 .ob-events{padding:8px 20px}
 .ob-events .lm-event-time{white-space:nowrap;min-width:9ch}
 /* P1-5: headings take programmatic focus on step change; ring only for keyboard users */
