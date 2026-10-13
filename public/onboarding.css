@@ -112,4 +112,5 @@
   .lm-seg button{height:auto}
   .ob-linkbtn,#sim{display:inline-flex;align-items:center}
   .ob-events .lm-event{grid-template-columns:64px 3px minmax(0,1fr)}
+  .ob-agent{min-height:44px}
 }

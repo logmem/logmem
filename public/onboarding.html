@@ -128,7 +128,7 @@
     <section class="lm-panel ob-card" data-step="space" aria-labelledby="h-space" hidden>
       <div><h1 id="h-space" tabindex="-1">Name your space.</h1><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
       <div class="ob-grid2">
-        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Field Notes Co." required autocomplete="organization"></div>
+        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Field Notes Co." required autocomplete="organization" aria-describedby="ws-err"><span class="lm-error" id="ws-err" hidden></span></div>
         <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" placeholder="fieldnotes" required maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:…:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
       </div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="sp-next">Continue</button></div>

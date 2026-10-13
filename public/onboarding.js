@@ -278,6 +278,15 @@
     return ok;
   }
   $('#sp').addEventListener('input', checkSpace);
+  function checkWorkspace() {
+    var ok = $('#ws').value.trim() !== '';
+    $('#ws').setAttribute('aria-invalid', ok ? 'false' : 'true');
+    var err = $('#ws-err');
+    err.hidden = ok;
+    err.textContent = ok ? '' : 'Enter a workspace name.';
+    return ok;
+  }
+  $('#ws').addEventListener('input', function () { if ($('#ws').getAttribute('aria-invalid') === 'true') checkWorkspace(); });
 
   // ---- Redis + real connection test ----------------------------------------------
   var backend = 'rest';
@@ -509,7 +518,10 @@
     if (!t || t.disabled) return;
     if (t.hasAttribute('data-choose')) choose(t.getAttribute('data-choose'));
     else if (t.hasAttribute('data-next')) {
-      if (current() === 'space' && !checkSpace()) return;
+      if (current() === 'space') {
+        var wsOk = checkWorkspace(), spOk = checkSpace();
+        if (!wsOk || !spOk) { $(wsOk ? '#sp' : '#ws').focus(); return; }
+      }
       go(state.i + 1);
     }
     else if (t.hasAttribute('data-back')) go(state.i - 1);
