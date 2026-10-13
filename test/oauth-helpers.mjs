@@ -1,6 +1,11 @@
 // Shared fixtures for test/oauth*.test.mjs. Not a test file itself.
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 
+// OAuth storage treats a bare process (no VERCEL_ENV, no NODE_ENV) as
+// non-local and fails closed. Tests are local: mark them as such unless the
+// runner already chose a NODE_ENV.
+if (!process.env.NODE_ENV) process.env.NODE_ENV = "test";
+
 /**
  * memory-redis plus the few OAuth-only semantics it lacks, implemented
  * synchronously so they are atomic like real Redis: GETDEL, SET NX/EX, and

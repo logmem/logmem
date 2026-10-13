@@ -17,6 +17,7 @@ import {
   LEGACY_CUTOFF_MS,
   sealCreds,
   openCreds,
+  recordAad,
   loadKek,
   safeEqual,
   sha256hex,
@@ -139,24 +140,28 @@ test("oauth storage: legacy raw-key refresh tokens consume once, client-checked,
 
 test("oauth storage: AES-256-GCM envelope round trip, hex and base64 KEKs", () => {
   const blob = { backend: { kind: "redis", uri: "rediss://:pw@h:6379" }, upstash_url: null, upstash_token: null };
+  const aad = recordAad("access", "a".repeat(64), { client_id: "cli_x", space: "s" });
   for (const kek of [TEST_KEK_HEX, Buffer.from(TEST_KEK_HEX, "hex").toString("base64")]) {
     const env = { LOGMEM_OAUTH_KEK: kek };
-    const env1 = sealCreds(blob, env);
+    const env1 = sealCreds(blob, aad, env);
     assert.equal(env1.enc, "aes-256-gcm");
+    assert.equal(env1.v, 2);
     assert.ok(env1.iv && env1.tag && env1.ct);
     assert.ok(!JSON.stringify(env1).includes("pw@h"));
-    assert.deepEqual(openCreds(env1, env), blob);
+    assert.deepEqual(openCreds(env1, aad, env), blob);
     // fresh IV each time
-    assert.notEqual(sealCreds(blob, env).iv, env1.iv);
+    assert.notEqual(sealCreds(blob, aad, env).iv, env1.iv);
     // tamper -> auth failure
     const ct = Buffer.from(env1.ct, "base64");
     ct[0] ^= 1;
-    assert.throws(() => openCreds({ ...env1, ct: ct.toString("base64") }, env));
+    assert.throws(() => openCreds({ ...env1, ct: ct.toString("base64") }, aad, env));
     // wrong key -> auth failure
-    assert.throws(() => openCreds(env1, { LOGMEM_OAUTH_KEK: "ff".repeat(32) }));
+    assert.throws(() => openCreds(env1, aad, { LOGMEM_OAUTH_KEK: "ff".repeat(32) }));
+    // wrong AAD -> auth failure
+    assert.throws(() => openCreds(env1, recordAad("access", "b".repeat(64), { client_id: "cli_x", space: "s" }), env));
     // truncated tag / wrong-size IV are rejected outright
-    assert.throws(() => openCreds({ ...env1, tag: Buffer.from(env1.tag, "base64").subarray(0, 4).toString("base64") }, env), /tag length/);
-    assert.throws(() => openCreds({ ...env1, iv: Buffer.alloc(16).toString("base64") }, env), /iv length/);
+    assert.throws(() => openCreds({ ...env1, tag: Buffer.from(env1.tag, "base64").subarray(0, 4).toString("base64") }, aad, env), /tag length/);
+    assert.throws(() => openCreds({ ...env1, iv: Buffer.alloc(16).toString("base64") }, aad, env), /iv length/);
   }
   assert.equal(loadKek({}), null);
   assert.throws(() => loadKek({ LOGMEM_OAUTH_KEK: "tooshort" }), StorageConfigError);
@@ -179,7 +184,7 @@ test("oauth storage: stored token record has {enc,iv,tag,ct} and no plaintext cr
   });
 });
 
-test("oauth storage: production without KEK refuses to mint; dev stores plaintext with warning", async () => {
+test("oauth storage: production without KEK refuses to mint; local dev stores plaintext with warning", async () => {
   await withEnv({ LOGMEM_OAUTH_KEK: undefined, VERCEL_ENV: "production" }, async () => {
     const r = oauthRedis();
     __setRedisForTests(r);
@@ -187,7 +192,7 @@ test("oauth storage: production without KEK refuses to mint; dev stores plaintex
     await assert.rejects(() => saveAuthCode(creds()), KekMissingError);
     assert.equal(r.data.size, 0, "nothing written");
   });
-  await withEnv({ LOGMEM_OAUTH_KEK: undefined, VERCEL_ENV: "preview" }, async () => {
+  await withEnv({ LOGMEM_OAUTH_KEK: undefined, VERCEL_ENV: "development" }, async () => {
     const r = oauthRedis();
     __setRedisForTests(r);
     const t = await mintTokens(creds());
@@ -216,7 +221,7 @@ for (const getdel of [true, false]) {
     });
   });
 
-  test(`oauth storage: refresh is single-use with one 60s grace reuse that revokes the children (${label})`, async () => {
+  test(`oauth storage: refresh is single-use; reuse inside the 60s window revokes the whole family (${label})`, async () => {
     await withEnv({ LOGMEM_OAUTH_KEK: TEST_KEK_HEX, VERCEL_ENV: undefined }, async () => {
       const r = oauthRedis({ getdel });
       __setRedisForTests(r);
@@ -227,32 +232,32 @@ for (const getdel of [true, false]) {
       assert.ok(r.data.has(`lm:oauth:rt:${sha256hex(t.refresh_token)}`), "victim token not burned");
 
       const first = await consumeRefresh(t.refresh_token, "cli_x");
-      assert.equal(first.grace, false);
+      assert.equal(first.reuse, undefined);
       assert.equal(first.rec.space, "acme");
       assert.equal(r.ttls.get(`lm:oauth:rtg:${sha256hex(t.refresh_token)}`), 60);
       const children = await mintTokens(creds());
-      await linkRefreshChildren(t.refresh_token, children);
+      assert.deepEqual(await linkRefreshChildren(t.refresh_token, children), { revoked: false });
 
-      assert.deepEqual(await consumeRefresh(t.refresh_token, "cli_evil"), { mismatch: true }, "grace also client-checked");
+      assert.deepEqual(await consumeRefresh(t.refresh_token, "cli_evil"), { mismatch: true }, "reuse path also client-checked");
 
       const warn = console.warn;
       const logged = [];
       console.warn = (m) => logged.push(m);
-      let grace;
+      let again;
       try {
-        grace = await consumeRefresh(t.refresh_token, "cli_x");
+        again = await consumeRefresh(t.refresh_token, "cli_x");
       } finally {
         console.warn = warn;
       }
-      assert.equal(grace.grace, true, "one retry inside the grace window");
+      assert.deepEqual(again, { reuse: true }, "a replay gets no record to mint from");
+      assert.equal(await lookupAccessToken(t.access_token), null, "original access token revoked");
       assert.equal(await lookupAccessToken(children.access_token), null, "first-use access token revoked");
       assert.equal(r.data.has(`lm:oauth:rt:${sha256hex(children.refresh_token)}`), false, "first-use refresh token revoked");
-      const ev = JSON.parse(logged.find((l) => String(l).includes("refresh_grace_used")));
-      assert.equal(ev.event, "refresh_grace_used");
-      assert.equal(ev.children_revoked, 2);
+      const ev = JSON.parse(logged.find((l) => String(l).includes("refresh_reuse_detected")));
+      assert.equal(ev.tokens_revoked, 3);
       assert.ok(!JSON.stringify(ev).includes(SECRET));
 
-      assert.equal(await consumeRefresh(t.refresh_token, "cli_x"), null, "third use refused");
+      assert.equal(await consumeRefresh(t.refresh_token, "cli_x"), null, "later uses just fail");
     });
   });
 }

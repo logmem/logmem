@@ -119,17 +119,29 @@ test("review #8 + #3: token issuance slides client TTL; mismatched client cannot
   });
 });
 
-test("review #3: concurrent first use of a refresh token never yields more than original + one grace", async () => {
+test("review #3: concurrent first use of a refresh token never yields more than one live token set", async () => {
   await withEnv(KEK, async () => {
     for (const getdel of [true, false]) {
       __setRedisForTests(oauthRedis({ getdel }));
-      const t = await mintTokens({ client_id: "cli_x", scope: "mcp", space: "s", backend: { kind: "redis", uri: "rediss://h" } });
+      const c = await registerClient({ redirect_uris: ["https://app.example/cb"], token_endpoint_auth_method: "none" });
+      const t = await mintTokens({ client_id: c.client_id, scope: "mcp", space: "s", backend: { kind: "redis", uri: "rediss://h" } });
       const warn = console.warn;
       console.warn = () => {};
       try {
-        const got = (await Promise.all([1, 2, 3, 4].map(() => consumeRefresh(t.refresh_token, "cli_x")))).filter((g) => g && g.rec);
-        assert.ok(got.length >= 1 && got.length <= 2, `getdel=${getdel} got ${got.length}`);
-        assert.ok(got.filter((g) => !g.grace).length === 1);
+        const results = await Promise.all(
+          [1, 2, 3, 4].map(async () => {
+            const res = mockRes();
+            await tokenHandler(mockReq({ method: "POST", body: { grant_type: "refresh_token", refresh_token: t.refresh_token, client_id: c.client_id } }), res);
+            return res;
+          }),
+        );
+        const ok = results.filter((x) => x.statusCode === 200).map((x) => JSON.parse(x.body));
+        assert.ok(ok.length <= 1, `getdel=${getdel} got ${ok.length} successes`);
+        const { lookupAccessToken } = await import("../api/oauth/_lib/storage.mjs");
+        const live = (await Promise.all(ok.map((x) => lookupAccessToken(x.access_token)))).filter(Boolean);
+        const reuse = results.some((x) => x.statusCode === 400 && /reuse detected/.test(x.body));
+        if (reuse) assert.equal(live.length, 0, "once reuse is detected no handed-out token survives");
+        assert.ok(live.length <= 1);
       } finally {
         console.warn = warn;
       }
@@ -214,7 +226,7 @@ test("review #2: oauth-legacy-seal dry-run writes nothing; --apply seals with re
     put(`lm:oauth:refresh:${rawR}`, { client_id: "c", space: "s", upstash_url: "https://x", upstash_token: "SECRET-R" }, 5678);
     put(`lm:oauth:code:${rawC}`, { client_id: "c", upstash_token: "SECRET-C" }, 100);
     const sealedCodeKey = `lm:oauth:code:${"4".repeat(64)}`;
-    put(sealedCodeKey, sealRecord({ client_id: "c", backend: { kind: "redis", uri: "rediss://h" } }), 600);
+    put(sealedCodeKey, sealRecord({ client_id: "c", backend: { kind: "redis", uri: "rediss://h" } }, "code", "4".repeat(64)), 600);
     const before = JSON.stringify([...r.data.entries()]);
 
     const logs = [];
