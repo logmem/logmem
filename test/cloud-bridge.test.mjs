@@ -4,14 +4,20 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request as httpRequest } from "node:http";
+import net from "node:net";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createRedis } from "../src/lib/redis-rest.mjs";
 import { probe } from "../scripts/bridge-probe.mjs";
 import {
   createBridge, classify, keyArgs, checkCommand, tokenMatches, sha256Hex,
-  COMMANDS, DENIED, DEFAULT_LIMITS, tenantPrefixes, genericRedisError,
+  COMMANDS, DENIED, DEFAULT_LIMITS, tenantPrefixes, genericRedisError, validateLimits, utcMonth,
 } from "../cloud/bridge/bridge.mjs";
+import { createRespRunner, createParser, encodeCommand } from "../cloud/bridge/resp.mjs";
+import { selfTest, meterRunner, limitsFromEnv } from "../cloud/bridge/main.mjs";
+import { translate } from "../src/lib/redis-native.mjs";
+import * as sliceA from "../cloud/meter/index.mjs";
 
 const TENANT = "acme";
 const TOKEN = "acmi_bridge_test_token_0123456789abcdef";
@@ -296,7 +302,7 @@ describe("jail", () => {
       ["GET", "acmi:other:secret"],
     ]);
     assert.equal(r.status, 403);
-    assert.deepEqual(r.body, { error: "forbidden" });
+    assert.deepEqual(r.body, { error: "forbidden", index: 2 }, "names the refused command's index, nothing else");
     assert.equal(await b.redis("GET", K("pipe1")), null, "nothing ran");
     assert.equal(await b.redis("GET", K("pipe2")), null);
 
@@ -385,7 +391,7 @@ describe("refused commands", () => {
 
 describe("auth", () => {
   let b;
-  before(async () => { b = await startBridge(); });
+  before(async () => { b = await startBridge({ limits: { authFailBurst: 1000 } }); });
   after(async () => { await b.close(); });
 
   test("missing token: 401 generic", async () => {
@@ -486,7 +492,7 @@ describe("limits", () => {
         };
         pump();
       });
-      assert.ok([413, "EPIPE", "ECONNRESET"].includes(status), String(status));
+      assert.equal(status, 413, "the bridge drains the rest of the upload, so the client sees the status");
       assert.equal(await b.redis("GET", K("chunked")), null);
       assert.ok(b.logs.some((l) => l.op === "exec" && l.cmd === null && l.ok === false), "overflow was refused, not parsed");
       assert.equal((await b.exec(["PING"])).status, 200, "bridge still serves");
@@ -534,7 +540,7 @@ describe("limits", () => {
 
   test("rate limit: token bucket per token, refills over time", async () => {
     let now = 1_000_000;
-    const b = await startBridge({ limits: { rateCapacity: 5, rateRefillPerSec: 1, now: () => now, maxPipeline: 10 } });
+    const b = await startBridge({ limits: { rateCapacity: 5, rateRefillPerSec: 1, now: () => now, maxPipeline: 5, maxKeys: 5, authFailBurst: 100 } });
     try {
       for (let i = 0; i < 5; i++) assert.equal((await b.exec(["PING"])).status, 200, `call ${i}`);
       const r = await b.exec(["PING"]);
@@ -568,6 +574,10 @@ function fakeMeter({ addLimit = Infinity } = {}) {
       assert.equal(typeof redis, "function");
       calls.meter.push({ tenant, op, n });
       used[op] += n;
+    },
+    async refund(redis, tenant, op, n) {
+      calls.refund = [...(calls.refund ?? []), { tenant, op, n }];
+      used[op] -= n;
     },
     async checkQuota(redis, tenant, op, plan, { n }) {
       calls.check.push({ tenant, op, plan, n });
@@ -673,12 +683,12 @@ describe("metering", () => {
     }
   });
 
-  test("refusing plan: checkQuota reserved the add, so meter() does not count it again", async () => {
+  test("checkQuota {reserved:true}: the add is already counted, meter() does not count it again", async () => {
     const counted = [];
     let checks = 0;
     const meter = {
       meter: async (_r, _t, op, n) => counted.push([op, n]),
-      checkQuota: async (_r, _t, _op, _p, { n }) => { checks += n; return { ok: true, used: 0, limit: 10, grace: false }; },
+      checkQuota: async (_r, _t, _op, _p, { n }) => { checks += n; return { ok: true, used: 0, limit: 10, grace: false, reserved: true }; },
     };
     const plan = { limits: { add: 10, read: null }, overage: null };
     const b = await startBridge({ meter, plan });
@@ -691,7 +701,7 @@ describe("metering", () => {
     } finally {
       await b.close();
     }
-    // An explicit {reserved} from the meter wins over the plan-shape inference.
+    // {reserved:false} (or absent): meter() counts the add, before it runs.
     const counted2 = [];
     const m2 = { meter: async (_r, _t, op, n) => counted2.push([op, n]), checkQuota: async () => ({ ok: true, reserved: false }) };
     const b2 = await startBridge({ meter: m2, plan });
@@ -825,6 +835,660 @@ describe("logs", () => {
   });
 });
 
+// ---- fakes for a redis:// upstream ------------------------------------------------------
+
+/** memory-redis plus MSET/MGET (it implements only what the server uses). */
+function withMulti(mem = createMemoryRedis()) {
+  const r = async (cmd, ...a) => {
+    const n = String(cmd).toUpperCase();
+    if (n === "MSET") {
+      for (let i = 0; i < a.length; i += 2) await mem("SET", a[i], a[i + 1]);
+      return "OK";
+    }
+    if (n === "MGET") return Promise.all(a.map((k) => mem("GET", k)));
+    return mem(cmd, ...a);
+  };
+  r._data = mem._data;
+  return r;
+}
+
+/** One valid, jailed sample of every command in COMMANDS. */
+function sampleCommand(name) {
+  const spec = COMMANDS[name].spec;
+  switch (spec) {
+    case "none": return [name];
+    case "scan": return ["SCAN", "0", "COUNT", "10"];
+    case "kscan": return [name, K("k"), "0", "COUNT", "10"];
+    case "one": return [name, K("k"), "a", "1"];
+    case "two": return name === "COPY" ? [name, K("a"), K("b")] : [name, K("a"), K("b"), "LEFT", "RIGHT"];
+    case "copy": return [name, K("a"), K("b")];
+    case "all": return [name, K("a"), K("b")];
+    case "pairs": return [name, K("a"), "1", K("b"), "2"];
+    case "destnum": return [name, K("d"), "2", K("a"), K("b")];
+    case "num": return [name, "2", K("a"), K("b")];
+    default: throw new Error(spec);
+  }
+}
+
+const sha1 = (s) => createHash("sha1").update(String(s)).digest("hex");
+
+function respEncode(v) {
+  if (v === null || v === undefined) return "$-1\r\n";
+  if (v instanceof Error) return `-${String(v.message).replace(/[\r\n]/g, " ")}\r\n`;
+  if (typeof v === "number") return `:${v}\r\n`;
+  if (Array.isArray(v)) return `*${v.length}\r\n${v.map(respEncode).join("")}`;
+  const str = String(v);
+  return `$${Buffer.byteLength(str)}\r\n${str}\r\n`;
+}
+
+/**
+ * A fake Redis speaking RESP2 on a real TCP port.
+ *   handle(cmd) -> reply   default: memory-redis, plus AUTH, SELECT, EVALSHA/SCRIPT LOAD
+ *   users       { name: password } for AUTH user pass
+ *   deny(cmd)   true -> NOPERM (a stand-in for a Redis ACL)
+ */
+async function startFakeRedis({ mem = withMulti(), users = null, deny = () => false, handle = null } = {}) {
+  const scripts = new Map();
+  const seen = [];
+  const sockets = new Set();
+  const server = net.createServer((sock) => {
+    sockets.add(sock);
+    sock.on("close", () => sockets.delete(sock));
+    const parser = createParser();
+    let authed = !users;
+    let chain = Promise.resolve();
+    sock.on("data", (chunk) => {
+      let cmds;
+      try { cmds = parser.feed(chunk); } catch { return sock.destroy(); }
+      for (const cmd of cmds) {
+        chain = chain.then(async () => {
+          seen.push(cmd);
+          const name = String(cmd[0]).toUpperCase();
+          let reply;
+          try {
+            if (handle) reply = await handle(cmd);
+            else if (name === "AUTH") {
+              const [u, pw] = cmd.length === 3 ? [cmd[1], cmd[2]] : ["default", cmd[1]];
+              if (users?.[u] !== pw) throw new Error("WRONGPASS invalid username-password pair or user is disabled.");
+              authed = true;
+              reply = "OK";
+            } else if (!authed) throw new Error("NOAUTH Authentication required.");
+            else if (deny(cmd)) throw new Error(`NOPERM User has no permissions to run the '${cmd[0]}' command`);
+            else if (name === "SELECT") reply = "OK";
+            else if (name === "SCRIPT" && String(cmd[1]).toUpperCase() === "LOAD") {
+              scripts.set(sha1(cmd[2]), cmd[2]);
+              reply = sha1(cmd[2]);
+            } else if (name === "EVALSHA") {
+              const src = scripts.get(cmd[1]);
+              if (!src) throw new Error("NOSCRIPT No matching script. Please use EVAL.");
+              reply = await mem("EVAL", src, ...cmd.slice(2));
+            } else {
+              if (name === "EVAL") scripts.set(sha1(cmd[1]), cmd[1]);
+              reply = await mem(...cmd);
+            }
+          } catch (e) {
+            reply = e instanceof Error ? e : new Error(String(e));
+          }
+          if (!sock.destroyed) sock.write(respEncode(reply));
+        });
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return {
+    port: server.address().port,
+    mem, seen, scripts,
+    url: (auth = "") => `redis://${auth}127.0.0.1:${server.address().port}`,
+    close: () => { for (const s of sockets) s.destroy(); return new Promise((r) => server.close(r)); },
+  };
+}
+
+// ---- resp.mjs: the zero-dependency native runner ---------------------------------------
+
+describe("resp.mjs", () => {
+  test("encode / parse round trip, including nested arrays, nil, integers and errors", () => {
+    assert.equal(encodeCommand(["SET", "k", "é"]).toString(), "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$2\r\né\r\n");
+    const p = createParser();
+    const wire = "+OK\r\n:42\r\n$-1\r\n*2\r\n$1\r\n0\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n-WRONGTYPE bad\r\n*-1\r\n";
+    // fed one byte at a time: replies only complete when their bytes arrive
+    const out = [];
+    for (const ch of Buffer.from(wire)) out.push(...p.feed(Buffer.from([ch])));
+    assert.deepEqual(out.slice(0, 4), ["OK", 42, null, ["0", ["a", "b"]]]);
+    assert.match(out[4].message, /^WRONGTYPE/);
+    assert.equal(out[5], null);
+  });
+
+  test("AUTH with a per-tenant ACL user, SELECT, replies in Upstash shape", async () => {
+    const fake = await startFakeRedis({ users: { "acmi-t-acme": "pw-acme" } });
+    const r = createRespRunner(`${fake.url("acmi-t-acme:pw-acme@")}/2`);
+    try {
+      assert.equal(await r("SET", K("a"), "1"), "OK");
+      assert.equal(await r("INCRBY", K("a"), 4), 5);
+      assert.equal(await r("GET", K("a")), "5");
+      await r("HSET", K("h"), "f", "v");
+      assert.deepEqual(await r("HGETALL", K("h")), ["f", "v"]);
+      assert.equal(await r("GET", K("none")), null);
+      await assert.rejects(() => r("SADD", K("a"), "x"), /^RespError: WRONGTYPE/);
+      assert.deepEqual(fake.seen.slice(0, 2), [["AUTH", "acmi-t-acme", "pw-acme"], ["SELECT", "2"]]);
+    } finally {
+      await r.close();
+      await fake.close();
+    }
+  });
+
+  test("wrong password and unreachable hosts fail with generic errors (no URL, user or password)", async () => {
+    const fake = await startFakeRedis({ users: { "acmi-t-acme": "right" } });
+    const bad = createRespRunner(fake.url("acmi-t-acme:WRONG_PW_SECRET@"));
+    try {
+      const e = await bad("PING").catch((x) => x);
+      assert.equal(e.message, "redis auth failed");
+    } finally {
+      await bad.close();
+      await fake.close();
+    }
+    const dead = createRespRunner(`redis://u:SECRETPW@127.0.0.1:1`, { connectTimeoutMs: 500 });
+    const e2 = await dead("PING").catch((x) => x);
+    assert.match(e2.message, /^redis (connection failed|connection closed|connect timed out)$/);
+    assert.ok(!/SECRETPW|127\.0\.0\.1|:1\b/.test(e2.message));
+  });
+
+  test("a command timeout drops the connection, fails in-flight work, and the next call reconnects", async () => {
+    let hang = true;
+    const mem = createMemoryRedis();
+    const fake = await startFakeRedis({ handle: async (cmd) => (hang && cmd[0] === "GET" ? new Promise(() => {}) : mem(...cmd)) });
+    const r = createRespRunner(fake.url(), { timeoutMs: 150 });
+    try {
+      const t0 = Date.now();
+      await assert.rejects(() => r("GET", K("x")), /timed out/);
+      assert.ok(Date.now() - t0 < 2000);
+      hang = false;
+      assert.equal(await r("PING"), "PONG");
+    } finally {
+      await r.close();
+      await fake.close();
+    }
+  });
+
+  test("the full COMMANDS table runs verbatim on a redis:// upstream (fake RESP server)", async () => {
+    const fake = await startFakeRedis({ handle: async (cmd) => ["echo", ...cmd] });
+    const r = createRespRunner(fake.url());
+    try {
+      for (const name of Object.keys(COMMANDS)) {
+        const c = checkCommand(sampleCommand(name), { prefixes: tenantPrefixes(TENANT) });
+        assert.equal(c.ok, true, name);
+        const reply = await r(...c.cmd);
+        assert.deepEqual(reply, ["echo", ...c.cmd.map(String)], name);
+      }
+      assert.equal(fake.seen.length, Object.keys(COMMANDS).length);
+    } finally {
+      await r.close();
+      await fake.close();
+    }
+  });
+});
+
+// ---- src/lib/redis-native.mjs covers the bridge table too ---------------------------
+
+describe("redis-native.mjs translate() and the bridge table", () => {
+  const fakeClient = () => {
+    const calls = [];
+    const client = new Proxy({}, {
+      get: (_t, prop) => (...args) => {
+        calls.push({ method: String(prop), args });
+        return Promise.resolve(prop === "hGetAll" ? {} : /Range/.test(String(prop)) ? [] : "OK");
+      },
+    });
+    return { client, calls };
+  };
+  const flat = (v) => (Array.isArray(v) ? v.flatMap(flat) : v && typeof v === "object" ? [...Object.keys(v), ...Object.values(v)].flatMap(flat) : [String(v)]);
+
+  test("every COMMANDS entry is translated, and every key argument reaches the client", async () => {
+    for (const name of Object.keys(COMMANDS)) {
+      const cmd = sampleCommand(name);
+      const { client, calls } = fakeClient();
+      await translate(client, cmd[0], cmd.slice(1));
+      assert.equal(calls.length, 1, name);
+      const sent = flat(calls[0].args);
+      for (const k of keyArgs(cmd)) assert.ok(sent.includes(k), `${name}: key ${k} dropped`);
+    }
+  });
+
+  test("options are not dropped: EXISTS multi-key, ZRANGE BYSCORE/LIMIT, SCAN TYPE", async () => {
+    const run = async (cmd) => {
+      const { client, calls } = fakeClient();
+      await translate(client, cmd[0], cmd.slice(1));
+      return calls[0];
+    };
+    assert.deepEqual(flat((await run(["EXISTS", K("a"), K("b")])).args), [K("a"), K("b")]);
+    assert.deepEqual((await run(["ZRANGE", K("z"), "0", "10", "BYSCORE", "LIMIT", "0", "5"])).args[0],
+      ["ZRANGE", K("z"), "0", "10", "BYSCORE", "LIMIT", "0", "5"]);
+    assert.ok((await run(["SCAN", "0", "MATCH", `${K("")}*`, "COUNT", "10", "TYPE", "hash"])).args[0].includes("TYPE"));
+  });
+
+  test("HSET keeps a field named __proto__ (null-prototype pairs)", async () => {
+    const { client, calls } = fakeClient();
+    await translate(client, "HSET", [K("h"), "__proto__", "x", "b", "y"]);
+    const fields = calls[0].args[1];
+    assert.equal(Object.getPrototypeOf(fields), null);
+    assert.deepEqual(Object.keys(fields).sort(), ["__proto__", "b"]);
+    assert.equal(fields.__proto__, "x");
+  });
+});
+
+// ---- review fixes (PR #30) ------------------------------------------------------------
+
+describe("H1: metering fails closed", () => {
+  test("a meter() error refuses the WRITE with 503 and runs nothing; reads still run", async () => {
+    const meter = {
+      meter: async (_r, _t, op) => { if (op === "add") throw new Error("native redis: unsupported command INCRBY"); throw new Error("read count down too"); },
+      checkQuota: async () => ({ ok: true, reserved: false, overage: true }),
+    };
+    const b = await startBridge({ meter, plan: { limits: { add: 10, read: null }, overage: { billed: true } } });
+    try {
+      for (let i = 0; i < 3; i++) {
+        const r = await b.exec(["SET", K(`h1-${i}`), "1"]);
+        assert.equal(r.status, 503);
+        assert.deepEqual(r.body, { error: "unavailable" });
+      }
+      assert.equal(await b.redis("GET", K("h1-0")), null, "no uncounted write landed");
+      await b.redis("SET", K("r"), "v");
+      assert.deepEqual((await b.exec(["GET", K("r")])).body, { result: "v" }, "reads allowed even when counting fails");
+      assert.equal((await b.pipe([["GET", K("r")], ["SET", K("x"), "1"]])).status, 503);
+      assert.equal(await b.redis("GET", K("x")), null);
+      assert.ok(b.logs.some((l) => l.op === "meter" && l.ok === false));
+    } finally {
+      await b.close();
+    }
+  });
+
+  test("no plan, meter only: a counting error still refuses the write", async () => {
+    const meter = { meter: async () => { throw new Error("down"); }, checkQuota: async () => ({ ok: true }) };
+    const b = await startBridge({ meter, plan: null });
+    try {
+      assert.equal((await b.exec(["SET", K("np"), "1"])).status, 503);
+      assert.equal((await b.exec(["PING"])).status, 200);
+    } finally {
+      await b.close();
+    }
+  });
+
+  test("slice A meter on a native runner that lacks INCRBY/EVAL: every write 503, nothing unmetered", async () => {
+    const NATIVE_OLD = new Set(["PING", "GET", "SET", "DEL", "EXISTS", "TYPE", "SCAN", "TTL", "EXPIRE", "HGET", "HSET", "HDEL", "HGETALL", "SADD", "SREM", "SMEMBERS", "LPUSH", "RPUSH", "LRANGE", "ZADD", "ZREM", "ZCARD", "ZSCORE", "ZRANGE", "ZREVRANGE", "ZRANGEBYSCORE", "ZREVRANGEBYSCORE", "INCR", "DECR"]);
+    const plans = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
+    for (const id of ["pro", "dev", "free"]) {
+      const inner = createMemoryRedis();
+      const redis = async (...c) => {
+        if (!NATIVE_OLD.has(String(c[0]).toUpperCase())) throw new Error(`native redis: unsupported command ${c[0]}`);
+        return inner(...c);
+      };
+      const plan = { grace_ratio: plans.grace_ratio, ...plans.plans[id], id };
+      const b = await startBridge({ redis, meter: { meter: sliceA.meter, checkQuota: sliceA.checkQuota }, plan });
+      try {
+        for (let i = 0; i < 3; i++) assert.equal((await b.exec(["SET", K(`a${i}`), "1"])).status, 503, id);
+        assert.equal(await inner("GET", K("a0")), null, `${id}: no write landed`);
+        assert.equal((await sliceA.usage(inner, TENANT)).add, 0);
+      } finally {
+        await b.close();
+      }
+      // and the startup self-test would have refused to start on this upstream
+      await assert.rejects(() => selfTest({ redis, meter: { ...sliceA, reserveScript: sliceA.RESERVE_LUA, ttlSeconds: 60 }, plan, tenant: TENANT }), /self-test failed/);
+    }
+  });
+
+  test("slice A meter, exactly once: dev (reserved) and pro (counted by meter())", async () => {
+    const plans = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
+    for (const id of ["dev", "pro"]) {
+      const redis = withMulti();
+      const plan = { grace_ratio: plans.grace_ratio, ...plans.plans[id], id };
+      const b = await startBridge({ redis, meter: { meter: sliceA.meter, checkQuota: sliceA.checkQuota }, plan });
+      try {
+        await b.exec(["SET", K("a"), "1"]);
+        await b.exec(["INCR", K("n")]);
+        await b.pipe([["SET", K("b"), "1"], ["GET", K("b")], ["SET", K("c"), "1"]]);
+        await b.exec(["GET", K("a")]);
+        await b.exec(["MSET", K("m1"), "1", K("m2"), "2", K("m3"), "3"]);
+        const u = await sliceA.usage(redis, TENANT);
+        assert.equal(u.add, 7, `${id} add (MSET of 3 = 3 adds)`);
+        assert.equal(u.read, 2, `${id} read`);
+        assert.equal(u.ops_total, 9);
+      } finally {
+        await b.close();
+      }
+    }
+  });
+
+  test("startup self-test passes on a healthy upstream and checks the meter's own keys", async () => {
+    const plans = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
+    const redis = createMemoryRedis();
+    const meter = { ...sliceA, reserveScript: sliceA.RESERVE_LUA, ttlSeconds: sliceA.METER_TTL_SECONDS };
+    const plan = { grace_ratio: plans.grace_ratio, ...plans.plans.dev, id: "dev" };
+    assert.deepEqual(await selfTest({ redis, meter, plan, tenant: TENANT }), { metered: true });
+    assert.deepEqual(await selfTest({ redis, meter: null, plan: null, tenant: TENANT }), { metered: false });
+    const u = await sliceA.usage(redis, TENANT);
+    assert.equal(u.add, 0, "the reserve probe is a no-op");
+    assert.equal(u.ops_total, 0);
+    assert.equal(await redis("GET", `${tenantPrefixes(TENANT)[0]}bridge:selftest`), null, "scratch key removed");
+    // a broken plan or a meter that cannot count also refuses to start
+    await assert.rejects(() => selfTest({ redis, meter, plan: { limits: {} }, tenant: TENANT }), /self-test failed: quota check/);
+    const noIncr = async (...c) => (c[0] === "INCRBY" && c[1].startsWith("acmi:cloud:") ? Promise.reject(new Error("NOPERM")) : redis(...c));
+    await assert.rejects(() => selfTest({ redis: noIncr, meter, plan, tenant: TENANT }), /self-test failed: meter counter/);
+  });
+
+  test("meterRunner sends EVAL as EVALSHA first and falls back on NOSCRIPT only", async () => {
+    const fake = await startFakeRedis();
+    const r = meterRunner(createRespRunner(fake.url()));
+    try {
+      const k = `acmi:cloud:meter:${TENANT}:${utcMonth(Date.now())}`;
+      const res = await r("EVAL", sliceA.RESERVE_LUA, 2, `${k}:add`, `${k}:ops_total`, "1", "10", "11", "60");
+      assert.equal(Number(res[0]), 1);
+      const names = fake.seen.map((c) => c[0]);
+      assert.deepEqual(names.slice(0, 2), ["EVALSHA", "EVAL"], "NOSCRIPT, then EVAL");
+      await r("EVAL", sliceA.RESERVE_LUA, 2, `${k}:add`, `${k}:ops_total`, "1", "10", "11", "60");
+      assert.equal(fake.seen.at(-1)[0], "EVALSHA", "cached script: EVALSHA only");
+    } finally {
+      await r.close();
+      await fake.close();
+    }
+    // a non-NOSCRIPT error (e.g. NOPERM) is not retried as EVAL
+    let evals = 0;
+    const deny = meterRunner(async (...c) => { if (c[0] === "EVAL") evals++; throw new Error("NOPERM no"); });
+    await assert.rejects(() => deny("EVAL", "return 1", 0), /NOPERM/);
+    assert.equal(evals, 0);
+  });
+});
+
+describe("M1: SCAN / HSCAN / SSCAN / ZSCAN COUNT capped", () => {
+  const P = { prefixes: tenantPrefixes(TENANT) };
+  test("COUNT over 1000 refused, 1000 accepted, options checked", () => {
+    assert.equal(checkCommand(["SCAN", "0", "COUNT", "1000"], P).ok, true);
+    assert.equal(checkCommand(["SCAN", "0", "COUNT", "1001"], P).ok, false);
+    assert.equal(checkCommand(["SCAN", "0", "COUNT", "999999"], P).ok, false);
+    assert.equal(checkCommand(["SCAN", "0", "COUNT", "0"], P).ok, false);
+    for (const n of ["HSCAN", "SSCAN", "ZSCAN"]) {
+      assert.equal(checkCommand([n, K("k"), "0", "COUNT", "1000", "MATCH", "f*"], P).ok, true, n);
+      assert.equal(checkCommand([n, K("k"), "0", "COUNT", "1001"], P).ok, false, n);
+      assert.equal(checkCommand([n, K("k"), "0", "BOGUS", "1"], P).ok, false, n);
+      assert.equal(checkCommand([n, K("k"), "x"], P).ok, false, n);
+      assert.equal(checkCommand([n, "acmi:t-other:k", "0"], P).ok, false, n);
+    }
+    assert.equal(checkCommand(["HSCAN", K("k"), "0", "NOVALUES"], P).ok, true);
+    assert.equal(checkCommand(["SSCAN", K("k"), "0", "NOVALUES"], P).ok, false);
+  });
+
+  test("SCAN costs ceil(COUNT/100) rate tokens", () => {
+    assert.equal(checkCommand(["SCAN", "0"], P).weight, 1);
+    assert.equal(checkCommand(["SCAN", "0", "COUNT", "1000"], P).weight, 10);
+    assert.equal(checkCommand(["ZSCAN", K("z"), "0", "COUNT", "250"], P).weight, 3);
+  });
+});
+
+describe("M2: arguments per command capped; multi-key writes metered per key", () => {
+  const P = { prefixes: tenantPrefixes(TENANT) };
+  const pairs = (n) => Array.from({ length: n }, (_, i) => [K(`k${i}`), "v"]).flat();
+  test("<= 1000 keys and <= 2001 arguments per command, <= 1 MB per command", () => {
+    assert.equal(checkCommand(["MSET", ...pairs(1000)], P).ok, true);
+    assert.deepEqual(checkCommand(["MSET", ...pairs(1001)], P), { ok: false, status: 413, error: "too_many_arguments" });
+    assert.deepEqual(checkCommand(["MSET", ...pairs(1000)], { ...P, maxArgs: 5000 }), { ok: true, op: "add", name: "MSET", cmd: ["MSET", ...pairs(1000)], weight: 1000 });
+    assert.equal(checkCommand(["MSET", ...pairs(1001)], { ...P, maxArgs: 5000 }).error, "too_many_keys");
+    const keys = (n) => Array.from({ length: n }, (_, i) => K(`k${i}`));
+    for (const c of ["DEL", "UNLINK", "EXISTS", "MGET", "TOUCH", "SINTER"]) {
+      assert.equal(checkCommand([c, ...keys(1000)], P).ok, true, c);
+      assert.equal(checkCommand([c, ...keys(1001)], P).error, "too_many_keys", c);
+    }
+    const members = (n) => Array.from({ length: n }, (_, i) => `m${i}`);
+    assert.equal(checkCommand(["SADD", K("s"), ...members(2000)], P).ok, true);
+    assert.equal(checkCommand(["SADD", K("s"), ...members(2001)], P).error, "too_many_arguments");
+    assert.equal(checkCommand(["ZADD", K("z"), ...members(2002)], P).error, "too_many_arguments");
+    assert.equal(checkCommand(["HSET", K("h"), ...members(2002)], P).error, "too_many_arguments");
+    const big = "x".repeat(400 * 1024);
+    assert.equal(checkCommand(["MSET", K("a"), big, K("b"), big, K("c"), big], P).error, "command_too_large");
+    assert.equal(checkCommand(["MSET", K("a"), big, K("b"), big], P).ok, true);
+  });
+
+  test("MSET with N pairs = N adds to the quota and N rate tokens", async () => {
+    const seen = [];
+    const meter = {
+      checkQuota: async (_r, _t, _op, _p, { n }) => (seen.push(n), { ok: true, reserved: true }),
+      meter: async () => {},
+    };
+    let now = 0;
+    const b = await startBridge({ redis: withMulti(), meter, plan: { limits: { add: 10 } }, limits: { rateCapacity: 1000, rateRefillPerSec: 1, maxKeys: 1000, now: () => now } });
+    try {
+      assert.equal((await b.exec(["MSET", ...pairs(500)])).status, 200);
+      assert.deepEqual(seen, [500]);
+      assert.equal((await b.exec(["MSET", ...pairs(400)])).status, 200);
+      const r = await b.exec(["MGET", ...pairs(101).filter((_, i) => i % 2 === 0)]);
+      assert.equal(r.status, 429, "500 + 400 + 101 keys > 1000 tokens");
+      assert.deepEqual(r.body, { error: "rate_limited" });
+    } finally {
+      await b.close();
+    }
+  });
+});
+
+describe("L1: a pipeline whose writes are refused runs nothing, and says why", () => {
+  test("over quota: 429 quota_exceeded with the first write's index; reads did not run", async () => {
+    const calls = [];
+    const redis = async (...c) => (calls.push(c), "OK");
+    const meter = { meter: async () => {}, checkQuota: async () => ({ ok: false, code: "quota_exceeded", used: 10, limit: 10 }) };
+    const b = await startBridge({ redis, meter, plan: { limits: { add: 10 } } });
+    try {
+      const r = await b.pipe([["GET", K("a")], ["SET", K("b"), "1"], ["GET", K("c")]]);
+      assert.equal(r.status, 429);
+      assert.deepEqual(r.body, { error: "quota_exceeded", index: 1 });
+      assert.equal(calls.length, 0);
+      assert.equal((await b.pipe([["GET", K("a")], ["GET", K("c")]])).status, 200, "a read-only pipeline still runs");
+      const m2 = { meter: async () => {}, checkQuota: async () => { throw new Error("down"); } };
+      const b2 = await startBridge({ redis, meter: m2, plan: { limits: { add: 1 } } });
+      try {
+        assert.deepEqual((await b2.pipe([["GET", K("a")], ["SET", K("b"), "1"]])).body, { error: "unavailable", index: 1 });
+      } finally {
+        await b2.close();
+      }
+    } finally {
+      await b.close();
+    }
+  });
+});
+
+describe("L2: a reserved write that fails in Redis is refunded", () => {
+  test("slice A dev plan: WRONGTYPE writes and failed pipeline writes are not billed", async () => {
+    const plans = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
+    for (const id of ["dev", "pro"]) {
+      const redis = createMemoryRedis();
+      const plan = { grace_ratio: plans.grace_ratio, ...plans.plans[id], id };
+      const b = await startBridge({ redis, meter: { meter: sliceA.meter, checkQuota: sliceA.checkQuota }, plan });
+      try {
+        assert.equal((await b.exec(["SADD", K("s"), "x"])).status, 200);
+        assert.equal((await b.exec(["INCR", K("s")])).status, 400); // WRONGTYPE
+        const p = await b.pipe([["SET", K("ok"), "1"], ["INCR", K("s")], ["GET", K("ok")]]);
+        assert.equal(p.status, 200);
+        assert.match(p.body[1].error, /WRONGTYPE/);
+        const u = await sliceA.usage(redis, TENANT);
+        assert.equal(u.add, 2, `${id}: SADD + SET billed, the two failed INCRs refunded`);
+        assert.equal(u.read, 1);
+        assert.equal(u.ops_total, 3);
+      } finally {
+        await b.close();
+      }
+    }
+  });
+
+  test("a meter-supplied refund() is used; a refund error is logged, not surfaced", async () => {
+    const refunds = [];
+    const meter = { meter: async () => {}, checkQuota: async () => ({ ok: true, reserved: true }), refund: async (_r, _t, op, n) => { refunds.push([op, n]); throw new Error("x"); } };
+    const b = await startBridge({ redis: async () => { throw new Error("WRONGTYPE no"); }, meter, plan: { limits: { add: 9 } } });
+    try {
+      const r = await b.exec(["DEL", K("a"), K("b")]);
+      assert.deepEqual(r.body, { error: "WRONGTYPE command failed" });
+      assert.deepEqual(refunds, [["add", 2]]);
+      assert.ok(b.logs.some((l) => l.op === "refund" && !l.ok));
+    } finally {
+      await b.close();
+    }
+  });
+});
+
+describe("L3: oversized uploads see the 413", () => {
+  test("declared Content-Length over the limit: always a 413, never a reset (20 runs)", async () => {
+    const b = await startBridge();
+    try {
+      const big = JSON.stringify(["SET", K("big"), "x".repeat(DEFAULT_LIMITS.maxBodyBytes + 10)]);
+      for (let i = 0; i < 20; i++) {
+        const r = await b.call("/exec", null, { raw: big });
+        assert.equal(r.status, 413, `run ${i}`);
+        assert.deepEqual(r.body, { error: "payload_too_large" });
+      }
+      assert.equal(await b.redis("GET", K("big")), null);
+    } finally {
+      await b.close();
+    }
+  });
+
+  test("an unbounded upload is cut off after the drain cap", { timeout: 15_000 }, async () => {
+    const b = await startBridge();
+    try {
+      const { port } = new URL(b.base);
+      const result = await new Promise((resolve) => {
+        const sock = net.connect(Number(port), "127.0.0.1");
+        let got = "";
+        sock.on("data", (d) => (got += d));
+        sock.on("error", () => {});
+        sock.on("close", () => resolve(got));
+        sock.write(`POST /exec HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${TOKEN}\r\nContent-Length: 999999999\r\n\r\n`);
+        const chunk = Buffer.alloc(256 * 1024, 120);
+        const pump = () => { while (!sock.destroyed && sock.write(chunk)); if (!sock.destroyed) sock.once("drain", pump); };
+        pump();
+      });
+      assert.match(result, /^HTTP\/1\.1 413/);
+    } finally {
+      await b.close();
+    }
+  });
+});
+
+describe("L4: deadlines, in-flight cap, failed-auth rate limit", () => {
+  test("a hung upstream command times out (504) within commandTimeoutMs", async () => {
+    const b = await startBridge({ redis: () => new Promise(() => {}), limits: { commandTimeoutMs: 100 } });
+    try {
+      const t0 = Date.now();
+      const r = await b.exec(["GET", K("a")]);
+      assert.equal(r.status, 504);
+      assert.deepEqual(r.body, { error: "timeout" });
+      assert.ok(Date.now() - t0 < 2000);
+    } finally {
+      await b.close();
+    }
+  });
+
+  test("a pipeline stops at the request deadline; unrun writes are refunded, timed-out ones are not", async () => {
+    let calls = 0;
+    const redis = (...c) => { calls++; return c[0] === "SET" && c[1] === K("slow") ? new Promise(() => {}) : Promise.resolve("OK"); };
+    const meter = fakeMeter();
+    const b = await startBridge({ redis, meter, plan: { name: "p" }, limits: { requestDeadlineMs: 300, commandTimeoutMs: 1000 } });
+    try {
+      const t0 = Date.now();
+      const r = await b.pipe([["SET", K("a"), "1"], ["SET", K("slow"), "1"], ["SET", K("b"), "1"], ["SET", K("c"), "1"]]);
+      assert.ok(Date.now() - t0 < 2000);
+      assert.equal(r.status, 200);
+      assert.deepEqual(r.body.map((x) => x.result ?? x.error), ["OK", "timeout", "timeout", "timeout"]);
+      assert.equal(calls, 2, "commands after the deadline never ran");
+      assert.equal(meter.used.add, 2, "4 admitted, 2 that never ran refunded; the timed-out one stays billed");
+    } finally {
+      await b.close();
+    }
+  });
+
+  test("in-flight cap: requests over maxInFlight get 503 busy", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const b = await startBridge({ redis: () => gate.then(() => "OK"), limits: { maxInFlight: 2 } });
+    try {
+      const slow = [b.exec(["GET", K("a")]), b.exec(["GET", K("b")])];
+      await new Promise((r) => setTimeout(r, 50));
+      const r = await b.exec(["GET", K("c")]);
+      assert.equal(r.status, 503);
+      assert.deepEqual(r.body, { error: "busy" });
+      release();
+      assert.deepEqual((await Promise.all(slow)).map((x) => x.status), [200, 200]);
+      assert.equal((await b.exec(["GET", K("d")])).status, 200, "slots are released");
+    } finally {
+      await b.close();
+    }
+  });
+
+  test("failed auth is rate limited per source address; the right token still works", async () => {
+    let now = 0;
+    const b = await startBridge({ limits: { authFailBurst: 3, authFailPerSec: 1, now: () => now } });
+    try {
+      const st = [];
+      for (let i = 0; i < 5; i++) st.push((await b.exec(["PING"], { token: "guess" + i })).status);
+      assert.deepEqual(st, [401, 401, 401, 429, 429]);
+      assert.equal((await b.exec(["PING"])).status, 200);
+      now += 2000;
+      assert.equal((await b.exec(["PING"], { token: "guess" })).status, 401, "refills");
+    } finally {
+      await b.close();
+    }
+  });
+});
+
+describe("L7: limits are validated at startup", () => {
+  test("rate capacity below the largest pipeline or command is refused", () => {
+    assert.throws(() => validateLimits({ ...DEFAULT_LIMITS, rateCapacity: 50 }), /maxPipeline|maxKeys/);
+    assert.throws(() => validateLimits({ ...DEFAULT_LIMITS, rateCapacity: 500, maxKeys: 1000 }), /maxKeys/);
+    assert.throws(() => validateLimits({ ...DEFAULT_LIMITS, maxInFlight: 0 }), /maxInFlight/);
+    assert.throws(() => createBridge({ tenant: TENANT, tokenSha256: HASH, redis: createMemoryRedis(), limits: { rateCapacity: 99 } }));
+    assert.throws(() => limitsFromEnv({ ACMI_BRIDGE_RATE_CAPACITY: "50" }), /rateCapacity/);
+    assert.throws(() => limitsFromEnv({ ACMI_BRIDGE_RATE_CAPACITY: "abc" }), /positive/);
+    assert.deepEqual(limitsFromEnv({ ACMI_BRIDGE_RATE_CAPACITY: "5000", ACMI_BRIDGE_RATE_PER_SEC: "100" }), { rateCapacity: 5000, rateRefillPerSec: 100 });
+  });
+});
+
+// ---- deploy artifacts -----------------------------------------------------------------
+
+describe("deploy artifacts", () => {
+  const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+  test("compose: one ingress mode (acmi-edge, no host port), per-tenant ACL URL, no secrets", () => {
+    const c = read("../cloud/bridge/compose.template.yml");
+    const live = c.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+    assert.doesNotMatch(live, /^\s*ports:/m, "no host port by default");
+    assert.match(live, /acmi-edge/);
+    assert.match(live, /ACMI_REDIS_URL: "\$\{ACMI_REDIS_URL_\{\{TENANT_ENV\}\}:\?/);
+    assert.doesNotMatch(live, /redis:\/\/[^$"]*:[^@$"]+@/, "no literal credentials");
+    assert.doesNotMatch(c, /internal: true\s*$/m, "no claim the template cannot enforce");
+  });
+
+  test("ACL template: tenant, lm and meter key trees only; no dangerous, admin or scripting categories", () => {
+    const acl = read("../cloud/bridge/acl.template.txt");
+    const rule = acl.split("\n").find((l) => l.startsWith("user "));
+    assert.ok(rule);
+    assert.match(rule, /^user acmi-t-\{\{TENANT\}\} on /);
+    assert.match(rule, / resetkeys ~acmi:t-\{\{TENANT\}\}:\* ~lm:t-\{\{TENANT\}\}:\* ~acmi:cloud:meter:\{\{TENANT\}\}:\* /);
+    assert.match(rule, / resetchannels /);
+    assert.match(rule, / -@all /);
+    assert.doesNotMatch(rule, /\+@(all|dangerous|admin|scripting|keyspace|write|read)\b/);
+    assert.doesNotMatch(rule, /\+(eval|keys|flushall|flushdb|config|script|function|debug|acl|module|monitor|select|migrate|sort|object)\b/i);
+    assert.match(rule, /\+evalsha\b/);
+    assert.match(rule, /#\{\{PASSWORD_SHA256\}\}/, "password as a hash, never plaintext");
+    const granted = new Set([...rule.matchAll(/\+([a-z]+)/g)].map((m) => m[1].toUpperCase()));
+    for (const c of Object.keys(COMMANDS)) assert.ok(granted.has(c), `ACL misses ${c}`);
+    for (const c of ["INCRBY", "EXPIRE", "GET", "EVALSHA", "PING"]) assert.ok(granted.has(c), `meter needs ${c}`);
+    // EVALSHA is denied to tenants by the bridge; the ACL grants it for the meter's reserve script only.
+    for (const c of DENIED) if (c !== "EVALSHA") assert.ok(!granted.has(c), `ACL grants denied ${c}`);
+  });
+
+  test("Dockerfile installs nothing and copies only what the bridge needs; .dockerignore exists", () => {
+    const d = read("../cloud/bridge/Dockerfile");
+    assert.doesNotMatch(d, /npm (ci|install)/);
+    const copies = [...d.matchAll(/^COPY (\S+)/gm)].map((m) => m[1]).sort();
+    assert.deepEqual(copies, ["cloud/bridge", "cloud/meter", "cloud/plans.json", "cloud/tenants", "src/lib"].sort());
+    assert.match(d, /^USER node$/m);
+    const ig = read("../.dockerignore");
+    for (const p of ["node_modules", ".env", ".git"]) assert.match(ig, new RegExp(`^${p.replace(".", "\\.")}`, "m"));
+  });
+});
+
 // ---- main.mjs ------------------------------------------------------------------------
 
 describe("main.mjs", () => {
@@ -832,48 +1496,87 @@ describe("main.mjs", () => {
     const { planFromEnv, redisFromEnv, meterFromEnv } = await import("../cloud/bridge/main.mjs");
     assert.equal(planFromEnv({}), null);
     assert.deepEqual(planFromEnv({ ACMI_PLAN_QUOTAS: '{"limits":{"add":5}}' }), { limits: { add: 5 } });
+    assert.equal(planFromEnv({ ACMI_PLAN_QUOTAS: "starter" }).id, "dev", "alias");
     assert.throws(() => planFromEnv({ ACMI_PLAN_QUOTAS: "{bad" }), /not valid JSON/);
+    assert.throws(() => planFromEnv({ ACMI_PLAN_QUOTAS: "nope" }), /unknown plan/);
     await assert.rejects(() => redisFromEnv({ ACMI_REDIS_URL: "ftp://x" }), /must be redis/);
     await assert.rejects(() => redisFromEnv({ ACMI_REDIS_URL: "https://x" }), /ACMI_REDIS_TOKEN/);
-    assert.equal(typeof (await redisFromEnv({ ACMI_REDIS_URL: "redis://127.0.0.1:1" })), "function");
+    assert.equal((await redisFromEnv({ ACMI_REDIS_URL: "redis://127.0.0.1:1" })).kind, "resp");
     await assert.rejects(() => meterFromEnv({ ACMI_METER_MODULE: "/nonexistent/meter.mjs" }), /meter module failed/);
+    const m = await meterFromEnv({});
+    assert.equal(typeof m.meter, "function");
+    assert.equal(m.reserveScript, sliceA.RESERVE_LUA);
   });
 
-  test("process smoke: main.mjs serves through an http(s) upstream and never logs secrets", { timeout: 20_000 }, async () => {
+  const spawnMain = async (env) => {
     const { spawn } = await import("node:child_process");
-    const UP = "upstream_token_for_test_abcdef";
-    const upstream = await startBridge({ tokenSha256: sha256Hex(UP) });
-    const port = 40000 + Math.floor(Math.random() * 20000);
     const child = spawn(process.execPath, [new URL("../cloud/bridge/main.mjs", import.meta.url).pathname], {
-      env: {
-        PATH: process.env.PATH,
-        ACMI_TENANT: TENANT,
-        ACMI_BRIDGE_TOKEN_SHA256: HASH,
-        ACMI_REDIS_URL: `${upstream.base}/exec`,
-        ACMI_REDIS_TOKEN: UP,
-        ACMI_BRIDGE_PORT: String(port),
-        ACMI_BRIDGE_HOST: "127.0.0.1",
-      },
+      env: { PATH: process.env.PATH, ...env },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
+    const exited = new Promise((r) => child.on("exit", (code) => r(code)));
+    const ready = new Promise((resolve, reject) => {
+      const t = setInterval(() => out.includes("listening") && (clearInterval(t), resolve()), 25);
+      exited.then((c) => { clearInterval(t); reject(Object.assign(new Error(`exited ${c}`), { out: () => out })); });
+    });
+    return { child, ready, exited, out: () => out };
+  };
+
+  test("process smoke: redis:// upstream with an ACL user, slice A meter, dev plan; no secrets in output", { timeout: 20_000 }, async () => {
+    const PW = "acl_pw_SECRET_123";
+    const fake = await startFakeRedis({ users: { "acmi-t-acme": PW } });
+    const port = 40000 + Math.floor(Math.random() * 20000);
+    const p = await spawnMain({
+      ACMI_TENANT: TENANT,
+      ACMI_BRIDGE_TOKEN_SHA256: HASH,
+      ACMI_REDIS_URL: fake.url(`acmi-t-acme:${PW}@`),
+      ACMI_BRIDGE_PORT: String(port),
+      ACMI_BRIDGE_HOST: "127.0.0.1",
+      ACMI_PLAN_QUOTAS: "dev",
+    });
     try {
-      await new Promise((resolve, reject) => {
-        const t = setInterval(() => out.includes("listening") && (clearInterval(t), resolve()), 25);
-        child.on("exit", (c) => { clearInterval(t); reject(new Error(`exited ${c}: ${out}`)); });
-      });
+      await p.ready;
       const r = createRedis({ url: `http://127.0.0.1:${port}/exec`, token: TOKEN });
       assert.equal(await r("SET", K("smoke"), "SMOKE_VALUE"), "OK");
       assert.equal(await r("GET", K("smoke")), "SMOKE_VALUE");
-      await assert.rejects(() => r("GET", "acmi:other:x"), /HTTP 403/);
+      assert.equal(await r("MSET", K("m1"), "1", K("m2"), "2"), "OK");
+      assert.deepEqual(await r("MGET", K("m1"), K("m2")), ["1", "2"]);
+      await assert.rejects(() => r("GET", "acmi:agent:x"), /HTTP 403/);
       const h = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
       assert.deepEqual(h, { ok: true, tenant: TENANT, version: h.version });
-      assert.ok(!out.includes("SMOKE_VALUE") && !out.includes(HASH) && !out.includes(UP) && !out.includes(upstream.base), out);
+      const u = await sliceA.usage(fake.mem, TENANT);
+      assert.equal(u.add, 3, "SET + MSET of 2, counted through the reserve script");
+      assert.equal(u.read, 3, "GET + MGET of 2");
+      assert.ok(fake.seen.some((c) => c[0] === "EVALSHA"), "meter used EVALSHA");
+      const out = p.out();
+      for (const s of ["SMOKE_VALUE", HASH, PW, "acmi-t-acme", String(fake.port)]) assert.ok(!out.includes(s), `leaked ${s}`);
     } finally {
-      child.kill("SIGTERM");
-      await upstream.close();
+      p.child.kill("SIGTERM");
+      await p.exited;
+      await fake.close();
+    }
+  });
+
+  test("process: refuses to start when the meter self-test fails (no INCRBY on meter keys)", { timeout: 20_000 }, async () => {
+    const fake = await startFakeRedis({ deny: (c) => String(c[0]).toUpperCase() === "INCRBY" && String(c[1]).startsWith("acmi:cloud:") });
+    const p = await spawnMain({
+      ACMI_TENANT: TENANT,
+      ACMI_BRIDGE_TOKEN_SHA256: HASH,
+      ACMI_REDIS_URL: fake.url(),
+      ACMI_BRIDGE_PORT: String(40000 + Math.floor(Math.random() * 20000)),
+      ACMI_BRIDGE_HOST: "127.0.0.1",
+      ACMI_PLAN_QUOTAS: "pro",
+    });
+    try {
+      await assert.rejects(() => p.ready);
+      assert.equal(await p.exited, 1);
+      assert.match(p.out(), /"self-test failed: meter counter"/);
+    } finally {
+      p.child.kill();
+      await fake.close();
     }
   });
 });

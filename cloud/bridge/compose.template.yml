@@ -1,13 +1,29 @@
 # acmi-bridge compose template: one service per tenant.
 #
-# The control plane (`acmi-cloud bridge render <id>`) fills the {{...}}
-# placeholders. ${...} values are injected at deploy time from Infisical; this
-# file never holds a secret. Only the token's sha256 reaches the container.
+# The control plane (`acmi-cloud bridge render <id>`, slice D) fills the
+# {{...}} placeholders. ${...} values are injected at deploy time from
+# Infisical; this file never holds a secret. Only the bridge token's sha256
+# reaches the container, and each tenant connects to Redis as its own ACL user
+# (cloud/bridge/acl.template.txt), so a jail bug is still contained by Redis.
 #
 #   {{TENANT}}      tenant id, e.g. acme  (keys: acmi:t-acme:*, lm:t-acme:*)
 #   {{TENANT_ENV}}  tenant id upper-cased, dashes to underscores, e.g. ACME
 #   {{PORT}}        this tenant's bridge port (registry: bridge_port)
 #   {{PLAN}}        plan id from cloud/plans.json, e.g. dev
+#
+# Ingress: ONE mode. Default (below): the TLS reverse proxy runs as a container
+# on the acmi-edge network and reaches acmi-bridge-{{TENANT}}:{{PORT}}; no host
+# port is published.
+# Alternative, when the proxy runs on the host instead: drop acmi-edge from
+# this service and publish loopback only:
+#     ports: ["127.0.0.1:{{PORT}}:{{PORT}}"]
+# Never both, and never a non-loopback host port.
+#
+# Networks are external and created once per VM by the platform stack.
+# Requirements `acmi-cloud bridge render` must verify (docker network inspect)
+# before deploying, because this file cannot enforce them:
+#   acmi-redis  Internal (no external route); Redis/Valkey and bridges only.
+#   acmi-edge   The proxy and bridges only; Redis is not attached to it.
 
 services:
   acmi-bridge-{{TENANT}}:
@@ -20,12 +36,14 @@ services:
       ACMI_BRIDGE_HOST: "0.0.0.0"
       ACMI_PLAN_QUOTAS: "{{PLAN}}"
       ACMI_BRIDGE_TOKEN_SHA256: "${ACMI_BRIDGE_TOKEN_SHA256_{{TENANT_ENV}}:?set from Infisical}"
-      ACMI_REDIS_URL: "${ACMI_REDIS_URL:?internal redis:// URL, from Infisical}"
-      ACMI_BRIDGE_RATE_CAPACITY: "${ACMI_BRIDGE_RATE_CAPACITY:-200}"
-      ACMI_BRIDGE_RATE_PER_SEC: "${ACMI_BRIDGE_RATE_PER_SEC:-100}"
-    ports:
-      # Published on loopback only; the TLS reverse proxy fronts it.
-      - "127.0.0.1:{{PORT}}:{{PORT}}"
+      # redis://acmi-t-{{TENANT}}:<password>@redis:6379, the tenant's own ACL user.
+      ACMI_REDIS_URL: "${ACMI_REDIS_URL_{{TENANT_ENV}}:?per-tenant ACL user URL, from Infisical}"
+      ACMI_BRIDGE_RATE_CAPACITY: "${ACMI_BRIDGE_RATE_CAPACITY:-2000}"
+      ACMI_BRIDGE_RATE_PER_SEC: "${ACMI_BRIDGE_RATE_PER_SEC:-500}"
+      ACMI_BRIDGE_MAX_CONNECTIONS: "${ACMI_BRIDGE_MAX_CONNECTIONS:-256}"
+      ACMI_BRIDGE_MAX_IN_FLIGHT: "${ACMI_BRIDGE_MAX_IN_FLIGHT:-64}"
+    expose:
+      - "{{PORT}}"
     networks:
       - acmi-redis
       - acmi-edge
@@ -46,10 +64,7 @@ services:
         max-file: "3"
 
 networks:
-  # Created once per VM by the Redis stack, with `internal: true`: Redis is
-  # reachable only from bridges, never from outside.
   acmi-redis:
     external: true
-  # Ingress side, between the reverse proxy and the bridges. Redis is not on it.
   acmi-edge:
     external: true

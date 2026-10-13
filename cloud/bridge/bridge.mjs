@@ -22,11 +22,22 @@ import { createHash, timingSafeEqual } from "node:crypto";
 export const VERSION = "0.1.0";
 
 export const DEFAULT_LIMITS = Object.freeze({
-  maxBodyBytes: 1024 * 1024, // 1 MB
+  maxBodyBytes: 1024 * 1024, // 1 MB request body
   maxValueBytes: 512 * 1024, // 512 KB per argument
+  maxCommandBytes: 1024 * 1024, // 1 MB across one command's arguments
+  maxArgs: 2001, // arguments after the command name (1000 pairs + a key)
+  maxKeys: 1000, // key arguments in one command (DEL, MGET, MSET, ...)
+  maxScanCount: 1000, // COUNT for SCAN / HSCAN / SSCAN / ZSCAN
   maxPipeline: 100,
-  rateCapacity: 200, // bucket size (commands); must be >= maxPipeline
-  rateRefillPerSec: 100, // commands per second, sustained
+  // Token bucket, charged per key (a command costs max(1, keys); SCAN costs
+  // ceil(COUNT/100)). Capacity must cover the largest single request.
+  rateCapacity: 2000,
+  rateRefillPerSec: 500,
+  requestDeadlineMs: 10_000, // whole request, all commands
+  commandTimeoutMs: 5_000, // one upstream command
+  maxInFlight: 64, // concurrent requests being served
+  authFailBurst: 10, // failed auths per source address before 429
+  authFailPerSec: 1,
 });
 
 export const TENANT_RE = /^[a-z][a-z0-9-]{2,30}$/;
@@ -47,7 +58,8 @@ export const TENANT_RE = /^[a-z][a-z0-9-]{2,30}$/;
 //   "destnum"  args[0] + numkeys at args[1]           (ZUNIONSTORE dest n k1..kn)
 //   "num"      numkeys at args[0]                     (ZUNION n k1..kn)
 //   "none"     no keys                                (PING)
-//   "scan"     no keys; MATCH is forced to the tenant prefix
+//   "scan"     no keys; MATCH is forced to the tenant prefix, COUNT capped
+//   "kscan"    args[0]; HSCAN/SSCAN/ZSCAN options checked, COUNT capped
 //   "copy"     args[0], args[1]; DB option refused (cross-db write)
 //
 // Coverage: every command src/, api/ and scripts/bridge-probe.mjs send, plus
@@ -108,7 +120,7 @@ export const COMMANDS = Object.freeze({
   HLEN: T("read", "one"),
   HEXISTS: T("read", "one"),
   HSTRLEN: T("read", "one"),
-  HSCAN: T("read", "one"),
+  HSCAN: T("read", "kscan"),
   HSET: T("add", "one"),
   HSETNX: T("add", "one"),
   HMSET: T("add", "one"),
@@ -140,7 +152,7 @@ export const COMMANDS = Object.freeze({
   SMISMEMBER: T("read", "one"),
   SCARD: T("read", "one"),
   SRANDMEMBER: T("read", "one"),
-  SSCAN: T("read", "one"),
+  SSCAN: T("read", "kscan"),
   SINTER: T("read", "all"),
   SUNION: T("read", "all"),
   SDIFF: T("read", "all"),
@@ -167,7 +179,7 @@ export const COMMANDS = Object.freeze({
   ZCOUNT: T("read", "one"),
   ZLEXCOUNT: T("read", "one"),
   ZRANDMEMBER: T("read", "one"),
-  ZSCAN: T("read", "one"),
+  ZSCAN: T("read", "kscan"),
   ZUNION: T("read", "num"),
   ZINTER: T("read", "num"),
   ZDIFF: T("read", "num"),
@@ -264,6 +276,7 @@ function resolveKeys(cmd) {
     case "scan":
       return [];
     case "one":
+    case "kscan":
       return args.length >= 1 ? [args[0]] : null;
     case "two":
       return args.length >= 2 ? [args[0], args[1]] : null;
@@ -326,19 +339,23 @@ export function inJail(key, prefixes) {
   return prefixes.some((p) => key.length > p.length && key.startsWith(p));
 }
 
+const validCount = (v, max) => /^\d{1,7}$/.test(String(v)) && Number(v) >= 1 && Number(v) <= max;
+
 /**
  * Rewrite SCAN so it can only see the tenant's keys.
  *   SCAN cursor [MATCH pattern] [COUNT n] [TYPE t]
- * No MATCH: force MATCH acmi:t-{tenant}:*. A MATCH must begin with a tenant
+ * No MATCH: force MATCH {first prefix}*. A MATCH must begin with a tenant
  * prefix (the prefix holds no glob metacharacters, so a pattern that starts
- * with it can only match keys inside it). Anything else is refused.
- * Option words are normalised to upper case, which the native client needs.
+ * with it can only match keys inside it). COUNT is capped: MATCH filters what
+ * comes back, not what Redis walks, and the keyspace is shared.
+ * Option words are normalised to upper case.
  */
-function jailScan(cmd, prefixes) {
+function jailScan(cmd, prefixes, maxCount) {
   const args = cmd.slice(1);
   if (args.length < 1 || !/^\d{1,20}$/.test(String(args[0]))) return null;
   const out = ["SCAN", String(args[0])];
   let match = null;
+  let count = 10;
   for (let i = 1; i < args.length; i += 2) {
     const opt = String(args[i]).toUpperCase();
     const val = args[i + 1];
@@ -348,7 +365,8 @@ function jailScan(cmd, prefixes) {
       if (!prefixes.some((p) => val.startsWith(p))) return null;
       match = val;
     } else if (opt === "COUNT") {
-      if (!/^\d{1,6}$/.test(String(val)) || Number(val) < 1) return null;
+      if (!validCount(val, maxCount)) return null;
+      count = Number(val);
       out.push("COUNT", String(val));
     } else if (opt === "TYPE") {
       if (!/^[a-z]{3,10}$/i.test(String(val))) return null;
@@ -358,34 +376,81 @@ function jailScan(cmd, prefixes) {
     }
   }
   out.splice(2, 0, "MATCH", match ?? `${prefixes[0]}*`);
-  return out;
+  return { cmd: out, count };
 }
 
 /**
- * Validate one command against the jail and limits. Returns
- *   { ok: true, op, name, cmd }   cmd is what gets sent to Redis
- *   { ok: false, status, error }  generic; never names a key or value
+ * HSCAN / SSCAN / ZSCAN key cursor [MATCH p] [COUNT n] [NOVALUES (HSCAN)].
+ * MATCH here filters fields/members inside the (jailed) key, so any pattern is
+ * fine; COUNT is capped and unknown options are refused.
  */
-export function checkCommand(cmd, { prefixes, maxValueBytes }) {
+function checkKeyScan(name, cmd, maxCount) {
+  const args = cmd.slice(1);
+  if (args.length < 2 || !/^\d{1,20}$/.test(String(args[1]))) return null;
+  const out = [name, args[0], String(args[1])];
+  let count = 10;
+  for (let i = 2; i < args.length; ) {
+    const opt = String(args[i]).toUpperCase();
+    if (opt === "NOVALUES" && name === "HSCAN") {
+      out.push("NOVALUES");
+      i += 1;
+      continue;
+    }
+    const val = args[i + 1];
+    if (val === undefined) return null;
+    if (opt === "MATCH" && typeof val === "string") out.push("MATCH", val);
+    else if (opt === "COUNT" && validCount(val, maxCount)) {
+      count = Number(val);
+      out.push("COUNT", String(val));
+    } else return null;
+    i += 2;
+  }
+  return { cmd: out, count };
+}
+
+const scanCost = (count) => Math.max(1, Math.ceil(count / 100));
+
+/**
+ * Validate one command against the jail and limits. Returns
+ *   { ok: true, op, name, cmd, weight }  cmd is what gets sent to Redis;
+ *                                        weight is its cost in rate tokens and
+ *                                        metered ops (max(1, key count))
+ *   { ok: false, status, error }         generic; never names a key or value
+ */
+export function checkCommand(cmd, opts) {
+  const L = { ...DEFAULT_LIMITS, ...opts };
+  const { prefixes } = L;
   if (!Array.isArray(cmd) || cmd.length === 0) return refuse(400, "bad_request");
+  if (cmd.length - 1 > L.maxArgs) return refuse(413, "too_many_arguments");
+  let total = 0;
   for (const a of cmd) {
     if (typeof a === "string") {
-      if (Buffer.byteLength(a) > maxValueBytes) return refuse(413, "value_too_large");
-    } else if (typeof a !== "number" || !Number.isFinite(a)) {
+      const n = Buffer.byteLength(a);
+      if (n > L.maxValueBytes) return refuse(413, "value_too_large");
+      total += n;
+    } else if (typeof a === "number" && Number.isFinite(a)) {
+      total += 24;
+    } else {
       return refuse(400, "bad_request");
     }
   }
+  if (total > L.maxCommandBytes) return refuse(413, "command_too_large");
   const name = cmdName(cmd);
   const e = entry(cmd);
   if (!name || !e) return refuse(403, "forbidden");
   if (e.spec === "scan") {
-    const scan = jailScan(cmd, prefixes);
-    return scan ? { ok: true, op: e.op, name, cmd: scan } : refuse(403, "forbidden");
+    const scan = jailScan(cmd, prefixes, L.maxScanCount);
+    return scan ? { ok: true, op: e.op, name, cmd: scan.cmd, weight: scanCost(scan.count) } : refuse(403, "forbidden");
   }
   const keys = resolveKeys(cmd);
   if (!keys) return refuse(403, "forbidden");
+  if (keys.length > L.maxKeys) return refuse(413, "too_many_keys");
   if (!keys.every((k) => inJail(k, prefixes))) return refuse(403, "forbidden");
-  return { ok: true, op: e.op, name, cmd: [name, ...cmd.slice(1)] };
+  if (e.spec === "kscan") {
+    const ks = checkKeyScan(name, cmd, L.maxScanCount);
+    return ks ? { ok: true, op: e.op, name, cmd: ks.cmd, weight: scanCost(ks.count) } : refuse(403, "forbidden");
+  }
+  return { ok: true, op: e.op, name, cmd: [name, ...cmd.slice(1)], weight: Math.max(1, keys.length) };
 }
 
 function refuse(status, error) {
@@ -435,6 +500,22 @@ export function createBucket({ capacity, refillPerSec, now = () => Date.now() })
   };
 }
 
+/** Per-source buckets with a hard cap on how many sources are tracked. */
+function createKeyedBuckets({ capacity, refillPerSec, now, maxKeys = 10_000 }) {
+  const m = new Map();
+  return {
+    take(key, n = 1) {
+      let b = m.get(key);
+      if (!b) {
+        if (m.size >= maxKeys) m.delete(m.keys().next().value);
+        b = createBucket({ capacity, refillPerSec, now });
+        m.set(key, b);
+      }
+      return b.take(n);
+    },
+  };
+}
+
 // ---- errors from Redis ----------------------------------------------------------
 
 /**
@@ -443,22 +524,41 @@ export function createBucket({ capacity, refillPerSec, now = () => Date.now() })
  */
 export function genericRedisError(e) {
   const m = /^([A-Z]{2,20})\b/.exec(String(e?.message ?? ""));
-  const cls = m && m[1] !== "ERR" && /^(WRONGTYPE|NOSCRIPT|BUSY|LOADING|OOM|READONLY|NOPERM|EXECABORT)$/.test(m[1]) ? m[1] : "ERR";
+  const cls = m && /^(WRONGTYPE|NOSCRIPT|BUSY|LOADING|OOM|READONLY|NOPERM|EXECABORT)$/.test(m[1]) ? m[1] : "ERR";
   return `${cls} command failed`;
 }
 
-// ---- quota helpers --------------------------------------------------------------
+const TIMEOUT = Symbol("timeout");
+
+function withDeadline(promise, ms) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(TIMEOUT), Math.max(0, ms));
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// ---- metering helpers ---------------------------------------------------------
+
+/** "YYYYMM" in UTC, the same month key cloud/meter uses. */
+export function utcMonth(ms) {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 /**
- * Does checkQuota itself count adds for this plan? True for a refusing plan
- * (finite add limit, no billed overage), where slice A's checkQuota is an
- * atomic reserve. A meter can say so explicitly with {reserved: boolean}.
+ * Default refund: take back `n` counted ops from the meter's counters for the
+ * month the ops were counted in. Same key layout as cloud/meter
+ * (acmi:cloud:meter:{tenant}:{yyyymm}:{op} and :ops_total). INCRBY with a
+ * negative amount, so the ACL needs no extra command. A meter may supply its
+ * own refund(redis, tenant, op, n, {now}).
  */
-export function reservesOnCheck(plan) {
-  if (!plan || typeof plan !== "object") return false;
-  const lim = plan.limits?.add;
-  if (lim === null || lim === undefined || !Number.isFinite(Number(lim))) return false;
-  return !(plan.overage && plan.overage.billed === true);
+export async function defaultRefund(redis, tenant, op, n, { now }) {
+  const base = `acmi:cloud:meter:${tenant}:${utcMonth(now)}`;
+  await redis("INCRBY", `${base}:${op}`, -n);
+  await redis("INCRBY", `${base}:ops_total`, -n);
 }
 
 // ---- bridge -------------------------------------------------------------------
@@ -478,8 +578,8 @@ function send(res, status, body) {
 
 /**
  * Read the request body up to `limit` bytes. Resolves null as soon as the body
- * is known to be over the limit (declared or streamed); the caller answers 413
- * and closes the connection instead of draining an unbounded upload.
+ * is known to be over the limit (declared or streamed); nothing past the
+ * limit is buffered.
  */
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
@@ -504,24 +604,66 @@ function readBody(req, limit) {
   });
 }
 
-/**
- * Answer, then drop the connection. The rest of the upload is discarded (not
- * buffered) for at most CLOSE_GRACE_MS so the client can read the reply, then
- * the socket is destroyed: an unbounded upload cannot hold the bridge.
- */
-const CLOSE_GRACE_MS = 1000;
+// Answering before the upload is read: write the reply, keep discarding the
+// rest of the upload (bounded) so the client is not reset mid-send and does
+// see the status, then end and close the connection.
+const DRAIN_MAX_BYTES = 4 * 1024 * 1024;
+const DRAIN_MAX_MS = 2000;
+
 function sendAndClose(req, res, status, body) {
-  res.setHeader("Connection", "close");
-  res.on("finish", () => {
-    req.on("data", () => {});
-    req.resume();
-    setTimeout(() => req.socket?.destroy(), CLOSE_GRACE_MS).unref();
-  });
-  send(res, status, body);
+  if (res.headersSent || res.writableEnded) return;
+  const s = JSON.stringify(body);
+  res.writeHead(status, { ...JSON_HEADERS, "Content-Length": Buffer.byteLength(s), Connection: "close" });
+  res.write(s);
+  if (req.complete || req.readableEnded) return res.end();
+  let drained = 0;
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    req.off("data", onData);
+    res.end();
+  };
+  const onData = (c) => {
+    drained += c.length;
+    if (drained > DRAIN_MAX_BYTES) finish();
+  };
+  const timer = setTimeout(finish, DRAIN_MAX_MS);
+  timer.unref?.();
+  req.on("data", onData);
+  req.once("end", finish);
+  req.once("error", finish);
+  req.once("close", finish);
+  req.resume();
+}
+
+/** Refuse without draining: for floods (auth failures over the per-source cap, busy). */
+function sendAndDestroy(req, res, status, body) {
+  if (res.headersSent || res.writableEnded) return;
+  const s = JSON.stringify(body);
+  res.writeHead(status, { ...JSON_HEADERS, "Content-Length": Buffer.byteLength(s), Connection: "close" });
+  res.end(s, () => req.socket?.destroy());
 }
 
 function defaultLog(line) {
   process.stdout.write(`${JSON.stringify(line)}\n`);
+}
+
+/**
+ * Validate limits; a misconfigured bridge refuses to start rather than run
+ * with a bucket that can never pay for a full pipeline or a full command.
+ */
+export function validateLimits(L) {
+  const pos = ["maxBodyBytes", "maxValueBytes", "maxCommandBytes", "maxArgs", "maxKeys", "maxScanCount", "maxPipeline",
+    "rateCapacity", "rateRefillPerSec", "requestDeadlineMs", "commandTimeoutMs", "maxInFlight", "authFailBurst", "authFailPerSec"];
+  for (const k of pos) {
+    if (!(typeof L[k] === "number" && Number.isFinite(L[k]) && L[k] > 0)) throw new Error(`acmi-bridge: limit ${k} must be a positive number`);
+  }
+  if (L.rateCapacity < L.maxPipeline) throw new Error("acmi-bridge: rateCapacity must be >= maxPipeline");
+  if (L.rateCapacity < L.maxKeys) throw new Error("acmi-bridge: rateCapacity must be >= maxKeys");
+  if (L.maxScanCount > 10_000) throw new Error("acmi-bridge: maxScanCount must be <= 10000");
+  return L;
 }
 
 /**
@@ -530,8 +672,9 @@ function defaultLog(line) {
  *   prefixes     optional subset of tenantPrefixes(tenant) (default: both)
  *   tokenSha256  hex sha256 of the bridge token (the token is never passed)
  *   redis        (...cmd) => Promise<result>, the canonical store
- *   meter        { meter(redis, tenant, op, n), checkQuota(redis, tenant, op, plan, {n}) } or null
- *   plan         plan object/name handed to checkQuota
+ *   meter        { meter(redis, tenant, op, n, {now}), checkQuota(redis, tenant, op, plan, {n, now}),
+ *                  refund?(redis, tenant, op, n, {now}) } or null
+ *   plan         plan object handed to checkQuota (null: count, never check)
  *   limits       overrides for DEFAULT_LIMITS, plus now() for tests
  *   log          (line) => void; receives {tenant, op, cmd, ok, ms}
  */
@@ -551,9 +694,14 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
   if (meter && (typeof meter.meter !== "function" || typeof meter.checkQuota !== "function")) {
     throw new Error("acmi-bridge: meter must provide meter() and checkQuota()");
   }
-  const L = { ...DEFAULT_LIMITS, ...limits };
+  const L = validateLimits({ ...DEFAULT_LIMITS, ...limits });
+  const now = L.now ?? (() => Date.now());
+  const checkOpts = { ...L, prefixes };
   const expected = tokenSha256.toLowerCase();
-  const bucket = createBucket({ capacity: L.rateCapacity, refillPerSec: L.rateRefillPerSec, now: L.now });
+  const bucket = createBucket({ capacity: L.rateCapacity, refillPerSec: L.rateRefillPerSec, now });
+  const authFails = createKeyedBuckets({ capacity: L.authFailBurst, refillPerSec: L.authFailPerSec, now });
+  const refund = typeof meter?.refund === "function" ? meter.refund : defaultRefund;
+  let inFlight = 0;
 
   const emit = (op, cmd, ok, t0) => {
     try {
@@ -563,99 +711,122 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     }
   };
 
-  // Quota contract (cloud/meter, slice A):
-  //   {ok:true}                          go (includes grace and billed overage: {ok:true, overage:true})
-  //   {ok:false, code:"quota_exceeded"}  429 quota_exceeded
-  //   anything else, or a throw          503 unavailable (fail closed for writes)
-  // On a refusing plan, checkQuota already reserved the adds (atomic
-  // check-and-increment), so meter() must not count them again.
-  async function enforceQuota(adds) {
-    if (!meter || adds === 0 || plan === null) return { ok: true, reserved: false };
-    let q;
-    try {
-      q = await meter.checkQuota(redis, tenant, "add", plan, { n: adds });
-    } catch {
-      return { ok: false, status: 503, error: "unavailable" };
+  /**
+   * Admit `adds` write ops before anything runs. Fails closed: any meter or
+   * quota error refuses the writes (503); nothing is run uncounted.
+   *   plan set:  checkQuota. {ok:true, reserved:true} means it already counted
+   *              (refusing plan); otherwise meter() counts now.
+   *   no plan:   meter() counts now.
+   * Returns { ok:true, counted } or { ok:false, status, error }.
+   */
+  async function admitWrites(adds, at) {
+    if (!meter || adds === 0) return { ok: true, counted: 0 };
+    let reserved = false;
+    if (plan !== null) {
+      let q;
+      try {
+        q = await meter.checkQuota(redis, tenant, "add", plan, { n: adds, now: at });
+      } catch {
+        return { ok: false, status: 503, error: "unavailable" };
+      }
+      if (q?.ok === false && q.code === "quota_exceeded") return { ok: false, status: 429, error: "quota_exceeded" };
+      if (q?.ok !== true) return { ok: false, status: 503, error: "unavailable" };
+      reserved = q.reserved === true;
     }
-    if (q?.ok === true) return { ok: true, reserved: typeof q.reserved === "boolean" ? q.reserved : reservesOnCheck(plan) };
-    if (q?.ok === false && q.code === "quota_exceeded") return { ok: false, status: 429, error: "quota_exceeded" };
-    return { ok: false, status: 503, error: "unavailable" };
+    if (!reserved) {
+      try {
+        await meter.meter(redis, tenant, "add", adds, { now: at });
+      } catch {
+        emit("meter", null, false, performance.now());
+        return { ok: false, status: 503, error: "unavailable" };
+      }
+    }
+    return { ok: true, counted: adds };
   }
 
-  async function count(adds, reads) {
+  async function settle(failedAdds, okReads, at) {
     if (!meter) return;
-    for (const [op, n] of [["add", adds], ["read", reads]]) {
-      if (n <= 0) continue;
+    if (failedAdds > 0) {
       try {
-        await meter.meter(redis, tenant, op, n);
+        await refund(redis, tenant, "add", failedAdds, { now: at });
+      } catch {
+        emit("refund", null, false, performance.now());
+      }
+    }
+    if (okReads > 0) {
+      // Reads are counted after the fact and never refused, even when counting fails.
+      try {
+        await meter.meter(redis, tenant, "read", okReads, { now: at });
       } catch {
         emit("meter", null, false, performance.now());
       }
     }
   }
 
-  async function run(checked) {
+  async function runOne(c, deadline) {
     const t0 = performance.now();
+    const left = Math.min(L.commandTimeoutMs, deadline - performance.now());
+    if (left <= 0) return { out: { error: "timeout" }, ran: false };
+    let r;
     try {
-      const result = await redis(...checked.cmd);
-      emit(checked.op, checked.name, true, t0);
-      return { result: result === undefined ? null : result };
+      r = await withDeadline(redis(...c.cmd), left);
     } catch (e) {
-      emit(checked.op, checked.name, false, t0);
-      return { error: genericRedisError(e) };
-    }
-  }
-
-  async function exec(body) {
-    const t0 = performance.now();
-    const c = checkCommand(body, { prefixes, maxValueBytes: L.maxValueBytes });
-    if (!c.ok) {
-      emit(classify(body) ?? "refused", cmdLabel(body), false, t0);
-      return [c.status, { error: c.error }];
-    }
-    if (!bucket.take(1)) {
       emit(c.op, c.name, false, t0);
-      return [429, { error: "rate_limited" }];
+      return { out: { error: genericRedisError(e) }, ran: true, failed: true };
     }
-    let reserved = false;
-    if (c.op === "add") {
-      const q = await enforceQuota(1);
-      if (!q.ok) {
-        emit(c.op, c.name, false, t0);
-        return [q.status, { error: q.error }];
-      }
-      reserved = q.reserved;
+    if (r === TIMEOUT) {
+      emit(c.op, c.name, false, t0);
+      // Outcome unknown (the write may have landed): no refund.
+      return { out: { error: "timeout" }, ran: true, failed: false, timedOut: true };
     }
-    const out = await run(c);
-    if (!out.error) await count(c.op === "add" && !reserved ? 1 : 0, c.op === "read" ? 1 : 0);
-    // Upstash answers a failed command with HTTP 400 and {error}.
-    return [out.error ? 400 : 200, out];
+    emit(c.op, c.name, true, t0);
+    return { out: { result: r === undefined ? null : r }, ran: true, failed: false };
   }
 
-  async function pipeline(body) {
-    if (!Array.isArray(body) || body.length === 0) return [400, { error: "bad_request" }];
-    if (body.length > L.maxPipeline) return [413, { error: "pipeline_too_large" }];
-    // All-or-nothing: check every command before running any.
+  /**
+   * Shared path for /exec (one command) and /pipeline. All-or-nothing on the
+   * jail, size, rate and quota checks: if anything refuses, nothing runs and
+   * the reply names the code (and, for a pipeline, the command index).
+   */
+  async function runRequest(cmds, isPipeline, t0) {
+    const deadline = t0 + L.requestDeadlineMs;
     const checked = [];
-    for (const cmd of body) {
-      const c = checkCommand(cmd, { prefixes, maxValueBytes: L.maxValueBytes });
-      if (!c.ok) return [c.status, { error: c.error }];
+    for (let i = 0; i < cmds.length; i++) {
+      const c = checkCommand(cmds[i], checkOpts);
+      if (!c.ok) {
+        emit(classify(cmds[i]) ?? "refused", cmdLabel(cmds[i]), false, t0);
+        return [c.status, isPipeline ? { error: c.error, index: i } : { error: c.error }];
+      }
       checked.push(c);
     }
-    if (!bucket.take(checked.length)) return [429, { error: "rate_limited" }];
-    const adds = checked.filter((c) => c.op === "add").length;
-    const q = await enforceQuota(adds);
-    if (!q.ok) return [q.status, { error: q.error }];
+    const cost = checked.reduce((n, c) => n + c.weight, 0);
+    if (!bucket.take(cost)) {
+      emit(isPipeline ? "pipeline" : checked[0].op, isPipeline ? null : checked[0].name, false, t0);
+      return [429, { error: "rate_limited" }];
+    }
+    const at = now();
+    const adds = checked.reduce((n, c) => n + (c.op === "add" ? c.weight : 0), 0);
+    const admit = await admitWrites(adds, at);
+    if (!admit.ok) {
+      const firstAdd = checked.findIndex((c) => c.op === "add");
+      emit(isPipeline ? "pipeline" : "add", isPipeline ? null : checked[0].name, false, t0);
+      return [admit.status, isPipeline ? { error: admit.error, index: firstAdd } : { error: admit.error }];
+    }
     const results = [];
-    let okAdds = 0;
+    let failedAdds = 0;
     let okReads = 0;
     for (const c of checked) {
-      const r = await run(c);
-      results.push(r);
-      if (!r.error) c.op === "add" ? okAdds++ : okReads++;
+      const r = await runOne(c, deadline);
+      results.push(r.out);
+      if (c.op === "add" && (r.failed || !r.ran)) failedAdds += c.weight;
+      if (c.op === "read" && !r.out.error) okReads += c.weight;
     }
-    await count(q.reserved ? 0 : okAdds, okReads);
-    return [200, results];
+    await settle(admit.counted ? failedAdds : 0, okReads, at);
+    if (isPipeline) return [200, results];
+    const out = results[0];
+    // Upstash answers a failed command with HTTP 400 and {error}.
+    if (out.error === "timeout") return [504, out];
+    return [out.error ? 400 : 200, out];
   }
 
   async function handler(req, res) {
@@ -664,21 +835,35 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     try {
       path = new URL(req.url, "http://bridge").pathname;
     } catch {
-      return send(res, 400, { error: "bad_request" });
+      return sendAndClose(req, res, 400, { error: "bad_request" });
     }
 
     if (path === "/health") {
-      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "method_not_allowed" });
-      return send(res, 200, { ok: true, tenant, version: VERSION });
+      if (req.method !== "GET" && req.method !== "HEAD") return sendAndClose(req, res, 405, { error: "method_not_allowed" });
+      return sendAndClose(req, res, 200, { ok: true, tenant, version: VERSION });
     }
 
     const isExec = path === "/" || path === "/exec";
     const isPipeline = path === "/pipeline";
-    if (!isExec && !isPipeline) return send(res, 404, { error: "not_found" });
-    if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
+    if (!isExec && !isPipeline) return sendAndClose(req, res, 404, { error: "not_found" });
+    if (req.method !== "POST") return sendAndClose(req, res, 405, { error: "method_not_allowed" });
+
+    if (inFlight >= L.maxInFlight) return sendAndDestroy(req, res, 503, { error: "busy" });
+    inFlight++;
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        inFlight--;
+      }
+    };
+    res.once("close", release);
+    res.once("finish", release);
 
     if (!tokenMatches(bearer(req), expected)) {
       emit("auth", null, false, t0);
+      const src = req.socket?.remoteAddress || "?";
+      if (!authFails.take(src)) return sendAndDestroy(req, res, 429, { error: "rate_limited" });
       return sendAndClose(req, res, 401, { error: "unauthorized" });
     }
 
@@ -686,7 +871,7 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     try {
       raw = await readBody(req, L.maxBodyBytes);
     } catch {
-      return send(res, 400, { error: "bad_request" });
+      return sendAndClose(req, res, 400, { error: "bad_request" });
     }
     if (raw === null) {
       emit(isPipeline ? "pipeline" : "exec", null, false, t0);
@@ -700,12 +885,18 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     }
 
     try {
+      let cmds;
       if (isPipeline) {
-        const [status, out] = await pipeline(body);
-        if (status !== 200) emit("pipeline", null, false, t0);
-        return send(res, status, out);
+        if (!Array.isArray(body) || body.length === 0 || !body.every(Array.isArray)) return send(res, 400, { error: "bad_request" });
+        if (body.length > L.maxPipeline) {
+          emit("pipeline", null, false, t0);
+          return send(res, 413, { error: "pipeline_too_large" });
+        }
+        cmds = body;
+      } else {
+        cmds = [body];
       }
-      const [status, out] = await exec(body);
+      const [status, out] = await runRequest(cmds, isPipeline, t0);
       return send(res, status, out);
     } catch {
       return send(res, 500, { error: "internal_error" });
@@ -714,6 +905,7 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
 
   return {
     handler,
+    limits: L,
     async close() {
       if (typeof redis.close === "function") await redis.close();
     },
