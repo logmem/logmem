@@ -8,13 +8,13 @@
 // Only the commands LogMem uses are implemented. Anything else throws, so a
 // new call site fails loudly in tests instead of silently doing nothing.
 
-// EVAL scripts registered by callers (the ACMI cloud control plane). The body
-// runs synchronously against this process's map, which is the atomicity the
-// tests rely on. A real Redis runs the same script text via EVAL.
-const evalScripts = new Map();
-export function registerEvalScript(source, fn) {
-  evalScripts.set(source, fn);
-}
+// EVAL runs scripts registered in lua-scripts.mjs (the ACMI cloud control plane).
+// The body runs synchronously against this process's map, which is the atomicity
+// the tests rely on. A real Redis runs the same script text via EVAL.
+import { evalScriptFor } from "./lua-scripts.mjs";
+
+// Kept for existing importers; the registry itself lives in lua-scripts.mjs.
+export { registerEvalScript } from "./lua-scripts.mjs";
 
 function globToRegex(glob) {
   const esc = String(glob).replace(/[.+^${}()|[\]\\]/g, "\\$&");
@@ -230,7 +230,7 @@ export function createMemoryRedis() {
       return flat(sliceRange(zsorted(e).reverse(), start, stop), withScores);
     },
     EVAL: (script, numkeys, ...rest) => {
-      const fn = evalScripts.get(String(script));
+      const fn = evalScriptFor(script);
       if (!fn) throw new Error("memory-redis: unsupported EVAL script");
       const n = Number(numkeys);
       if (!Number.isInteger(n) || n < 0 || n > rest.length) throw new Error("ERR wrong number of keys");

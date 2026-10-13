@@ -21,7 +21,7 @@
 
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
-import { registerEvalScript } from "../../src/lib/memory-redis.mjs";
+import { registerEvalScript } from "../../src/lib/lua-scripts.mjs";
 
 // Defence in depth on top of the t- namespace (BACKPLANE.md §1, PR #28 review M1).
 export const RESERVED = [

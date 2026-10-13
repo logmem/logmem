@@ -333,3 +333,17 @@ test("redis-native: control-plane commands reach Redis verbatim (EVAL, INCRBY, H
   await translate({ zAdd: async (k, m) => (typed = [k, m]) }, "ZADD", ["z", "1", "a"]);
   assert.deepEqual(typed, ["z", [{ score: 1, value: "a" }]]);
 });
+
+test("lua-scripts: cloud modules register with the neutral registry, not the test double", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { evalScriptFor } = await import("../src/lib/lua-scripts.mjs");
+  const { RESERVE_LUA } = await import("../cloud/meter/index.mjs");
+  const { CREATE_TENANT_LUA } = await import("../cloud/tenants/index.mjs");
+  assert.equal(typeof evalScriptFor(RESERVE_LUA), "function");
+  assert.equal(typeof evalScriptFor(CREATE_TENANT_LUA), "function");
+  assert.equal(evalScriptFor("return 1"), undefined);
+  for (const f of ["../cloud/meter/index.mjs", "../cloud/tenants/index.mjs"]) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    assert.ok(!/from\s+["'][^"']*memory-redis/.test(src), `${f} must not import memory-redis`);
+  }
+});

@@ -22,7 +22,7 @@
 //     decision). Do not rename the refusal to upgrade_required here.
 
 import { validTenantId } from "../tenants/index.mjs";
-import { registerEvalScript } from "../../src/lib/memory-redis.mjs";
+import { registerEvalScript } from "../../src/lib/lua-scripts.mjs";
 
 export const OPS = ["add", "read", "recall"];
 export const METER_TTL_SECONDS = 400 * 86400;
