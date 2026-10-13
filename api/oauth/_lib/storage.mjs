@@ -43,8 +43,11 @@
 // plaintext field>" (client_id, space, sub, scope, expires_at, issued_at,
 // redirect_uri, code_challenge, ...). So a sealed blob copied under another
 // key, or next to edited plaintext fields, fails to open. Envelopes without
-// `v` were sealed with the constant v1 AAD; they open only until
-// LEGACY_CUTOFF_MS (scripts/oauth-legacy-seal.mjs re-seals them as v2).
+// `v` were sealed with the constant v1 AAD. Access-token lookup still opens
+// them until LEGACY_CUTOFF_MS. Refresh-token and authorization-code
+// consumption never mint from them: a v1 blob copied under an attacker-chosen
+// key would otherwise become a fresh v2 grant that still refreshes after the
+// cutoff. scripts/oauth-legacy-seal.mjs does not re-seal v1 envelopes.
 // Without a KEK, minting is refused (KekMissingError -> 503) unless
 // insecureAllowed(); local dev then stores {enc:"none", warning, data}.
 //
@@ -285,6 +288,8 @@ export function sealCreds(creds, aad, env = process.env) {
  * Inverse of sealCreds. Throws on a missing/wrong KEK, a malformed/tampered
  * envelope, or an AAD mismatch (blob moved to another key or record). A
  * legacy envelope (no `v`, constant v1 AAD) opens only before LEGACY_CUTOFF_MS.
+ * That path is for access-token lookup. consumeRefresh and consumeAuthCode
+ * refuse v1 outright so a copied blob cannot be exchanged for a v2 grant.
  */
 export function openCreds(envelope, aad, env = process.env) {
   if (!envelope || typeof envelope !== "object") throw new Error("no credential envelope");
@@ -466,7 +471,11 @@ export async function consumeAuthCode(code) {
   if (!code || typeof code !== "string") return null;
   const r = deployRedis();
   const h = sha256hex(code);
-  return openSealed(parse(await consumeOnce(r, KEY.code(h), TTL.code)), "code", h);
+  const stored = parse(await consumeOnce(r, KEY.code(h), TTL.code));
+  // Constant-AAD v1 opens under any key until the cutoff. Burn the code and
+  // return nothing so /api/oauth/token answers invalid_grant and mints no v2 grant.
+  if (isV1Sealed(stored)) return null;
+  return openSealed(stored, "code", h);
 }
 
 // ───── Access + refresh tokens ─────
@@ -592,7 +601,11 @@ export async function consumeRefresh(refresh_token, client_id) {
   if (peek && peek.creds) {
     if (peek.client_id !== client_id) return { mismatch: true };
     const raw = await consumeOnce(r, KEY.refresh(h), TTL.refresh);
-    const rec = openSealed(parse(raw), "refresh", h);
+    const stored = parse(raw);
+    // Same rule as consumeAuthCode: never mint from a v1 envelope, and do not
+    // leave a grace record that a replay could treat as a real rotation.
+    if (isV1Sealed(stored)) return null;
+    const rec = openSealed(stored, "refresh", h);
     if (rec) {
       await r("SET", KEY.refreshGrace(h), JSON.stringify({ rec: raw, children: null }), "EX", String(TTL.refreshGrace));
       return { rec };
