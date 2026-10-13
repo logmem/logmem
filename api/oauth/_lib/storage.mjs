@@ -24,7 +24,13 @@
 //
 // Credentials (backend, upstash_url, upstash_token) are sealed with
 // AES-256-GCM under LOGMEM_OAUTH_KEK into record.creds =
-// {enc:"aes-256-gcm", iv, tag, ct}. Without a KEK, production refuses to
+// {enc:"aes-256-gcm", v:2, iv, tag, ct}. The v2 AAD binds the envelope to its
+// record: "logmem-oauth-creds-v2|<kind>|<key hash>|<canonical JSON of every
+// plaintext field>" (client_id, space, sub, scope, expires_at, issued_at,
+// redirect_uri, code_challenge, ...). So a sealed blob copied under another
+// key, or next to edited plaintext fields, fails to open. Envelopes without
+// `v` were sealed with the constant v1 AAD; they open only until
+// LEGACY_CUTOFF_MS (scripts/oauth-legacy-seal.mjs re-seals them as v2). Without a KEK, production refuses to
 // mint (KekMissingError -> 503); other envs store {enc:"none", warning, data}.
 //
 // Token contents bind a backend AND a space: the MCP route restores the
@@ -56,7 +62,8 @@ export const TTL = {
 export const LEGACY_CUTOFF_MS = Date.UTC(2026, 9, 26);
 
 const DEPLOY_TIMEOUT_MS = 5000;
-const AAD = Buffer.from("logmem-oauth-creds-v1");
+const AAD_V1 = Buffer.from("logmem-oauth-creds-v1"); // TODO(remove after LEGACY_CUTOFF_MS)
+const ENVELOPE_V = 2;
 const GCM_IV_BYTES = 12;
 const GCM_TAG_BYTES = 16;
 
@@ -200,8 +207,32 @@ export function hmacHex(key, data) {
   return createHmac("sha256", key).update(data).digest("hex");
 }
 
-/** Seal the credential blob. Throws KekMissingError in production without a KEK. */
-export function sealCreds(creds, env = process.env) {
+/** Stable JSON: object keys sorted at every level, so the AAD is deterministic. */
+function canonical(v) {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object") {
+    return `{${Object.keys(v)
+      .sort()
+      .filter((k) => v[k] !== undefined)
+      .map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+
+/**
+ * v2 AAD: binds the envelope to its record kind ("code" | "access" |
+ * "refresh"), the sha256 key hash it is stored under, and every plaintext
+ * field stored beside it.
+ */
+export function recordAad(kind, keyHash, plain) {
+  if (!kind || !/^[0-9a-f]{64}$/.test(String(keyHash))) throw new Error("recordAad needs a kind and a sha256 key hash");
+  return Buffer.from(`logmem-oauth-creds-v2|${kind}|${keyHash}|${canonical(plain)}`, "utf8");
+}
+
+/** Seal the credential blob under `aad` (see recordAad). Throws KekMissingError in production without a KEK. */
+export function sealCreds(creds, aad, env = process.env) {
+  if (!Buffer.isBuffer(aad) || aad.length === 0) throw new Error("sealCreds requires record-bound AAD");
   const kek = loadKek(env);
   if (!kek) {
     if (isProd(env)) throw new KekMissingError();
@@ -209,19 +240,34 @@ export function sealCreds(creds, env = process.env) {
   }
   const iv = randomBytes(GCM_IV_BYTES);
   const cipher = createCipheriv("aes-256-gcm", kek, iv, { authTagLength: GCM_TAG_BYTES });
-  cipher.setAAD(AAD);
+  cipher.setAAD(aad);
   const ct = Buffer.concat([cipher.update(JSON.stringify(creds), "utf8"), cipher.final()]);
-  return { enc: "aes-256-gcm", iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ct: ct.toString("base64") };
+  return { enc: "aes-256-gcm", v: ENVELOPE_V, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ct: ct.toString("base64") };
 }
 
-/** Inverse of sealCreds. Throws on a missing/wrong KEK or a malformed/tampered envelope. */
-export function openCreds(envelope, env = process.env) {
+/**
+ * Inverse of sealCreds. Throws on a missing/wrong KEK, a malformed/tampered
+ * envelope, or an AAD mismatch (blob moved to another key or record). A
+ * legacy envelope (no `v`, constant v1 AAD) opens only before LEGACY_CUTOFF_MS.
+ */
+export function openCreds(envelope, aad, env = process.env) {
   if (!envelope || typeof envelope !== "object") throw new Error("no credential envelope");
   if (envelope.enc === "none") {
     if (isProd(env)) throw new KekMissingError();
     return envelope.data;
   }
   if (envelope.enc !== "aes-256-gcm") throw new Error("unknown credential envelope");
+  let useAad;
+  if (envelope.v === ENVELOPE_V) {
+    if (!Buffer.isBuffer(aad) || aad.length === 0) throw new Error("openCreds requires record-bound AAD");
+    useAad = aad;
+  } else if (envelope.v === undefined) {
+    // TODO(remove after LEGACY_CUTOFF_MS): constant-AAD v1 envelopes.
+    if (!legacyOpen()) throw new Error("v1 credential envelope past the legacy cutoff");
+    useAad = AAD_V1;
+  } else {
+    throw new Error("unknown credential envelope version");
+  }
   const kek = loadKek(env);
   if (!kek) throw new KekMissingError();
   const iv = Buffer.from(String(envelope.iv), "base64");
@@ -229,7 +275,7 @@ export function openCreds(envelope, env = process.env) {
   if (iv.length !== GCM_IV_BYTES) throw new Error("bad envelope iv length");
   if (tag.length !== GCM_TAG_BYTES) throw new Error("bad envelope tag length");
   const decipher = createDecipheriv("aes-256-gcm", kek, iv, { authTagLength: GCM_TAG_BYTES });
-  decipher.setAAD(AAD);
+  decipher.setAAD(useAad);
   decipher.setAuthTag(tag);
   const pt = Buffer.concat([decipher.update(Buffer.from(String(envelope.ct), "base64")), decipher.final()]);
   return JSON.parse(pt.toString("utf8"));
@@ -237,15 +283,20 @@ export function openCreds(envelope, env = process.env) {
 
 const CRED_FIELDS = new Set(["backend", "upstash_url", "upstash_token"]);
 
-/** Move credential fields out of `rec` into a sealed `creds` envelope. */
-export function sealRecord(rec) {
+/**
+ * Move credential fields out of `rec` into a sealed `creds` envelope bound to
+ * (kind, keyHash, the remaining plaintext fields). The caller must already
+ * know the key hash, so generate the token/code before sealing.
+ */
+export function sealRecord(rec, kind, keyHash) {
   const creds = {};
   const out = {};
   for (const [k, v] of Object.entries(rec)) {
+    if (k === "creds") continue;
     if (CRED_FIELDS.has(k)) creds[k] = v ?? null;
     else out[k] = v;
   }
-  out.creds = sealCreds(creds);
+  out.creds = sealCreds(creds, recordAad(kind, keyHash, out));
   return out;
 }
 
@@ -253,13 +304,13 @@ export function sealRecord(rec) {
  * Restore the plaintext shape callers expect ({...rec, backend, upstash_url,
  * upstash_token}). Records without `creds` pass through unchanged (callers
  * only accept those from legacy keys). Returns null if the envelope cannot
- * be opened (rotated KEK, tampering).
+ * be opened (rotated KEK, tampering, wrong key/record binding, v1 past cutoff).
  */
-function openRecord(rec) {
+function openRecord(rec, kind, keyHash) {
   if (!rec || !rec.creds) return rec;
   try {
-    const creds = openCreds(rec.creds);
-    const { creds: _drop, ...rest } = rec;
+    const { creds: envelope, ...rest } = rec;
+    const creds = openCreds(envelope, recordAad(kind, keyHash, rest));
     return { ...rest, ...creds };
   } catch (e) {
     console.warn(`[oauth] could not open credential envelope: ${e.name}`);
@@ -267,8 +318,21 @@ function openRecord(rec) {
   }
 }
 
+/** Is this a sealed record still on the constant-AAD v1 envelope? */
+export const isV1Sealed = (rec) => !!(rec && rec.creds && rec.creds.enc === "aes-256-gcm" && rec.creds.v === undefined);
+
+/**
+ * Migration helper: re-seal a v1 record under the v2 record-bound AAD.
+ * Returns the new record, or null if it cannot be opened (or is past cutoff).
+ */
+export function resealV1Record(rec, kind, keyHash) {
+  if (!isV1Sealed(rec)) return null;
+  const opened = openRecord(rec, kind, keyHash);
+  return opened ? sealRecord(opened, kind, keyHash) : null;
+}
+
 /** Hashed keys must hold sealed records; anything else is ignored. */
-const openSealed = (rec) => (rec && rec.creds ? openRecord(rec) : null);
+const openSealed = (rec, kind, keyHash) => (rec && rec.creds ? openRecord(rec, kind, keyHash) : null);
 /** Legacy keys only ever held unsealed records; a sealed one there is foreign. */
 const openLegacy = (rec) => (rec && !rec.creds ? rec : null);
 
@@ -350,16 +414,18 @@ export async function touchClient(client_id) {
 
 export async function saveAuthCode(payload) {
   const r = deployRedis();
-  const rec = sealRecord(payload); // throws KekMissingError in prod without a KEK
   const code = randomToken(32);
-  await r("SET", KEY.code(sha256hex(code)), JSON.stringify(rec), "EX", String(TTL.code));
+  const h = sha256hex(code);
+  const rec = sealRecord(payload, "code", h); // throws KekMissingError in prod without a KEK
+  await r("SET", KEY.code(h), JSON.stringify(rec), "EX", String(TTL.code));
   return code;
 }
 
 export async function consumeAuthCode(code) {
   if (!code || typeof code !== "string") return null;
   const r = deployRedis();
-  return openSealed(parse(await consumeOnce(r, KEY.code(sha256hex(code)), TTL.code)));
+  const h = sha256hex(code);
+  return openSealed(parse(await consumeOnce(r, KEY.code(h), TTL.code)), "code", h);
 }
 
 // ───── Access + refresh tokens ─────
@@ -374,11 +440,13 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   // {kind:'redis',uri}); upstash_url/_token stay populated for the upstash
   // kind so opened records remain readable by pre-refactor callers.
   // sealRecord throws KekMissingError before anything is written.
-  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access });
-  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at });
+  const hAt = sha256hex(access);
+  const hRt = sha256hex(refresh);
+  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access }, "access", hAt);
+  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at }, "refresh", hRt);
 
-  await r("SET", KEY.access(sha256hex(access)), JSON.stringify(accessRecord), "EX", String(TTL.access));
-  await r("SET", KEY.refresh(sha256hex(refresh)), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
+  await r("SET", KEY.access(hAt), JSON.stringify(accessRecord), "EX", String(TTL.access));
+  await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
 
   return { access_token: access, token_type: "Bearer", expires_in: TTL.access, refresh_token: refresh, scope };
 }
@@ -386,8 +454,9 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
 export async function lookupAccessToken(access_token) {
   if (!access_token || typeof access_token !== "string") return null;
   const r = deployRedis();
-  const rec = parse(await r("GET", KEY.access(sha256hex(access_token))));
-  if (rec) return openSealed(rec);
+  const h = sha256hex(access_token);
+  const rec = parse(await r("GET", KEY.access(h)));
+  if (rec) return openSealed(rec, "access", h);
   // Backward compat: tokens minted before hashing were keyed by the raw value.
   // Only unsealed records count, and only until the cutoff.
   // TODO(remove after LEGACY_CUTOFF_MS): drop this legacy raw-key lookup.
@@ -416,7 +485,7 @@ export async function consumeRefresh(refresh_token, client_id) {
   if (peek && peek.creds) {
     if (peek.client_id !== client_id) return { mismatch: true };
     const raw = await consumeOnce(r, KEY.refresh(h), TTL.refresh);
-    const rec = openSealed(parse(raw));
+    const rec = openSealed(parse(raw), "refresh", h);
     if (rec) {
       await r("SET", KEY.refreshGrace(h), JSON.stringify({ rec: raw, children: null }), "EX", String(TTL.refreshGrace));
       return { rec, grace: false };
@@ -429,7 +498,7 @@ export async function consumeRefresh(refresh_token, client_id) {
     const graceRec = parse(gpeek.rec);
     if (!graceRec || graceRec.client_id !== client_id) return { mismatch: true };
     const g = parse(await consumeOnce(r, KEY.refreshGrace(h), TTL.refreshGrace));
-    const rec = g && openSealed(parse(g.rec));
+    const rec = g && openSealed(parse(g.rec), "refresh", h);
     if (rec) {
       let revoked = 0;
       const ch = g.children || {};

@@ -214,7 +214,7 @@ test("review #2: oauth-legacy-seal dry-run writes nothing; --apply seals with re
     put(`lm:oauth:refresh:${rawR}`, { client_id: "c", space: "s", upstash_url: "https://x", upstash_token: "SECRET-R" }, 5678);
     put(`lm:oauth:code:${rawC}`, { client_id: "c", upstash_token: "SECRET-C" }, 100);
     const sealedCodeKey = `lm:oauth:code:${"4".repeat(64)}`;
-    put(sealedCodeKey, sealRecord({ client_id: "c", backend: { kind: "redis", uri: "rediss://h" } }), 600);
+    put(sealedCodeKey, sealRecord({ client_id: "c", backend: { kind: "redis", uri: "rediss://h" } }, "code", "4".repeat(64)), 600);
     const before = JSON.stringify([...r.data.entries()]);
 
     const logs = [];

@@ -17,6 +17,7 @@ import {
   LEGACY_CUTOFF_MS,
   sealCreds,
   openCreds,
+  recordAad,
   loadKek,
   safeEqual,
   sha256hex,
@@ -139,24 +140,28 @@ test("oauth storage: legacy raw-key refresh tokens consume once, client-checked,
 
 test("oauth storage: AES-256-GCM envelope round trip, hex and base64 KEKs", () => {
   const blob = { backend: { kind: "redis", uri: "rediss://:pw@h:6379" }, upstash_url: null, upstash_token: null };
+  const aad = recordAad("access", "a".repeat(64), { client_id: "cli_x", space: "s" });
   for (const kek of [TEST_KEK_HEX, Buffer.from(TEST_KEK_HEX, "hex").toString("base64")]) {
     const env = { LOGMEM_OAUTH_KEK: kek };
-    const env1 = sealCreds(blob, env);
+    const env1 = sealCreds(blob, aad, env);
     assert.equal(env1.enc, "aes-256-gcm");
+    assert.equal(env1.v, 2);
     assert.ok(env1.iv && env1.tag && env1.ct);
     assert.ok(!JSON.stringify(env1).includes("pw@h"));
-    assert.deepEqual(openCreds(env1, env), blob);
+    assert.deepEqual(openCreds(env1, aad, env), blob);
     // fresh IV each time
-    assert.notEqual(sealCreds(blob, env).iv, env1.iv);
+    assert.notEqual(sealCreds(blob, aad, env).iv, env1.iv);
     // tamper -> auth failure
     const ct = Buffer.from(env1.ct, "base64");
     ct[0] ^= 1;
-    assert.throws(() => openCreds({ ...env1, ct: ct.toString("base64") }, env));
+    assert.throws(() => openCreds({ ...env1, ct: ct.toString("base64") }, aad, env));
     // wrong key -> auth failure
-    assert.throws(() => openCreds(env1, { LOGMEM_OAUTH_KEK: "ff".repeat(32) }));
+    assert.throws(() => openCreds(env1, aad, { LOGMEM_OAUTH_KEK: "ff".repeat(32) }));
+    // wrong AAD -> auth failure
+    assert.throws(() => openCreds(env1, recordAad("access", "b".repeat(64), { client_id: "cli_x", space: "s" }), env));
     // truncated tag / wrong-size IV are rejected outright
-    assert.throws(() => openCreds({ ...env1, tag: Buffer.from(env1.tag, "base64").subarray(0, 4).toString("base64") }, env), /tag length/);
-    assert.throws(() => openCreds({ ...env1, iv: Buffer.alloc(16).toString("base64") }, env), /iv length/);
+    assert.throws(() => openCreds({ ...env1, tag: Buffer.from(env1.tag, "base64").subarray(0, 4).toString("base64") }, aad, env), /tag length/);
+    assert.throws(() => openCreds({ ...env1, iv: Buffer.alloc(16).toString("base64") }, aad, env), /iv length/);
   }
   assert.equal(loadKek({}), null);
   assert.throws(() => loadKek({ LOGMEM_OAUTH_KEK: "tooshort" }), StorageConfigError);
