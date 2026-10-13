@@ -557,12 +557,23 @@ export const TOOLS = [
     async run({ refs, since, limit }, ctx) {
       const sinceMs = since ? clock(ctx) - parseSince(since) : undefined;
       const merged = [];
+      const read_warnings = [];
+      // One unreadable log (bad ref, wrong Redis type, a timed-out read) is
+      // reported and skipped; it no longer fails the whole merge.
       for (const r of refs) {
-        const { ns, id } = parseRef(r);
-        for (const e of await ctx.store.readLog(ns, id, { sinceMs })) merged.push({ ...e, from: `${ns}:${id}` });
+        let ns, id;
+        try {
+          ({ ns, id } = parseRef(r));
+          for (const e of await ctx.store.readLog(ns, id, { sinceMs })) merged.push({ ...e, from: `${ns}:${id}` });
+        } catch (e) {
+          if (e?.code === "bad_agent_id") throw e;
+          read_warnings.push({ ref: String(r), error: String(e?.message || e).slice(0, 200) });
+        }
       }
       merged.sort((a, b) => b.ts - a.ts);
-      return { ok: true, entries: merged.slice(0, limit || 50) };
+      const out = { ok: true, entries: merged.slice(0, limit || 50) };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {

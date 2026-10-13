@@ -303,13 +303,20 @@ export const ACMI_TOOLS = [
     async run({ keys, since, limit }, { store }) {
       const sinceMs = since ? Date.now() - parseSince(since) : undefined;
       const merged = [];
+      const read_warnings = [];
       for (const raw of keys) {
-        const ref = String(raw)
-          .replace(/^acmi:/, "")
-          .replace(new RegExp(`^${store.space}:`), "")
-          .replace(/:timeline$/, "");
-        const { ns, id } = parseRef(ref);
-        for (const e of await store.readLog(ns, id, { sinceMs })) merged.push({ e, src: `${ns}:${id}` });
+        try {
+          const ref = String(raw)
+            .replace(/^acmi:/, "")
+            .replace(new RegExp(`^${store.space}:`), "")
+            .replace(/:timeline$/, "");
+          const { ns, id } = parseRef(ref);
+          for (const e of await store.readLog(ns, id, { sinceMs })) merged.push({ e, src: `${ns}:${id}` });
+        } catch (e) {
+          if (e?.code === "bad_agent_id") throw e;
+          // ACMI's acmi_cat failed the whole call (Redis REST 500) on one bad key.
+          read_warnings.push({ key: String(raw), error: String(e?.message || e).slice(0, 200) });
+        }
       }
       merged.sort((a, b) => b.e.ts - a.e.ts);
       const events = merged.slice(0, limit || 50).map(({ e, src }) => {
@@ -321,7 +328,7 @@ export const ACMI_TOOLS = [
           summary: a.summary || JSON.stringify(a),
         };
       });
-      return { ok: true, events };
+      return read_warnings.length ? { ok: true, events, read_warnings } : { ok: true, events };
     },
   },
   {
