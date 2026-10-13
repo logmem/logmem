@@ -203,7 +203,7 @@ inside the 13:00 hour.
 |---|---|---|
 | `CRON_SECRET` | yes | 32+ random characters (below). Unset or shorter: the endpoint answers 503 and runs nothing |
 | `LOGMEM_REST_URL`, `LOGMEM_REST_TOKEN` | yes | the bridge (or `LOGMEM_REDIS_URI`). The check writes, so these must be read-write |
-| `LOGMEM_DOGFOOD_SPACES` | no | default `madez,fieldnotes` |
+| `LOGMEM_DOGFOOD_SPACES` | no | default `madez,fieldnotes`. A blank or empty value is unset and uses that default |
 | `LOGMEM_DOGFOOD_MIRROR_SPACES` | no | spaces with ACMI parity checked; default `madez` |
 
 The bridge creds were approved for **preview only** in the dogfood design. Running the

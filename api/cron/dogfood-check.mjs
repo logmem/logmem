@@ -6,11 +6,13 @@
 //   CRON_SECRET unset (or under 32 chars) -> 503, nothing runs (fail closed).
 //   header missing or wrong              -> 401.
 //
-// For each space in LOGMEM_DOGFOOD_SPACES (default "madez,fieldnotes") it runs
-// the same runCheck as scripts/dogfood-check.mjs against the server's env
-// backend, writes the checkup as agent:logmem-check, and stores the scorecard
-// in Redis at lm:{space}:dogfood:scorecard. A second run on the same UTC day
-// replaces that day's checkup and scorecard row (no duplicates).
+// For each space in LOGMEM_DOGFOOD_SPACES (default "madez,fieldnotes"; a blank
+// or empty value is unset and uses that default) it runs the same runCheck as
+// scripts/dogfood-check.mjs against the server's env backend, writes the
+// checkup as agent:logmem-check, and stores the scorecard in Redis at
+// lm:{space}:dogfood:scorecard. A second run of this handler on the same UTC
+// day replaces that day's checkup and scorecard row (no duplicates). The
+// Actions workflow does not: it checks out feat/dogfood-phase0, which appends.
 //
 // Mirror parity is checked for LOGMEM_DOGFOOD_MIRROR_SPACES (default "madez"),
 // the same as the workflow's --mirror-spaces madez.
@@ -30,9 +32,15 @@ const SPACE_RE = /^[a-z0-9_-]{1,60}$/;
 
 const list = (v, d) => String(v ?? d).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
-/** Spaces to check; throws on a malformed name (a config error, not a request error). */
+/**
+ * Spaces to check. A nullish, blank, or empty list is unset and uses the
+ * design default (madez, fieldnotes): those are the two dogfood spaces, and a
+ * day the check does not run is a gap. An explicit name is kept. A malformed
+ * name throws (a config error, not a request error).
+ */
 export function dogfoodSpaces(env = process.env) {
-  const spaces = [...new Set(list(env.LOGMEM_DOGFOOD_SPACES, "madez,fieldnotes"))];
+  const given = list(env.LOGMEM_DOGFOOD_SPACES, "");
+  const spaces = [...new Set(given.length ? given : list(null, "madez,fieldnotes"))];
   for (const s of spaces) if (!SPACE_RE.test(s)) throw new Error(`LOGMEM_DOGFOOD_SPACES: bad space name (${s.length} chars)`);
   return spaces;
 }
