@@ -1,0 +1,55 @@
+# acmi-bridge compose template: one service per tenant.
+#
+# The control plane (`acmi-cloud bridge render <id>`) fills the {{...}}
+# placeholders. ${...} values are injected at deploy time from Infisical; this
+# file never holds a secret. Only the token's sha256 reaches the container.
+#
+#   {{TENANT}}      tenant id, e.g. acme  (keys: acmi:t-acme:*, lm:t-acme:*)
+#   {{TENANT_ENV}}  tenant id upper-cased, dashes to underscores, e.g. ACME
+#   {{PORT}}        this tenant's bridge port (registry: bridge_port)
+#   {{PLAN}}        plan id from cloud/plans.json, e.g. dev
+
+services:
+  acmi-bridge-{{TENANT}}:
+    image: ${ACMI_BRIDGE_IMAGE:-acmi-bridge:0.1.0}
+    container_name: acmi-bridge-{{TENANT}}
+    restart: unless-stopped
+    environment:
+      ACMI_TENANT: "{{TENANT}}"
+      ACMI_BRIDGE_PORT: "{{PORT}}"
+      ACMI_BRIDGE_HOST: "0.0.0.0"
+      ACMI_PLAN_QUOTAS: "{{PLAN}}"
+      ACMI_BRIDGE_TOKEN_SHA256: "${ACMI_BRIDGE_TOKEN_SHA256_{{TENANT_ENV}}:?set from Infisical}"
+      ACMI_REDIS_URL: "${ACMI_REDIS_URL:?internal redis:// URL, from Infisical}"
+      ACMI_BRIDGE_RATE_CAPACITY: "${ACMI_BRIDGE_RATE_CAPACITY:-200}"
+      ACMI_BRIDGE_RATE_PER_SEC: "${ACMI_BRIDGE_RATE_PER_SEC:-100}"
+    ports:
+      # Published on loopback only; the TLS reverse proxy fronts it.
+      - "127.0.0.1:{{PORT}}:{{PORT}}"
+    networks:
+      - acmi-redis
+      - acmi-edge
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # Created once per VM by the Redis stack, with `internal: true`: Redis is
+  # reachable only from bridges, never from outside.
+  acmi-redis:
+    external: true
+  # Ingress side, between the reverse proxy and the bridges. Redis is not on it.
+  acmi-edge:
+    external: true
