@@ -10,12 +10,22 @@
 //           code    -> deleted (10 min lifetime; not worth migrating)
 //   --delete: every legacy record is deleted (users re-authorize).
 //
-// Also re-seals records already in the hashed layout whose envelope is still
-// v1 (constant AAD, sealed before record binding): lm:oauth:at:* and
-// lm:oauth:rt:* are opened with the v1 AAD and re-sealed with the v2
-// record-bound AAD, keeping the remaining TTL. v1 envelopes stop opening at
-// LEGACY_CUTOFF_MS, so run this before then. Codes (10 min) and grace records
-// (60 s) are not worth migrating. In --delete mode v1 records are deleted.
+// Records already in the hashed layout but on the v1 envelope (constant AAD,
+// sealed before record binding) are NOT re-sealed: re-sealing would launder
+// a v1 blob an attacker spliced under their own key into a valid v2 record.
+// Seal mode leaves them alone; they keep working until LEGACY_CUTOFF_MS
+// (2026-10-26) and then stop opening, and those users simply re-authorize.
+// --delete removes them now instead.
+//
+// Wrong-KEK guard (seal mode): before writing anything, every sealed
+// lm:oauth:at:* / lm:oauth:rt:* record is test-opened with the configured
+// KEK. A record that does not open is never deleted: it is skipped and
+// counted, NOTHING is written in that run (the KEK is probably wrong, and
+// sealing legacy records under it would lock those users out too), and the
+// CLI exits non-zero. Deleting only ever happens with an explicit --delete.
+//
+// Legacy records are sealed with a TTL clamped to min(remaining TTL, the
+// kind's TTL, expires_at - now); expires_at itself is never changed.
 //
 // DRY RUN by default: prints what it would do. Pass --apply to write.
 // Seal mode requires LOGMEM_OAUTH_KEK. Uses LOGMEM_DEPLOY_REST_URL/_TOKEN
@@ -27,15 +37,15 @@
 //   node scripts/oauth-legacy-seal.mjs --apply      # do it
 
 import { pathToFileURL } from "node:url";
-import { KEY, TTL, deployRedis, loadKek, parse, sealRecord, sha256hex, isV1Sealed, resealV1Record } from "../api/oauth/_lib/storage.mjs";
+import { KEY, TTL, LEGACY_CUTOFF_MS, deployRedis, loadKek, parse, sealRecord, sha256hex, isV1Sealed, canOpenRecord, storageNow } from "../api/oauth/_lib/storage.mjs";
 
 const KINDS = [
   { kind: "access", prefix: "lm:oauth:token:", dest: KEY.access, ttl: TTL.access },
   { kind: "refresh", prefix: "lm:oauth:refresh:", dest: KEY.refresh, ttl: TTL.refresh },
   { kind: "code", prefix: "lm:oauth:code:", dest: null, ttl: TTL.code },
 ];
-// Hashed-layout prefixes whose v1 envelopes get re-sealed as v2.
-const V1_KINDS = [
+// Hashed-layout prefixes: preflight-checked in seal mode, v1 deleted only with --delete.
+const HASHED_KINDS = [
   { kind: "access", prefix: "lm:oauth:at:", ttl: TTL.access },
   { kind: "refresh", prefix: "lm:oauth:rt:", ttl: TTL.refresh },
 ];
@@ -52,12 +62,51 @@ async function scanAll(r, pattern) {
 }
 
 /**
- * Returns a report { mode, apply, sealed, deleted, skipped, actions[] }.
- * actions entries are { kind, key: "<sha256 prefix>", action }.
+ * Returns a report { mode, apply, sealed, deleted, skipped, unopenable,
+ * v1Kept, aborted, actions[] }. actions entries are
+ * { kind, key: "<sha256 prefix>", action }. `unopenable` > 0 means the run
+ * wrote nothing and the CLI exits non-zero.
  */
-export async function migrateLegacy(r, { apply = false, mode = "seal", log = () => {} } = {}) {
+export async function migrateLegacy(r, { apply = false, mode = "seal", log = () => {}, now = storageNow } = {}) {
   if (mode === "seal" && !loadKek()) throw new Error("seal mode requires LOGMEM_OAUTH_KEK (or use --delete)");
-  const report = { mode, apply, sealed: 0, resealed: 0, deleted: 0, skipped: 0, actions: [] };
+  const report = { mode, apply, sealed: 0, deleted: 0, skipped: 0, unopenable: 0, v1Kept: 0, aborted: false, actions: [] };
+  const pastCutoff = now() >= LEGACY_CUTOFF_MS;
+
+  // 1. Hashed-layout records: preflight (seal) or v1 cleanup plan (--delete).
+  const hashedPlan = [];
+  for (const k of HASHED_KINDS) {
+    for (const key of await scanAll(r, `${k.prefix}*`)) {
+      const h = key.slice(k.prefix.length);
+      if (!/^[0-9a-f]{64}$/.test(h)) continue;
+      const rec = parse(await r("GET", key));
+      if (!rec || !rec.creds || rec.creds.enc === "none") continue;
+      const v1 = isV1Sealed(rec);
+      const short = h.slice(0, 12);
+      if (mode === "delete") {
+        if (v1) hashedPlan.push({ kind: k.kind, key, short, action: "delete" });
+        continue;
+      }
+      if (v1 && pastCutoff) continue; // cannot open by design any more; it just expires
+      if (!canOpenRecord(rec, k.kind, h)) {
+        report.unopenable++;
+        report.actions.push({ kind: k.kind, key: short, action: "skip-unopenable" });
+        log(`skip ${v1 ? "v1 " : ""}${k.kind} ${short}… (does not open with this KEK; NOT deleted)`);
+      } else if (v1) {
+        report.v1Kept++;
+        report.actions.push({ kind: k.kind, key: short, action: "keep-v1" });
+        log(`keep v1 ${k.kind} ${short}… (left to expire; re-auth after the cutoff)`);
+      }
+    }
+  }
+  if (report.unopenable > 0) {
+    report.aborted = true;
+    log(`aborted: ${report.unopenable} sealed record(s) do not open with LOGMEM_OAUTH_KEK. Check the KEK; nothing was written.`);
+    return report;
+  }
+
+  // 2. Legacy raw-key records.
+  // expires_at is wall-clock seconds; the storage clock only drives the legacy cutoff.
+  const nowS = Math.floor(Date.now() / 1000);
   for (const k of KINDS) {
     for (const key of await scanAll(r, `${k.prefix}*`)) {
       const raw = key.slice(k.prefix.length);
@@ -68,13 +117,14 @@ export async function migrateLegacy(r, { apply = false, mode = "seal", log = () 
         report.skipped++;
         continue; // already sealed (hashed-layout code) or not ours
       }
-      const action = mode === "seal" && k.dest ? "seal" : "delete";
+      const remaining = Number(await r("TTL", key));
+      let ttl = remaining > 0 ? Math.min(remaining, k.ttl) : k.ttl;
+      if (Number.isFinite(rec.expires_at)) ttl = Math.min(ttl, Math.floor(rec.expires_at) - nowS);
+      const action = mode === "seal" && k.dest && ttl > 0 ? "seal" : "delete";
       report.actions.push({ kind: k.kind, key: short, action });
       log(`${apply ? "" : "[dry-run] "}${action} ${k.kind} ${short}…`);
       if (!apply) continue;
       if (action === "seal") {
-        const remaining = Number(await r("TTL", key));
-        const ttl = remaining > 0 ? remaining : k.ttl;
         const h = sha256hex(raw);
         await r("SET", k.dest(h), JSON.stringify(sealRecord(rec, k.kind, h)), "EX", String(ttl));
         report.sealed++;
@@ -84,28 +134,14 @@ export async function migrateLegacy(r, { apply = false, mode = "seal", log = () 
       await r("DEL", key);
     }
   }
-  for (const k of V1_KINDS) {
-    for (const key of await scanAll(r, `${k.prefix}*`)) {
-      const h = key.slice(k.prefix.length);
-      if (!/^[0-9a-f]{64}$/.test(h)) continue;
-      const rec = parse(await r("GET", key));
-      if (!isV1Sealed(rec)) continue; // v2 already, or not ours
-      const short = h.slice(0, 12);
-      const next = mode === "seal" ? resealV1Record(rec, k.kind, h) : null;
-      // Unopenable (wrong KEK / past cutoff) or --delete: the record is dead weight.
-      const action = next ? "reseal" : "delete";
-      report.actions.push({ kind: k.kind, key: short, action });
-      log(`${apply ? "" : "[dry-run] "}${action} v1 ${k.kind} ${short}…`);
-      if (!apply) continue;
-      if (next) {
-        const remaining = Number(await r("TTL", key));
-        await r("SET", key, JSON.stringify(next), "EX", String(remaining > 0 ? remaining : k.ttl));
-        report.resealed++;
-      } else {
-        await r("DEL", key);
-        report.deleted++;
-      }
-    }
+
+  // 3. --delete only: v1 hashed records.
+  for (const p of hashedPlan) {
+    report.actions.push({ kind: p.kind, key: p.short, action: "delete" });
+    log(`${apply ? "" : "[dry-run] "}delete v1 ${p.kind} ${p.short}…`);
+    if (!apply) continue;
+    await r("DEL", p.key);
+    report.deleted++;
   }
   return report;
 }
@@ -117,6 +153,11 @@ async function main() {
   const report = await migrateLegacy(deployRedis(), { apply, mode, log: (m) => console.log(m) });
   const { actions, ...summary } = report;
   console.log(JSON.stringify({ ...summary, planned: actions.length }));
+  if (report.unopenable > 0) {
+    console.error(`oauth-legacy-seal: ${report.unopenable} record(s) skipped because they do not open with this KEK; nothing written`);
+    process.exitCode = 2;
+    return;
+  }
   if (!apply) console.log("dry run: nothing written. Re-run with --apply to execute.");
 }
 

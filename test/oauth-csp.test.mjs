@@ -76,6 +76,7 @@ test("csp: function policy = global policy with form-action widened to the redir
   assert.match(consentCsp("https://app.example/cb?x=1"), /form-action 'self' https:\/\/app\.example$/);
   assert.match(consentCsp("http://127.0.0.1:8765/callback"), /form-action 'self' http:\/\/127\.0\.0\.1:8765$/);
   assert.match(consentCsp("not a url"), /form-action 'self'$/);
+  assert.match(consentCsp("https://my_app.example/cb"), /form-action 'self' https:\/\/my_app\.example$/, "underscore hosts allowed");
   assert.match(ERROR_CSP, /form-action 'none'$/);
 });
 
@@ -145,4 +146,11 @@ test("info: /authorize sends no Access-Control-Allow-Origin", async () => {
     await authorizeHandler(mockReq({ url: "/api/oauth/authorize?client_id=nope&redirect_uri=https://x.example" }), err);
     assert.equal(err.getHeader("access-control-allow-origin"), undefined);
   });
+});
+
+test("info: the 405 response carries the error CSP too", async () => {
+  const res = mockRes();
+  await authorizeHandler(mockReq({ method: "PUT", url: "/api/oauth/authorize" }), res);
+  assert.equal(res.statusCode, 405);
+  assert.equal(res.getHeader("content-security-policy"), ERROR_CSP);
 });

@@ -115,10 +115,11 @@ export default async function handler(req, res) {
         upstash_token: rec.upstash_token,
         backend: rec.backend,
         space: rec.space,
+        fid: rec.fid, // same grant: rotation stays in the family
       });
       // Reuse may have been detected while this request was in flight; if so
       // the tokens just minted were deleted and must not be handed out.
-      if ((await linkRefreshChildren(refresh_token, tokens)).revoked) {
+      if ((await linkRefreshChildren(refresh_token, tokens, rec.fid)).revoked) {
         return bad(res, 400, "invalid_grant", "refresh token reuse detected; all tokens for this grant were revoked");
       }
       await touchClient(client_id);

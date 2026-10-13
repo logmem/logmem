@@ -116,3 +116,32 @@ test("refresh reuse: a normal rotation outside any replay still works and links 
     assert.ok(await lookupAccessToken(t1.body.access_token));
   });
 });
+
+test("refresh reuse: every token of the grant carries one family id, and reuse revokes older tokens too", async () => {
+  await withEnv(KEK, async () => {
+    const r = oauthRedis();
+    const { c, t0 } = await setup(r);
+    const fidOf = (k) => JSON.parse(r.data.get(k).value).fid;
+    const fid = fidOf(KEY.access(sha256hex(t0.access_token)));
+    assert.match(fid, /^[0-9a-f]{32}$/);
+    assert.equal(fidOf(KEY.refresh(sha256hex(t0.refresh_token))), fid);
+
+    const t1 = (await refresh(c.client_id, t0.refresh_token)).body;
+    // rt0's 60s window passes: the chain from rt0 is gone, only the family links at0 to the grant.
+    r.data.delete(KEY.refreshGrace(sha256hex(t0.refresh_token)));
+    assert.equal(fidOf(KEY.access(sha256hex(t1.access_token))), fid, "rotation stays in the family");
+    const t2 = (await refresh(c.client_id, t1.refresh_token)).body;
+    assert.ok(await lookupAccessToken(t0.access_token), "older access token still live before any reuse");
+
+    const replay = await quiet(() => refresh(c.client_id, t1.refresh_token)); // reuse of rt1 inside its window
+    assert.equal(replay.status, 400);
+    for (const t of [t0, t1, t2]) assert.equal(await lookupAccessToken(t.access_token), null);
+    assert.equal(r.data.has(KEY.refresh(sha256hex(t2.refresh_token))), false);
+    assert.equal(r.data.has(KEY.family(fid)), false, "family set cleared");
+
+    // A separate grant (new auth-code exchange) gets its own family and is untouched.
+    const other = await mintTokens({ client_id: c.client_id, scope: "mcp", space: "acme", backend: { kind: "redis", uri: "rediss://h" } });
+    assert.notEqual(fidOf(KEY.access(sha256hex(other.access_token))), fid);
+    assert.ok(await lookupAccessToken(other.access_token));
+  });
+});

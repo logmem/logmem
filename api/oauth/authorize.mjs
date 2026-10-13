@@ -51,7 +51,7 @@ const BASE_CSP = [
   "frame-ancestors 'none'",
   "base-uri 'none'",
 ];
-const SAFE_ORIGIN = /^https?:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?$|^https?:\/\/\[[0-9A-Fa-f:.]+\](?::\d{1,5})?$/;
+const SAFE_ORIGIN = /^https?:\/\/[A-Za-z0-9._-]+(?::\d{1,5})?$|^https?:\/\/\[[0-9A-Fa-f:.]+\](?::\d{1,5})?$/;
 
 /** CSP for the consent page: form-action 'self' plus the (already validated) redirect_uri origin. */
 export function consentCsp(redirect_uri) {
@@ -282,7 +282,12 @@ export default async function handler(req, res) {
       return sendConsent(res, 200, params, nonce);
     }
 
-    if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
+    if (req.method !== "POST") {
+      res.setHeader("Content-Security-Policy", ERROR_CSP);
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Allow", "GET, POST");
+      return res.status(405).json({ error: "method_not_allowed" });
+    }
 
     const body = req.body || {};
     const v = await validateAuthRequest(body);

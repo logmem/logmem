@@ -27,7 +27,13 @@ const NO_KEK = { LOGMEM_OAUTH_KEK: undefined, LOGMEM_OAUTH_ALLOW_INSECURE: undef
 const SHARED = { LOGMEM_DEPLOY_REST_URL: undefined, LOGMEM_DEPLOY_REST_TOKEN: undefined, UPSTASH_REDIS_REST_URL: "https://shared.example", UPSTASH_REDIS_REST_TOKEN: "shared-token" };
 
 test("fail-closed: insecureAllowed only for local dev or the explicit flag, never production", () => {
-  assert.equal(insecureAllowed({}), true);
+  assert.equal(insecureAllowed({}), false, "a bare process (no VERCEL_ENV, no NODE_ENV) fails closed");
+  assert.equal(insecureAllowed({ NODE_ENV: "production" }), false);
+  assert.equal(insecureAllowed({ NODE_ENV: "development" }), true);
+  assert.equal(insecureAllowed({ NODE_ENV: "test" }), true);
+  assert.equal(insecureAllowed({ VERCEL_ENV: "", NODE_ENV: "test" }), true, "empty VERCEL_ENV counts as unset");
+  assert.equal(insecureAllowed({ VERCEL_ENV: "preview", NODE_ENV: "development" }), false, "NODE_ENV cannot open a Vercel env");
+  assert.equal(insecureAllowed({ VERCEL_ENV: "production", NODE_ENV: "test" }), false);
   assert.equal(insecureAllowed({ VERCEL_ENV: "development" }), true);
   assert.equal(insecureAllowed({ VERCEL_ENV: "preview" }), false);
   assert.equal(insecureAllowed({ VERCEL_ENV: "staging" }), false, "custom environments fail closed");
@@ -107,5 +113,13 @@ test("fail-closed: local dev and the explicit flag store plaintext; a KEK seals 
     const t = await mintTokens(creds());
     assert.equal(JSON.parse(r.data.get(KEY.access(sha256hex(t.access_token))).value).creds.enc, "aes-256-gcm");
     assert.equal((await lookupAccessToken(t.access_token)).upstash_token, "SECRET");
+  });
+});
+
+test("fail-closed: no VERCEL_ENV and no NODE_ENV refuses plaintext and the shared-Redis fallback", async () => {
+  await withEnv({ ...NO_KEK, ...SHARED, VERCEL_ENV: undefined, NODE_ENV: undefined }, async () => {
+    __setRedisForTests(null);
+    assert.throws(() => assertKekReady(), KekMissingError);
+    await assert.rejects(() => getClient("cli_x"), StorageConfigError);
   });
 });

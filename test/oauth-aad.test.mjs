@@ -124,35 +124,84 @@ test("aad: a legacy v1 (constant-AAD) record opens before the cutoff and not aft
   });
 });
 
-test("aad: oauth-legacy-seal re-seals v1 records as v2 so they survive the cutoff", async () => {
+test("aad: oauth-legacy-seal never re-seals v1 records into v2 (no laundering of spliced blobs)", async () => {
   await withEnv(KEK, async () => {
     const r = oauthRedis();
     const at = "f".repeat(64);
-    const rt = "9".repeat(64);
     const atKey = KEY.access(sha256hex(at));
-    const rtKey = KEY.refresh(sha256hex(rt));
-    put(r, atKey, v1Record());
+    // An attacker with Redis write splices a v1 blob under their own key with a far-future expiry.
+    put(r, atKey, { ...v1Record(), expires_at: 4102444800 });
     r.ttls.set(atKey, 4321);
-    put(r, rtKey, v1Record());
-    r.ttls.set(rtKey, 8765);
     __setClockForTests(() => LEGACY_CUTOFF_MS - 1000);
-
     const before = JSON.stringify([...r.data.entries()]);
-    const logs = [];
-    const dry = await migrateLegacy(r, { log: (m) => logs.push(m) });
-    assert.equal(dry.actions.filter((x) => x.action === "reseal").length, 2);
-    assert.equal(JSON.stringify([...r.data.entries()]), before, "dry run writes nothing");
-    assert.ok(!logs.join("\n").includes("OLD-SECRET"));
 
     const done = await migrateLegacy(r, { apply: true });
-    assert.equal(done.resealed, 2);
-    assert.equal(get(r, atKey).creds.v, 2);
-    assert.equal(r.ttls.get(atKey), 4321, "remaining TTL kept");
-    assert.equal(r.ttls.get(rtKey), 8765);
+    assert.equal(done.v1Kept, 1);
+    assert.equal(done.resealed, undefined, "no re-seal path any more");
+    assert.equal(JSON.stringify([...r.data.entries()]), before, "the v1 record is left exactly as it was");
+    assert.equal(get(r, atKey).creds.v, undefined);
 
     __setRedisForTests(r);
     __setClockForTests(() => LEGACY_CUTOFF_MS + 1);
-    assert.equal((await lookupAccessToken(at)).upstash_token, "OLD-SECRET", "v2 record opens after the cutoff");
-    assert.equal((await consumeRefresh(rt, "cli_old")).rec.space, "old");
+    assert.equal(await quiet(() => lookupAccessToken(at)), null, "the spliced v1 blob dies at the cutoff; users re-auth");
+
+    // --delete removes v1 records now instead.
+    __setClockForTests(() => LEGACY_CUTOFF_MS - 1000);
+    const del = await migrateLegacy(r, { apply: true, mode: "delete" });
+    assert.equal(del.deleted, 1);
+    assert.equal(r.data.has(atKey), false);
+  });
+});
+
+test("aad: oauth-legacy-seal with the wrong KEK skips unopenable records, deletes nothing, writes nothing", async () => {
+  const r = oauthRedis();
+  const v1Key = KEY.access(sha256hex("1".repeat(64)));
+  put(r, v1Key, v1Record()); // sealed under TEST_KEK_HEX
+  r.ttls.set(v1Key, 100);
+  // a v2 record under the right KEK, and a legacy raw record that would otherwise be sealed
+  await withEnv(KEK, async () => {
+    __setRedisForTests(r);
+    await mintTokens({ client_id: "cli_x", scope: "mcp", space: "s", backend: { kind: "redis", uri: "rediss://h" } });
+    __setRedisForTests(null);
+  });
+  const legacyKey = `lm:oauth:token:${"7".repeat(64)}`;
+  put(r, legacyKey, { client_id: "c", space: "s", upstash_token: "T", expires_at: 9e9 });
+  __setClockForTests(() => LEGACY_CUTOFF_MS - 1000);
+  const before = JSON.stringify([...r.data.entries()]);
+  await withEnv({ ...KEK, LOGMEM_OAUTH_KEK: "ff".repeat(32) }, async () => {
+    const logs = [];
+    const rep = await migrateLegacy(r, { apply: true, log: (m) => logs.push(m) });
+    assert.equal(rep.aborted, true);
+    assert.ok(rep.unopenable >= 3, `v1 + v2 at + v2 rt counted (got ${rep.unopenable})`);
+    assert.equal(rep.deleted, 0);
+    assert.equal(rep.sealed, 0);
+    assert.ok(rep.actions.every((a) => a.action === "skip-unopenable"));
+    assert.equal(JSON.stringify([...r.data.entries()]), before, "nothing deleted or written");
+    assert.match(logs.join("\n"), /Check the KEK/);
+  });
+});
+
+test("aad: oauth-legacy-seal CLI exits non-zero when records were skipped", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../scripts/oauth-legacy-seal.mjs", import.meta.url), "utf8");
+  assert.match(src, /report\.unopenable > 0[\s\S]*process\.exitCode = 2/);
+});
+
+test("aad: legacy raw records are sealed with a clamped TTL; expires_at is never extended", async () => {
+  await withEnv(KEK, async () => {
+    const r = oauthRedis();
+    const raw = "8".repeat(64);
+    const nowS = Math.floor(Date.now() / 1000);
+    put(r, `lm:oauth:token:${raw}`, { client_id: "c", space: "s", upstash_token: "T", expires_at: nowS + 100 });
+    r.ttls.set(`lm:oauth:token:${raw}`, 999999); // forged long TTL
+    const expired = "6".repeat(64);
+    put(r, `lm:oauth:token:${expired}`, { client_id: "c", space: "s", upstash_token: "T", expires_at: nowS - 5 });
+    r.ttls.set(`lm:oauth:token:${expired}`, 500);
+    const rep = await migrateLegacy(r, { apply: true });
+    const k = KEY.access(sha256hex(raw));
+    assert.ok(r.ttls.get(k) <= 100 && r.ttls.get(k) > 90, `ttl ${r.ttls.get(k)}`);
+    assert.equal(get(r, k).expires_at, nowS + 100);
+    assert.equal(r.data.has(KEY.access(sha256hex(expired))), false, "already-expired legacy record is not resurrected");
+    assert.equal(rep.sealed, 1);
   });
 });

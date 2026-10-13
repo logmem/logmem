@@ -2,9 +2,10 @@
 // Fail closed by default: those are required, and there is no fallback to
 // UPSTASH_REDIS_REST_URL, so OAuth records never land in a shared user-data
 // Redis by accident. The UPSTASH_* fallback and plaintext creds (no KEK) are
-// allowed only in local dev: VERCEL_ENV unset or "development", or
-// LOGMEM_OAUTH_ALLOW_INSECURE=1. Preview deployments fail closed like
-// production, and production ignores the opt-in flag.
+// allowed only in local dev (see insecureAllowed): VERCEL_ENV "development",
+// no VERCEL_ENV with NODE_ENV development/test, or LOGMEM_OAUTH_ALLOW_INSECURE=1.
+// Preview deployments fail closed like production, and production ignores
+// the opt-in flag.
 //
 // Keys (all under lm:oauth:, outside every space). Secrets are never key
 // material: every token/code key is sha256(value) in hex, and hashed records
@@ -20,9 +21,14 @@
 //                                     second presentation inside the window is
 //                                     reuse (RFC 9700 4.14): the whole family is
 //                                     revoked and invalid_grant returned
-//   lm:oauth:rtg:<sha256(refresh)>:revoked — family-revoked marker (60s), so a
-//                                     first use still in flight discards its
-//                                     freshly minted tokens
+//   lm:oauth:rtg:<sha256(refresh)>:revoked — per-token revoked marker (60s)
+//   lm:oauth:fam:<fid>              — SET of "at:<hash>" / "rt:<hash>" for every
+//                                     token ever minted for one grant (TTL 30d,
+//                                     slid on each mint). Every record carries
+//                                     `fid`, so reuse detection revokes ALL of
+//                                     the grant's tokens, older ones included
+//   lm:oauth:fam:<fid>:revoked      — family-revoked marker (60s), so a first
+//                                     use still in flight discards what it mints
 //   <key>:used                      — consume lock when GETDEL is unavailable
 //
 // Legacy (pre-hash) keys, read-only until LEGACY_CUTOFF_MS, and only for
@@ -55,6 +61,8 @@ export const KEY = {
   refresh: (h) => `lm:oauth:rt:${h}`,
   refreshGrace: (h) => `lm:oauth:rtg:${h}`,
   refreshRevoked: (h) => `lm:oauth:rtg:${h}:revoked`,
+  family: (fid) => `lm:oauth:fam:${fid}`,
+  familyRevoked: (fid) => `lm:oauth:fam:${fid}:revoked`,
   // TODO(remove after LEGACY_CUTOFF_MS): pre-hash raw-token keys.
   legacyAccess: (t) => `lm:oauth:token:${t}`,
   legacyRefresh: (t) => `lm:oauth:refresh:${t}`,
@@ -99,12 +107,17 @@ const isProd = (env = process.env) => env.VERCEL_ENV === "production";
 
 /**
  * Plaintext creds and the UPSTASH_* storage fallback are local-dev only:
- * VERCEL_ENV unset or "development", or LOGMEM_OAUTH_ALLOW_INSECURE=1.
- * Never in production, whatever the flag says. Preview fails closed.
+ *   - VERCEL_ENV === "development" (vercel dev), or
+ *   - VERCEL_ENV unset/empty AND NODE_ENV is "development" or "test", or
+ *   - LOGMEM_OAUTH_ALLOW_INSECURE=1 outside production.
+ * Never in production, whatever the flag says. Preview, custom environments
+ * and a bare process with no VERCEL_ENV/NODE_ENV all fail closed.
  */
 export function insecureAllowed(env = process.env) {
   if (isProd(env)) return false;
-  return !env.VERCEL_ENV || env.VERCEL_ENV === "development" || env.LOGMEM_OAUTH_ALLOW_INSECURE === "1";
+  if (env.LOGMEM_OAUTH_ALLOW_INSECURE === "1") return true;
+  if (env.VERCEL_ENV === "development") return true;
+  return !env.VERCEL_ENV && (env.NODE_ENV === "development" || env.NODE_ENV === "test");
 }
 
 // ───── Test seams ─────
@@ -121,6 +134,8 @@ export function __setClockForTests(fn) {
   clock = fn || (() => Date.now());
 }
 const legacyOpen = () => clock() < LEGACY_CUTOFF_MS;
+/** Current time on the storage clock (test-overridable). For scripts/oauth-legacy-seal.mjs. */
+export const storageNow = () => clock();
 
 // ───── Deploy Redis runner ─────
 
@@ -139,7 +154,7 @@ export function deployRedis() {
     throw new StorageConfigError(
       fallback
         ? "deploy missing LOGMEM_DEPLOY_REST_URL/_TOKEN"
-        : `${env.VERCEL_ENV} requires LOGMEM_DEPLOY_REST_URL/_TOKEN for OAuth storage`,
+        : `${env.VERCEL_ENV || "this environment"} requires LOGMEM_DEPLOY_REST_URL/_TOKEN for OAuth storage`,
     );
   }
   return async (...cmd) => {
@@ -343,13 +358,18 @@ function openRecord(rec, kind, keyHash) {
 export const isV1Sealed = (rec) => !!(rec && rec.creds && rec.creds.enc === "aes-256-gcm" && rec.creds.v === undefined);
 
 /**
- * Migration helper: re-seal a v1 record under the v2 record-bound AAD.
- * Returns the new record, or null if it cannot be opened (or is past cutoff).
+ * Migration preflight: can this sealed record be opened with the current KEK
+ * (and, for v1, before the cutoff)? Never returns the plaintext.
  */
-export function resealV1Record(rec, kind, keyHash) {
-  if (!isV1Sealed(rec)) return null;
-  const opened = openRecord(rec, kind, keyHash);
-  return opened ? sealRecord(opened, kind, keyHash) : null;
+export function canOpenRecord(rec, kind, keyHash) {
+  if (!rec || !rec.creds) return false;
+  const w = console.warn;
+  console.warn = () => {};
+  try {
+    return openRecord(rec, kind, keyHash) !== null;
+  } finally {
+    console.warn = w;
+  }
 }
 
 /** Hashed keys must hold sealed records; anything else is ignored. */
@@ -451,8 +471,15 @@ export async function consumeAuthCode(code) {
 
 // ───── Access + refresh tokens ─────
 
-export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space }) {
+const isFid = (f) => typeof f === "string" && /^[0-9a-f]{32}$/.test(f);
+
+/**
+ * Mint an access + refresh pair. `fid` is the grant's family id: omit it for
+ * a new grant (auth-code exchange), pass the refresh record's fid on rotation.
+ */
+export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space, fid }) {
   const r = deployRedis();
+  const family = isFid(fid) ? fid : randomToken(16);
   const access = randomToken(32);
   const refresh = randomToken(32);
   const issued_at = Math.floor(Date.now() / 1000);
@@ -463,12 +490,14 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   // sealRecord throws KekMissingError before anything is written.
   const hAt = sha256hex(access);
   const hRt = sha256hex(refresh);
-  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access }, "access", hAt);
+  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access, fid: family }, "access", hAt);
   // sibling_at lets reuse detection revoke the access token minted alongside.
-  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt }, "refresh", hRt);
+  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt, fid: family }, "refresh", hRt);
 
   await r("SET", KEY.access(hAt), JSON.stringify(accessRecord), "EX", String(TTL.access));
   await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
+  await r("SADD", KEY.family(family), `at:${hAt}`, `rt:${hRt}`);
+  await r("EXPIRE", KEY.family(family), String(TTL.refresh));
 
   return { access_token: access, token_type: "Bearer", expires_in: TTL.access, refresh_token: refresh, scope };
 }
@@ -490,15 +519,37 @@ export async function lookupAccessToken(access_token) {
 
 const MAX_FAMILY_HOPS = 8;
 
+/** Delete every token recorded in the grant's family set. */
+async function revokeFamilySet(r, fid) {
+  let deleted = 0;
+  for (const m of (await r("SMEMBERS", KEY.family(fid))) || []) {
+    const [kind, mh] = String(m).split(":");
+    if (!/^[0-9a-f]{64}$/.test(mh || "")) continue;
+    if (kind === "at") deleted += Number(await r("DEL", KEY.access(mh))) || 0;
+    else if (kind === "rt") {
+      deleted += Number(await r("DEL", KEY.refresh(mh))) || 0;
+      await r("DEL", KEY.refreshGrace(mh));
+    }
+  }
+  await r("DEL", KEY.family(fid));
+  return deleted;
+}
+
 /**
- * Revoke a refresh-token family starting at the just-rotated token `h`: the
- * access token minted alongside it, everything minted from its first use, and
- * onward along any further rotations still inside their grace window. Sets a
- * revoked marker on every hop first, so a first use still in flight discards
- * what it mints (see linkRefreshChildren). Returns how many tokens were deleted.
+ * Revoke the whole grant behind the just-rotated token `h`. With a family id
+ * (every record minted since fid was introduced), every access and refresh
+ * token of the grant goes, older ones included. The chain walk below also
+ * covers records without a fid: the access token minted alongside `h`,
+ * everything minted from its first use, and onward along further rotations
+ * still inside their grace window. Revoked markers go up first, so a first
+ * use still in flight discards what it mints (see linkRefreshChildren).
+ * Returns how many tokens were deleted.
  */
 async function revokeFamily(r, h) {
   let deleted = 0;
+  const g0 = parse(await r("GET", KEY.refreshGrace(h)));
+  const fid = g0 && parse(g0.rec)?.fid;
+  if (isFid(fid)) await r("SET", KEY.familyRevoked(fid), "1", "EX", String(TTL.refreshGrace));
   let cur = h;
   for (let hop = 0; cur && hop < MAX_FAMILY_HOPS; hop++) {
     await r("SET", KEY.refreshRevoked(cur), "1", "EX", String(TTL.refreshGrace));
@@ -515,6 +566,8 @@ async function revokeFamily(r, h) {
     }
     cur = ch.rt;
   }
+  // After the chain walk (it needs the grace records the set sweep removes).
+  if (isFid(fid)) deleted += await revokeFamilySet(r, fid);
   return deleted;
 }
 
@@ -578,7 +631,7 @@ export async function consumeRefresh(refresh_token, client_id) {
  * revokeFamily sets the marker before reading children, means at least one
  * side always sees the other.
  */
-export async function linkRefreshChildren(refresh_token, minted) {
+export async function linkRefreshChildren(refresh_token, minted, fid) {
   const r = deployRedis();
   const h = sha256hex(refresh_token);
   const gk = KEY.refreshGrace(h);
@@ -590,7 +643,8 @@ export async function linkRefreshChildren(refresh_token, minted) {
     g.children = { at, rt };
     await r("SET", gk, JSON.stringify(g), "EX", String(ttl > 0 ? ttl : TTL.refreshGrace));
   }
-  if (await r("GET", KEY.refreshRevoked(h))) {
+  const famRevoked = isFid(fid) ? await r("GET", KEY.familyRevoked(fid)) : null;
+  if (famRevoked || (await r("GET", KEY.refreshRevoked(h)))) {
     await r("DEL", KEY.access(at));
     await r("DEL", KEY.refresh(rt));
     return { revoked: true };
