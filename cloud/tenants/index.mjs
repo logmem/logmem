@@ -1,0 +1,342 @@
+// cloud/tenants — ACMI Cloud control plane: tenant registry, API keys, plans.
+//
+// Spec: docs/cloud/BACKPLANE.md §1. Works over any Redis command runner with the
+// `await redis("HSET", key, ...)` shape (memory, REST, native).
+//
+// Keys:
+//   acmi:cloud:tenants              SET of tenant ids
+//   acmi:cloud:tenant:{id}          HASH id, name, plan, status, created_at, namespace, key_ids (JSON)
+//   acmi:cloud:tenant:{id}:keys     SET of key ids (authoritative; key_ids mirrors it)
+//   acmi:cloud:key:{keyid}          HASH keyid, tenant, label, hash, created_at, expires_at, revoked_at, rotated_to
+//
+// Secrets: an API key is `acmi_live_<keyid>_<secret>`, secret = 32 random bytes,
+// base64url. Only sha256(secret) is stored. The full key is returned exactly once
+// (createKey / rotateKey) and never logged. Errors are generic and never echo input.
+
+import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
+
+export const RESERVED = ["madez", "cloud", "probe", "admin", "system"];
+export const STATUSES = ["active", "suspended", "deleted"];
+
+const TENANT_RE = /^[a-z][a-z0-9-]{2,30}$/;
+const KEYID_RE = /^[a-f0-9]{16}$/;
+const SECRET_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url, no padding
+const KEY_PREFIX = "acmi_live_";
+const MAX_KEY_LEN = KEY_PREFIX.length + 16 + 1 + 43;
+const MAX_GRACE_MS = 30 * 86400000;
+
+const TENANTS_SET = "acmi:cloud:tenants";
+const tenantKey = (id) => `acmi:cloud:tenant:${id}`;
+const tenantKeysSet = (id) => `acmi:cloud:tenant:${id}:keys`;
+const keyKey = (keyid) => `acmi:cloud:key:${keyid}`;
+
+/** Generic error: a fixed message and code, never the offending value. */
+function fail(code) {
+  const e = new Error(code);
+  e.code = code;
+  return e;
+}
+
+export function validTenantId(id) {
+  return typeof id === "string" && TENANT_RE.test(id) && !RESERVED.includes(id);
+}
+
+export function validKeyId(keyid) {
+  return typeof keyid === "string" && KEYID_RE.test(keyid);
+}
+
+function hashToObj(arr) {
+  const out = {};
+  for (let i = 0; i < (arr || []).length; i += 2) out[arr[i]] = arr[i + 1];
+  return out;
+}
+
+const sha256 = (s) => crypto.createHash("sha256").update(s, "utf8").digest();
+
+// ---------- plans ----------
+
+let plansCache = null;
+
+function deepFreeze(o) {
+  if (o && typeof o === "object") {
+    for (const v of Object.values(o)) deepFreeze(v);
+    Object.freeze(o);
+  }
+  return o;
+}
+
+const OPS = ["add", "read", "recall"];
+
+function checkPlans(doc) {
+  if (!doc || typeof doc !== "object" || !doc.plans || typeof doc.plans !== "object") throw fail("invalid_plans");
+  for (const [id, p] of Object.entries(doc.plans)) {
+    if (!/^[a-z][a-z0-9-]*$/.test(id) || !p || typeof p.limits !== "object") throw fail("invalid_plans");
+    for (const op of OPS) {
+      const v = p.limits[op];
+      if (v !== null && !(Number.isSafeInteger(v) && v >= 0)) throw fail("invalid_plans");
+    }
+  }
+  if (!doc.plans[doc.default]) throw fail("invalid_plans");
+  for (const [alias, target] of Object.entries(doc.aliases || {})) {
+    if (!alias.startsWith("_") && !doc.plans[target]) throw fail("invalid_plans");
+  }
+  return doc;
+}
+
+/** Read cloud/plans.json (cached after first load; restart to pick up edits). */
+export function loadPlans() {
+  if (!plansCache) {
+    const text = readFileSync(new URL("../plans.json", import.meta.url), "utf8");
+    plansCache = deepFreeze(checkPlans(JSON.parse(text)));
+  }
+  return plansCache;
+}
+
+function resolvePlanId(name) {
+  const doc = loadPlans();
+  if (typeof name !== "string" || name.startsWith("_")) return null;
+  if (Object.hasOwn(doc.plans, name)) return name;
+  const aliased = doc.aliases && Object.hasOwn(doc.aliases, name) ? doc.aliases[name] : null;
+  return aliased && Object.hasOwn(doc.plans, aliased) ? aliased : null;
+}
+
+/**
+ * Plan object for a tenant record (`{plan}`) or a plan name. Aliases resolve
+ * (starter -> dev, scale -> agency). Returns `{id, ...plan, grace_ratio}`.
+ * Throws `unknown_plan` rather than guessing: quotas fail closed.
+ */
+export function planFor(tenant) {
+  const name = typeof tenant === "string" ? tenant : tenant?.plan;
+  const id = resolvePlanId(name);
+  if (!id) throw fail("unknown_plan");
+  const doc = loadPlans();
+  return Object.freeze({ id, ...doc.plans[id], grace_ratio: doc.grace_ratio ?? 0.1 });
+}
+
+// ---------- tenants ----------
+
+function toTenant(h) {
+  if (!h || !h.id) return null;
+  let keyIds = [];
+  try {
+    const v = JSON.parse(h.key_ids || "[]");
+    if (Array.isArray(v)) keyIds = v.filter(validKeyId);
+  } catch {
+    keyIds = [];
+  }
+  const t = {
+    id: h.id,
+    name: h.name ?? h.id,
+    plan: h.plan,
+    status: STATUSES.includes(h.status) ? h.status : "suspended",
+    created_at: Number(h.created_at) || 0,
+    namespace: h.namespace,
+    key_ids: keyIds,
+  };
+  if (h.updated_at) t.updated_at = Number(h.updated_at);
+  if (h.bridge_port) t.bridge_port = Number(h.bridge_port);
+  return t;
+}
+
+/** Create a tenant once. A second create with the same id fails and changes nothing. */
+export async function createTenant(redis, { id, name, plan } = {}) {
+  if (!validTenantId(id)) throw fail("invalid_tenant");
+  const planId = resolvePlanId(plan ?? loadPlans().default);
+  if (!planId) throw fail("unknown_plan");
+  const display = name === undefined ? id : name;
+  if (typeof display !== "string" || display.length < 1 || display.length > 100 || /[\u0000-\u001f\u007f]/.test(display)) {
+    throw fail("invalid_name");
+  }
+  const key = tenantKey(id);
+  // SET-once: HSETNX on `id` is the atomic claim. Losing it means the tenant exists.
+  if (Number(await redis("HSETNX", key, "id", id)) !== 1) throw fail("tenant_exists");
+  const tenant = {
+    id,
+    name: display,
+    plan: planId,
+    status: "active",
+    created_at: Date.now(),
+    namespace: `acmi:${id}:`,
+    key_ids: [],
+  };
+  await redis(
+    "HSET", key,
+    "name", tenant.name,
+    "plan", tenant.plan,
+    "status", tenant.status,
+    "created_at", String(tenant.created_at),
+    "namespace", tenant.namespace,
+    "key_ids", "[]",
+  );
+  await redis("SADD", TENANTS_SET, id);
+  return tenant;
+}
+
+export async function getTenant(redis, id) {
+  if (!validTenantId(id)) return null;
+  return toTenant(hashToObj(await redis("HGETALL", tenantKey(id))));
+}
+
+export async function listTenants(redis) {
+  const ids = (await redis("SMEMBERS", TENANTS_SET)) || [];
+  const out = [];
+  for (const id of [...ids].sort()) {
+    const t = await getTenant(redis, id);
+    if (t) out.push(t);
+  }
+  return out;
+}
+
+/** active | suspended | deleted. `deleted` is terminal (no resurrection). */
+export async function setStatus(redis, id, status) {
+  if (!validTenantId(id)) throw fail("invalid_tenant");
+  if (!STATUSES.includes(status)) throw fail("invalid_status");
+  const t = await getTenant(redis, id);
+  if (!t) throw fail("not_found");
+  if (t.status === "deleted" && status !== "deleted") throw fail("invalid_status");
+  const now = Date.now();
+  await redis("HSET", tenantKey(id), "status", status, "updated_at", String(now));
+  return { ...t, status, updated_at: now };
+}
+
+// ---------- API keys ----------
+
+function parseKey(presented) {
+  if (typeof presented !== "string" || presented.length !== MAX_KEY_LEN || !presented.startsWith(KEY_PREFIX)) return null;
+  const rest = presented.slice(KEY_PREFIX.length);
+  const keyid = rest.slice(0, 16);
+  if (rest[16] !== "_") return null;
+  const secret = rest.slice(17);
+  if (!validKeyId(keyid) || !SECRET_RE.test(secret)) return null;
+  return { keyid, secret };
+}
+
+async function syncKeyIds(redis, tenant) {
+  const ids = ((await redis("SMEMBERS", tenantKeysSet(tenant))) || []).filter(validKeyId).sort();
+  await redis("HSET", tenantKey(tenant), "key_ids", JSON.stringify(ids));
+  return ids;
+}
+
+async function readKey(redis, keyid) {
+  const h = hashToObj(await redis("HGETALL", keyKey(keyid)));
+  return h.keyid ? h : null;
+}
+
+function keyState(k, now = Date.now()) {
+  if (k.revoked_at) return "revoked";
+  if (k.expires_at && Number(k.expires_at) <= now) return "expired";
+  return "active";
+}
+
+function validLabel(label) {
+  return typeof label === "string" && label.length <= 64 && !/[\u0000-\u001f\u007f]/.test(label);
+}
+
+async function mintKey(redis, tenant, label) {
+  let keyid;
+  for (let i = 0; i < 4 && !keyid; i++) {
+    const candidate = crypto.randomBytes(8).toString("hex");
+    if (Number(await redis("HSETNX", keyKey(candidate), "keyid", candidate)) === 1) keyid = candidate;
+  }
+  if (!keyid) throw fail("key_create_failed");
+  const secret = crypto.randomBytes(32).toString("base64url");
+  await redis(
+    "HSET", keyKey(keyid),
+    "tenant", tenant,
+    "label", label,
+    "hash", sha256(secret).toString("hex"),
+    "created_at", String(Date.now()),
+  );
+  await redis("SADD", tenantKeysSet(tenant), keyid);
+  await syncKeyIds(redis, tenant);
+  return { key: `${KEY_PREFIX}${keyid}_${secret}`, keyid };
+}
+
+/** Create an API key. The returned `key` is the only copy; store it now. */
+export async function createKey(redis, tenant, { label = "" } = {}) {
+  if (!validTenantId(tenant)) throw fail("invalid_tenant");
+  if (!validLabel(label)) throw fail("invalid_label");
+  const t = await getTenant(redis, tenant);
+  if (!t || t.status === "deleted") throw fail("not_found");
+  return mintKey(redis, tenant, label);
+}
+
+// Fixed dummy so a miss costs the same hash + compare as a hit.
+const DUMMY_HASH = sha256("acmi-dummy-key-hash");
+
+/**
+ * Verify a presented key. Returns `{tenant, keyid}` or null; never says why.
+ * Refuses: malformed, unknown, revoked, expired (rotate grace over), tenant
+ * missing / suspended / deleted.
+ */
+export async function verifyKey(redis, presented) {
+  const parsed = parseKey(presented);
+  const got = sha256(parsed ? parsed.secret : "acmi-malformed");
+  const k = parsed ? await readKey(redis, parsed.keyid) : null;
+  let want = DUMMY_HASH;
+  if (k && /^[a-f0-9]{64}$/.test(k.hash || "")) want = Buffer.from(k.hash, "hex");
+  const match = crypto.timingSafeEqual(want, got);
+  if (!parsed || !k || !match || want === DUMMY_HASH) return null;
+  if (k.keyid !== parsed.keyid || keyState(k) !== "active") return null;
+  if (!validTenantId(k.tenant)) return null;
+  const t = await getTenant(redis, k.tenant);
+  if (!t || t.status !== "active") return null;
+  return { tenant: k.tenant, keyid: k.keyid };
+}
+
+async function ownedKey(redis, tenant, keyid) {
+  if (!validTenantId(tenant)) throw fail("invalid_tenant");
+  if (!validKeyId(keyid)) throw fail("invalid_key");
+  const k = await readKey(redis, keyid);
+  if (!k || k.tenant !== tenant) throw fail("not_found");
+  return k;
+}
+
+/**
+ * Issue a new key with the same label. The old key stays valid until
+ * now + graceMs, then verifyKey refuses it. graceMs 0 cuts it off immediately.
+ */
+export async function rotateKey(redis, tenant, keyid, { graceMs = 86400000 } = {}) {
+  if (!Number.isSafeInteger(graceMs) || graceMs < 0 || graceMs > MAX_GRACE_MS) throw fail("invalid_grace");
+  const old = await ownedKey(redis, tenant, keyid);
+  if (keyState(old) !== "active") throw fail("not_found");
+  const t = await getTenant(redis, tenant);
+  if (!t || t.status === "deleted") throw fail("not_found");
+  const next = await mintKey(redis, tenant, old.label ?? "");
+  const until = Date.now() + graceMs;
+  const expiresAt = old.expires_at ? Math.min(Number(old.expires_at), until) : until;
+  await redis("HSET", keyKey(keyid), "expires_at", String(expiresAt), "rotated_to", next.keyid);
+  return { key: next.key, keyid: next.keyid, previous: keyid, previous_expires_at: expiresAt };
+}
+
+export async function revokeKey(redis, tenant, keyid) {
+  const k = await ownedKey(redis, tenant, keyid);
+  const at = k.revoked_at ? Number(k.revoked_at) : Date.now();
+  if (!k.revoked_at) await redis("HSET", keyKey(keyid), "revoked_at", String(at));
+  return { keyid, status: "revoked", revoked_at: at };
+}
+
+/** Key metadata only. Hashes and secrets never leave this module. */
+export async function listKeys(redis, tenant) {
+  if (!validTenantId(tenant)) throw fail("invalid_tenant");
+  const ids = ((await redis("SMEMBERS", tenantKeysSet(tenant))) || []).filter(validKeyId).sort();
+  const now = Date.now();
+  const out = [];
+  for (const id of ids) {
+    const k = await readKey(redis, id);
+    if (!k || k.tenant !== tenant) continue;
+    const meta = {
+      keyid: k.keyid,
+      label: k.label ?? "",
+      status: keyState(k, now),
+      created_at: Number(k.created_at) || 0,
+      prefix: `${KEY_PREFIX}${k.keyid}_`,
+    };
+    if (k.expires_at) meta.expires_at = Number(k.expires_at);
+    if (k.rotated_to && validKeyId(k.rotated_to)) meta.rotated_to = k.rotated_to;
+    if (k.revoked_at) meta.revoked_at = Number(k.revoked_at);
+    out.push(meta);
+  }
+  return out;
+}

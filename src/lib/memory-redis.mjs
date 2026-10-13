@@ -79,6 +79,15 @@ export function createMemoryRedis() {
       data.set(k, { type: "string", value: String(n) });
       return n;
     },
+    INCRBY: (k, by) => {
+      const e = get(k, "string");
+      const n = (e ? Number(e.value) : 0) + Number(by);
+      if (!Number.isSafeInteger(n) || !Number.isInteger(Number(by))) {
+        throw new Error("ERR value is not an integer or out of range");
+      }
+      data.set(k, { type: "string", value: String(n) });
+      return n;
+    },
     EXPIRE: (k) => (data.has(k) ? 1 : 0),
     TTL: (k) => (data.has(k) ? -1 : -2),
     DBSIZE: () => data.size,
@@ -128,6 +137,16 @@ export function createMemoryRedis() {
         e.value.set(String(pairs[i]), String(pairs[i + 1]));
       }
       return added;
+    },
+    HSETNX: (k, f, v) => {
+      let e = get(k, "hash");
+      if (e?.value.has(String(f))) return 0;
+      if (!e) {
+        e = { type: "hash", value: new Map() };
+        data.set(k, e);
+      }
+      e.value.set(String(f), String(v));
+      return 1;
     },
     HGET: (k, f) => get(k, "hash")?.value.get(String(f)) ?? null,
     HDEL: (k, ...fields) => {

@@ -1,0 +1,73 @@
+{
+  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Agency/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. 'recall' limits are placeholders: Mikey to confirm. Change numbers here, not in code.",
+  "version": 1,
+  "default": "free",
+  "grace_ratio": 0.1,
+  "aliases": {
+    "_note": "PRD names (Starter/Scale) kept only as aliases.",
+    "starter": "dev",
+    "scale": "agency"
+  },
+  "plans": {
+    "free": {
+      "name": "Free",
+      "price_usd_month": 0,
+      "limits": { "add": 10000, "read": null, "recall": 1000 },
+      "overage": null,
+      "history_days": 7,
+      "spaces": 1,
+      "agents": 3,
+      "_note": "recall limit: Mikey to confirm. No overage: writes refused after the 10% grace."
+    },
+    "dev": {
+      "name": "Dev",
+      "price_usd_month": 19,
+      "limits": { "add": 50000, "read": null, "recall": 10000 },
+      "overage": null,
+      "history_days": 30,
+      "spaces": 1,
+      "agents": 5,
+      "_note": "recall limit: Mikey to confirm. No overage: writes refused after the 10% grace (upgrade)."
+    },
+    "pro": {
+      "name": "Pro",
+      "price_usd_month": 49,
+      "limits": { "add": 150000, "read": null, "recall": 50000 },
+      "overage": { "billed": true, "usd_per_10k": 2 },
+      "history_days": 90,
+      "spaces": 3,
+      "agents": 25,
+      "_note": "recall limit: Mikey to confirm. Overage billed (~$2 / 10k), never refused."
+    },
+    "team": {
+      "name": "Team",
+      "price_usd_month": 99,
+      "limits": { "add": 500000, "read": null, "recall": 200000 },
+      "overage": { "billed": true, "usd_per_10k": 2 },
+      "history_days": 365,
+      "spaces": 10,
+      "agents": null,
+      "_note": "recall limit: Mikey to confirm. Overage billed (~$2 / 10k), never refused. agents null = unlimited."
+    },
+    "agency": {
+      "name": "Agency",
+      "price_usd_month": 199,
+      "limits": { "add": 1500000, "read": null, "recall": 600000 },
+      "overage": { "billed": true, "usd_per_10k": 1.5 },
+      "history_days": 365,
+      "spaces": 30,
+      "agents": null,
+      "_note": "recall limit: Mikey to confirm. Overage billed (~$1.50 / 10k), never refused. 30 client spaces."
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "price_usd_month": null,
+      "limits": { "add": null, "read": null, "recall": null },
+      "overage": { "billed": true, "usd_per_10k": null },
+      "history_days": null,
+      "spaces": null,
+      "agents": null,
+      "_note": "Custom contract. Limits null = unlimited; set per contract."
+    }
+  }
+}
