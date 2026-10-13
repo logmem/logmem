@@ -3,7 +3,7 @@
 // A ref is a pointer into the tenant's own Redis namespace. Two shapes:
 //
 //   Log entry   {logKey}@{score}#{id}
-//               logKey  lm:{tenant}:{ns}:{id}:log  or  acmi:{tenant}:{ns}:{id}:timeline
+//               logKey  lm:t-{tenant}:{ns}:{id}:log  or  acmi:t-{tenant}:{ns}:{id}:timeline
 //               score   the entry's raw ZSET score (ms for lm:*, whatever the
 //                       legacy writer used for acmi:*), so lookup is one
 //                       ZRANGEBYSCORE score score, not a scan of the log
@@ -12,8 +12,11 @@
 //                       stable JSON (minus the `_o` ordinal)
 //
 //   Document    the key itself, for string slots:
-//               lm:{tenant}:*:who, lm:{tenant}:*:recap,
-//               acmi:{tenant}:*:profile, acmi:{tenant}:*:rollup:latest
+//               lm:t-{tenant}:*:who, lm:t-{tenant}:*:recap,
+//               acmi:t-{tenant}:*:profile, acmi:t-{tenant}:*:rollup:latest
+//
+// Only the t-{tenant} namespace is accepted (see outbox.mjs); a bare
+// lm:{tenant}: or acmi:{tenant}: ref is refused.
 //
 // Why score + id rather than {logKey}#{trail} alone: a ZSET member is the whole
 // entry JSON, so finding one by trail means reading the entire log. The score
@@ -24,7 +27,7 @@
 import { createHash } from "node:crypto";
 import { stableJson, tryParse, normTs } from "../../src/core/store.mjs";
 import { asEntry } from "../../src/core/vocab.mjs";
-import { RecallError, refInTenant, checkTenant, MAX_REF } from "./outbox.mjs";
+import { RecallError, refInTenant, checkTenant, tenantNs, MAX_REF } from "./outbox.mjs";
 import { hasSecret } from "./redact.mjs";
 
 const LOG_REF_RE = /^(.+:(?:log|timeline))@(-?\d+(?:\.\d+)?)#(.+)$/;
@@ -112,14 +115,14 @@ export async function loadEntry(redis, tenant, ref) {
 
 /** Every canonical key pattern rebuild walks for a tenant. */
 export function canonicalPatterns(tenant) {
-  checkTenant(tenant);
+  const ns = tenantNs(tenant);
   return [
-    { match: `lm:${tenant}:*:log`, type: "log" },
-    { match: `acmi:${tenant}:*:timeline`, type: "log" },
-    { match: `lm:${tenant}:*:who`, type: "doc" },
-    { match: `lm:${tenant}:*:recap`, type: "doc" },
-    { match: `acmi:${tenant}:*:profile`, type: "doc" },
-    { match: `acmi:${tenant}:*:rollup:latest`, type: "doc" },
+    { match: `lm:${ns}:*:log`, type: "log" },
+    { match: `acmi:${ns}:*:timeline`, type: "log" },
+    { match: `lm:${ns}:*:who`, type: "doc" },
+    { match: `lm:${ns}:*:recap`, type: "doc" },
+    { match: `acmi:${ns}:*:profile`, type: "doc" },
+    { match: `acmi:${ns}:*:rollup:latest`, type: "doc" },
   ];
 }
 

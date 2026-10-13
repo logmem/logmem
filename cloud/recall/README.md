@@ -6,7 +6,7 @@ rebuild from Redis at any time. There is one collection, `acmi_memory_v1`, share
 
 | File | What it does |
 |------|--------------|
-| `outbox.mjs` | `enqueue(redis, tenant, {ref, kind, ts})` does an RPUSH of `{ref, kind, ts}` to `acmi:{tenant}:outbox`, and nothing else |
+| `outbox.mjs` | `enqueue(redis, tenant, {ref, kind, ts})` does an RPUSH of `{ref, kind, ts}` to `acmi:t-{tenant}:outbox`, and nothing else |
 | `refs.mjs` | The ref format, plus the default `loadEntry` (reads the canonical entry from Redis) |
 | `redact.mjs` | `redact(text)` replaces secret-shaped strings with `[REDACTED]` |
 | `chunk.mjs` | Splits text into chunks of about 800 characters, with 100 characters of overlap |
@@ -17,9 +17,12 @@ rebuild from Redis at any time. There is one collection, `acmi_memory_v1`, share
 
 ## Refs
 
-A ref points into the tenant's own namespace. It always starts with `lm:{tenant}:` or `acmi:{tenant}:`.
+A ref points into the tenant's own namespace, `t-{id}` (BACKPLANE.md, PR #28 review M1). It always starts with
+`lm:t-{tenant}:` or `acmi:t-{tenant}:`. Bare `lm:{tenant}:` and `acmi:{tenant}:` refs are refused: those prefixes are
+the fleet's own trees (`acmi:agent:`, `lm:oauth:`, ...), and a tenant named `agent` or `oauth` must not reach them. The
+Qdrant payload `tenant_id` stays the bare `{id}`.
 
-- **Log entry:** `{logKey}@{score}#{id}`. For example, `lm:acme:channel:ops:log@1791731538741#memoOps-1791731538741-9f…`.
+- **Log entry:** `{logKey}@{score}#{id}`. For example, `lm:t-acme:channel:ops:log@1791731538741#memoOps-1791731538741-9f…`.
   - `logKey` is a `lm:*:log` or `acmi:*:timeline` ZSET.
   - `score` is the member's raw ZSET score.
   - `id` is the entry's `trail` (or the ACMI `correlationId`). An entry with neither gets `h-` plus 16 hex characters
@@ -48,8 +51,8 @@ await enqueue(redis, tenant, { ref: logRef(key, score, member), kind: entry.kind
 - **Missing entries:** when a canonical entry no longer exists in Redis, its points are deleted the next time its ref
   is indexed. Recall also drops it at hydration time.
 - **Failures:** a failed item is retried with exponential backoff (`backoffMs * 2^(n-1)`). The retry state is in
-  `acmi:{tenant}:outbox:retry`.
-- **Dead letters:** after `maxAttempts` failures (5 by default), the item goes to `acmi:{tenant}:outbox:dlq` as
+  `acmi:t-{tenant}:outbox:retry`.
+- **Dead letters:** after `maxAttempts` failures (5 by default), the item goes to `acmi:t-{tenant}:outbox:dlq` as
   `{ref, kind, ts, attempts, error}`. `error` is a short code, never a message.
 
 ## Running against a real Qdrant
@@ -97,7 +100,7 @@ await rebuild({ redis, qdrant, embed, tenant });   // deletes tenant_id == tenan
 while ((await indexOnce({ redis, qdrant, embed, tenant })).popped) {}
 ```
 
-Rebuild walks `lm:{t}:*:log`, `acmi:{t}:*:timeline` and the string doc slots with `SCAN`. After a migration copy, an
+Rebuild walks `lm:t-{t}:*:log`, `acmi:t-{t}:*:timeline` and the string doc slots with `SCAN`. After a migration copy, an
 entry can exist under both `lm:` and `acmi:`. In that case both are indexed, under different refs.
 
 ## Embedder

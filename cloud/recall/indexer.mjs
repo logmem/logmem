@@ -1,4 +1,4 @@
-// indexer.mjs — drain acmi:{tenant}:outbox into the Qdrant recall index.
+// indexer.mjs — drain acmi:t-{tenant}:outbox into the Qdrant recall index.
 //
 // Per outbox item {ref, kind, ts}:
 //   1. load the canonical entry from Redis (loadEntry; Redis is the truth)
@@ -7,7 +7,7 @@
 //   4. upsert points with deterministic ids, then delete stale chunks of the
 //      same ref (an entry that shrank leaves no orphans)
 //   5. on failure: retry with exponential backoff; after maxAttempts the item
-//      goes to acmi:{tenant}:outbox:dlq with an error code (never a message)
+//      goes to acmi:t-{tenant}:outbox:dlq with an error code (never a message)
 //
 // Nothing here logs entry text, payloads, vectors or error messages. The
 // optional `log` gets counts, codes and a sha256 prefix of the ref.

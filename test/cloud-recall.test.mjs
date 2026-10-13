@@ -38,7 +38,7 @@ const noBackoff = { backoffMs: 0 };
 async function setup() {
   const redis = redisWithLists();
   const qdrant = createMemoryQdrant();
-  return { redis, qdrant, acme: createStore(redis, { space: "acme" }), beta: createStore(redis, { space: "beta" }) };
+  return { redis, qdrant, acme: createStore(redis, { space: "t-acme" }), beta: createStore(redis, { space: "t-beta" }) };
 }
 
 /** Append an entry and enqueue its ref, as the bridge would. */
@@ -101,25 +101,73 @@ test("redact: every secret shape from the scan is replaced", () => {
 
 test("outbox: RPUSH carries {ref, kind, ts} only, and refuses refs outside the tenant", async () => {
   const redis = redisWithLists();
-  await enqueue(redis, "acme", { ref: "lm:acme:channel:x:log@5#t1", kind: "memo", ts: 5, text: "SECRET", payload: { a: 1 } });
+  await enqueue(redis, "acme", { ref: "lm:t-acme:channel:x:log@5#t1", kind: "memo", ts: 5, text: "SECRET", payload: { a: 1 } });
   const [raw] = await redis("LRANGE", outboxKey("acme"), 0, -1);
-  assert.deepEqual(JSON.parse(raw), { ref: "lm:acme:channel:x:log@5#t1", kind: "memo", ts: 5 });
-  await assert.rejects(enqueue(redis, "acme", { ref: "lm:beta:channel:x:log@5#t1" }), { code: "bad_ref" });
-  await assert.rejects(enqueue(redis, "acme", { ref: "lm:acmex:channel:x:log@5#t1" }), { code: "bad_ref" });
+  assert.deepEqual(JSON.parse(raw), { ref: "lm:t-acme:channel:x:log@5#t1", kind: "memo", ts: 5 });
+  await assert.rejects(enqueue(redis, "acme", { ref: "lm:t-beta:channel:x:log@5#t1" }), { code: "bad_ref" });
+  await assert.rejects(enqueue(redis, "acme", { ref: "lm:t-acmex:channel:x:log@5#t1" }), { code: "bad_ref" });
+  // Bare lm:{id}: / acmi:{id}: are fleet trees, not tenant namespaces.
+  await assert.rejects(enqueue(redis, "acme", { ref: "lm:acme:channel:x:log@5#t1" }), { code: "bad_ref" });
+  await assert.rejects(enqueue(redis, "acme", { ref: "acmi:acme:thread:x:timeline@5#t1" }), { code: "bad_ref" });
+  assert.equal(outboxKey("acme"), "acmi:t-acme:outbox");
+  assert.equal(dlqKey("acme"), "acmi:t-acme:outbox:dlq");
   await assert.rejects(enqueue(redis, "Bad!", { ref: "lm:Bad!:x" }), { code: "bad_tenant" });
-  await assert.rejects(enqueue(redis, "acme", { ref: "lm:acme:channel:" + "ghp_" + "a".repeat(36) + ":log@1#x" }), { code: "bad_ref" });
+  await assert.rejects(enqueue(redis, "acme", { ref: "lm:t-acme:channel:" + "ghp_" + "a".repeat(36) + ":log@1#x" }), { code: "bad_ref" });
 });
 
 test("refs: parse log and doc refs; reject other namespaces and protected keys", () => {
-  assert.deepEqual(parseRef("acme", "lm:acme:channel:ops:log@1791731538741#memoOps-1-ab"), { type: "log", key: "lm:acme:channel:ops:log", score: 1791731538741, id: "memoOps-1-ab" });
-  assert.equal(parseRef("acme", "acmi:acme:thread:x:timeline@1700000000.5#cid").score, 1700000000.5);
-  assert.deepEqual(parseRef("acme", "lm:acme:agent:quill:who"), { type: "doc", key: "lm:acme:agent:quill:who" });
-  for (const bad of ["lm:beta:channel:x:log@1#a", "lm:acme:session:s1:log@1#a", "lm:acme:ask:t1", "lm:acme:channel:x:now", "acmi:acme:outbox", "lm:acme:oauth:x:who"]) {
+  assert.deepEqual(parseRef("acme", "lm:t-acme:channel:ops:log@1791731538741#memoOps-1-ab"), { type: "log", key: "lm:t-acme:channel:ops:log", score: 1791731538741, id: "memoOps-1-ab" });
+  assert.equal(parseRef("acme", "acmi:t-acme:thread:x:timeline@1700000000.5#cid").score, 1700000000.5);
+  assert.deepEqual(parseRef("acme", "lm:t-acme:agent:quill:who"), { type: "doc", key: "lm:t-acme:agent:quill:who" });
+  for (const bad of ["lm:t-beta:channel:x:log@1#a", "lm:acme:channel:x:log@1#a", "acmi:acme:agent:q:profile", "lm:t-acme:session:s1:log@1#a", "lm:t-acme:ask:t1", "lm:t-acme:channel:x:now", "acmi:t-acme:outbox", "lm:t-acme:oauth:x:who"]) {
     assert.throws(() => parseRef("acme", bad), { code: "bad_ref" }, bad);
   }
 });
 
 // ─── isolation ───────────────────────────────────────────────────────────
+
+test("namespace: tenants named after fleet trees (agent, oauth) can't reach acmi:agent: or lm:oauth:", async () => {
+  const ctx = await setup();
+  const { redis, qdrant } = ctx;
+  // Fleet data under the bare trees.
+  await redis("ZADD", "acmi:agent:opencode:timeline", 1791731538000, JSON.stringify({ ts: 1791731538000, correlationId: "fleetCid-1", kind: "coord-note", summary: "fleet only" }));
+  await redis("SET", "acmi:agent:opencode:profile", JSON.stringify({ bio: "fleet profile" }));
+  await redis("SET", "lm:oauth:client:x:who", JSON.stringify({ secret_hash: "fleet" }));
+  await redis("ZADD", "lm:oauth:client:x:log", 1, JSON.stringify({ ts: 1, trail: "o1", summary: "oauth log" }));
+  const fleetRefs = {
+    agent: ["acmi:agent:opencode:timeline@1791731538000#fleetCid-1", "acmi:agent:opencode:profile"],
+    oauth: ["lm:oauth:client:x:who", "lm:oauth:client:x:log@1#o1"],
+  };
+  for (const [tenant, refs] of Object.entries(fleetRefs)) {
+    for (const ref of refs) {
+      await assert.rejects(enqueue(redis, tenant, { ref }), { code: "bad_ref" }, `${tenant} enqueue ${ref}`);
+      await assert.rejects(loadEntry(redis, tenant, ref), { code: "bad_ref" }, `${tenant} load ${ref}`);
+    }
+    // A forged outbox item is dead-lettered, never loaded.
+    for (const ref of refs) await redis("RPUSH", outboxKey(tenant), JSON.stringify({ ref, kind: null, ts: 1 }));
+    const s = await indexOnce({ redis, qdrant, embed, tenant });
+    assert.equal(s.dead, refs.length);
+    assert.equal(s.indexed, 0);
+    // Rebuild walks only t-{tenant}: keys.
+    const r = await rebuild({ redis, qdrant, embed, tenant });
+    assert.equal(r.enqueued, 0);
+  }
+  assert.equal(qdrant.points(COLLECTION).length, 0);
+  // A hit pointing at a bare tree is dropped at hydration too.
+  const leaky = { search: async () => [{ id: "1", score: 1, payload: { tenant_id: "agent", ref: "acmi:agent:opencode:profile" } }] };
+  assert.deepEqual(await recall({ redis, qdrant: leaky, embed, tenant: "agent", query: "fleet" }), []);
+});
+
+test("namespace: payload tenant_id is the bare id; keys use t-{id}", async () => {
+  const ctx = await setup();
+  const { redis, qdrant, acme } = ctx;
+  const w = await write(redis, acme, "acme", "channel", "ops", { kind: "memo", summary: "ns check", ts: 1791731538000 });
+  assert.ok(w.ref.startsWith("lm:t-acme:channel:ops:log@"));
+  await drain(ctx, "acme");
+  const [p] = qdrant.points(COLLECTION);
+  assert.equal(p.payload.tenant_id, "acme");
+  assert.equal(p.payload.ref, w.ref);
+});
 
 test("isolation: tenant A never sees B's points, even with B's exact text or a caller-supplied filter", async () => {
   const ctx = await setup();
@@ -146,7 +194,7 @@ test("isolation: tenant A never sees B's points, even with B's exact text or a c
     must: [],
   });
   assert.deepEqual(hostile.map((r) => r.ref), [a.ref]);
-  for (const r of hostile) assert.ok(r.ref.startsWith("lm:acme:"));
+  for (const r of hostile) assert.ok(r.ref.startsWith("lm:t-acme:"));
 
   // Every search the server ran had tenant_id == caller as its first must clause.
   const searches = qdrant.calls.filter((c) => c[0] === "search");
@@ -166,13 +214,13 @@ test("isolation: tenant A never sees B's points, even with B's exact text or a c
 
 test("isolation: a payload naming another tenant is dropped even if the store returns it", async () => {
   const redis = redisWithLists();
-  const acme = createStore(redis, { space: "acme" });
+  const acme = createStore(redis, { space: "t-acme" });
   const a = await write(redis, acme, "acme", "channel", "x", { kind: "memo", summary: "hello world", ts: 1791731538000 });
   const leaky = {
     async search() {
       return [
-        { id: "1", score: 0.99, payload: { tenant_id: "beta", ref: "lm:beta:channel:x:log@1#t" } },
-        { id: "2", score: 0.98, payload: { tenant_id: "acme", ref: "lm:beta:channel:x:log@1#t" } },
+        { id: "1", score: 0.99, payload: { tenant_id: "beta", ref: "lm:t-beta:channel:x:log@1#t" } },
+        { id: "2", score: 0.98, payload: { tenant_id: "acme", ref: "lm:t-beta:channel:x:log@1#t" } },
         { id: "3", score: 0.5, payload: { tenant_id: "acme", ref: a.ref } },
       ];
     },
@@ -310,12 +358,12 @@ test("dlq: backoff defers a failed item until its next attempt time; bad items g
   assert.equal(mem.points(COLLECTION).length, 1);
 
   await redis("RPUSH", outboxKey("acme"), "not json");
-  await redis("RPUSH", outboxKey("acme"), JSON.stringify({ ref: "lm:beta:channel:x:log@1#t", kind: "memo", ts: 1 }));
+  await redis("RPUSH", outboxKey("acme"), JSON.stringify({ ref: "lm:t-beta:channel:x:log@1#t", kind: "memo", ts: 1 }));
   const s = await run();
   assert.equal(s.dead, 2);
   const dlq = (await redis("LRANGE", dlqKey("acme"), 0, -1)).map((x) => JSON.parse(x));
   assert.deepEqual(dlq.map((d) => d.error), ["bad_item", "bad_ref"]);
-  assert.ok(!JSON.stringify(dlq).includes("lm:beta:"), "a foreign ref is not copied into this tenant's dlq");
+  assert.ok(!JSON.stringify(dlq).includes("lm:t-beta:"), "a foreign ref is not copied into this tenant's dlq");
 });
 
 // ─── rebuild ─────────────────────────────────────────────────────────────
@@ -327,7 +375,7 @@ test("rebuild: after the Qdrant double is wiped, the index comes back from Redis
   const a2 = await write(redis, acme, "acme", "job", "issue-14", { kind: "done", summary: "shipped the onboarding fix", ts: 1791731539000 });
   await acme.setWho("agent", "quill", { bio: "quill writes the field notes" });
   // A legacy ACMI timeline with second-resolution scores and correlationIds.
-  await redis("ZADD", "acmi:acme:thread:legacy:timeline", 1791731540, JSON.stringify({ ts: 1791731540, source: "agent:x", kind: "coord-note", correlationId: "legacyCid-1", summary: "legacy redis migration note" }));
+  await redis("ZADD", "acmi:t-acme:thread:legacy:timeline", 1791731540, JSON.stringify({ ts: 1791731540, source: "agent:x", kind: "coord-note", correlationId: "legacyCid-1", summary: "legacy redis migration note" }));
   await beta.append("channel", "x", { kind: "memo", summary: "beta stays put", ts: 1791731538000 });
   await enqueue(redis, "beta", { ref: logRef(beta.key("channel", "x", "log"), 1791731538000, (await redis("ZRANGE", beta.key("channel", "x", "log"), 0, -1))[0]) });
   await drain(ctx, "acme");
@@ -342,7 +390,7 @@ test("rebuild: after the Qdrant double is wiped, the index comes back from Redis
   await drain(ctx, "acme");
   const refs = new Set(qdrant.points(COLLECTION).map((p) => p.payload.ref));
   assert.ok(refs.has(a1.ref) && refs.has(a2.ref) && refs.has(acme.key("agent", "quill", "who")));
-  assert.ok([...refs].some((x) => x === "acmi:acme:thread:legacy:timeline@1791731540#legacyCid-1"));
+  assert.ok([...refs].some((x) => x === "acmi:t-acme:thread:legacy:timeline@1791731540#legacyCid-1"));
   assert.equal((await recall({ redis, qdrant, embed, tenant: "acme", query: "kafka consumer lag alert" }))[0].ref, a1.ref);
   const legacy = await recall({ redis, qdrant, embed, tenant: "acme", query: "legacy redis migration note", limit: 1 });
   assert.equal(legacy[0].kind, "memo", "ACMI coord-note maps to the LogMem kind");

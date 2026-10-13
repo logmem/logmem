@@ -1,8 +1,14 @@
 // outbox.mjs — the queue between canonical Redis writes and the recall index.
 //
-//   acmi:{tenant}:outbox        LIST of JSON {ref, kind, ts}   (RPUSH / LPOP)
-//   acmi:{tenant}:outbox:dlq    LIST of JSON {ref, kind, ts, attempts, error}
-//   acmi:{tenant}:outbox:retry  HASH ref -> JSON {n, next}
+//   acmi:t-{tenant}:outbox        LIST of JSON {ref, kind, ts}   (RPUSH / LPOP)
+//   acmi:t-{tenant}:outbox:dlq    LIST of JSON {ref, kind, ts, attempts, error}
+//   acmi:t-{tenant}:outbox:retry  HASH ref -> JSON {n, next}
+//
+// Tenant namespace = `t-{id}` (BACKPLANE.md, PR #28 review M1): a tenant's keys
+// live under acmi:t-{id}: and lm:t-{id}:. Bare acmi:{id}: / lm:{id}: are the
+// fleet's own trees (acmi:agent:, lm:oauth:, ...) and are never reachable, even
+// when the tenant id happens to be "agent" or "oauth". The Qdrant payload
+// tenant_id stays the bare {id}.
 //
 // Only refs go in. Never the entry text, never a payload: the indexer loads the
 // canonical entry from Redis itself, so the outbox can't carry a secret.
@@ -12,9 +18,12 @@ import { hasSecret } from "./redact.mjs";
 export const TENANT_RE = /^[a-z][a-z0-9-]{2,30}$/;
 export const MAX_REF = 1024;
 
-export const outboxKey = (tenant) => `acmi:${checkTenant(tenant)}:outbox`;
-export const dlqKey = (tenant) => `acmi:${checkTenant(tenant)}:outbox:dlq`;
-export const retryKey = (tenant) => `acmi:${checkTenant(tenant)}:outbox:retry`;
+/** The Redis namespace segment for a tenant id: `t-{id}`. */
+export const tenantNs = (tenant) => `t-${checkTenant(tenant)}`;
+
+export const outboxKey = (tenant) => `acmi:${tenantNs(tenant)}:outbox`;
+export const dlqKey = (tenant) => `acmi:${tenantNs(tenant)}:outbox:dlq`;
+export const retryKey = (tenant) => `acmi:${tenantNs(tenant)}:outbox:retry`;
 
 export class RecallError extends Error {
   constructor(code, message = code) {
@@ -28,9 +37,11 @@ export function checkTenant(tenant) {
   return tenant;
 }
 
-/** A ref must point into the tenant's own namespace (lm:{tenant}: or acmi:{tenant}:). */
+/** A ref must point into the tenant's own namespace: lm:t-{tenant}: or acmi:t-{tenant}:. Bare lm:{tenant}: / acmi:{tenant}: never match. */
 export function refInTenant(tenant, ref) {
-  return typeof ref === "string" && (ref.startsWith(`lm:${tenant}:`) || ref.startsWith(`acmi:${tenant}:`));
+  if (typeof tenant !== "string" || !TENANT_RE.test(tenant) || typeof ref !== "string") return false;
+  const ns = `t-${tenant}`;
+  return ref.startsWith(`lm:${ns}:`) || ref.startsWith(`acmi:${ns}:`);
 }
 
 export async function enqueue(redis, tenant, { ref, kind, ts } = {}) {
