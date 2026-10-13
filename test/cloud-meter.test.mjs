@@ -187,3 +187,20 @@ test("meter -> checkQuota end to end on the free plan", async () => {
   assert.equal(accepted, 11, "10 + 10% grace");
   assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11);
 });
+
+test("L3: checkQuota fails closed on a missing op limit and a bad grace_ratio", async () => {
+  const redis = createMemoryRedis();
+  for (const op of OPS) {
+    await assert.rejects(checkQuota(redis, "acme", op, { limits: {} }, { now: OCT }), { code: "invalid_plan" }, op);
+  }
+  await assert.rejects(checkQuota(redis, "acme", "add", { limits: { add: undefined } }), { code: "invalid_plan" });
+  await assert.rejects(checkQuota(redis, "acme", "add", { limits: { add: "10" } }), { code: "invalid_plan" });
+  for (const grace_ratio of [-0.1, 1.01, 10, 1e9, Number.NaN, "0.1", null]) {
+    await assert.rejects(checkQuota(redis, "acme", "add", { limits: { add: 0 }, grace_ratio }), { code: "invalid_plan" }, String(grace_ratio));
+  }
+  // Explicit null is the only "unlimited"; 0 and 1 are valid grace ratios.
+  assert.equal((await checkQuota(redis, "acme", "add", { limits: { add: null } })).ok, true);
+  await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");
+  assert.equal((await checkQuota(redis, "acme", "add", { limits: { add: 10 }, grace_ratio: 0 }, { now: OCT })).ok, false);
+  assert.equal((await checkQuota(redis, "acme", "add", { limits: { add: 10 }, grace_ratio: 1 }, { now: OCT })).grace, true);
+});

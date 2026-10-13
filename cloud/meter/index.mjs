@@ -8,7 +8,8 @@
 //
 // Quota rule:
 //   - read is counted, never refused.
-//   - limit null = unlimited.
+//   - limit null = unlimited; a missing limit (undefined) is invalid_plan (fail closed).
+//   - grace_ratio, if given, must be in [0, 1]; default 0.1.
 //   - up to 100% of the limit: ok.
 //   - plans without overage (free, dev): a 10% grace margin, then refuse with
 //     quota_exceeded. Nothing is dropped silently; the caller surfaces the error.
@@ -93,15 +94,19 @@ export async function checkQuota(redis, tenant, op, plan, { now, n = 1 } = {}) {
   const month = monthKey(now ?? Date.now());
   const raw = Number(await redis("GET", counterKey(tenant, month, op)));
   const used = Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+  // Fail closed: only an explicit null means unlimited; a missing limit is a broken plan.
+  if (!Object.hasOwn(plan.limits, op)) throw fail("invalid_plan");
   const lim = plan.limits[op];
-  const limit = lim === null || lim === undefined ? null : Number(lim);
-  if (limit !== null && !(Number.isSafeInteger(limit) && limit >= 0)) throw fail("invalid_plan");
+  if (lim !== null && !(Number.isSafeInteger(lim) && lim >= 0)) throw fail("invalid_plan");
+  const limit = lim;
+  const gr = plan.grace_ratio;
+  if (gr !== undefined && !(Number.isFinite(gr) && gr >= 0 && gr <= 1)) throw fail("invalid_plan");
 
   if (op === "read" || limit === null) return { ok: true, used, limit, grace: false };
   const after = used + n;
   if (after <= limit) return { ok: true, used, limit, grace: false };
   if (plan.overage && plan.overage.billed === true) return { ok: true, used, limit, grace: false, overage: true };
-  const ratio = Number.isFinite(plan.grace_ratio) && plan.grace_ratio >= 0 ? plan.grace_ratio : 0.1;
+  const ratio = gr === undefined ? 0.1 : gr;
   // Integer margin; the epsilon absorbs float error (e.g. 0.1 * 30 = 3.0000000000000004).
   const graceMax = limit + Math.floor(limit * ratio + 1e-9);
   if (after <= graceMax) return { ok: true, used, limit, grace: true };

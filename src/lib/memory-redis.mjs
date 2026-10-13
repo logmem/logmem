@@ -174,7 +174,13 @@ export function createMemoryRedis() {
       e.value.push(...vals.map(String));
       return e.value.length;
     },
-    ZADD: (k, ...args) => {
+    ZADD: (k, ...rest) => {
+      // Leading flags: NX | XX | LT | GT (Redis 6.2+). LT/GT = write-if-lower/higher.
+      const flags = new Set();
+      while (rest.length && ["NX", "XX", "LT", "GT"].includes(String(rest[0]).toUpperCase())) {
+        flags.add(String(rest.shift()).toUpperCase());
+      }
+      const args = rest;
       let e = get(k, "zset");
       if (!e) {
         e = { type: "zset", value: new Map() };
@@ -183,9 +189,15 @@ export function createMemoryRedis() {
       let added = 0;
       for (let i = 0; i < args.length; i += 2) {
         const member = String(args[i + 1]);
-        if (!e.value.has(member)) added++;
-        e.value.set(member, Number(args[i]));
+        const score = Number(args[i]);
+        const has = e.value.has(member);
+        if ((flags.has("NX") && has) || (flags.has("XX") && !has)) continue;
+        if (has && flags.has("LT") && !(score < e.value.get(member))) continue;
+        if (has && flags.has("GT") && !(score > e.value.get(member))) continue;
+        if (!has) added++;
+        e.value.set(member, score);
       }
+      if (!e.value.size) data.delete(k);
       return added;
     },
     ZREM: (k, ...members) => {

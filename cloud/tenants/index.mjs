@@ -5,9 +5,15 @@
 //
 // Keys:
 //   acmi:cloud:tenants              SET of tenant ids
-//   acmi:cloud:tenant:{id}          HASH id, name, plan, status, created_at, namespace, key_ids (JSON)
+//   acmi:cloud:tenant:{id}          HASH claim, id, name, plan, status, created_at, namespace, key_ids (JSON),
+//                                   updated_at, deleted_at (write-once; present = deleted, whatever status says)
 //   acmi:cloud:tenant:{id}:keys     SET of key ids (authoritative; key_ids mirrors it)
 //   acmi:cloud:key:{keyid}          HASH keyid, tenant, label, hash, created_at, expires_at, revoked_at, rotated_to
+//   acmi:cloud:key:{keyid}:expiry   ZSET member "at", written with ZADD LT (write-if-lower): the authoritative
+//                                   rotate-grace end; concurrent rotations can only shorten it
+//
+// Tenant data lives under namespaceFor(id) = "t-{id}", i.e. acmi:t-{id}: and lm:t-{id}: (BACKPLANE.md Rule 4).
+// The Qdrant tenant_id is the bare id.
 //
 // Secrets: an API key is `acmi_live_<keyid>_<secret>`, secret = 32 random bytes,
 // base64url. Only sha256(secret) is stored. The full key is returned exactly once
@@ -16,7 +22,11 @@
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 
-export const RESERVED = ["madez", "cloud", "probe", "admin", "system"];
+// Defence in depth on top of the t- namespace (BACKPLANE.md §1, PR #28 review M1).
+export const RESERVED = [
+  "madez", "cloud", "probe", "admin", "system", "agent", "work", "thread", "bus", "user", "oauth", "onboard",
+  "fieldnotes", "registry", "tenant", "inbox", "relay", "acmi", "lm", "logmem", "mcp", "api", "www", "t",
+];
 export const STATUSES = ["active", "suspended", "deleted"];
 
 const TENANT_RE = /^[a-z][a-z0-9-]{2,30}$/;
@@ -25,11 +35,14 @@ const SECRET_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url, no padding
 const KEY_PREFIX = "acmi_live_";
 const MAX_KEY_LEN = KEY_PREFIX.length + 16 + 1 + 43;
 const MAX_GRACE_MS = 30 * 86400000;
+export const MAX_LIVE_KEYS = 20; // active + in-grace keys per tenant
+const CLAIM_STALE_MS = 30000; // a create claim older than this with no record is abandoned
 
 const TENANTS_SET = "acmi:cloud:tenants";
 const tenantKey = (id) => `acmi:cloud:tenant:${id}`;
 const tenantKeysSet = (id) => `acmi:cloud:tenant:${id}:keys`;
 const keyKey = (keyid) => `acmi:cloud:key:${keyid}`;
+const keyExpiryKey = (keyid) => `acmi:cloud:key:${keyid}:expiry`;
 
 /** Generic error: a fixed message and code, never the offending value. */
 function fail(code) {
@@ -40,6 +53,18 @@ function fail(code) {
 
 export function validTenantId(id) {
   return typeof id === "string" && TENANT_RE.test(id) && !RESERVED.includes(id);
+}
+
+/** Redis namespace segment for a tenant: "t-{id}". Never build it by hand. */
+export function namespaceFor(id) {
+  if (!validTenantId(id)) throw fail("invalid_tenant");
+  return `t-${id}`;
+}
+
+/** The only key prefixes a tenant credential may touch. */
+export function keyPrefixes(id) {
+  const ns = namespaceFor(id);
+  return [`acmi:${ns}:`, `lm:${ns}:`];
 }
 
 export function validKeyId(keyid) {
@@ -78,6 +103,9 @@ function checkPlans(doc) {
     }
   }
   if (!doc.plans[doc.default]) throw fail("invalid_plans");
+  if (doc.grace_ratio !== undefined && !(Number.isFinite(doc.grace_ratio) && doc.grace_ratio >= 0 && doc.grace_ratio <= 1)) {
+    throw fail("invalid_plans");
+  }
   for (const [alias, target] of Object.entries(doc.aliases || {})) {
     if (!alias.startsWith("_") && !doc.plans[target]) throw fail("invalid_plans");
   }
@@ -117,7 +145,8 @@ export function planFor(tenant) {
 // ---------- tenants ----------
 
 function toTenant(h) {
-  if (!h || !h.id) return null;
+  // id and status are written by one HSET; a record without both is an unfinished create.
+  if (!h || !h.id || !h.status) return null;
   let keyIds = [];
   try {
     const v = JSON.parse(h.key_ids || "[]");
@@ -129,17 +158,23 @@ function toTenant(h) {
     id: h.id,
     name: h.name ?? h.id,
     plan: h.plan,
-    status: STATUSES.includes(h.status) ? h.status : "suspended",
+    status: h.deleted_at ? "deleted" : STATUSES.includes(h.status) ? h.status : "suspended",
     created_at: Number(h.created_at) || 0,
     namespace: h.namespace,
     key_ids: keyIds,
   };
   if (h.updated_at) t.updated_at = Number(h.updated_at);
   if (h.bridge_port) t.bridge_port = Number(h.bridge_port);
+  if (h.deleted_at) t.deleted_at = Number(h.deleted_at);
   return t;
 }
 
-/** Create a tenant once. A second create with the same id fails and changes nothing. */
+/**
+ * Create a tenant once. A second create of a live or finished id fails with
+ * tenant_exists and changes nothing. Claim-then-complete: an atomic HSETNX
+ * claim, then one HSET writes the whole record. If a create died between the
+ * two, a retry after CLAIM_STALE_MS takes the claim over and completes it.
+ */
 export async function createTenant(redis, { id, name, plan } = {}) {
   if (!validTenantId(id)) throw fail("invalid_tenant");
   const planId = resolvePlanId(plan ?? loadPlans().default);
@@ -149,19 +184,31 @@ export async function createTenant(redis, { id, name, plan } = {}) {
     throw fail("invalid_name");
   }
   const key = tenantKey(id);
-  // SET-once: HSETNX on `id` is the atomic claim. Losing it means the tenant exists.
-  if (Number(await redis("HSETNX", key, "id", id)) !== 1) throw fail("tenant_exists");
+  const now = Date.now();
+  const claim = `${now}:${crypto.randomBytes(8).toString("hex")}`;
+  if (Number(await redis("HSETNX", key, "claim", claim)) !== 1) {
+    const h = hashToObj(await redis("HGETALL", key));
+    if (h.status) {
+      await redis("SADD", TENANTS_SET, id); // repair: a create that died before SADD
+      throw fail("tenant_exists");
+    }
+    const claimedAt = Number(String(h.claim || "0").split(":")[0]);
+    if (h.claim && now - claimedAt < CLAIM_STALE_MS) throw fail("tenant_exists"); // in flight
+    await redis("HSET", key, "claim", claim); // take over the abandoned claim
+    if ((await redis("HGET", key, "claim")) !== claim) throw fail("tenant_exists");
+  }
   const tenant = {
     id,
     name: display,
     plan: planId,
     status: "active",
-    created_at: Date.now(),
-    namespace: `acmi:${id}:`,
+    created_at: now,
+    namespace: namespaceFor(id),
     key_ids: [],
   };
   await redis(
     "HSET", key,
+    "id", id,
     "name", tenant.name,
     "plan", tenant.plan,
     "status", tenant.status,
@@ -188,15 +235,31 @@ export async function listTenants(redis) {
   return out;
 }
 
-/** active | suspended | deleted. `deleted` is terminal (no resurrection). */
+/**
+ * active | suspended | deleted. Deletion is final, also under concurrency:
+ * delete writes a write-once deleted_at (HSETNX) that toTenant honours over
+ * status; every other change re-checks deleted_at after its write and puts
+ * status back to deleted if a delete landed meanwhile.
+ */
 export async function setStatus(redis, id, status) {
   if (!validTenantId(id)) throw fail("invalid_tenant");
   if (!STATUSES.includes(status)) throw fail("invalid_status");
   const t = await getTenant(redis, id);
   if (!t) throw fail("not_found");
-  if (t.status === "deleted" && status !== "deleted") throw fail("invalid_status");
+  const key = tenantKey(id);
   const now = Date.now();
-  await redis("HSET", tenantKey(id), "status", status, "updated_at", String(now));
+  if (status === "deleted") {
+    await redis("HSETNX", key, "deleted_at", String(now));
+    await redis("HSET", key, "status", "deleted", "updated_at", String(now));
+    const at = Number(await redis("HGET", key, "deleted_at"));
+    return { ...t, status: "deleted", updated_at: now, deleted_at: at };
+  }
+  if (t.status === "deleted") throw fail("invalid_status");
+  await redis("HSET", key, "status", status, "updated_at", String(now));
+  if (await redis("HGET", key, "deleted_at")) {
+    await redis("HSET", key, "status", "deleted");
+    throw fail("invalid_status");
+  }
   return { ...t, status, updated_at: now };
 }
 
@@ -220,7 +283,15 @@ async function syncKeyIds(redis, tenant) {
 
 async function readKey(redis, keyid) {
   const h = hashToObj(await redis("HGETALL", keyKey(keyid)));
-  return h.keyid ? h : null;
+  if (!h.keyid) return null;
+  // The ZSET (write-if-lower) is authoritative; the hash field is a mirror.
+  const z = (await redis("ZRANGE", keyExpiryKey(keyid), 0, 0, "WITHSCORES")) || [];
+  const zAt = z.length >= 2 ? Number(z[1]) : NaN;
+  const hAt = h.expires_at ? Number(h.expires_at) : NaN;
+  const at = Math.min(Number.isFinite(zAt) ? zAt : Infinity, Number.isFinite(hAt) ? hAt : Infinity);
+  if (Number.isFinite(at)) h.expires_at = String(at);
+  else delete h.expires_at;
+  return h;
 }
 
 function keyState(k, now = Date.now()) {
@@ -233,7 +304,20 @@ function validLabel(label) {
   return typeof label === "string" && label.length <= 64 && !/[\u0000-\u001f\u007f]/.test(label);
 }
 
-async function mintKey(redis, tenant, label) {
+async function liveKeyCount(redis, tenant, excluding) {
+  const ids = ((await redis("SMEMBERS", tenantKeysSet(tenant))) || []).filter(validKeyId);
+  const now = Date.now();
+  let n = 0;
+  for (const id of ids) {
+    if (id === excluding) continue;
+    const k = await readKey(redis, id);
+    if (k && k.tenant === tenant && keyState(k, now) === "active") n++;
+  }
+  return n;
+}
+
+async function mintKey(redis, tenant, label, { excluding } = {}) {
+  if ((await liveKeyCount(redis, tenant, excluding)) >= MAX_LIVE_KEYS) throw fail("key_limit");
   let keyid;
   for (let i = 0; i < 4 && !keyid; i++) {
     const candidate = crypto.randomBytes(8).toString("hex");
@@ -280,6 +364,8 @@ export async function verifyKey(redis, presented) {
   if (!parsed || !k || !match || want === DUMMY_HASH) return null;
   if (k.keyid !== parsed.keyid || keyState(k) !== "active") return null;
   if (!validTenantId(k.tenant)) return null;
+  // Defence in depth: the tenant field must agree with the tenant's own key set.
+  if (Number(await redis("SISMEMBER", tenantKeysSet(k.tenant), k.keyid)) !== 1) return null;
   const t = await getTenant(redis, k.tenant);
   if (!t || t.status !== "active") return null;
   return { tenant: k.tenant, keyid: k.keyid };
@@ -303,9 +389,12 @@ export async function rotateKey(redis, tenant, keyid, { graceMs = 86400000 } = {
   if (keyState(old) !== "active") throw fail("not_found");
   const t = await getTenant(redis, tenant);
   if (!t || t.status === "deleted") throw fail("not_found");
-  const next = await mintKey(redis, tenant, old.label ?? "");
+  const next = await mintKey(redis, tenant, old.label ?? "", { excluding: keyid });
   const until = Date.now() + graceMs;
-  const expiresAt = old.expires_at ? Math.min(Number(old.expires_at), until) : until;
+  // Write-if-lower: ZADD LT can only shorten the grace, whatever the interleaving.
+  await redis("ZADD", keyExpiryKey(keyid), "LT", until, "at");
+  const z = (await redis("ZRANGE", keyExpiryKey(keyid), 0, 0, "WITHSCORES")) || [];
+  const expiresAt = Math.min(Number(z[1]) || until, until);
   await redis("HSET", keyKey(keyid), "expires_at", String(expiresAt), "rotated_to", next.keyid);
   return { key: next.key, keyid: next.keyid, previous: keyid, previous_expires_at: expiresAt };
 }

@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import {
-  RESERVED, validTenantId, createTenant, getTenant, listTenants, setStatus,
+  RESERVED, MAX_LIVE_KEYS, validTenantId, namespaceFor, keyPrefixes, createTenant, getTenant, listTenants, setStatus,
   createKey, verifyKey, rotateKey, revokeKey, listKeys, loadPlans, planFor,
 } from "../cloud/tenants/index.mjs";
 
@@ -31,7 +31,10 @@ function allStored(redis) {
 // ---------- ids ----------
 
 test("validTenantId: format and reserved ids", () => {
-  assert.deepEqual(RESERVED, ["madez", "cloud", "probe", "admin", "system"]);
+  assert.deepEqual(RESERVED, [
+    "madez", "cloud", "probe", "admin", "system", "agent", "work", "thread", "bus", "user", "oauth", "onboard",
+    "fieldnotes", "registry", "tenant", "inbox", "relay", "acmi", "lm", "logmem", "mcp", "api", "www", "t",
+  ]);
   for (const id of ["acme", "abc", "a-1", "x".repeat(31), "team-42"]) assert.equal(validTenantId(id), true, id);
   for (const id of [...RESERVED, "ab", "1abc", "-abc", "Acme", "acme_x", "acme:x", "a".repeat(32), "", null, undefined, 42, "acme\n", "ac me", "acmi:madez"]) {
     assert.equal(validTenantId(id), false, String(id));
@@ -41,9 +44,27 @@ test("validTenantId: format and reserved ids", () => {
 test("createTenant: refuses reserved and malformed ids, writes nothing", async () => {
   const redis = createMemoryRedis();
   for (const id of [...RESERVED, "A", "x:y", "../etc"]) {
-    await assert.rejects(createTenant(redis, { id, plan: "free" }), (e) => e.code === "invalid_tenant" && !e.message.includes(id));
+    await assert.rejects(createTenant(redis, { id, plan: "free" }), (e) => e.code === "invalid_tenant" && e.message === "invalid_tenant");
   }
   assert.equal(redis._data.size, 0);
+});
+
+test("namespaceFor / keyPrefixes: t-{id}, validated, no overlap with fleet trees", () => {
+  assert.equal(namespaceFor("acme"), "t-acme");
+  assert.deepEqual(keyPrefixes("acme"), ["acmi:t-acme:", "lm:t-acme:"]);
+  for (const bad of ["madez", "agent", "t", "A", "a:b", "", null]) {
+    assert.throws(() => namespaceFor(bad), { code: "invalid_tenant" });
+    assert.throws(() => keyPrefixes(bad), { code: "invalid_tenant" });
+  }
+  // Fleet / system trees that a bare acmi:{id}: namespace would have collided with (review M1).
+  const fleet = ["acmi:agent:", "acmi:work:", "acmi:registry:", "acmi:bus:", "acmi:thread:", "acmi:madez:", "lm:oauth:", "acmi:inbox:"];
+  for (const id of ["agentx", "work-1", "registry2", "bus-a", "notion-sync", "abc"]) {
+    for (const p of keyPrefixes(id)) for (const f of fleet) assert.ok(!p.startsWith(f) && !f.startsWith(p), `${p} vs ${f}`);
+  }
+  // Distinct tenants never share or nest prefixes.
+  const [a] = keyPrefixes("abc");
+  const [b] = keyPrefixes("abc-d");
+  assert.ok(!b.startsWith(a) && !a.startsWith(b));
 });
 
 // ---------- registry ----------
@@ -54,7 +75,8 @@ test("createTenant: registry hash + set, defaults, alias plans", async () => {
   assert.equal(t.id, "acme");
   assert.equal(t.status, "active");
   assert.equal(t.plan, "pro");
-  assert.equal(t.namespace, "acmi:acme:");
+  assert.equal(t.namespace, "t-acme");
+  assert.equal(await redis("HGET", "acmi:cloud:tenant:acme", "namespace"), "t-acme");
   assert.deepEqual(t.key_ids, []);
   assert.equal(await redis("TYPE", "acmi:cloud:tenant:acme"), "hash");
   assert.deepEqual(await redis("SMEMBERS", "acmi:cloud:tenants"), ["acme"]);
@@ -338,4 +360,142 @@ test("no API surface returns a secret twice; errors never echo input", async () 
   assert.ok(!JSON.stringify(surfaces).includes(secret));
   const e = await createTenant(redis, { id: secret.toLowerCase() }).catch((x) => x);
   assert.ok(e instanceof Error && !e.message.includes(secret.toLowerCase()));
+});
+
+// ---------- review follow-ups (PR #28): races, tamper, half-writes, caps ----------
+
+/**
+ * Runner that holds every caller at `match` until `count` callers have arrived,
+ * so read-then-write races interleave deterministically.
+ */
+function gated(base, match, count = 2) {
+  let open;
+  const gate = new Promise((res) => (open = res));
+  let seen = 0;
+  return async (...args) => {
+    if (match(args)) {
+      const out = await base(...args);
+      if (++seen === count) open();
+      await gate;
+      return out;
+    }
+    return base(...args);
+  };
+}
+
+test("M2: concurrent delete vs resume cannot resurrect a tenant (both orders)", async () => {
+  for (const order of ["delete-first", "active-first"]) {
+    const base = createMemoryRedis();
+    await createTenant(base, { id: "lazarus" });
+    const { key } = await createKey(base, "lazarus");
+    await setStatus(base, "lazarus", "suspended");
+    const slow = gated(base, (a) => a[0] === "HGETALL" && a[1] === "acmi:cloud:tenant:lazarus");
+    const del = () => setStatus(slow, "lazarus", "deleted");
+    const act = () => setStatus(slow, "lazarus", "active");
+    const later = (fn) => new Promise((r) => setTimeout(r, 5)).then(fn);
+    await Promise.allSettled(order === "delete-first" ? [del(), later(act)] : [act(), later(del)]);
+    const t = await getTenant(base, "lazarus");
+    assert.equal(t.status, "deleted", order);
+    assert.ok(t.deleted_at, order);
+    assert.equal(await verifyKey(base, key), null, `${order}: keys stay dead`);
+    await assert.rejects(setStatus(base, "lazarus", "active"), { code: "invalid_status" });
+  }
+});
+
+test("M2: deleted_at is write-once and wins over a stray status write", async () => {
+  const redis = await withTenant();
+  const { key } = await createKey(redis, "acme");
+  const d1 = await setStatus(redis, "acme", "deleted");
+  const d2 = await setStatus(redis, "acme", "deleted");
+  assert.equal(d2.deleted_at, d1.deleted_at, "re-delete keeps the first deleted_at");
+  await redis("HSET", "acmi:cloud:tenant:acme", "status", "active"); // a racing writer that lost
+  assert.equal((await getTenant(redis, "acme")).status, "deleted");
+  assert.equal(await verifyKey(redis, key), null);
+});
+
+test("L1: concurrent rotations never leave a longer grace than the shortest", async () => {
+  const base = createMemoryRedis();
+  await createTenant(base, { id: "alpha" });
+  const a = await createKey(base, "alpha");
+  const slow = gated(base, (x) => x[0] === "HGETALL" && x[1] === `acmi:cloud:key:${a.keyid}`);
+  const [x, y] = await Promise.all([
+    rotateKey(slow, "alpha", a.keyid, { graceMs: 0 }),
+    new Promise((r) => setTimeout(r, 5)).then(() => rotateKey(slow, "alpha", a.keyid, { graceMs: 30 * 86400000 })),
+  ]);
+  assert.ok(y.previous_expires_at <= x.previous_expires_at + 10, "the 30d rotation reports the clamped grace");
+  assert.equal(await verifyKey(base, a.key), null, "graceMs:0 won: old key is dead");
+  const meta = (await listKeys(base, "alpha")).find((k) => k.keyid === a.keyid);
+  assert.equal(meta.status, "expired");
+  assert.ok(meta.expires_at <= Date.now());
+  // Even a raw HSET of a later expires_at (a lost racer's mirror write) cannot extend it.
+  await base("HSET", `acmi:cloud:key:${a.keyid}`, "expires_at", String(Date.now() + 86400000));
+  assert.equal(await verifyKey(base, a.key), null);
+});
+
+test("L2: verifyKey requires keyid membership in the tenant's key set", async () => {
+  const redis = await withTenant("alpha");
+  await createTenant(redis, { id: "bravo" });
+  const a = await createKey(redis, "alpha");
+  await redis("HSET", `acmi:cloud:key:${a.keyid}`, "tenant", "bravo"); // raw tamper
+  assert.equal(await verifyKey(redis, a.key), null, "not in bravo's set");
+  await redis("HSET", `acmi:cloud:key:${a.keyid}`, "tenant", "alpha");
+  assert.ok(await verifyKey(redis, a.key));
+  await redis("SREM", "acmi:cloud:tenant:alpha:keys", a.keyid);
+  assert.equal(await verifyKey(redis, a.key), null, "removed from own set");
+});
+
+test("L4: a half-written create fails closed, then a retry completes it", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 13) });
+  const redis = createMemoryRedis();
+  // Crash after the claim, before the record write.
+  await redis("HSETNX", "acmi:cloud:tenant:zombie", "claim", `${Date.now()}:deadbeef`);
+  assert.equal(await getTenant(redis, "zombie"), null, "unfinished record is not a tenant");
+  await assert.rejects(createKey(redis, "zombie"), { code: "not_found" });
+  await assert.rejects(createTenant(redis, { id: "zombie" }), { code: "tenant_exists" }, "claim still fresh: maybe in flight");
+  t.mock.timers.tick(30001);
+  const z = await createTenant(redis, { id: "zombie", name: "Zombie", plan: "pro" });
+  assert.equal(z.status, "active");
+  assert.deepEqual(await getTenant(redis, "zombie"), z);
+  assert.deepEqual((await listTenants(redis)).map((x) => x.id), ["zombie"]);
+  await assert.rejects(createTenant(redis, { id: "zombie" }), { code: "tenant_exists" }, "complete now");
+
+  // Legacy shape from the old claim field (id only, no status) is also recoverable.
+  await redis("HSETNX", "acmi:cloud:tenant:legacy", "id", "legacy");
+  assert.equal(await getTenant(redis, "legacy"), null);
+  assert.equal((await createTenant(redis, { id: "legacy" })).status, "active");
+
+  // Crash after the record write, before SADD: retry repairs the index, still no overwrite.
+  await createTenant(redis, { id: "orphan", name: "Orig" });
+  await redis("SREM", "acmi:cloud:tenants", "orphan");
+  await assert.rejects(createTenant(redis, { id: "orphan", name: "New" }), { code: "tenant_exists" });
+  assert.ok((await listTenants(redis)).some((x) => x.id === "orphan"));
+  assert.equal((await getTenant(redis, "orphan")).name, "Orig");
+});
+
+test("L4: concurrent creates still yield exactly one winner whose record sticks", async () => {
+  const redis = createMemoryRedis();
+  const res = await Promise.allSettled(Array.from({ length: 20 }, (_, i) => createTenant(redis, { id: "racer", name: `n${i}` })));
+  const ok = res.filter((x) => x.status === "fulfilled");
+  assert.equal(ok.length, 1);
+  assert.equal((await getTenant(redis, "racer")).name, ok[0].value.name);
+  for (const x of res.filter((r) => r.status === "rejected")) assert.equal(x.reason.code, "tenant_exists");
+});
+
+test("Info: live keys per tenant are capped; revoked keys free a slot; rotate is allowed at the cap", async () => {
+  const redis = await withTenant();
+  assert.equal(MAX_LIVE_KEYS, 20);
+  const keys = [];
+  for (let i = 0; i < MAX_LIVE_KEYS; i++) keys.push(await createKey(redis, "acme"));
+  await assert.rejects(createKey(redis, "acme"), { code: "key_limit" });
+  const r = await rotateKey(redis, "acme", keys[0].keyid, { graceMs: 0 });
+  assert.ok(await verifyKey(redis, r.key), "rotation replaces, so it fits at the cap");
+  // A grace rotation at the cap may overshoot by one (old key in grace); a second one is refused.
+  assert.ok(await rotateKey(redis, "acme", keys[1].keyid, { graceMs: 60000 }));
+  await assert.rejects(rotateKey(redis, "acme", keys[3].keyid, { graceMs: 60000 }), { code: "key_limit" });
+  await revokeKey(redis, "acme", keys[2].keyid);
+  await assert.rejects(createKey(redis, "acme"), { code: "key_limit" }, "21 live -> 20 live: still at the cap");
+  await revokeKey(redis, "acme", keys[4].keyid);
+  assert.ok(await createKey(redis, "acme"), "a revoked key frees a slot");
+  await createTenant(redis, { id: "beta" });
+  assert.ok(await createKey(redis, "beta"), "cap is per tenant");
 });
