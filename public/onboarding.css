@@ -1,0 +1,102 @@
+/* onboarding.css: layout for /onboarding only. Every color, radius and font
+   comes from ds/tokens/logmem.css; components are the lm-* classes in
+   ds/components/bundle.css. No new colors here. */
+
+[hidden]{display:none!important}
+.ob-header{background:var(--surface);border-bottom:1px solid var(--border)}
+.ob-header-in{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
+.ob-logo{display:flex}
+.ob-logo img{height:28px;width:auto}
+.ob-count{margin-left:auto;font-size:13px;color:var(--text-muted)}
+
+.ob-layout{display:flex;flex-wrap:wrap;gap:32px;padding-top:40px;padding-bottom:64px}
+.ob-rail{flex:1 1 240px;max-width:280px;min-width:0}
+.ob-main{flex:999 1 560px;min-width:0}
+
+/* step rail */
+.ob-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ob-step{width:100%;display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:var(--radius-md);border:0;cursor:pointer;font:inherit;color:var(--text);background:transparent;text-align:left}
+.ob-step:hover:not(:disabled){background:var(--surface-sunken)}
+.ob-step[aria-current]{background:var(--brand-subtle)}
+.ob-step:disabled{cursor:not-allowed;color:var(--text-subtle)}
+.ob-dot{width:26px;height:26px;flex:none;display:grid;place-items:center;border-radius:50%;font-size:12px;font-weight:600;border:1.5px solid var(--border-strong);color:var(--text-subtle)}
+.ob-dot[data-s="done"]{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
+.ob-dot[data-s="cur"]{border:2px solid var(--brand);color:var(--brand)}
+.ob-step-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ob-step-title{font-size:14px;font-weight:600}
+.ob-step-sub{font-size:12px;color:var(--text-subtle)}
+.ob-rail-now{display:none;margin:8px 0 0;font-size:13px;color:var(--text-muted)}
+
+/* step cards */
+.ob-card{padding:28px;display:flex;flex-direction:column;gap:20px}
+.ob-card h1{font-size:22px;line-height:28px;margin:0 0 6px}
+.ob-card h1:focus{outline:none}
+.ob-card h2{margin:0}
+.ob-lede{margin:0;color:var(--text-muted);max-width:68ch}
+.ob-note{margin:0;font-size:13px;line-height:19px;color:var(--text-subtle);max-width:72ch}
+.ob-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:16px}
+.ob-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;color:var(--text-muted);font-size:14px}
+.ob-linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--link);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.ob-main a.lm-btn{text-decoration:none}
+
+/* step 1: two ways to run it */
+.ob-choice{padding:20px;display:flex;flex-direction:column;gap:12px}
+.ob-choice--rec{border-color:var(--brand)}
+.ob-choice .lm-row{margin-top:auto}
+
+/* plan picker */
+.ob-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px;border:0;margin:0;padding:0;min-width:0}
+.ob-plans--row{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
+.ob-plan{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);cursor:pointer;min-width:0}
+.ob-plan:hover{border-color:var(--border-strong)}
+.ob-plan:has(input:checked){border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+.ob-plan:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:2px}
+.ob-plan .lm-check{font-weight:600}
+.ob-plan-body{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ob-plans--row .ob-plan-body{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px 24px}
+.ob-price{font-family:var(--font-display);font-weight:800;font-size:28px;line-height:32px;letter-spacing:-.02em}
+.ob-price small{font-family:var(--font-sans);font-size:13px;font-weight:400;letter-spacing:0;color:var(--text-muted)}
+.ob-plan .lm-kv{font-size:12.5px;gap:4px 12px}
+.ob-plan-extra{margin:0;font-size:12.5px;line-height:18px;color:var(--text-muted)}
+.ob-oss{display:flex;gap:8px 16px;align-items:center;flex-wrap:wrap;padding:12px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-md);font-size:14px}
+
+/* detect */
+.ob-agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:8px;border:0;padding:0;margin:0;min-width:0}
+.ob-agents legend{padding:0;margin-bottom:8px;font-size:12px;font-weight:500}
+.ob-agent{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-md);min-height:40px;flex-wrap:wrap;min-width:0}
+.ob-agent[data-found]{border-color:var(--success)}
+.ob-agent .lm-badge{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.ob-countdown{font-family:var(--font-mono);font-size:12px;color:var(--text-subtle)}
+.ob-results{list-style:none;margin:6px 0 0;padding:0;display:flex;gap:6px 16px;flex-wrap:wrap}
+.ob-results li{display:inline-flex;gap:6px;align-items:center}
+
+/* ACMI toggles */
+.ob-toggle{display:flex;gap:12px;align-items:flex-start;padding:16px;border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer}
+.ob-toggle .lm-switch{margin-top:2px}
+.ob-toggle-text{display:flex;flex-direction:column;gap:4px}
+
+/* connect */
+.ob-snip-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ob-tabpanel{display:flex;flex-direction:column;gap:8px;padding-top:4px}
+.ob-tabpanel:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--radius-sm)}
+
+.ob-note--muted{color:var(--text-muted)}
+.ob-tags{margin-bottom:6px}
+.ob-form{gap:16px}
+.ob-narrow{max-width:420px}
+.ob-seg{align-self:flex-start;max-width:100%}
+.ob-small{font-size:13px}
+.ob-legend-sub{font-weight:400}
+.ob-events{padding:8px 20px}
+.ob-av1{background:var(--viz-1)}.ob-av2{background:var(--viz-2)}
+
+@media (max-width:767px){
+  .ob-layout{gap:16px;padding-top:20px;padding-bottom:40px}
+  .ob-rail{max-width:none;flex-basis:100%}
+  .ob-steps{flex-direction:row;flex-wrap:wrap;gap:6px}
+  .ob-step{width:auto;padding:4px;border-radius:50%}
+  .ob-step-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .ob-rail-now{display:block}
+  .ob-card{padding:20px 16px}
+  .wrap.ob-layout,.wrap.ob-header-in{padding-left:16px;padding-right:16px}
+}

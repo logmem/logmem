@@ -72,6 +72,13 @@ export function createMemoryRedis() {
       const re = globToRegex(pattern);
       return [...data.keys()].filter((k) => re.test(k)).sort();
     },
+    INCR: (k) => {
+      const e = get(k, "string");
+      const n = (e ? Number(e.value) : 0) + 1;
+      if (!Number.isInteger(n)) throw new Error("ERR value is not an integer or out of range");
+      data.set(k, { type: "string", value: String(n) });
+      return n;
+    },
     EXPIRE: (k) => (data.has(k) ? 1 : 0),
     TTL: (k) => (data.has(k) ? -1 : -2),
     DBSIZE: () => data.size,
