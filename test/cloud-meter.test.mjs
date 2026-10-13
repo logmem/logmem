@@ -100,10 +100,14 @@ test("checkQuota: free plan grace boundary (10k adds, 11k with grace, then refus
   assert.deepEqual(await at(11000), { ok: false, code: "quota_exceeded", used: 11000, limit: 10000 });
   assert.deepEqual(await at(50000), { ok: false, code: "quota_exceeded", used: 50000, limit: 10000 });
 
-  // n > 1: a batch that would cross the grace edge is refused whole.
-  await redis("SET", "acmi:cloud:meter:acme:202610:add", "10990");
+  // n > 1: a batch that would cross the grace edge is refused whole, and not reserved.
+  const addKey = "acmi:cloud:meter:acme:202610:add";
+  await redis("SET", addKey, "10990");
   assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT, n: 10 })).ok, true);
+  assert.equal(await redis("GET", addKey), "11000", "a batch that fits is reserved");
+  await redis("SET", addKey, "10990");
   assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT, n: 11 })).ok, false);
+  assert.equal(await redis("GET", addKey), "10990", "a refused batch does not increment");
 });
 
 test("checkQuota: grace margin is exact integer math for awkward limits", async () => {
@@ -162,28 +166,79 @@ test("checkQuota: limit null = unlimited (enterprise)", async () => {
   assert.deepEqual(await checkQuota(redis, "acme", "add", plan, { now: OCT }), { ok: true, used: 999999999, limit: null, grace: false });
 });
 
-test("checkQuota: does not count; validates inputs", async () => {
+test("checkQuota: refusing plans reserve; paid plans, reads, and bad input do not", async () => {
   const redis = createMemoryRedis();
-  const plan = planFor("free");
-  await checkQuota(redis, "acme", "add", plan, { now: OCT });
-  assert.equal((await redis("KEYS", "*")).length, 0);
-  await assert.rejects(checkQuota(redis, "admin", "add", plan), { code: "invalid_tenant" });
-  await assert.rejects(checkQuota(redis, "acme", "delete", plan), { code: "invalid_op" });
+  const free = planFor("free");
+  await assert.rejects(checkQuota(redis, "admin", "add", free), { code: "invalid_tenant" });
+  await assert.rejects(checkQuota(redis, "acme", "delete", free), { code: "invalid_op" });
   await assert.rejects(checkQuota(redis, "acme", "add", null), { code: "invalid_plan" });
   await assert.rejects(checkQuota(redis, "acme", "add", { limits: { add: -1 } }), { code: "invalid_plan" });
-  await assert.rejects(checkQuota(redis, "acme", "add", plan, { n: 0 }), { code: "invalid_count" });
+  await assert.rejects(checkQuota(redis, "acme", "add", free, { n: 0 }), { code: "invalid_count" });
+  assert.equal((await redis("KEYS", "*")).length, 0, "bad input writes nothing");
+
+  const paid = planFor("pro");
+  await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");
+  await checkQuota(redis, "acme", "add", paid, { now: OCT });
+  await checkQuota(redis, "acme", "read", free, { now: OCT, n: 5 });
+  assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:add"), "10", "a billed plan is not reserved");
+  assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:read"), null, "reads are not reserved");
+
+  const ok = await checkQuota(redis, "acme", "add", free, { now: OCT });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.used, 10, "used is the count before this reserve");
+  assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:add"), "11");
+  assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:ops_total"), "1");
 });
 
-test("meter -> checkQuota end to end on the free plan", async () => {
+test("checkQuota: a refusing plan reserves atomically and stops at the grace cap", async () => {
   const redis = createMemoryRedis();
   const plan = { ...planFor("free"), limits: { add: 10, read: null, recall: 10 } };
   let accepted = 0;
   for (let i = 0; i < 20; i++) {
     const q = await checkQuota(redis, "acme", "add", plan, { now: OCT });
-    if (!q.ok) break;
-    await meter(redis, "acme", "add", 1, { now: OCT });
+    if (!q.ok) {
+      assert.equal(q.code, "quota_exceeded");
+      break;
+    }
     accepted++;
   }
   assert.equal(accepted, 11, "10 + 10% grace");
   assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11);
+  assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).code, "quota_exceeded");
+  assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11, "a refusal does not increment");
+
+  await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");
+  const pair = await Promise.all([
+    checkQuota(redis, "acme", "add", plan, { now: OCT }),
+    checkQuota(redis, "acme", "add", plan, { now: OCT }),
+  ]);
+  assert.equal(pair.filter((r) => r.ok).length, 1, "only one of two concurrent reserves fits");
+  assert.equal(pair.filter((r) => r.code === "quota_exceeded").length, 1);
+  assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:add"), "11");
+});
+
+test("meter: a refusing plan re-checks and will not pass the grace cap", async () => {
+  const redis = createMemoryRedis();
+  const plan = { ...planFor("free"), limits: { add: 10, read: null, recall: 10 } };
+  let accepted = 0;
+  for (let i = 0; i < 20; i++) {
+    try {
+      await meter(redis, "acme", "add", 1, { now: OCT, plan });
+      accepted++;
+    } catch (e) {
+      assert.equal(e.code, "quota_exceeded");
+      break;
+    }
+  }
+  assert.equal(accepted, 11);
+  await assert.rejects(meter(redis, "acme", "add", 1, { now: OCT, plan }), { code: "quota_exceeded" });
+  assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11);
+
+  await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");
+  const pair = await Promise.allSettled([
+    meter(redis, "acme", "add", 1, { now: OCT, plan }),
+    meter(redis, "acme", "add", 1, { now: OCT, plan }),
+  ]);
+  assert.equal(pair.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:add"), "11");
 });

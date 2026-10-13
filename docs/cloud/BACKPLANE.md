@@ -44,14 +44,17 @@ control plane (acmi-cloud CLI + API): tenants, plans, keys, provisioning, quotas
   - The registry stores only `sha256(secret)` and metadata, keyed by `keyid`.
   - Keys are created, listed (metadata only), rotated (old and new valid for a grace window) and revoked.
   - Compares use `timingSafeEqual`.
-- **Plans** are data, not code: `cloud/plans.json`. Default numbers follow the PRD (Starter $49, Pro $99,
-  Scale $199). Quotas are per op per month, and the file is easy to change.
+- **Plans** are data, not code: `cloud/plans.json`. Numbers follow docs/PRICING.md (Mikey's ruling of
+  2026-10-13): Free $0, Dev $19, Pro $49, Team $99, Agency $199, Enterprise contact. The PRD names are
+  aliases only (`starter` → `dev`, `scale` → `agency`). Quotas are per op per month, and the file is easy to change.
 
 ### 2. Metering and quotas (`cloud/meter`)
 - **Ops:** `add` (any write), `read` (any read command), `recall` (vector search), `ops_total`.
 - **Counter:** `INCRBY acmi:cloud:meter:{tenant}:{yyyymm}:{op}`, with the TTL at 400 days.
 - **Quotas:** soft cap at 100%, plus a 10% grace margin. After that, writes are refused with `quota_exceeded` and
-  reads still work. This matches docs/PRICING.md's rule that writes are never dropped silently.
+  reads still work. On Free and Dev (no billed overage) the check and the increment are one atomic reservation,
+  so concurrent callers cannot pass the grace cap; a refusal does not increment. Paid plans bill overage and are
+  not refused. This matches docs/PRICING.md's rule that writes are never dropped silently.
 - **Exports:** a usage summary per tenant per month, for billing later. Billing itself is out of scope (open
   question 1).
 
@@ -117,8 +120,9 @@ control plane (acmi-cloud CLI + API): tenants, plans, keys, provisioning, quotas
    indexer run anywhere.
 2. Which embedding provider and model?
 3. Free-pilot abuse controls.
-4. Pricing. The PRD's $49/$99/$199 and docs/PRICING.md's Free/Dev ladder differ; `plans.json` holds whichever
-   Mikey picks.
+4. Pricing. Decided 2026-10-13: the docs/PRICING.md ladder (Free $0, Dev $19, Pro $49, Team $99, Agency $199,
+   Enterprise contact), encoded in `cloud/plans.json`. The PRD's Starter $49 / Pro $99 / Scale $199 prices are
+   not the ladder; `starter` and `scale` are aliases only.
 5. "Osteo": confirm the name and scope.
 6. Qdrant firewall and `QDRANT_API_KEY` in Infisical (still pending).
 
