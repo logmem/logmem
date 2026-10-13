@@ -8,17 +8,22 @@
 //   - stores under lm:onboard:* on the deployment's own backend
 //     (descriptorFromEnv), and answers 503 when there is none.
 
+import { randomBytes } from "node:crypto";
 import { fromDescriptor, descriptorFromEnv } from "../lib/backend.mjs";
 
 export const KEYS = {
   probe: (code) => `lm:onboard:probe:${code}`,
   // ZSET of live pairing codes. Score is the unix expiry second.
   probeLive: "lm:onboard:probe:live",
+  // Serializes the probe cap. Value is a random holder token, never a code.
+  probeLock: "lm:onboard:lock:probe",
   rate: (ip, bucket = "") => `lm:onboard:rl:${bucket ? `${bucket}:` : ""}${ip}`,
   // One string per signup, EX the retention window. The index score is the
   // unix expiry second; the member is sha256(normalized email).
   waitlistEntry: (field) => `lm:onboard:waitlist:${field}`,
   waitlistIndex: "lm:onboard:waitlist:index",
+  // Serializes the waitlist cap. Value is a random holder token, never an email.
+  waitlistLock: "lm:onboard:lock:waitlist",
 };
 
 /**
@@ -37,6 +42,122 @@ export async function sweepIndex(redis, indexKey, nowSec) {
 
 export const RATE_LIMIT = 10; // requests
 export const RATE_WINDOW_S = 60; // per window
+
+/**
+ * Client-facing 429 for a busy cap lock. Kept apart from the per-IP limiter's
+ * "too many requests" so the two failures are not the same signal.
+ */
+export const LOCK_BUSY_ERROR = "store busy";
+export const LOCK_RETRY_AFTER_S = 1;
+
+/**
+ * Vercel maxDuration on /api/onboarding/probe and /api/onboarding/waitlist.
+ * An isolate can still be inside the locked section until that budget ends,
+ * so the lock TTL has to be longer than this whole window, not just the work
+ * that happens to have run so far.
+ */
+export const ROUTE_MAX_DURATION_S = 10;
+export const LOCK_TTL_S = 30;
+/** Waiters give up well under the route budget and the handler answers 429. */
+export const LOCK_WAIT_MS = 2000;
+
+/** Thrown when a capped write could not take the store lock before its budget ran out. */
+export class StoreLockError extends Error {
+  constructor() {
+    super(LOCK_BUSY_ERROR);
+    this.name = "StoreLockError";
+    this.code = "LOCK_BUSY";
+    this.retryAfter = LOCK_RETRY_AFTER_S;
+  }
+}
+
+/**
+ * Exponential backoff with equal jitter. The floor is half the ceiling, so a
+ * waiter cannot tight-spin SET NX the way a zero-delay pause does.
+ */
+function lockBackoffMs(attempt) {
+  const ceiling = Math.min(120, 20 * 2 ** attempt);
+  const half = ceiling / 2;
+  return Math.floor(half + Math.random() * half);
+}
+
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+/**
+ * Run `fn` while this caller is the only holder of `key` on the shared store.
+ *
+ * The probe and waitlist caps are a read of the live count followed by a
+ * write. Each of those commands is atomic, and the gap between them is not:
+ * overlapping requests can all observe "under the cap" and all insert.
+ * SET key token NX EX is one atomic command on every backend this runner
+ * talks to (REST, TCP, and the in-memory double). The admit (count, then
+ * insert) runs only while holding that key. `fn` receives `{ requireHeld }`,
+ * which re-reads the token and throws StoreLockError when this caller is no
+ * longer the holder. Call it immediately before the insert.
+ *
+ * Release is not an EVAL compare-and-delete. src/lib/redis-native.mjs rejects
+ * EVAL (`translate` throws "unsupported command"; there is no EVAL case), and
+ * src/lib/memory-redis.mjs does the same. src/lib/redis-rest.mjs would forward
+ * the script, but descriptorFromEnv picks TCP or REST per deployment, and the
+ * in-memory double is what tests and local dev run. One release path has to
+ * be commands all three implement, which is GET then DEL, and only DEL when
+ * the value is still this token. That pair is racy if EX fires between the
+ * two commands and a new holder has taken the key. LOCK_TTL_S stays above
+ * ROUTE_MAX_DURATION_S so a live isolate is not still inside `fn` after EX,
+ * and requireHeld refuses the insert when the token has already changed.
+ * EX still drops the key if this process dies without reaching release.
+ *
+ * Acquire and release share one try/finally. If SET throws, the write may
+ * already be stored under this token; the finally block deletes the key when
+ * GET still returns it, then the SET error propagates.
+ *
+ * A busy key is retried with backoff until `waitMs` (LOCK_WAIT_MS, about 2s).
+ * Past that, StoreLockError asks the route for 429 with Retry-After.
+ */
+export async function withStoreLock(redis, key, fn, { ttlS = LOCK_TTL_S, waitMs = LOCK_WAIT_MS } = {}) {
+  const ttl = Number(ttlS);
+  if (!(ttl > ROUTE_MAX_DURATION_S)) throw new Error("lock TTL must outlive the route");
+  const token = randomBytes(16).toString("hex");
+  const deadline = Date.now() + Number(waitMs);
+  let held = false;
+  let setMayHaveLanded = false;
+  const release = async () => {
+    try {
+      const cur = await redis("GET", key);
+      if (cur === token) await redis("DEL", key);
+    } catch {
+      // EX drops the key if this process never comes back.
+    }
+  };
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const ok = await redis("SET", key, token, "NX", "EX", String(ttl));
+        if (ok === "OK") {
+          held = true;
+          break;
+        }
+      } catch (e) {
+        setMayHaveLanded = true;
+        throw e;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(lockBackoffMs(attempt), remaining));
+    }
+    if (!held) throw new StoreLockError();
+    return await fn({
+      async requireHeld() {
+        const cur = await redis("GET", key);
+        if (cur !== token) throw new StoreLockError();
+      },
+    });
+  } finally {
+    if (held || setMayHaveLanded) await release();
+  }
+}
 
 /** The deployment's own Redis runner, or null (callers answer 503). */
 export function serverRedis(env = process.env) {
