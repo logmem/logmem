@@ -10,6 +10,7 @@
 import { lmKey, lmIndexKey, acmiKey, acmiIndexKey, PROTECTED } from "./keys.mjs";
 import { asEntry, normalizeKind, stageFromStatus } from "./vocab.mjs";
 import { isProtectedKey } from "../lib/helpers.mjs";
+import { unreadableTypeWarning } from "../lib/redact.mjs";
 
 export function normTs(n) {
   // ISO / date strings ("2026-10-12T20:52:00Z", "2026-10-12 20:52Z") were
@@ -98,10 +99,19 @@ async function readLegacyDoc(redis, key) {
  * Read a legacy acmi:* timeline as {score, member} rows whatever its type.
  * ACMI left some timelines as a JSON array in a STRING (45 keys in the
  * 2026-10-11 madez dry run) and a few as LISTs; ZRANGE on those throws
- * WRONGTYPE and used to fail the whole read. Unknown types read as empty.
+ * WRONGTYPE and used to fail the whole read. A missing key (type none) reads
+ * as empty. Any other type reads as empty and carries an unreadable-type
+ * warning so a missing log and an unreadable one do not look the same.
  */
+function markUnreadable(type) {
+  const rows = [];
+  Object.defineProperty(rows, "unreadableType", { value: type, enumerable: false });
+  return rows;
+}
+
 async function readLegacyLog(redis, key) {
   const t = await typeOf(redis, key);
+  if (t === "none") return [];
   if (t === "zset") return parseZ(await redis("ZRANGE", key, 0, -1, "WITHSCORES"));
   let items = [];
   if (t === "string") {
@@ -110,7 +120,7 @@ async function readLegacyLog(redis, key) {
   } else if (t === "list") {
     items = (await redis("LRANGE", key, 0, -1)).map(tryParse);
   } else {
-    return [];
+    return markUnreadable(t);
   }
   return items
     .filter((e) => e != null && e !== "")
@@ -122,11 +132,12 @@ async function readLegacyLog(redis, key) {
 
 /**
  * A legacy job with only an ACMI `status` gets the LogMem `stage` it maps
- * to (vocab STAGE_FROM_STATUS). A stage written in LogMem always wins, and
- * `status` itself is kept as-is.
+ * to (vocab STAGE_FROM_STATUS), marked `stage_from: "acmi_status"`. A stage
+ * written in LogMem always wins, and then the marker is absent. `status`
+ * itself is kept as-is.
  */
-function legacyStage(ns, old) {
-  if (ns !== "job" || old.stage != null) return {};
+function legacyStage(ns, old, own = {}) {
+  if (ns !== "job" || old.stage != null || own.stage != null) return {};
   const stage = stageFromStatus(old.status);
   return stage ? { stage, stage_from: "acmi_status" } : {};
 }
@@ -196,7 +207,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       const own = await readObject(redis, k(ns, id, "now"));
       if (!compat) return own;
       const old = await readObject(redis, legacy(ns, id, "now"));
-      const merged = { ...old, ...legacyStage(ns, old), ...own };
+      const merged = { ...old, ...legacyStage(ns, old, own), ...own };
       return merged;
     },
     async setNow(ns, id, fields) {
@@ -266,10 +277,12 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       const min = sinceMs != null ? normTs(sinceMs) : "-inf";
       const max = untilMs != null ? normTs(untilMs) : "+inf";
       const rows = parseZ(await redis("ZRANGEBYSCORE", k(ns, id, "log"), min, max, "WITHSCORES"));
+      let unreadableType = null;
       if (compat) {
         // Legacy scores may be in s/us/ns, so scan the whole key and filter
         // after normalising (a score-range query would miss mixed units).
         const old = await readLegacyLog(redis, legacy(ns, id, "log"));
+        if (old.unreadableType) unreadableType = old.unreadableType;
         // After the migration copy, an entry exists in both places. The lm
         // copy wins; the legacy twin (same ts + trail + summary) is skipped.
         const sig = (e) => `${normTs(e.ts)}|${e.trail ?? ""}|${e.summary ?? ""}`;
@@ -297,6 +310,12 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       entries = entries.map((x) => x.e);
       if (reverse) entries.reverse();
       if (limit != null) entries = entries.slice(0, limit);
+      if (unreadableType) {
+        Object.defineProperty(entries, "warnings", {
+          value: [unreadableTypeWarning(unreadableType)],
+          enumerable: false,
+        });
+      }
       return entries;
     },
     async logSize(ns, id) {

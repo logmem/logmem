@@ -78,7 +78,7 @@ test("mixed units: ns-scored legacy events sort and filter as ms", async () => {
 test("feed: one unreadable log is reported in read_warnings, the rest still merge", async () => {
   const redis = createMemoryRedis();
   await redis("ZADD", `acmi:${S}:thread:good:timeline`, 1791700000000, JSON.stringify(ev(1791700000000, "good")));
-  // A legacy timeline key holding a SET is a type nothing reads: empty, no error.
+  // A legacy timeline key holding a SET cannot be read: empty, with a warning.
   await redis("SADD", `acmi:${S}:thread:weird:timeline`, "x");
   // An lm log key holding the wrong type throws WRONGTYPE from Redis itself.
   await redis("SET", `lm:${S}:channel:broken:log`, "x");
@@ -87,19 +87,31 @@ test("feed: one unreadable log is reported in read_warnings, the rest still merg
   assert.equal(feed.ok, true);
   assert.ok(feed.entries.some((e) => e.summary === "good"));
   assert.ok(Array.isArray(feed.read_warnings), "bad refs are reported");
-  assert.deepEqual(feed.read_warnings.map((w) => w.ref).sort(), ["channel:broken", "channel:undefined"]);
+  assert.deepEqual(
+    feed.read_warnings.map((w) => `${w.ref}:${w.code}`).sort(),
+    ["channel:broken:read_failed", "channel:undefined:read_failed", "channel:weird:unreadable_type"],
+  );
+  for (const w of feed.read_warnings) {
+    assert.equal(w.error, undefined, "raw error text is not a warning field");
+    assert.equal(typeof w.message, "string");
+  }
 });
 
 test("acmi_cat compat: a WRONGTYPE timeline no longer fails the whole merge", async () => {
   const redis = createMemoryRedis();
   await redis("ZADD", `acmi:${S}:thread:good:timeline`, 1791700000000, JSON.stringify(ev(1791700000000, "good")));
   await redis("SET", `acmi:${S}:work:stringy:timeline`, JSON.stringify([ev(1791700002000, "stringy")]));
+  await redis("HSET", `acmi:${S}:work:hashed:timeline`, "a", "b");
   const lm = createLogmem({ redis, space: S, surface: "test", sessionId: "s1", defaultAgent: "relay", compat: true });
   await redis("SET", `lm:${S}:job:broken:log`, "x");
-  const r = await call(lm, "acmi_cat", { keys: ["thread:good", "work:stringy", "work:broken", "work:undefined"] });
+  const r = await call(lm, "acmi_cat", { keys: ["thread:good", "work:stringy", "work:hashed", "work:broken", "work:undefined"] });
   assert.equal(r.ok, true);
   assert.deepEqual(r.events.map((e) => e.summary).sort(), ["good", "stringy"]);
-  assert.deepEqual(r.read_warnings?.map((w) => w.key).sort(), ["work:broken", "work:undefined"]);
+  assert.deepEqual(
+    r.read_warnings?.map((w) => `${w.key}:${w.code}`).sort(),
+    ["work:broken:read_failed", "work:hashed:unreadable_type", "work:undefined:read_failed"],
+  );
+  for (const w of r.read_warnings) assert.equal(w.error, undefined);
 });
 
 // ─── A1: legacy ACMI status -> LogMem stage (decision 2026-10-13) ────────
@@ -123,6 +135,9 @@ test("A1: legacy job status maps to stage on compat read; LogMem stage wins; sta
   assert.equal(await stage("waiting"), "open");
   assert.equal(await stage("weird"), undefined, "unknown statuses map to nothing");
   assert.equal(await stage("overridden"), "active", "a LogMem stage wins over the legacy status");
+  const over = await st.getNow("job", "overridden");
+  assert.equal(Object.hasOwn(over, "stage_from"), false, "stage_from is absent when the LogMem stage wins");
+  assert.equal((await st.getNow("job", "culled")).stage_from, "acmi_status", "a derived stage keeps the marker");
   assert.equal((await st.getNow("job", "culled")).status, "archived", "original status kept");
   assert.equal(await redis("HGET", `acmi:${S}:work:culled:signals`, "status"), "archived", "acmi:* untouched");
   // Channels and agents never get a derived stage.
@@ -143,4 +158,73 @@ test("A1: logmem_jobs hides done by default; include_done and stage=done show th
   assert.deepEqual((await call(lm, "logmem_jobs", { include_done: true })).jobs, ["a", "b", "c", "d"]);
   assert.deepEqual((await call(lm, "logmem_jobs", { stage: "done" })).jobs, ["a", "c"]);
   assert.deepEqual((await call(lm, "logmem_jobs", { stage: "blocked" })).jobs, ["d"]);
+  assert.equal(def.read_warnings, undefined, "a clean jobs read has no warnings");
+});
+
+test("legacy timeline: an unreadable Redis type warns; a missing key does not", async () => {
+  const redis = createMemoryRedis();
+  await redis("SADD", `acmi:${S}:work:weird:timeline`, "x");
+  await redis("HSET", `acmi:${S}:thread:hashed:timeline`, "k", "v");
+  const st = createStore(redis, { space: S, compat: true });
+  const weird = await st.readLog("job", "weird");
+  const hashed = await st.readLog("channel", "hashed");
+  const missing = await st.readLog("job", "no-such-job");
+  assert.deepEqual([...weird], []);
+  assert.deepEqual([...hashed], []);
+  assert.deepEqual([...missing], []);
+  assert.equal(weird.warnings[0].code, "unreadable_type");
+  assert.match(weird.warnings[0].message, /type 'set'/);
+  assert.equal(hashed.warnings[0].code, "unreadable_type");
+  assert.match(hashed.warnings[0].message, /type 'hash'/);
+  assert.equal(missing.warnings, undefined, "a missing timeline is empty with no warning");
+  assert.equal(await st.logSize("job", "weird"), 0);
+  const lm = createLogmem({ redis, space: S, surface: "test", sessionId: "s1", defaultAgent: "relay", compat: true });
+  const view = await call(lm, "logmem_view", { ref: "job:weird" });
+  assert.deepEqual(view.log, []);
+  assert.equal(view.read_warnings[0].code, "unreadable_type");
+  assert.equal(view.read_warnings[0].ref, "job:weird");
+  const open = await call(lm, "logmem_open", { job: "weird" });
+  assert.equal(open.read_warnings[0].code, "unreadable_type");
+});
+
+test("read_warnings use a fixed code and never carry a Redis REST token or endpoint", async () => {
+  const token = "upstashRestToken_DoNotLeak_99";
+  const endpoint = "https://madez-tenant.upstash.io/bridge";
+  const host = "madez-tenant.upstash.io";
+  const redis = createMemoryRedis();
+  await redis("SADD", `lm:${S}:job:list`, "ok", "bad");
+  await redis("HSET", `lm:${S}:job:ok:now`, "stage", JSON.stringify("active"));
+  await redis("ZADD", `acmi:${S}:thread:good:timeline`, 1791700000000, JSON.stringify(ev(1791700000000, "good")));
+  const leak = `Redis REST HGETALL: ERR ${endpoint} Bearer ${token} token=${token} at ${host}`;
+  const wrapped = async (cmd, ...args) => {
+    const key = String(args[0] ?? "");
+    if (key.includes(":job:bad:") || key.includes(":work:bad:") || key.includes(":channel:leaky:") || key.includes(":thread:leaky:")) {
+      throw new Error(leak);
+    }
+    return redis(cmd, ...args);
+  };
+  const lm = createLogmem({ redis: wrapped, space: S, surface: "test", sessionId: "s1", defaultAgent: "relay", compat: true });
+  const feed = await call(lm, "logmem_feed", { refs: ["channel:good", "channel:leaky"] });
+  const jobs = await call(lm, "logmem_jobs", { stage: "active" });
+  const cat = await call(lm, "acmi_cat", { keys: ["thread:good", "thread:leaky"] });
+  const def = await call(lm, "logmem_jobs", {});
+  assert.deepEqual(feed.entries.map((e) => e.summary), ["good"]);
+  assert.equal(feed.read_warnings[0].ref, "channel:leaky");
+  assert.equal(feed.read_warnings[0].code, "read_failed");
+  assert.deepEqual(jobs.jobs, ["ok"], "a failed getNow does not match the stage filter");
+  assert.equal(jobs.read_warnings[0].ref, "job:bad");
+  assert.equal(jobs.read_warnings[0].code, "read_failed");
+  assert.ok(def.jobs.includes("bad"), "a failed getNow is not treated as done");
+  assert.equal(def.hidden_done, 0);
+  assert.equal(def.read_warnings[0].code, "read_failed");
+  assert.equal(cat.read_warnings[0].key, "thread:leaky");
+  assert.equal(cat.read_warnings[0].code, "read_failed");
+  for (const body of [feed, jobs, cat, def]) {
+    const blob = JSON.stringify(body);
+    assert.ok(!blob.includes(token), blob);
+    assert.ok(!blob.includes(endpoint), blob);
+    assert.ok(!blob.includes(host), blob);
+    assert.ok(!blob.includes("Bearer"), blob);
+    assert.ok(!body.read_warnings.some((w) => "error" in w));
+  }
 });

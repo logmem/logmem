@@ -26,9 +26,9 @@ dry run. Regression tests: `test/acmi-known-failures.test.mjs` (each fails on `1
 
 | ACMI failure | LogMem before | Now |
 |---|---|---|
-| String-typed timelines (45 keys) → `WRONGTYPE`, whole read fails | `readLog`/`logSize` compat threw | **Fixed.** Legacy timelines read as ZSET, JSON-array STRING or LIST; other types read empty |
+| String-typed timelines (45 keys) → `WRONGTYPE`, whole read fails | `readLog`/`logSize` compat threw | **Fixed.** Legacy timelines read as ZSET, JSON-array STRING or LIST. A missing key reads empty. Any other Redis type reads empty and warns `unreadable_type` |
 | Hash-typed legacy profile (1 key) | `getWho`/`getRecap` compat threw | **Fixed.** Legacy docs read as STRING or HASH |
-| One bad key fails the whole multi-stream read (`acmi_cat` → Redis REST 500) | Same in `logmem_feed` and compat `acmi_cat` | **Fixed.** Per-ref errors go to `read_warnings`; the rest still merge |
+| One bad key fails the whole multi-stream read (`acmi_cat` → Redis REST 500) | Same in `logmem_feed` and compat `acmi_cat` | **Fixed.** Per-ref errors go to `read_warnings` as a fixed code plus a sanitized message (no Redis token or endpoint URL); the rest still merge. `logmem_jobs` reports a per-job `getNow` failure the same way |
 | ISO-string `ts` → stored at 1970, lost from every window | `normTs("2026-…")` returned 0 | **Fixed.** Date strings parse; numeric strings unchanged |
 | ns → ms off by 1 ms (float division) | `floor(x / 1e6)` could land 1 ms early | **Fixed.** Rounded to µs first |
 | Empty-string timeline member (seen on `thread:agent-coordination`) | Shown as a blank entry | **Fixed.** Blank members skipped in reads and counts |
