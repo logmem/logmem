@@ -29,7 +29,7 @@
     waitlist: ['Join the waitlist', 'Email and agent count'],
     space: ['Name your space', 'One walled-off memory'],
     redis: ['Connect your Redis', 'Upstash or rediss://'],
-    acmi: ['ACMI compatibility', 'Optional'],
+    acmi: ['Existing history', 'Optional · ACMI compatible'],
     connect: ['Connect agents', 'A snippet per host'],
     first: ['First entries', 'See the log fill'],
     handoff: ['Second agent', 'Your first Handoff'],
