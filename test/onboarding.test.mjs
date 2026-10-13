@@ -99,7 +99,7 @@ test("probe: write-once with a 10-minute TTL", async () => {
   assert.equal(first.status, 201);
   const second = await call(h, { method: "POST", body: { code: "ZZ9ZZ9", agents: [{ name: "claude", version: "2" }] } });
   assert.equal(second.status, 409);
-  const set = redis.calls.find((c) => c[0] === "SET");
+  const set = redis.calls.find((c) => c[0] === "SET" && c[1] === KEYS.probe("ZZ9ZZ9"));
   assert.deepEqual(set.slice(3), ["NX", "EX", "600"]);
   assert.equal(TTL_S, 600);
   assert.equal(redis.ttls.get(KEYS.probe("ZZ9ZZ9")), 600);
@@ -162,6 +162,57 @@ test("probe: global cap on live keys, freed when they expire", async () => {
   assert.equal(redis.data.has(KEYS.probe("CAP002")), false);
   assert.equal((await post("CAP003")).status, 201, "a slot freed by expiry can be used");
   assert.equal(redis.data.get(KEYS.probeLive).value.size, 1);
+});
+
+// Count the capped keys after every Redis command. A check-then-act cap goes
+// over the limit at a yield point, which is the moment another request can run.
+function observe(redis, measure) {
+  let high = 0;
+  const wrapped = async (cmd, ...args) => {
+    const result = await redis(cmd, ...args);
+    high = Math.max(high, measure());
+    return result;
+  };
+  wrapped.data = redis.data;
+  wrapped.ttls = redis.ttls;
+  wrapped.calls = redis.calls;
+  wrapped.high = () => high;
+  return wrapped;
+}
+
+const probeCode = (i) => `A${i.toString(36).toUpperCase().padStart(5, "0")}`;
+
+test("probe: a parallel burst never stores more than the live cap", async () => {
+  const raw = oauthRedis();
+  const stored = () => {
+    const payloads = [...raw.data.keys()].filter((k) => /^lm:onboard:probe:[A-Z0-9]{6}$/.test(k)).length;
+    const index = raw.data.get(KEYS.probeLive)?.value.size ?? 0;
+    return Math.max(payloads, index);
+  };
+  const redis = observe(raw, stored);
+  const cap = 5;
+  const h = probeWith(redis, { liveCap: cap });
+  const n = 30;
+  // One address each, so the per-IP limit of 10 does not stop the burst.
+  const results = await Promise.all(Array.from({ length: n }, (_, i) => call(h, {
+    method: "POST",
+    body: { code: probeCode(i), agents: [{ name: "claude", version: "1" }] },
+    headers: { "x-forwarded-for": `203.0.113.${i + 1}` },
+  })));
+  assert.equal(stored(), cap, "final payload and index count sit on the cap");
+  assert.ok(redis.high() <= cap, `high-water ${redis.high()} exceeded cap ${cap}`);
+  assert.equal(results.filter((r) => r.status === 201).length, cap);
+  const blocked = results.filter((r) => r.status === 429);
+  assert.equal(blocked.length, n - cap);
+  assert.ok(blocked.every((r) => r.body.error === "probe capacity reached" && r.headers["retry-after"] === "600"));
+  assert.equal(raw.data.has(KEYS.probeLock), false, "the lock is released");
+  const again = await call(h, {
+    method: "POST",
+    body: { code: probeCode(0), agents: [{ name: "codex", version: "2" }] },
+    headers: { "x-forwarded-for": "203.0.113.200" },
+  });
+  assert.equal(again.status === 409 || again.status === 429, true);
+  assert.equal(stored(), cap, "a follow-up does not open another slot");
 });
 
 // ---- waitlist ----------------------------------------------------------------
@@ -244,6 +295,42 @@ test("waitlist: size cap, and retention deletes the plaintext email", async () =
   const dumped = [...redis.data.entries()].filter(([k]) => k.startsWith("lm:onboard:waitlist:")).map(([, e]) => e.value);
   assert.equal(dumped.some((v) => String(v).includes("a@example.com") || String(v).includes("b@example.com")), false, "plaintext emails past retention are deleted");
   assert.equal(JSON.parse(redis.data.get(KEYS.waitlistEntry(emailKey("c@example.com"))).value).email, "c@example.com");
+});
+
+test("waitlist: a parallel burst never stores more than the size cap", async () => {
+  const raw = oauthRedis();
+  const stored = () => {
+    const rows = [...raw.data.keys()].filter((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)).length;
+    const index = raw.data.get(KEYS.waitlistIndex)?.value.size ?? 0;
+    return Math.max(rows, index);
+  };
+  const redis = observe(raw, stored);
+  const cap = 3;
+  const h = waitlistHandler({ redis: () => redis, maxEntries: cap, log: quiet });
+  const n = 30;
+  const results = await Promise.all(Array.from({ length: n }, (_, i) => call(h, {
+    method: "POST",
+    body: { email: `burst${i}@example.com`, agents: 1, plan: "dev" },
+    headers: { "x-forwarded-for": `198.51.100.${i + 1}` },
+  })));
+  assert.equal(stored(), cap, "final rows and index sit on the cap");
+  assert.ok(redis.high() <= cap, `high-water ${redis.high()} exceeded cap ${cap}`);
+  assert.equal(results.filter((r) => r.status === 200).length, cap);
+  const blocked = results.filter((r) => r.status === 503);
+  assert.equal(blocked.length, n - cap);
+  assert.ok(blocked.every((r) => r.body.error === "waitlist is full"));
+  assert.equal(raw.data.has(KEYS.waitlistLock), false, "the lock is released");
+  const kept = [...raw.data.entries()].find(([k, e]) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k) && e.type === "string");
+  const email = JSON.parse(kept[1].value).email;
+  const again = await call(h, {
+    method: "POST",
+    body: { email, agents: 2, plan: "pro" },
+    headers: { "x-forwarded-for": "198.51.100.200" },
+  });
+  assert.equal(again.status, 200, "an address already on the list can still update when full");
+  assert.deepEqual(again.body, { ok: true });
+  assert.equal(stored(), cap, "the update does not take another slot");
+  assert.ok(redis.high() <= cap);
 });
 
 // ---- connection test ----------------------------------------------------------

@@ -8,7 +8,9 @@
 // email (that is what we contact) and the same sha256 beside it (dedupe).
 // Idempotent: a repeat signup keeps the first ts and the original expiry, so
 // re-posting does not extend retention. Expired rows are deleted on the next
-// signup. The index is capped at WAITLIST_MAX live rows.
+// signup. The index is capped at WAITLIST_MAX live rows. The sweep, the
+// dedupe read, and the insert run under lm:onboard:lock:waitlist so overlapping
+// signups cannot all pass the count and all insert.
 //
 // Abuse limits: body at most 1 KB; email shape-checked, trimmed, lowercased
 // and at most 254 chars; agents an integer 1-10000 (else null); plan from
@@ -17,7 +19,7 @@
 // never says whether the email was already on the list.
 
 import { createHash } from "node:crypto";
-import { KEYS, serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, sweepIndex, UNAVAILABLE } from "../../src/http/onboarding.mjs";
+import { KEYS, serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, sweepIndex, withStoreLock, StoreLockError, UNAVAILABLE } from "../../src/http/onboarding.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 10 };
@@ -85,40 +87,56 @@ export function createHandler({
 
       const nowMs = now();
       const nowSec = Math.floor(nowMs / 1000);
-      const { expired } = await sweepIndex(redis, KEYS.waitlistIndex, nowSec);
-      for (const id of expired) {
-        if (FIELD_RE.test(id)) await redis("DEL", KEYS.waitlistEntry(id));
-      }
-
       const entryKey = KEYS.waitlistEntry(field);
-      const prevRaw = await redis("GET", entryKey);
-      if (prevRaw) {
-        let prev = null;
-        try {
-          prev = JSON.parse(prevRaw);
-        } catch {
-          prev = null;
-        }
-        const expiredRow = prev && Number.isFinite(prev.exp) && prev.exp <= nowMs;
-        if (!expiredRow) {
-          // Keep the first ts and the original retention. A repeat must not
-          // push the expiry out, or the cap would never apply to that address.
-          const ts = Number.isFinite(prev?.ts) ? prev.ts : nowMs;
-          const exp = Number.isFinite(prev?.exp) && prev.exp > nowMs ? prev.exp : nowMs + ttlS * 1000;
-          const remain = Math.max(1, Math.ceil((exp - nowMs) / 1000));
-          await redis("SET", entryKey, JSON.stringify({ email, hash: field, agents, plan, ts, exp }), "EX", String(remain));
-          await redis("ZADD", KEYS.waitlistIndex, String(Math.floor(exp / 1000)), field);
-          return done(200, { ok: true });
-        }
-        await redis("DEL", entryKey);
-        await redis("ZREM", KEYS.waitlistIndex, field);
-      }
+      let outcome;
+      try {
+        // One holder at a time: the live count and the insert are one step.
+        // A repeat of an address already stored still updates inside the lock,
+        // so a full list does not reject that address.
+        outcome = await withStoreLock(redis, KEYS.waitlistLock, async () => {
+          const { expired } = await sweepIndex(redis, KEYS.waitlistIndex, nowSec);
+          for (const id of expired) {
+            if (FIELD_RE.test(id)) await redis("DEL", KEYS.waitlistEntry(id));
+          }
 
-      const live = Number(await redis("ZCARD", KEYS.waitlistIndex)) || 0;
-      if (live >= maxEntries) return done(503, { error: "waitlist is full" });
-      const exp = nowMs + ttlS * 1000;
-      await redis("SET", entryKey, JSON.stringify({ email, hash: field, agents, plan, ts: nowMs, exp }), "EX", String(ttlS));
-      await redis("ZADD", KEYS.waitlistIndex, String(Math.floor(exp / 1000)), field);
+          const prevRaw = await redis("GET", entryKey);
+          if (prevRaw) {
+            let prev = null;
+            try {
+              prev = JSON.parse(prevRaw);
+            } catch {
+              prev = null;
+            }
+            const expiredRow = prev && Number.isFinite(prev.exp) && prev.exp <= nowMs;
+            if (!expiredRow) {
+              // Keep the first ts and the original retention. A repeat must not
+              // push the expiry out, or the cap would never apply to that address.
+              const ts = Number.isFinite(prev?.ts) ? prev.ts : nowMs;
+              const exp = Number.isFinite(prev?.exp) && prev.exp > nowMs ? prev.exp : nowMs + ttlS * 1000;
+              const remain = Math.max(1, Math.ceil((exp - nowMs) / 1000));
+              await redis("SET", entryKey, JSON.stringify({ email, hash: field, agents, plan, ts, exp }), "EX", String(remain));
+              await redis("ZADD", KEYS.waitlistIndex, String(Math.floor(exp / 1000)), field);
+              return { status: 200 };
+            }
+            await redis("DEL", entryKey);
+            await redis("ZREM", KEYS.waitlistIndex, field);
+          }
+
+          const live = Number(await redis("ZCARD", KEYS.waitlistIndex)) || 0;
+          if (live >= maxEntries) return { status: 503 };
+          const exp = nowMs + ttlS * 1000;
+          await redis("SET", entryKey, JSON.stringify({ email, hash: field, agents, plan, ts: nowMs, exp }), "EX", String(ttlS));
+          await redis("ZADD", KEYS.waitlistIndex, String(Math.floor(exp / 1000)), field);
+          return { status: 200 };
+        });
+      } catch (e) {
+        if (e instanceof StoreLockError) {
+          res.setHeader("Retry-After", "1");
+          return done(429, { error: "too many requests" });
+        }
+        throw e;
+      }
+      if (outcome.status === 503) return done(503, { error: "waitlist is full" });
       return done(200, { ok: true });
     } catch (e) {
       sendServerError(res, ROUTE, e, log ? { sink: log } : {});

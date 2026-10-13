@@ -8,17 +8,22 @@
 //   - stores under lm:onboard:* on the deployment's own backend
 //     (descriptorFromEnv), and answers 503 when there is none.
 
+import { randomBytes } from "node:crypto";
 import { fromDescriptor, descriptorFromEnv } from "../lib/backend.mjs";
 
 export const KEYS = {
   probe: (code) => `lm:onboard:probe:${code}`,
   // ZSET of live pairing codes. Score is the unix expiry second.
   probeLive: "lm:onboard:probe:live",
+  // Serializes the probe cap. Value is a random holder token, never a code.
+  probeLock: "lm:onboard:lock:probe",
   rate: (ip, bucket = "") => `lm:onboard:rl:${bucket ? `${bucket}:` : ""}${ip}`,
   // One string per signup, EX the retention window. The index score is the
   // unix expiry second; the member is sha256(normalized email).
   waitlistEntry: (field) => `lm:onboard:waitlist:${field}`,
   waitlistIndex: "lm:onboard:waitlist:index",
+  // Serializes the waitlist cap. Value is a random holder token, never an email.
+  waitlistLock: "lm:onboard:lock:waitlist",
 };
 
 /**
@@ -37,6 +42,57 @@ export async function sweepIndex(redis, indexKey, nowSec) {
 
 export const RATE_LIMIT = 10; // requests
 export const RATE_WINDOW_S = 60; // per window
+
+/** Thrown when a capped write could not take the store lock before its budget ran out. */
+export class StoreLockError extends Error {
+  constructor() {
+    super("store lock busy");
+    this.name = "StoreLockError";
+    this.code = "LOCK_BUSY";
+  }
+}
+
+const lockPause = () => new Promise((resolve) => {
+  setTimeout(resolve, 0);
+});
+
+/**
+ * Run `fn` while this caller is the only holder of `key` on the shared store.
+ *
+ * The probe and waitlist caps are a read of the live count followed by a
+ * write. Each of those commands is atomic, and the gap between them is not:
+ * overlapping requests can all observe "under the cap" and all insert.
+ * SET key token NX EX is one atomic command on every backend this runner
+ * talks to (REST, TCP, and the in-memory double). The admit (count, then
+ * insert) runs only while holding that key, so two admits cannot both pass
+ * the count.
+ *
+ * The token is random. The lock is released only when GET still returns it,
+ * and EX is the backstop if the process dies between the two.
+ */
+export async function withStoreLock(redis, key, fn, { ttlS = 60, tries = 800 } = {}) {
+  const token = randomBytes(16).toString("hex");
+  let held = false;
+  for (let i = 0; i < tries; i++) {
+    const ok = await redis("SET", key, token, "NX", "EX", String(ttlS));
+    if (ok === "OK") {
+      held = true;
+      break;
+    }
+    await lockPause();
+  }
+  if (!held) throw new StoreLockError();
+  try {
+    return await fn();
+  } finally {
+    try {
+      const cur = await redis("GET", key);
+      if (cur === token) await redis("DEL", key);
+    } catch {
+      // EX drops the key if this process never comes back.
+    }
+  }
+}
 
 /** The deployment's own Redis runner, or null (callers answer 503). */
 export function serverRedis(env = process.env) {

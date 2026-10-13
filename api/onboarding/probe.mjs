@@ -14,13 +14,15 @@
 //   - 10 POSTs and 40 GETs per IP per minute. GET is higher because the setup
 //     page polls every 3 seconds (~20/min) and may be open in a second tab.
 //   - at most PROBE_LIVE_CAP pairing keys alive at once (lm:onboard:probe:live
-//     scores are the expiry second; expired members are dropped on each call)
+//     scores are the expiry second; expired members are dropped on each call).
+//     The sweep, the count, and the SET NX / ZADD run under lm:onboard:lock:probe
+//     so overlapping requests cannot all pass the count and all insert.
 //   - nothing else in the body is read, stored or echoed; responses are no-store
 //
 // What lands here is only command names and `--version` output. The script
 // never reads config files or environment variables.
 
-import { KEYS, serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, sweepIndex, UNAVAILABLE } from "../../src/http/onboarding.mjs";
+import { KEYS, serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, sweepIndex, withStoreLock, StoreLockError, UNAVAILABLE } from "../../src/http/onboarding.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 10 };
@@ -114,17 +116,28 @@ export function createHandler({ redis: getRedis = () => serverRedis(), now = () 
       const agents = cleanAgents(body.agents);
       const ts = now();
       const value = JSON.stringify({ agents, ts });
-      const { nowSec, live } = await dropExpired(redis, ts);
       const key = KEYS.probe(code);
-      if (await redis("GET", key)) return done(409, { error: "code already used" });
-      if (live >= liveCap) {
-        res.setHeader("Retry-After", String(TTL_S));
-        return done(429, { error: "probe capacity reached" });
+      let outcome;
+      try {
+        // One holder at a time: the live count and the insert are one step.
+        outcome = await withStoreLock(redis, KEYS.probeLock, async () => {
+          const { nowSec, live } = await dropExpired(redis, ts);
+          if (await redis("GET", key)) return { status: 409, error: "code already used" };
+          if (live >= liveCap) return { status: 429, error: "probe capacity reached", retryAfter: String(TTL_S) };
+          const set = await redis("SET", key, value, "NX", "EX", String(TTL_S));
+          if (set !== "OK") return { status: 409, error: "code already used" };
+          await redis("ZADD", KEYS.probeLive, String(nowSec + TTL_S), code);
+          return { status: 201, body: { ok: true } };
+        });
+      } catch (e) {
+        if (e instanceof StoreLockError) {
+          res.setHeader("Retry-After", "1");
+          return done(429, { error: "too many requests" });
+        }
+        throw e;
       }
-      const set = await redis("SET", key, value, "NX", "EX", String(TTL_S));
-      if (set !== "OK") return done(409, { error: "code already used" });
-      await redis("ZADD", KEYS.probeLive, String(nowSec + TTL_S), code);
-      return done(201, { ok: true });
+      if (outcome.retryAfter) res.setHeader("Retry-After", outcome.retryAfter);
+      return done(outcome.status, outcome.body ?? { error: outcome.error });
     } catch (e) {
       sendServerError(res, ROUTE, e, log ? { sink: log } : {});
     }
