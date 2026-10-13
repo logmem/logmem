@@ -1,0 +1,47 @@
+name: test
+
+# Runs `npm test` on every pull request, whatever its base branch, so stacked
+# PRs (for example one based on another feature branch) are checked too.
+# Offline only: tests use the in-memory backend. No secrets, no deploys.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Node version (.nvmrc, then package.json engines, else 20)
+        id: node
+        run: |
+          if [ -f .nvmrc ]; then
+            v="$(tr -d '[:space:]v' < .nvmrc)"
+          elif [ -f package.json ] && node -e "process.exit(require('./package.json').engines?.node ? 0 : 1)" 2>/dev/null; then
+            v="$(node -p "require('./package.json').engines.node" | grep -oE '[0-9]+' | head -1)"
+          fi
+          echo "version=${v:-20}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          cache: npm
+
+      - name: Install
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - run: npm test
