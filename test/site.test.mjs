@@ -194,9 +194,8 @@ test("homepage: no unpublished self-host pitch, ask-first matches what is built,
   const footer = between("<footer", "</footer>");
   assert.doesNotMatch(footer, /soon/i);
   assert.equal(footer.includes("h-soon"), false);
-  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "https://github.com/madezmedia/acmi", "/onboarding"]);
+  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "/onboarding"]);
   assert.match(footer, />Demo</);
-  assert.match(footer, />ACMI spec</);
   assert.match(footer, />Join the waitlist</);
   assert.match(footer, /A Mad EZ Media product/);
 
@@ -220,6 +219,31 @@ test("homepage: no unpublished self-host pitch, ask-first matches what is built,
 
   // home.js only binds the old updates form when that form is on the page.
   assert.match(js, /var form = \$\('#updates-form'\);\n  if \(form\)/);
+});
+
+// Text a visitor can read or hear: text nodes, plus alt / aria-label / title.
+function visibleText(html) {
+  const src = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  const announced = [];
+  for (const m of src.matchAll(/\b(?:alt|aria-label|title|placeholder)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    announced.push(m[1] ?? m[2] ?? "");
+  }
+  return `${src.replace(/<[^>]+>/g, " ")} ${announced.join(" ")}`
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
+
+test("homepage: visible text does not name ACMI", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(visibleText(html), /ACMI/);
 });
 
 test("site: probe.sh names a login wall (Vercel preview protection) instead of blaming the code", async (t) => {

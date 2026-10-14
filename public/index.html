@@ -23,7 +23,6 @@
       <a href="#how">How it works</a>
       <a href="#cases">Use cases</a>
       <a href="#trust">Trust</a>
-      <a href="#acmi">ACMI</a>
     </nav>
     <span class="h-header-cta">
       <a href="/app" class="lm-btn lm-btn--secondary">Sign in</a>
@@ -106,8 +105,6 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
 <!-- Proof strip: only things we can show -->
 <section class="h-proof" aria-label="What LogMem can show today">
   <ul class="wrap h-proof-list">
-    <li><i class="lm-i lg" data-i="globe" aria-hidden="true"></i><span><strong>Open protocol (MIT)</strong><span class="h-proof-sub">Implements ACMI, the Agentic Context Memory Interface</span></span></li>
-    <li><i class="lm-i lg" data-i="check" aria-hidden="true"></i><span><strong>Passes the ACMI conformance suite</strong><span class="h-proof-sub">Run against our compatibility adapter</span></span></li>
     <li><i class="lm-i lg" data-i="timeline" aria-hidden="true"></i><span><strong>Running our own agent team</strong><span class="h-proof-sub">Written by our agents doing their actual work</span></span></li>
   </ul>
 </section>
@@ -156,7 +153,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
   </div>
 </section>
 
-<!-- How it works: plain words; developer vocabulary lives in the ACMI section below -->
+<!-- How it works: plain words -->
 <section id="how" class="wrap h-section" aria-labelledby="how-title">
   <div class="h-section-head">
     <span class="lm-eyebrow">How it works</span>
@@ -289,30 +286,6 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
   </dl>
 </section>
 
-<!-- ACMI -->
-<section id="acmi" class="h-band" aria-labelledby="acmi-title">
-  <div class="wrap h-section h-acmi">
-    <div class="h-acmi-copy">
-      <span class="lm-eyebrow">Built on ACMI</span>
-      <h2 id="acmi-title" class="lm-display h-h2">An open protocol underneath.</h2>
-      <p class="h-sub">LogMem implements ACMI, the MIT-licensed Agentic Context Memory Interface, and passes its conformance suite. Agents that already speak ACMI keep working: compatibility mode reads their history and accepts their calls.</p>
-      <div class="h-cta-row">
-        <a href="https://github.com/madezmedia/acmi" class="lm-btn lm-btn--secondary">Read the ACMI spec <i class="lm-i" data-i="external" aria-hidden="true"></i></a>
-        <a href="/onboarding" class="lm-btn lm-btn--ghost">See the setup flow</a>
-      </div>
-    </div>
-    <figure class="h-acmi-fig">
-      <figcaption class="lm-eyebrow">LogMem word → ACMI</figcaption>
-<pre class="h-code">logmem_start   acmi_spawn
-logmem_brief   acmi_bootstrap
-logmem_note    acmi_event
-logmem_recap   acmi_rollup_set
-trail          correlationId
-origin         parentCorrelationId</pre>
-    </figure>
-  </div>
-</section>
-
 <!-- Closing CTA: points at the /onboarding waitlist, which saves the email -->
 <section id="updates" class="wrap h-section h-updates" aria-labelledby="updates-title">
   <div class="h-updates-copy">
@@ -339,12 +312,6 @@ origin         parentCorrelationId</pre>
         </ul>
       </div>
       <div>
-        <h2 class="lm-eyebrow">Developers</h2>
-        <ul>
-          <li><a href="https://github.com/madezmedia/acmi">ACMI spec</a></li>
-        </ul>
-      </div>
-      <div>
         <h2 class="lm-eyebrow">Company</h2>
         <ul>
           <li><a href="/onboarding">Join the waitlist</a></li>
@@ -354,7 +321,6 @@ origin         parentCorrelationId</pre>
   </div>
   <div class="wrap h-footer-base">
     <span>LogMem is a working name; trademark clearance pending.</span>
-    <img class="logo-l" src="/ds/logos/powered-by-acmi.svg" alt="Powered by ACMI" width="103" height="18"><img class="logo-d" src="/ds/logos/powered-by-acmi-reversed.svg" alt="Powered by ACMI" width="103" height="18">
   </div>
 </footer>
 </body>
