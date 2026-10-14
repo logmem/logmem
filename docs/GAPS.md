@@ -19,6 +19,36 @@ Fixed on this branch. Do not treat a `decided` row as an answer unless its signa
 | M2 | A crash after `SET NX`, or a `LOGMEM_DECIDE_SECRET` rotation, left an ask stuck. | **Fixed.** The claim is taken first and holds the full signed entry, so it counts at once (no race between two answers). A failed append rolls back the rows and the claim (all or nothing); after a crash, an identical retry writes the missing rows (`reconciled`). An admin re-answer from the Decisions page replaces a key whose signature does not verify under the current secret. An ask altered after it was signed is not migrated. |
 | L1 | A resumed shift trusted a caller-tampered agent id, and a caller-chosen trail could collide with one already on the receiver. | **Fixed.** An invalid stored agent id is dropped (not recapped). Handoff and inbox refuse a trail that is already used on that agent's log. |
 
+## ACMI known-failure audit (2026-10-13)
+
+Checked LogMem against every failure the madez fleet hit on ACMI, using the dirty shapes from the 2026-10-11
+dry run. Regression tests: `test/acmi-known-failures.test.mjs` (each fails on `13358fc`, passes here).
+
+| ACMI failure | LogMem before | Now |
+|---|---|---|
+| String-typed timelines (45 keys) → `WRONGTYPE`, whole read fails | `readLog`/`logSize` compat threw | **Fixed.** Legacy timelines read as ZSET, JSON-array STRING or LIST. A missing key reads empty. Any other Redis type reads empty and warns `unreadable_type` |
+| Hash-typed legacy profile (1 key) | `getWho`/`getRecap` compat threw | **Fixed.** Legacy docs read as STRING or HASH |
+| One bad key fails the whole multi-stream read (`acmi_cat` → Redis REST 500) | Same in `logmem_feed` and compat `acmi_cat` | **Fixed.** Per-ref errors go to `read_warnings` as a fixed code plus a sanitized message (no Redis token or endpoint URL); the rest still merge. `logmem_jobs` reports a per-job `getNow` failure the same way |
+| ISO-string `ts` → stored at 1970, lost from every window | `normTs("2026-…")` returned 0 | **Fixed.** Date strings parse; numeric strings unchanged |
+| ns → ms off by 1 ms (float division) | `floor(x / 1e6)` could land 1 ms early | **Fixed.** Rounded to µs first |
+| Empty-string timeline member (seen on `thread:agent-coordination`) | Shown as a blank entry | **Fixed.** Blank members skipped in reads and counts |
+| Mixed ms/us/s/ns scores | Already handled (`normTs` + full-scan compat read) | OK |
+| `undefined`/`null` key segments | Already refused (`validateKeySegments`) | OK |
+| `agent:agent:x` double prefix | Already refused on write (`checkAgentId`) | OK on write; see open item A2 for legacy history |
+| Unauthenticated fleet reads (`/api/fleet`, `/api/work`) | `/api/view` requires the admin cookie and a space allowlist | OK |
+| Secrets committed (`.env.local`, plaintext tokens) | None found in the tree | OK (history not scanned) |
+| No REST timeouts → "fetch failed" cascades | 5 s timeout + one retry on idempotent reads | OK for single calls; see A3 for fan-out |
+
+Still open:
+
+| # | Gap | Fix |
+|---|---|---|
+| A1 | ACMI `signals.status` did not map to `stage`, so culled jobs showed as un-staged | **Done (2026-10-13, Mikey GO, cid `logmemStatusToStageDecision-1791921700000`).** Compat read maps status → stage (`vocab.STAGE_FROM_STATUS`); `logmem_jobs` hides done unless `include_done`; stage reads batched 25 at a time |
+| A2 | The dry run leaves 1,108 keys unmapped as `id-has-colon`, including `acmi:madez:agent:agent:bentley:timeline` (the CLI namespace footgun) | Migration maps `agent:agent:<id>` → `agent:<id>` and reports the rest; otherwise that history is invisible after cutover |
+| A3 | `logmem_jobs stage=…` reads every job's Now one at a time (704 jobs, 2 keys each in compat): the per-key cascade that produced ACMI's "fetch failed" warnings | Pipeline the reads (U8) or keep a stage index set |
+| A4 | Compat reads load the whole legacy ZSET on every call (`thread:agent-coordination` is 1,400+ entries); large responses are what returned REST 500s on ACMI | U8: `ZRANGE … REV LIMIT` on lm keys; cap legacy reads to the requested window once scores are rescored by the migration |
+| A5 | 88 legacy entries have scores below 1e9 ("small" in the dry run) and stay near 1970 | Migration: rescore from the member's `ts`/`timestamp` when present, else report |
+
 ## Tier 0: fix before anyone else uses it (safety)
 
 | # | Gap | Evidence | Fix |

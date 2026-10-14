@@ -143,3 +143,20 @@ export const NAMESPACES = { thread: "channel", work: "job", agent: "agent" };
 const NS_BACK = Object.fromEntries(Object.entries(NAMESPACES).map(([a, l]) => [l, a]));
 export const nsFromAcmi = (ns) => NAMESPACES[ns] ?? ns;
 export const nsToAcmi = (ns) => NS_BACK[ns] ?? ns;
+
+// ─── Job stage from a legacy ACMI status ────────────────────────────────
+// ACMI work items carried free-text signals.status; LogMem jobs have a
+// stage (open · active · blocked · done). Decision 2026-10-13 (Mikey, cid
+// logmemStatusToStageDecision-1791921700000): map on compat read, keep the
+// original status, never rewrite acmi:*. Unknown values map to nothing.
+export const STAGE_FROM_STATUS = {
+  done: ["completed", "complete", "done", "merged", "archived", "closed", "cancelled", "canceled"],
+  blocked: ["stalled", "blocked"],
+  active: ["in_progress", "in-progress", "active", "running"],
+  open: ["pending", "open", "acknowledged", "todo", "new"],
+};
+const STATUS_TO_STAGE = new Map(Object.entries(STAGE_FROM_STATUS).flatMap(([stage, list]) => list.map((s) => [s, stage])));
+export function stageFromStatus(status) {
+  if (typeof status !== "string") return undefined;
+  return STATUS_TO_STAGE.get(status.trim().toLowerCase());
+}
