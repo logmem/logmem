@@ -14,6 +14,7 @@ import { createShifts } from "./core/session.mjs";
 import { TOOLS, keywordRecall } from "./core/tools.mjs";
 import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
+import { styleFor } from "./core/style.mjs";
 import { RESULT_SCHEMA } from "./core/params.mjs";
 import { validateKeySegments } from "./lib/helpers.mjs";
 import { readFileSync } from "node:fs";
@@ -47,6 +48,12 @@ export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].include
 
 export function toResult(data) {
   const structured = data !== null && typeof data === "object" && !Array.isArray(data) ? data : { ok: true, value: data };
+  // Plain-writing check (docs/spec/WRITING.md): warn on the entry just written, never block.
+  const written = structured.entry?.summary ?? structured.entries?.[0]?.summary;
+  if (structured.ok !== false && typeof written === "string" && !structured.style) {
+    const style = styleFor(written);
+    if (style) structured.style = style;
+  }
   return {
     content: [{ type: "text", text: JSON.stringify(structured, null, 2) }],
     structuredContent: structured,
