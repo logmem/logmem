@@ -160,11 +160,16 @@
   var POLL_MS = 3000, POLL_FOR_MS = 10 * 60 * 1000;
   var probe = { code: null, started: 0, timer: null, tick: null, state: 'idle', delay: POLL_MS };
 
+  // The script always comes from logmem.si. Vercel preview URLs sit behind
+  // Deployment Protection: fetching probe.sh there returns the Vercel login
+  // page, which `sh` then tries to run. Previews share prod's store, so a code
+  // paired through logmem.si still shows up here. Only local dev pairs with itself.
+  var CANON = 'https://logmem.si';
+  function isLocalDev(origin) { return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin); }
   function probeCommand(code) {
     var origin = location.origin;
-    var canon = 'https://logmem.si';
-    if (origin === canon) return 'curl -fsSL ' + canon + '/probe.sh | LOGMEM_PAIR=' + code + ' sh';
-    return 'curl -fsSL ' + origin + '/probe.sh | LOGMEM_URL=' + origin + ' LOGMEM_PAIR=' + code + ' sh';
+    if (isLocalDev(origin)) return 'curl -fsSL ' + origin + '/probe.sh | LOGMEM_URL=' + origin + ' LOGMEM_PAIR=' + code + ' sh';
+    return 'curl -fsSL ' + CANON + '/probe.sh | LOGMEM_PAIR=' + code + ' sh';
   }
 
   function startProbe(force) {

@@ -71,12 +71,17 @@ main() {
 
   body=$(printf '{"code":"%s","agents":[%s]}' "$pair" "$json")
   echo "Sending the list above (names and versions only) to $base ..."
-  if curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' --data "$body" "$base/api/onboarding/probe" >/dev/null; then
-    echo "Sent. Go back to the setup page; it shows these agents within a few seconds."
-  else
-    echo "Sending failed. The code may be used already or expired: get a new one on the setup page." >&2
-    return 1
-  fi
+  # No -L: a redirect here means a login wall (e.g. Vercel preview protection), not the API.
+  status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data "$body" "$base/api/onboarding/probe" 2>/dev/null) || status=000
+  case "$status" in
+    201|200) echo "Sent. Go back to the setup page; it shows these agents within a few seconds." ;;
+    409) echo "That code was already used. Get a new one on the setup page." >&2; return 1 ;;
+    400) echo "The setup page didn't accept that code. Get a new one on the setup page." >&2; return 1 ;;
+    429) echo "Too many tries. Wait a minute, then run it again." >&2; return 1 ;;
+    301|302|303|307|308|401|403) echo "$base asked for a login, so nothing was sent. Run the command from https://logmem.si/onboarding instead." >&2; return 1 ;;
+    000) echo "Couldn't reach $base. Check your connection and try again." >&2; return 1 ;;
+    *) echo "Sending failed (HTTP $status). Get a new code on the setup page and try again." >&2; return 1 ;;
+  esac
 }
 
 # First line of `<cmd> --version`, at most 3 seconds, printable ASCII only
