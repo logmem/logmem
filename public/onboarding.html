@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Set up LogMem</title>
-<meta name="description" content="Set up LogMem: join the LogMem Cloud waitlist, or run the open-source server on your own Redis and connect your agents.">
+<meta name="description" content="Set up LogMem: join the waitlist for the hosted version, or run it on your own Redis and connect your AI tools today.">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
@@ -34,60 +34,49 @@
 
     <!-- 1. Choose how to run it -->
     <section class="lm-panel ob-card" data-step="choose" aria-labelledby="h-choose">
-      <div><h1 id="h-choose" tabindex="-1">Choose how to run LogMem.</h1><p class="ob-lede">LogMem is one shared log for a team of agents: who did what, Handoffs, Asks a person has to approve, and Recaps. Run it on our cloud, or run the open-source server on a Redis you control.</p></div>
+      <div><h1 id="h-choose" tabindex="-1">Choose how to run LogMem.</h1><p class="ob-lede">LogMem gives your AI tools one shared memory. They remember what already happened, hand work to each other, and ask you first before anything that can’t be undone. Join the waitlist for the hosted version, or run it today on a Redis you control.</p></div>
       <div class="ob-grid2">
-        <div class="lm-panel ob-choice ob-choice--rec">
-          <div class="lm-row"><h2 class="lm-title-2">LogMem Cloud</h2><span class="lm-badge lm-badge--brand">Recommended</span><span class="lm-demo" title="Hosted spaces and billing aren't built yet">Preview</span></div>
-          <p class="ob-note ob-note--muted">We host the spaces, quotas and approvals. Nothing to run.</p>
-          <ul class="ob-list"><li>Hosted spaces and billing don’t exist yet.</li><li>This path ends on a waitlist: your email and how many agents you plan to run.</li><li>Prices shown are proposed, not final.</li></ul>
-          <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-choose="cloud">See plans and join the waitlist</button></div>
-        </div>
         <div class="lm-panel ob-choice">
-          <div class="lm-row"><h2 class="lm-title-2">Bring your own Redis</h2><span class="lm-badge">Open source · MIT</span></div>
-          <p class="ob-note ob-note--muted">Run the LogMem server against an Upstash (REST) or rediss:// Redis you own. Free, no limits.</p>
-          <ul class="ob-list"><li>Detect the agents on this machine.</li><li>Name a space, test your Redis, choose ACMI compatibility.</li><li>Get a snippet per agent host, then try a first Handoff.</li></ul>
-          <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-choose="byo">Set up on my Redis</button></div>
+          <div class="lm-row"><h2 class="lm-title-2">Hosted LogMem</h2><span class="lm-badge lm-badge--warning">Waitlist</span></div>
+          <p class="ob-note ob-note--muted">We’d run it for you, so there’s nothing to set up. It isn’t open yet.</p>
+          <ul class="ob-list"><li>Hosted spaces don’t exist yet.</li><li>This path ends on a waitlist: your email and how many agents you plan to run.</li><li>We’ll write once, when you can try it.</li></ul>
+          <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-choose="cloud">Join the waitlist</button></div>
+        </div>
+        <div class="lm-panel ob-choice ob-choice--rec">
+          <div class="lm-row"><h2 class="lm-title-2">Run it on your own Redis</h2><span class="lm-badge">Self-hosted</span></div>
+          <p class="ob-note ob-note--muted">Run the LogMem server against an Upstash (REST) or rediss:// Redis you own. Your data stays there.</p>
+          <ul class="ob-list"><li>Find the AI tools on this machine.</li><li>Name a space, test your Redis, and choose whether to bring existing ACMI history.</li><li>Get a snippet for each tool, then try a first handoff.</li></ul>
+          <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-choose="byo">Set it up on my Redis</button></div>
         </div>
       </div>
     </section>
 
-    <!-- Cloud: plan picker -->
+    <!-- Cloud: what you'd use it for (no pricing; the value still goes to the waitlist as "plan") -->
     <section class="lm-panel ob-card" data-step="plan" aria-labelledby="h-plan" hidden>
       <div>
-        <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">Proposed pricing, not final</span><span class="lm-demo">Preview</span></div>
-        <h1 id="h-plan" tabindex="-1">Pick the plan you’d start on.</h1>
-        <p class="ob-lede">One meter: entries written per month. Reads, Briefs, recall and the app are never metered. The attributed log and approvals come with every plan. There is no checkout yet; your pick goes on the waitlist with your email.</p>
+        <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">No pricing yet</span></div>
+        <h1 id="h-plan" tabindex="-1">What would you use it for?</h1>
+        <p class="ob-lede">Pick the one closest to you. It goes on the waitlist with your email, so we know who to write to first. There’s no pricing or checkout yet.</p>
       </div>
       <fieldset class="ob-plans" id="plans-main">
-        <legend class="lm-sr">Plan</legend>
-        <div class="ob-plan" data-plan="free"><label class="lm-check"><input type="radio" name="plan" value="free" checked aria-describedby="plan-free-d"><span>Free</span></label><div class="ob-plan-body" id="plan-free-d"><span class="ob-price">$0 <small>/ month</small></span>
-          <dl class="lm-kv"><dt>Spaces</dt><dd>1</dd><dt>Agents</dt><dd>3</dd><dt>Entries</dt><dd>10k / month</dd><dt>History</dt><dd>7 days</dd><dt>Approvers</dt><dd>Owner only</dd><dt>Support</dt><dd>Community</dd></dl></div></div>
-        <div class="ob-plan" data-plan="dev"><label class="lm-check"><input type="radio" name="plan" value="dev" aria-describedby="plan-dev-d"><span>Dev</span></label><div class="ob-plan-body" id="plan-dev-d"><span class="ob-price">$19 <small>/ month</small></span>
-          <dl class="lm-kv"><dt>Spaces</dt><dd>1</dd><dt>Agents</dt><dd>5</dd><dt>Entries</dt><dd>50k / month</dd><dt>History</dt><dd>30 days</dd><dt>Approvers</dt><dd>Owner only</dd><dt>Support</dt><dd>Email</dd></dl></div></div>
-        <div class="ob-plan" data-plan="pro"><label class="lm-check"><input type="radio" name="plan" value="pro" aria-describedby="plan-pro-d"><span>Pro</span></label><div class="ob-plan-body" id="plan-pro-d"><span class="ob-price">$49 <small>/ month</small></span>
-          <dl class="lm-kv"><dt>Spaces</dt><dd>3</dd><dt>Agents</dt><dd>25</dd><dt>Entries</dt><dd>150k / month</dd><dt>History</dt><dd>90 days</dd><dt>Approvers</dt><dd>3 seats</dd><dt>Support</dt><dd>Email</dd></dl>
-          <p class="ob-plan-extra">Webhooks, Slack and Mattermost approvals, export. Overage about $2 per 10k.</p></div></div>
-        <div class="ob-plan" data-plan="team"><label class="lm-check"><input type="radio" name="plan" value="team" aria-describedby="plan-team-d"><span>Team</span></label><div class="ob-plan-body" id="plan-team-d"><span class="ob-price">$99 <small>/ month</small></span>
-          <dl class="lm-kv"><dt>Spaces</dt><dd>10</dd><dt>Agents</dt><dd>Unlimited</dd><dt>Entries</dt><dd>500k / month</dd><dt>History</dt><dd>1 year</dd><dt>Approvers</dt><dd>10 seats</dd><dt>Support</dt><dd>Priority</dd></dl>
-          <p class="ob-plan-extra">Everything in Pro. Overage about $2 per 10k.</p></div></div>
+        <legend class="lm-sr">What you’d use it for</legend>
+        <div class="ob-plan" data-plan="free"><label class="lm-check"><input type="radio" name="plan" value="free" checked aria-describedby="plan-free-d"><span>Just trying it</span></label><div class="ob-plan-body" id="plan-free-d"><p class="ob-plan-extra">You want to see how it works before anything else.</p></div></div>
+        <div class="ob-plan" data-plan="dev"><label class="lm-check"><input type="radio" name="plan" value="dev" aria-describedby="plan-dev-d"><span>One person, several AI tools</span></label><div class="ob-plan-body" id="plan-dev-d"><p class="ob-plan-extra">Claude Code, Cursor, Codex and Claude share one memory, so you stop being the messenger.</p></div></div>
+        <div class="ob-plan" data-plan="pro"><label class="lm-check"><input type="radio" name="plan" value="pro" aria-describedby="plan-pro-d"><span>Small team with someone who approves</span></label><div class="ob-plan-body" id="plan-pro-d"><p class="ob-plan-extra">Agents do the work, and one person signs off on sending, paying, deleting and publishing.</p></div></div>
+        <div class="ob-plan" data-plan="team"><label class="lm-check"><input type="radio" name="plan" value="team" aria-describedby="plan-team-d"><span>Bigger team</span></label><div class="ob-plan-body" id="plan-team-d"><p class="ob-plan-extra">Several people and many agents working in the same spaces.</p></div></div>
       </fieldset>
       <fieldset class="ob-plans ob-plans--row" id="plans-row">
-        <legend class="lm-sr">Larger plans</legend>
-        <div class="ob-plan" data-plan="agency"><label class="lm-check"><input type="radio" name="plan" value="agency" aria-describedby="plan-agency-d"><span>Agency</span></label><div class="ob-plan-body" id="plan-agency-d"><span class="ob-price">$199 <small>/ month</small></span>
-          <dl class="lm-kv"><dt>Spaces</dt><dd>30 client spaces</dd><dt>Agents</dt><dd>Unlimited</dd><dt>Entries</dt><dd>1.5M / month</dd><dt>History</dt><dd>1 year</dd><dt>Approvers</dt><dd>25 seats</dd></dl>
-          <p class="ob-plan-extra">Per-client scorecards and white-label. Overage about $1.50 per 10k.</p></div></div>
-        <div class="ob-plan" data-plan="enterprise"><label class="lm-check"><input type="radio" name="plan" value="enterprise" aria-describedby="plan-enterprise-d"><span>Enterprise</span></label><div class="ob-plan-body" id="plan-enterprise-d"><span class="ob-price">Contact <small>sales</small></span>
-          <dl class="lm-kv"><dt>Hosting</dt><dd>Hosted, BYOC or on-prem</dd><dt>Limits</dt><dd>Custom</dd><dt>Approvers</dt><dd>Unlimited</dd><dt>Support</dt><dd>SLA</dd></dl>
-          <p class="ob-plan-extra">SSO, SOC2-ready logs, HIPAA.</p></div></div>
+        <legend class="lm-sr">Larger setups</legend>
+        <div class="ob-plan" data-plan="agency"><label class="lm-check"><input type="radio" name="plan" value="agency" aria-describedby="plan-agency-d"><span>Agency, one space per client</span></label><div class="ob-plan-body" id="plan-agency-d"><p class="ob-plan-extra">Each client gets a walled-off memory that other clients’ agents can’t see.</p></div></div>
+        <div class="ob-plan" data-plan="enterprise"><label class="lm-check"><input type="radio" name="plan" value="enterprise" aria-describedby="plan-enterprise-d"><span>Company with its own requirements</span></label><div class="ob-plan-body" id="plan-enterprise-d"><p class="ob-plan-extra">You need to talk to us about hosting or security before you start.</p></div></div>
       </fieldset>
-      <div class="ob-oss"><span><strong>Open source (MIT)</strong> · $0 · your Redis, unlimited spaces and agents.</span><button type="button" class="ob-linkbtn" data-choose="byo">Set it up now instead</button></div>
-      <p class="ob-note">Annual billing is planned at about 17% off Dev, Pro and Team. When a Free or Dev space reaches its cap, writes keep landing for a 10% margin, then are refused with a clear error. Nothing is dropped silently.</p>
+      <div class="ob-oss"><span><strong>Want it today?</strong> Run it on your own Redis.</span><button type="button" class="ob-linkbtn" data-choose="byo">Set it up now instead</button></div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
     </section>
 
     <!-- Detect agents (both paths) -->
     <section class="lm-panel ob-card" data-step="detect" aria-labelledby="h-detect" hidden>
-      <div><h1 id="h-detect" tabindex="-1">Detect the agents on this machine.</h1><p class="ob-lede">Run this in a terminal. It looks for 9 agent CLIs on your PATH, prints what it finds, and sends only their names and versions back to this page.</p></div>
+      <div><h1 id="h-detect" tabindex="-1">Find the AI tools on this machine.</h1><p class="ob-lede">Run this in a terminal. It looks for 9 agent tools on your PATH, prints what it finds, and sends only their names and versions back to this page.</p></div>
       <div class="lm-stack">
         <span class="lm-eyebrow">Run in a terminal</span>
         <pre class="code" id="probe-cmd" aria-label="Probe command"></pre>
@@ -108,27 +97,27 @@
     <!-- Cloud: waitlist -->
     <section class="lm-panel ob-card" data-step="waitlist" aria-labelledby="h-waitlist" hidden>
       <div>
-        <div class="lm-row ob-tags"><span class="lm-demo" title="LogMem Cloud isn't open yet">Preview</span></div>
-        <h1 id="h-waitlist" tabindex="-1">Join the LogMem Cloud waitlist.</h1>
-        <p class="ob-lede">LogMem Cloud isn’t open yet. Leave your email and we’ll write when hosted spaces are ready. That is the only thing we use it for.</p>
+        <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">Waitlist</span></div>
+        <h1 id="h-waitlist" tabindex="-1">Join the waitlist.</h1>
+        <p class="ob-lede">The hosted version isn’t open yet. Leave your email and we’ll write once, when you can try it. That’s the only thing we use it for.</p>
       </div>
       <form id="wl-form" novalidate class="lm-stack ob-form">
         <div class="ob-grid2">
           <div class="lm-field"><label class="lm-label" for="wl-email">Email</label><input class="lm-input" id="wl-email" name="email" type="email" autocomplete="email" required aria-describedby="wl-email-err"><span class="lm-error" id="wl-email-err" hidden></span></div>
           <div class="lm-field"><label class="lm-label" for="wl-agents">Agents you plan to run</label><input class="lm-input" id="wl-agents" name="agents" type="number" min="1" max="10000" step="1" inputmode="numeric" value="3" aria-describedby="wl-agents-help"><span class="lm-help" id="wl-agents-help">A rough number is fine.</span></div>
         </div>
-        <p class="ob-note ob-note--muted">Plan: <strong id="wl-plan"></strong> <button type="button" class="ob-linkbtn" data-goto="plan">Change</button></p>
+        <p class="ob-note ob-note--muted">Using it for: <strong id="wl-plan"></strong> <button type="button" class="ob-linkbtn" data-goto="plan">Change</button></p>
         <div id="wl-status" role="status" aria-live="polite"></div>
         <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="submit" class="lm-btn lm-btn--primary" id="wl-submit">Join the waitlist</button></div>
       </form>
-      <p class="ob-note">Signing up again with the same email only updates your plan and agent count. Want to start today? <button type="button" class="ob-linkbtn" data-choose="byo">Run the open-source server on your own Redis</button>.</p>
+      <p class="ob-note">Signing up again with the same email only updates your answer and agent count. Want it today? <button type="button" class="ob-linkbtn" data-choose="byo">Run it on your own Redis</button>.</p>
     </section>
 
     <!-- BYO: space -->
     <section class="lm-panel ob-card" data-step="space" aria-labelledby="h-space" hidden>
       <div><h1 id="h-space" tabindex="-1">Name your space.</h1><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
       <div class="ob-grid2">
-        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Field Notes Co." required autocomplete="organization"></div>
+        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Field Notes Co." required autocomplete="organization" aria-describedby="ws-err"><span class="lm-error" id="ws-err" hidden></span></div>
         <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" placeholder="fieldnotes" required maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:…:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
       </div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="sp-next">Continue</button></div>
@@ -150,7 +139,7 @@
 
     <!-- BYO: ACMI -->
     <section class="lm-panel ob-card" data-step="acmi" aria-labelledby="h-acmi" hidden>
-      <div><h1 id="h-acmi" tabindex="-1">Bring your existing agent history?</h1><p class="ob-lede">Compatibility mode lets agents keep their acmi_* tools and shows their existing history in LogMem. Turn it off if you’re starting fresh.</p></div>
+      <div><h1 id="h-acmi" tabindex="-1">Bring your existing agent history?</h1><p class="ob-lede">If your agents already use the ACMI protocol, compatibility mode lets them keep their acmi_* tools and shows their history in LogMem. Turn it off if you’re starting fresh.</p></div>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="compat" checked><span class="ob-toggle-text"><strong class="lm-title-3">ACMI compatibility</strong><span class="muted ob-small">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*. Sets <code class="mono">LOGMEM_ACMI_COMPAT=1</code>.</span></span></label>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="mirror"><span class="ob-toggle-text"><strong class="lm-title-3">Mirror writes back to ACMI</strong><span class="muted ob-small">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it. Sets <code class="mono">LOGMEM_MIRROR_ACMI=1</code> for this space.</span></span></label>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
@@ -158,7 +147,7 @@
 
     <!-- BYO: connect agents -->
     <section class="lm-panel ob-card" data-step="connect" aria-labelledby="h-connect" hidden>
-      <div><h1 id="h-connect" tabindex="-1">Connect your first agent.</h1><p class="ob-lede">Pick where the agent runs. Paste the snippet, restart the agent, and its first call starts a shift.</p></div>
+      <div><h1 id="h-connect" tabindex="-1">Connect your first AI tool.</h1><p class="ob-lede">Pick the tool. Paste the snippet, restart it, and its first call starts with a short catch-up.</p></div>
       <div class="lm-tabs" role="tablist" aria-label="Agent host" id="hosts"></div>
       <div class="ob-tabpanel" role="tabpanel" id="host-panel" tabindex="0">
         <div class="ob-snip-meta"><span class="lm-eyebrow" id="snip-label"></span><span id="snip-badges" class="lm-row"></span></div>
@@ -174,7 +163,7 @@
 
     <!-- BYO: first entries -->
     <section class="lm-panel ob-card" data-step="first" aria-labelledby="h-first" hidden>
-      <div><h1 id="h-first" tabindex="-1">Watch the first entries arrive.</h1><p class="ob-lede">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. Each change is written to the log in order. Below is what that looks like.</p></div>
+      <div><h1 id="h-first" tabindex="-1">Watch the first notes arrive.</h1><p class="ob-lede">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. As it works, it writes notes on what changed, in order. Below is what that looks like.</p></div>
       <div class="lm-panel lm-demo-frame ob-events">
         <div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div>
         <div class="lm-events">
@@ -183,13 +172,13 @@
           <div class="lm-event" data-k="work"><time class="lm-event-time" datetime="2026-10-12T08:11:00Z">08:11 UTC</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">progress</span><strong class="lm-title-3">quill</strong><span class="lm-event-summary">Outline done, 6 sections</span></div><div class="lm-prov"><span>via claude-code</span><span class="lm-demo">Demo data</span></div></div></div>
         </div>
       </div>
-      <p class="ob-note">At the end of the shift the agent writes a Recap. Its next Start opens with a Brief built from it, so the next shift doesn’t start cold.</p>
+      <p class="ob-note">When work stops, the agent leaves a recap. If it forgets, LogMem writes one after 30 minutes of quiet, so the next catch-up is never empty.</p>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
     </section>
 
     <!-- BYO: second agent + handoff -->
     <section class="lm-panel ob-card" data-step="handoff" aria-labelledby="h-handoff" hidden>
-      <div><h1 id="h-handoff" tabindex="-1">Add a second agent and pass it work.</h1><p class="ob-lede">Memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it.</p></div>
+      <div><h1 id="h-handoff" tabindex="-1">Add a second agent and hand it work.</h1><p class="ob-lede">Shared memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it. The handoff stays open until the other agent picks it up.</p></div>
       <ol class="ob-list">
         <li>Repeat <button type="button" class="ob-linkbtn" data-goto="connect">Connect agents</button> on another host, with <code class="mono">LOGMEM_AGENT=atlas</code>.</li>
         <li>Tell quill: <code class="mono">hand issue 14 to atlas</code>. LogMem writes a Handoff and atlas follows the job.</li>
@@ -209,7 +198,7 @@
       <div>
         <div class="lm-row ob-tags"><span class="lm-demo" title="Approver invites aren't built yet">Preview</span></div>
         <h1 id="h-approver" tabindex="-1">Invite a person to approve.</h1>
-        <p class="ob-lede">Some actions can’t be undone: sending an email, publishing, paying. Before one of those, an agent writes an Ask and the job waits. The Ask goes to this person, who sees it under Decisions and approves or rejects it. Once it’s decided, the agent carries on.</p>
+        <p class="ob-lede">Some actions can’t be undone: sending, paying, deleting, publishing. Before one of those, the agent stops and shows this person the exact action. They see it under Decisions and approve or reject it; then the agent carries on. (Today the agent waits on its own; enforcement on our side is coming.)</p>
       </div>
       <form id="ap-form" novalidate class="lm-stack ob-form">
         <div class="lm-field ob-narrow"><label class="lm-label" for="ap-email">Approver’s email</label><input class="lm-input" id="ap-email" type="email" autocomplete="off" aria-describedby="ap-help"><span class="lm-help" id="ap-help">You can approve yourself to start. Invites aren’t sent yet.</span></div>
