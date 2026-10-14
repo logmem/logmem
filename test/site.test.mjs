@@ -171,15 +171,41 @@ test("homepage: no unpublished self-host pitch, ask-first matches what is built,
   assert.equal(html.includes("If your AI tools can connect to an MCP server"), false);
   assert.equal(html.includes("they can share LogMem"), false);
 
-  const pause = "LogMem does not stop an agent that skips that ask yet.";
+  const caveat = "Today, agents that follow LogMem pause and ask before anything that can’t be undone, and LogMem does not stop an agent that skips that ask.";
+  assert.equal(html.split(caveat).length - 1, 1, "the ask-first limit is said once");
+  assert.ok(between('class="h-fine"', "</p>").includes(caveat), "the one caveat sits with what is true today");
+  assert.equal(html.includes("ships in v1"), false, "no version promise");
+  assert.equal(html.includes("does not stop an agent that skips that ask yet"), false);
+  assert.equal(html.includes("sign off"), false, "does not claim a person approves on the hosted site");
+  assert.equal(html.includes("stay on the record"), false);
+
   for (const [name, chunk] of [
-    ["hero", between('class="h-lede"', 'id="connect"')],
     ["step 4", between(">Ask first<", ">Wrap up<")],
     ["trust", between(">The agent pauses and asks<", ">A read-only web app<")],
   ]) {
-    assert.ok(chunk.includes("pauses and asks"), `${name} says the agent pauses and asks`);
-    assert.ok(chunk.includes(pause), `${name} says LogMem does not enforce the pause yet`);
+    assert.ok(chunk.includes("pauses and asks"), `${name} still describes the pause`);
+    assert.equal(chunk.includes(caveat), false, `${name} does not repeat the caveat`);
+    assert.equal(chunk.includes("does not stop"), false, `${name} does not repeat the limit`);
   }
+  const rules = between('class="h-ticks h-rules"', "</ul>");
+  assert.match(rules, /They pause and ask you before sending, paying, deleting or publishing/);
+  assert.equal(rules.includes(caveat), false);
+
+  const footer = between("<footer", "</footer>");
+  assert.doesNotMatch(footer, /soon/i);
+  assert.equal(footer.includes("h-soon"), false);
+  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "https://github.com/madezmedia/acmi", "/onboarding"]);
+  assert.match(footer, />Demo</);
+  assert.match(footer, />ACMI spec</);
+  assert.match(footer, />Join the waitlist</);
+  assert.match(footer, /A Mad EZ Media product/);
+
+  const connect = between('id="connect"', 'id="demo"');
+  assert.match(connect, /Preview of the install\. <a href="\/onboarding">Join the waitlist<\/a> to get access\./);
+  assert.doesNotMatch(connect, /Run in a terminal/);
+  assert.doesNotMatch(connect, /Coming soon/i);
+  assert.doesNotMatch(connect, /this is the command/i);
+  assert.match(connect, /The package is not on npm yet/);
 
   const heroCta = between('class="h-cta-row"', 'class="h-fine"');
   const close = between('id="updates"', "<footer");

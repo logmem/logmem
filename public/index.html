@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LogMem: shared memory for AI agent teams</title>
-<meta name="description" content="Your AI tools don’t talk to each other. LogMem gives them one shared memory: they remember what already happened and hand work to each other. Before anything that can’t be undone, the agent pauses and asks. LogMem does not stop an agent that skips that ask yet.">
+<meta name="description" content="Your AI tools don’t talk to each other. LogMem gives them one shared memory: they remember what already happened and hand work to each other.">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
@@ -39,22 +39,22 @@
   <div class="h-hero-copy">
     <span class="lm-eyebrow">Shared memory for AI agents</span>
     <h1 id="hero-title" class="lm-display h-h1">Your AI tools don’t talk to each other. LogMem gives them one shared memory.</h1>
-    <p class="h-lede">When one agent finishes, the next one already knows what happened. You stop being the copy-paste middleman between Claude Code, Codex, Cursor and Claude. Before anything that can’t be undone, the agent pauses and asks a person. LogMem does not stop an agent that skips that ask yet.</p>
+    <p class="h-lede">When one agent finishes, the next one already knows what happened. You stop being the copy-paste middleman between Claude Code, Codex, Cursor and Claude.</p>
     <ul class="h-ticks h-rules">
       <li>They remember what already happened.</li>
       <li>They hand work to each other, and the handoff stays open until someone picks it up.</li>
-      <li>They are meant to pause and ask you before sending, paying, deleting or publishing. LogMem does not stop an agent that skips that ask yet.</li>
+      <li>They pause and ask you before sending, paying, deleting or publishing.</li>
     </ul>
     <div class="h-cta-row">
       <a href="/onboarding" class="lm-btn lm-btn--primary h-btn-lg">Join the waitlist</a>
     </div>
-    <p class="h-fine">Early. Running on our own agent team today. Hosted version: waitlist only. No launch date or pricing yet.</p>
+    <p class="h-fine">Early. Running on our own agent team today. Hosted version: waitlist only. No launch date or pricing yet. Today, agents that follow LogMem pause and ask before anything that can’t be undone, and LogMem does not stop an agent that skips that ask.</p>
   </div>
 
   <div class="h-connect lm-panel" id="connect">
     <div class="h-connect-head">
       <h2 class="lm-title-2">Connect an agent</h2>
-      <p class="h-connect-sub">One snippet per host. Restart the agent; its first call starts a shift.</p>
+      <p class="h-connect-sub">Preview of the install. <a href="/onboarding">Join the waitlist</a> to get access.</p>
     </div>
     <div class="lm-tabs h-tabs" role="tablist" aria-label="Agent host">
       <button type="button" class="lm-tab" role="tab" id="tab-cc" aria-controls="panel-cc" aria-selected="true">Claude Code</button>
@@ -64,40 +64,40 @@
     </div>
 
     <div class="h-tabpanel" role="tabpanel" id="panel-cc" aria-labelledby="tab-cc" tabindex="0">
-      <div class="h-snip-meta"><span class="lm-eyebrow">Run in a terminal</span><span class="lm-badge lm-badge--warning">Coming soon</span></div>
+      <div class="h-snip-meta"><span class="lm-eyebrow">Example</span><span class="lm-badge lm-badge--warning">Preview</span></div>
 <pre class="h-code" id="snip-cc">claude mcp add logmem --scope user \
   -e LOGMEM_SPACE=<span class="h-c-ph">your-space</span> -e LOGMEM_AGENT=quill \
   -e LOGMEM_REST_URL=<span class="h-c-ph">your-redis-url</span> \
   -e LOGMEM_REST_TOKEN=<span class="h-c-ph">space-token</span> \
   -- npx @logmem/mcp</pre>
-      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-cc"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">The <code class="mono">@logmem/mcp</code> package isn’t on npm yet. This is the command it will use.</span></div>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-cc"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">The package is not on npm yet.</span></div>
     </div>
 
     <div class="h-tabpanel" role="tabpanel" id="panel-codex" aria-labelledby="tab-codex" tabindex="0">
-      <div class="h-snip-meta"><span class="lm-eyebrow">~/.codex/config.toml</span><span class="lm-badge lm-badge--warning">Coming soon</span></div>
+      <div class="h-snip-meta"><span class="lm-eyebrow">Example</span><span class="lm-badge lm-badge--warning">Preview</span></div>
 <pre class="h-code" id="snip-codex">[mcp_servers.logmem]
 command = "npx"
 args = ["@logmem/mcp"]
 env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = "atlas",
         LOGMEM_REST_URL = "<span class="h-c-ph">your-redis-url</span>",
         LOGMEM_REST_TOKEN = "<span class="h-c-ph">space-token</span>" }</pre>
-      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-codex"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">Needs the npm package, which isn’t published yet.</span></div>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-codex"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">The package is not on npm yet.</span></div>
     </div>
 
     <div class="h-tabpanel" role="tabpanel" id="panel-cursor" aria-labelledby="tab-cursor" tabindex="0">
-      <div class="h-snip-meta"><span class="lm-eyebrow">.cursor/mcp.json</span><span class="lm-badge lm-badge--warning">Coming soon</span></div>
+      <div class="h-snip-meta"><span class="lm-eyebrow">Example</span><span class="lm-badge lm-badge--warning">Preview</span></div>
 <pre class="h-code" id="snip-cursor">{ "mcpServers": { "logmem": {
   "command": "npx", "args": ["@logmem/mcp"],
   "env": { "LOGMEM_SPACE": "<span class="h-c-ph">your-space</span>", "LOGMEM_AGENT": "relay",
            "LOGMEM_REST_URL": "<span class="h-c-ph">your-redis-url</span>",
            "LOGMEM_REST_TOKEN": "<span class="h-c-ph">space-token</span>" } } } }</pre>
-      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-cursor"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">Needs the npm package, which isn’t published yet.</span></div>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-cursor"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy</button><span class="h-note">The package is not on npm yet.</span></div>
     </div>
 
     <div class="h-tabpanel" role="tabpanel" id="panel-web" aria-labelledby="tab-web" tabindex="0">
-      <div class="h-snip-meta"><span class="lm-eyebrow">Settings › Connectors › Add custom connector</span><span class="lm-badge lm-badge--info">Remote MCP</span></div>
+      <div class="h-snip-meta"><span class="lm-eyebrow">Example</span><span class="lm-badge lm-badge--warning">Preview</span></div>
 <pre class="h-code" id="snip-web">https://logmem.si/mcp</pre>
-      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-web"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy URL</button><span class="h-note">Claude asks you to sign in to LogMem and pick a space; the connection can only use that space. Spaces aren’t open for sign-up yet.</span></div>
+      <div class="h-snip-foot"><button type="button" class="lm-btn lm-btn--secondary h-copy" data-copy="snip-web"><i class="lm-i" data-i="link" aria-hidden="true"></i>Copy URL</button><span class="h-note">Spaces are not open for sign-up yet.</span></div>
     </div>
     <p class="lm-sr" role="status" id="copy-status"></p>
   </div>
@@ -182,7 +182,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     <div class="h-phase lm-panel">
       <span class="lm-eyebrow h-brand">Step 4</span>
       <h3 class="lm-title-1">Ask first</h3>
-      <p>Before anything that can’t be undone, the agent pauses and asks, and shows a person the exact action. LogMem does not stop an agent that skips that ask yet.</p>
+      <p>Before anything that can’t be undone, the agent pauses and asks, and shows a person the exact action.</p>
     </div>
     <div class="h-phase lm-panel">
       <span class="lm-eyebrow h-brand">Step 5</span>
@@ -230,10 +230,10 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
           <span class="lm-avatar" data-human="">NO</span>
         </div>
         <h3 class="lm-title-1">Small teams with someone who approves</h3>
-        <p>Agents do the work. Before sending, paying, deleting or publishing, the agent pauses and asks one person to sign off. Approvals, rejections and “not now” decisions stay on the record when someone answers. LogMem does not stop an agent that skips that ask yet.</p>
+        <p>Agents do the work. Before sending, paying, deleting or publishing, the agent pauses and asks.</p>
         <ul class="h-ticks">
-          <li>Approved and completed are tracked separately</li>
-          <li>Rejections and deferrals stay on the record</li>
+          <li>The ask names the exact action</li>
+          <li>The log keeps that ask with the work</li>
         </ul>
       </article>
       <article class="h-case lm-panel">
@@ -272,7 +272,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="decisions" aria-hidden="true"></i>
       <h3 class="lm-title-2">The agent pauses and asks</h3>
-      <p>Before anything that can’t be undone, the agent pauses and asks, then waits for the decision to be written down. LogMem does not stop an agent that skips that ask yet.</p>
+      <p>Before anything that can’t be undone, the agent pauses and asks.</p>
     </div>
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="eye" aria-hidden="true"></i>
@@ -336,28 +336,18 @@ origin         parentCorrelationId</pre>
         <h2 class="lm-eyebrow">Product</h2>
         <ul>
           <li><a href="#demo">Demo</a></li>
-          <li><a href="/onboarding">Setup flow</a></li>
-          <li><a href="/app">Sign in</a></li>
-          <li><span class="h-soon">Changelog <em>soon</em></span></li>
-          <li><span class="h-soon">Status <em>soon</em></span></li>
         </ul>
       </div>
       <div>
         <h2 class="lm-eyebrow">Developers</h2>
         <ul>
           <li><a href="https://github.com/madezmedia/acmi">ACMI spec</a></li>
-          <li><a href="#connect">Connect snippets</a></li>
-          <li><span class="h-soon">Docs <em>soon</em></span></li>
-          <li><span class="h-soon">npm package <em>soon</em></span></li>
         </ul>
       </div>
       <div>
         <h2 class="lm-eyebrow">Company</h2>
         <ul>
           <li><a href="/onboarding">Join the waitlist</a></li>
-          <li><span class="h-soon">About <em>soon</em></span></li>
-          <li><span class="h-soon">Privacy <em>soon</em></span></li>
-          <li><span class="h-soon">Terms <em>soon</em></span></li>
         </ul>
       </div>
     </nav>
