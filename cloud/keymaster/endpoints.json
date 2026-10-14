@@ -1,0 +1,8 @@
+{
+  "login": "POST /api/v1/auth/universal-auth/login",
+  "secret": "GET /api/v3/secrets/raw/{secretName}",
+  "memberships": "GET /api/v2/workspace/{projectId}/identity-memberships",
+  "privileges": "GET /api/v1/additional-privilege/identity",
+  "addTemporary": "POST /api/v1/additional-privilege/identity/temporary",
+  "revoke": "DELETE /api/v1/additional-privilege/identity"
+}
