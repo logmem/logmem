@@ -35,7 +35,8 @@ export const DEFAULT_LIMITS = Object.freeze({
   rateRefillPerSec: 500,
   requestDeadlineMs: 10_000, // whole request, all commands
   commandTimeoutMs: 5_000, // one upstream command
-  maxInFlight: 64, // concurrent requests being served
+  maxInFlight: 64, // concurrent authenticated requests being served
+  maxUnauthInFlight: 8, // concurrent unauthenticated replies still draining (401, 404, health, ...)
   authFailBurst: 10, // failed auths per source address before 429
   authFailPerSec: 1,
 });
@@ -528,6 +529,19 @@ export function genericRedisError(e) {
   return `${cls} command failed`;
 }
 
+// Error classes Redis itself replies with. A thrown error with one of these
+// classes is a definite refusal (the command did not run), unless the runner
+// says otherwise (`server: false`: resp.mjs connection/timeout/protocol errors).
+const SERVER_ERROR_RE = /^(ERR|WRONGTYPE|NOPERM|NOSCRIPT|BUSY|BUSYKEY|LOADING|OOM|READONLY|EXECABORT|NOAUTH|WRONGPASS|MISCONF|NOREPLICAS|CROSSSLOT|MOVED|ASK|TRYAGAIN)\b/;
+
+/** True only for an error reply from Redis; timeouts and dropped connections are not. */
+export function isServerRejection(e) {
+  if (!e || typeof e !== "object") return false;
+  if (e.server === true) return true;
+  if (e.server === false) return false;
+  return SERVER_ERROR_RE.test(String(e.message ?? ""));
+}
+
 const TIMEOUT = Symbol("timeout");
 
 function withDeadline(promise, ms) {
@@ -656,7 +670,7 @@ function defaultLog(line) {
  */
 export function validateLimits(L) {
   const pos = ["maxBodyBytes", "maxValueBytes", "maxCommandBytes", "maxArgs", "maxKeys", "maxScanCount", "maxPipeline",
-    "rateCapacity", "rateRefillPerSec", "requestDeadlineMs", "commandTimeoutMs", "maxInFlight", "authFailBurst", "authFailPerSec"];
+    "rateCapacity", "rateRefillPerSec", "requestDeadlineMs", "commandTimeoutMs", "maxInFlight", "maxUnauthInFlight", "authFailBurst", "authFailPerSec"];
   for (const k of pos) {
     if (!(typeof L[k] === "number" && Number.isFinite(L[k]) && L[k] > 0)) throw new Error(`acmi-bridge: limit ${k} must be a positive number`);
   }
@@ -702,6 +716,30 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
   const authFails = createKeyedBuckets({ capacity: L.authFailBurst, refillPerSec: L.authFailPerSec, now });
   const refund = typeof meter?.refund === "function" ? meter.refund : defaultRefund;
   let inFlight = 0;
+  let unauthInFlight = 0;
+
+  // Hold a slot from `which` pool until the response closes. false = pool full.
+  function takeSlot(res, which) {
+    if (which === "auth" ? inFlight >= L.maxInFlight : unauthInFlight >= L.maxUnauthInFlight) return false;
+    if (which === "auth") inFlight++;
+    else unauthInFlight++;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (which === "auth") inFlight--;
+      else unauthInFlight--;
+    };
+    res.once("close", release);
+    res.once("finish", release);
+    return true;
+  }
+
+  /** Replies sent before (or without) authentication: own small pool; when full, no drain. */
+  function replyUnauth(req, res, status, body) {
+    if (!takeSlot(res, "unauth")) return sendAndDestroy(req, res, status, body);
+    return sendAndClose(req, res, status, body);
+  }
 
   const emit = (op, cmd, ok, t0) => {
     try {
@@ -763,30 +801,39 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     }
   }
 
-  async function runOne(c, deadline) {
+  /**
+   * Run one admitted command. `state` is per request: { deadline, expired }.
+   * Result flags:
+   *   ran        the command was sent
+   *   rejected   Redis answered with an error reply: the write certainly did
+   *              not happen, so a counted add is refunded
+   *   (anything else that fails, a timeout or a dropped connection, is
+   *   outcome-unknown: the write may have landed, so it stays counted)
+   */
+  async function runOne(c, state) {
     const t0 = performance.now();
-    const remaining = deadline - t0;
-    const left = Math.min(L.commandTimeoutMs, remaining);
-    // left <= 0: the request deadline is already spent. Nothing runs, so the op is refundable.
-    if (left <= 0) return { out: { error: "timeout" }, ran: false, deadlineHit: true };
+    const left = state.deadline - t0;
+    // Expired is sticky: once the request deadline has been hit (by the clock
+    // or by a command whose timer was the request deadline), nothing else runs.
+    if (state.expired || left < 1) {
+      state.expired = true;
+      return { out: { error: "timeout" }, ran: false };
+    }
+    const boundByRequest = left < L.commandTimeoutMs;
     let r;
     try {
-      r = await withDeadline(redis(...c.cmd), left);
+      r = await withDeadline(redis(...c.cmd), boundByRequest ? left : L.commandTimeoutMs);
     } catch (e) {
       emit(c.op, c.name, false, t0);
-      return { out: { error: genericRedisError(e) }, ran: true, failed: true };
+      return { out: { error: genericRedisError(e) }, ran: true, rejected: isServerRejection(e) };
     }
     if (r === TIMEOUT) {
+      if (boundByRequest) state.expired = true;
       emit(c.op, c.name, false, t0);
-      // Outcome unknown (the write may have landed): no refund.
-      // setTimeout can fire a few ms before performance.now() reaches `deadline`.
-      // When this command was bounded by the request deadline (not commandTimeoutMs),
-      // later commands must not start.
-      const deadlineHit = left < L.commandTimeoutMs;
-      return { out: { error: "timeout" }, ran: true, failed: false, timedOut: true, deadlineHit };
+      return { out: { error: "timeout" }, ran: true, rejected: false };
     }
     emit(c.op, c.name, true, t0);
-    return { out: { result: r === undefined ? null : r }, ran: true, failed: false };
+    return { out: { result: r === undefined ? null : r }, ran: true, rejected: false };
   }
 
   /**
@@ -795,7 +842,7 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
    * the reply names the code (and, for a pipeline, the command index).
    */
   async function runRequest(cmds, isPipeline, t0) {
-    const deadline = t0 + L.requestDeadlineMs;
+    const state = { deadline: t0 + L.requestDeadlineMs, expired: false };
     const checked = [];
     for (let i = 0; i < cmds.length; i++) {
       const c = checkCommand(cmds[i], checkOpts);
@@ -821,12 +868,11 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     const results = [];
     let failedAdds = 0;
     let okReads = 0;
-    let deadlineSpent = false;
     for (const c of checked) {
-      const r = deadlineSpent ? { out: { error: "timeout" }, ran: false, failed: false } : await runOne(c, deadline);
+      const r = await runOne(c, state);
       results.push(r.out);
-      if (r.deadlineHit) deadlineSpent = true;
-      if (c.op === "add" && (r.failed || !r.ran)) failedAdds += c.weight;
+      // Refund only what certainly did not happen: never sent, or refused by Redis.
+      if (c.op === "add" && (!r.ran || r.rejected)) failedAdds += c.weight;
       if (c.op === "read" && !r.out.error) okReads += c.weight;
     }
     await settle(admit.counted ? failedAdds : 0, okReads, at);
@@ -843,37 +889,28 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     try {
       path = new URL(req.url, "http://bridge").pathname;
     } catch {
-      return sendAndClose(req, res, 400, { error: "bad_request" });
+      return replyUnauth(req, res, 400, { error: "bad_request" });
     }
 
     if (path === "/health") {
-      if (req.method !== "GET" && req.method !== "HEAD") return sendAndClose(req, res, 405, { error: "method_not_allowed" });
-      return sendAndClose(req, res, 200, { ok: true, tenant, version: VERSION });
+      if (req.method !== "GET" && req.method !== "HEAD") return replyUnauth(req, res, 405, { error: "method_not_allowed" });
+      return replyUnauth(req, res, 200, { ok: true, tenant, version: VERSION });
     }
 
     const isExec = path === "/" || path === "/exec";
     const isPipeline = path === "/pipeline";
-    if (!isExec && !isPipeline) return sendAndClose(req, res, 404, { error: "not_found" });
-    if (req.method !== "POST") return sendAndClose(req, res, 405, { error: "method_not_allowed" });
+    if (!isExec && !isPipeline) return replyUnauth(req, res, 404, { error: "not_found" });
+    if (req.method !== "POST") return replyUnauth(req, res, 405, { error: "method_not_allowed" });
 
-    if (inFlight >= L.maxInFlight) return sendAndDestroy(req, res, 503, { error: "busy" });
-    inFlight++;
-    let released = false;
-    const release = () => {
-      if (!released) {
-        released = true;
-        inFlight--;
-      }
-    };
-    res.once("close", release);
-    res.once("finish", release);
-
+    // Auth first, then the in-flight slot: unauthenticated traffic can never
+    // take the slots valid requests need (it has its own small pool).
     if (!tokenMatches(bearer(req), expected)) {
       emit("auth", null, false, t0);
       const src = req.socket?.remoteAddress || "?";
       if (!authFails.take(src)) return sendAndDestroy(req, res, 429, { error: "rate_limited" });
-      return sendAndClose(req, res, 401, { error: "unauthorized" });
+      return replyUnauth(req, res, 401, { error: "unauthorized" });
     }
+    if (!takeSlot(res, "auth")) return sendAndDestroy(req, res, 503, { error: "busy" });
 
     let raw;
     try {

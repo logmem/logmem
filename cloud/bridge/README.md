@@ -63,7 +63,8 @@ doesn't roll back the ones before it, and its slot holds `{"error": ...}`.
 | rate bucket | 2000 tokens, refilled at 500/s | A command costs one token per key (minimum 1). `SCAN` costs `ceil(COUNT/100)`. Capacity must be at least the largest pipeline and the key cap, or the bridge refuses to start. |
 | failed auth | 10 per source address, then 1/s | Over the limit: 429 and the connection is closed. A valid token is never limited by this. Source = the socket peer: behind a proxy, all clients share the proxy's address. |
 | deadlines | 5 s per upstream command, 10 s per request | A pipeline stops at the deadline, and commands that didn't run come back as `{"error":"timeout"}`. |
-| concurrency | 64 requests in flight, 256 connections | |
+| concurrency | 64 authenticated requests in flight, 8 unauthenticated, 256 connections | The slot is taken after the token check, so unauthenticated traffic (401s, 404s, `/health`) can't take the slots valid requests need. It has its own small pool, and when that's full the bridge replies and closes the socket without draining. |
+| upstream reply | 8 MB | Over the cap, the command fails and the Redis connection is dropped; the next command reconnects. |
 
 ## Metering
 
@@ -81,44 +82,76 @@ pairs counts as N adds, and `MGET` of N keys counts as N reads. A pipeline count
       running.
   - Without a plan, the bridge calls `meter(add, n)`.
   - If counting fails, the write is refused with a 503 and nothing runs. No write ever lands uncounted.
-- **Refunds.** A counted write that Redis then rejects (e.g. `WRONGTYPE`), or that never ran because the deadline hit,
-  is taken back. That uses the meter's `refund()` if it has one, otherwise `INCRBY -n` on
-  `acmi:cloud:meter:{tenant}:{yyyymm}:add` and `:ops_total`. A write that timed out is not refunded, because it may
-  have landed.
+- **Refunds** cover only writes that certainly didn't happen:
+  - writes Redis answered with an error reply (`WRONGTYPE`, `ERR`, `NOPERM`, ...)
+  - writes that never ran because the request deadline hit
+
+  Timeouts, dropped connections and protocol errors are never refunded, because the write may have landed. A refund
+  uses the meter's `refund()` if it has one, otherwise `INCRBY -n` on `acmi:cloud:meter:{tenant}:{yyyymm}:add` and
+  `:ops_total`.
 - **Reads** are counted after they succeed, and are never refused. Not even when counting fails: that failure is
   logged as `{"op":"meter","ok":false}`.
+
+**The meter has its own connection, as its own Redis user (`ACMI_METER_REDIS_URL`).** Tenant commands and meter calls
+never share a connection or a user. The meter's EVALs are sent as `EVALSHA` first. With a `redis://` upstream and a
+meter, `ACMI_METER_REDIS_URL` is required and must be a different user. With a REST upstream and no meter URL, the
+meter shares the REST runner, because no ACL split is possible there.
 
 At startup, `main.mjs` runs a self-test against the real upstream and refuses to start if any step fails:
 
 1. `PING`.
-2. A write to an `acmi:t-{tenant}:` scratch key.
-3. `INCRBY 0` and `EXPIRE` on the meter's own month counter.
-4. On a refusing plan, the reserve script as a no-op, through `EVALSHA`.
+2. A write to an `acmi:t-{tenant}:` scratch key (tenant connection).
+3. `INCRBY 0` and `EXPIRE` on the meter's own month counter (meter connection).
+4. On a refusing plan, the reserve script through `EVALSHA`, with a cap it can never pass, so no counter changes.
 5. A `checkQuota` that validates the plan.
+
+It also checks that the tenant user can't reach the meter keys. If it can, the bridge logs a warning (not fatal, since
+a dev Redis has no ACLs).
+
+The reserve script refuses `n < 1`, so even a caller holding the meter user can't decrement usage through it.
 
 ## Redis ACL (defence in depth)
 
-Each tenant connects to Redis as its own ACL user, `acmi-t-{tenant}`. Its rule is in
-[`acl.template.txt`](acl.template.txt):
+Each tenant gets two Redis users, defined in [`acl.template.txt`](acl.template.txt). Each runs on its own connection.
 
-- **Keys:** only `~acmi:t-{tenant}:* ~lm:t-{tenant}:* ~acmi:cloud:meter:{tenant}:*`.
-- **Channels:** none.
-- **Commands:** `-@all`, then exactly the bridge's command table plus `EVALSHA`, which the meter's reserve script needs.
-- **Not granted:** no `@dangerous`, `@admin` or `@scripting` category, and no `EVAL`, `SCRIPT` or `KEYS`.
+| User | Used by | Keys | Commands |
+|---|---|---|---|
+| `acmi-t-{tenant}` (`ACMI_REDIS_URL`) | every tenant command | `~acmi:t-{tenant}:* ~lm:t-{tenant}:*` | `-@all` then exactly the bridge command table. No `EVAL`/`EVALSHA`, no `@dangerous`, `@admin` or `@scripting`, no `KEYS`. |
+| `acmi-meter-{tenant}` (`ACMI_METER_REDIS_URL`) | the meter only | `~acmi:cloud:meter:{tenant}:*` | `-@all +ping +get +incrby +expire +evalsha` |
 
-So even a jail bug is contained by Redis itself. One caveat: `SCAN` takes no key argument, so the ACL can't narrow it.
-The bridge's forced `MATCH` is what limits it.
+Neither user has channels. Both rules start with `reset`, so re-applying one (a password rotation, a template change)
+replaces the user instead of merging into it. The old password hash and any old selectors are gone.
 
-**Slice D's `acmi-cloud` CLI provisions this.** You never do it by hand. The CLI:
+- **Containment:** a jail bug is contained by Redis itself. The tenant user can't touch other tenants, the fleet, or its
+  own usage counters, and the meter user can't touch any data.
+- **SCAN caveat:** `SCAN` takes no key argument, so the ACL can't narrow it. The bridge's forced `MATCH` is what limits it.
+- **COPY caveat:** key patterns can't restrict `COPY ... DB n`; the jail refuses that option.
+- **Database:** `SELECT` isn't granted, so use database 0.
 
-- generates the user's password and stores it in Infisical
-- loads the rule with an admin connection, with the password as a sha256 hash
-- loads the reserve script (`SCRIPT LOAD`) so `EVALSHA` works. This must be repeated after a Redis restart. Until it
-  is, writes on refusing plans fail closed, and a starting bridge refuses to start.
-- sets `ACMI_REDIS_URL_{TENANT}=redis://acmi-t-{tenant}:<password>@redis:6379` for the compose service
+**Slice D's `acmi-cloud` CLI provisions both users.** You never do it by hand. The CLI:
 
-The meter's EVALs are sent as `EVALSHA` first, and only fall back to `EVAL` on `NOSCRIPT`. The ACL denies that
-fallback, so the request fails closed.
+- generates the passwords and stores them in Infisical
+- applies each rule with `ACL SETUSER`, with the password as a sha256 hash
+- loads the reserve script (`SCRIPT LOAD`). This must be repeated after a Redis restart. Until it is, writes on
+  refusing plans fail closed and a starting bridge refuses to start.
+- sets `ACMI_REDIS_URL_{TENANT}` and `ACMI_METER_REDIS_URL_{TENANT}` for the compose service
+
+A URL with a user but no password is refused at startup. It's never silently run as Redis's `default` user.
+
+## Reply values
+
+Replies from a `redis://` upstream are binary-safe:
+
+- a bulk string that is valid UTF-8 comes back as a JSON string
+- any other bulk string comes back as `{"$base64": "<base64 of the raw bytes>"}`
+- integers beyond 2^53 come back as decimal strings
+
+The RESP parser is strict and incremental:
+
+- lengths and integers must be ASCII digits with an optional leading `-`
+- every bulk must end in CRLF
+- parse state is kept between chunks, so nothing already parsed is read again
+- a reply nobody asked for drops the connection
 
 ## Run one
 
@@ -140,8 +173,8 @@ docker run --rm -p 127.0.0.1:8080:8080 --env-file acme.env acmi-bridge:0.1.0
 ```
 
 The image installs no npm packages. It copies only `src/lib`, `cloud/bridge`, `cloud/meter`, `cloud/tenants` (the
-meter imports it) and `cloud/plans.json`, and runs as `node`. Pin the base image by digest before production; there's a
-TODO in the Dockerfile.
+meter imports it) and `cloud/plans.json`, and runs as `node`. The base image is pinned by digest
+(`node:22-alpine`, multi-arch index); the Dockerfile says how to bump it.
 
 For Elestio, the control plane renders `compose.template.yml` once per tenant (`acmi-bridge-{tenant}`). Secrets come
 from Infisical at deploy time and are never written into the file.
@@ -160,6 +193,8 @@ from Infisical at deploy time and are never written into the file.
 | `ACMI_BRIDGE_TOKEN_SHA256` | yes | sha256 (hex) of the bridge token. The token itself never goes in env. |
 | `ACMI_REDIS_URL` | yes | `redis://`/`rediss://` as the tenant's ACL user, or `http(s)://` (REST upstream) |
 | `ACMI_REDIS_TOKEN` | for http(s) | bearer token for a REST upstream |
+| `ACMI_METER_REDIS_URL` | with a meter on `redis://` | the meter's own connection, as `acmi-meter-{tenant}` |
+| `ACMI_METER_REDIS_TOKEN` | for an http(s) meter URL | bearer token for it |
 | `ACMI_BRIDGE_PORT` | no | listen port, default 8080 |
 | `ACMI_BRIDGE_HOST` | no | listen address, default 0.0.0.0 |
 | `ACMI_PLAN_QUOTAS` | no | plan id or JSON plan. If it's set and there's no meter module, the bridge refuses to start. |

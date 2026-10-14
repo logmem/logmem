@@ -130,6 +130,7 @@ local n = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
 local graceMax = tonumber(ARGV[3])
 local ttl = tonumber(ARGV[4])
+if not n or n < 1 or n ~= math.floor(n) then return redis.error_reply("ERR invalid count") end
 local cur = tonumber(redis.call("GET", key) or "0") or 0
 if cur < 0 then cur = 0 end
 if cur + n > graceMax then return {0, cur} end
@@ -148,6 +149,9 @@ function applyReserve(call, keys, argv) {
   const limit = Number(argv[1]);
   const graceMax = Number(argv[2]);
   const ttl = Number(argv[3]);
+  // Same guard as the Lua: a reserve is for n >= 1 only (a negative n would
+  // decrement usage, n = 0 is meaningless).
+  if (!Number.isSafeInteger(n) || n < 1) throw new Error("ERR invalid count");
   let cur = Number(call("GET", key));
   if (!Number.isFinite(cur) || cur < 0) cur = 0;
   if (cur + n > graceMax) return [0, cur];

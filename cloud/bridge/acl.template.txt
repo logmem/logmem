@@ -1,30 +1,50 @@
-# acmi-bridge: per-tenant Redis ACL user (defence in depth under the bridge jail).
+# acmi-bridge: per-tenant Redis ACL users (defence in depth under the bridge jail).
+#
+# Two users per tenant, on two separate connections:
+#   acmi-t-{tenant}      tenant data. Used for every tenant command (ACMI_REDIS_URL).
+#   acmi-meter-{tenant}  that tenant's usage counters. Used only by the meter
+#                        (ACMI_METER_REDIS_URL). The tenant user has no access to
+#                        them, so even a jail bypass cannot rewrite its own usage.
 #
 # Provisioned by slice D (`acmi-cloud tenant create` / `acmi-cloud bridge render`),
 # never by hand and never committed rendered. The provisioner:
-#   1. generates a random password, stores it in Infisical, and renders
-#      {{PASSWORD_SHA256}} as its sha256 (hex): Redis keeps only the hash;
-#   2. loads this rule with an admin connection (ACL SETUSER, or an aclfile
-#      plus ACL LOAD), then ACL SAVE when an aclfile is in use;
+#   1. generates two random passwords, stores them in Infisical, and renders
+#      {{PASSWORD_SHA256}} / {{METER_PASSWORD_SHA256}} as their sha256 (hex):
+#      Redis keeps only the hashes;
+#   2. applies each rule with an admin connection:
+#        ACL SETUSER <name> <the rule below, from "reset" on>
+#      (or an aclfile + ACL LOAD, then ACL SAVE). Each rule starts with
+#      `reset`, so re-applying it (a password rotation, a template change)
+#      REPLACES the user: old password hashes, key patterns, commands and
+#      selectors are gone, not merged;
 #   3. loads the meter reserve script once (SCRIPT LOAD, admin connection), so
-#      the bridge can call it with EVALSHA. Repeat after every Redis restart or
-#      SCRIPT FLUSH: until it is loaded, writes on refusing plans fail closed
+#      the meter user can call it with EVALSHA. Repeat after every Redis restart
+#      or SCRIPT FLUSH: until it is loaded, writes on refusing plans fail closed
 #      (503) and a starting bridge refuses to start;
-#   4. sets ACMI_REDIS_URL_{TENANT_ENV}=redis://acmi-t-{tenant}:<password>@redis:6379
-#      in Infisical for the compose service.
+#   4. sets, in Infisical, for the compose service:
+#        ACMI_REDIS_URL_{TENANT_ENV}=redis://acmi-t-{tenant}:<password>@redis:6379
+#        ACMI_METER_REDIS_URL_{TENANT_ENV}=redis://acmi-meter-{tenant}:<password>@redis:6379
 #
-# What the rule allows:
-#   keys      only acmi:t-{tenant}:*, lm:t-{tenant}:* and the tenant's own meter
-#             counters acmi:cloud:meter:{tenant}:* (scripts are held to the same
-#             patterns: Redis checks the keys a script declares)
+# Tenant user:
+#   keys      only acmi:t-{tenant}:* and lm:t-{tenant}:*
 #   channels  none
-#   commands  exactly the bridge command table (cloud/bridge/bridge.mjs COMMANDS)
-#             plus EVALSHA for the meter reserve script. No @dangerous, @admin or
-#             @scripting categories, no EVAL, SCRIPT, FUNCTION, KEYS, FLUSH*,
-#             CONFIG, CLIENT, DEBUG, SORT, SELECT or MIGRATE.
+#   commands  exactly the bridge command table (cloud/bridge/bridge.mjs COMMANDS).
+#             No EVAL/EVALSHA, no @dangerous, @admin or @scripting categories,
+#             no SCRIPT, FUNCTION, KEYS, FLUSH*, CONFIG, CLIENT, DEBUG, SORT,
+#             SELECT or MIGRATE. (SELECT not granted: use database 0.)
 #   caveat    SCAN takes no key argument, so the ACL cannot narrow it; the bridge
 #             forces its MATCH to the tenant prefix. A jail bypass could list
-#             other key names (not read them) through SCAN.
+#             other key names (not read them) through SCAN. COPY ... DB n cannot
+#             be limited by key patterns; the jail refuses the DB option.
 #
-# Placeholders: {{TENANT}} tenant id; {{PASSWORD_SHA256}} sha256 hex of the password.
-user acmi-t-{{TENANT}} on #{{PASSWORD_SHA256}} resetkeys ~acmi:t-{{TENANT}}:* ~lm:t-{{TENANT}}:* ~acmi:cloud:meter:{{TENANT}}:* resetchannels -@all +ping +del +unlink +exists +touch +type +ttl +pttl +expire +pexpire +expireat +pexpireat +persist +rename +renamenx +copy +scan +get +getrange +strlen +mget +set +setnx +setex +psetex +setrange +getset +getdel +getex +append +incr +incrby +incrbyfloat +decr +decrby +mset +msetnx +hget +hmget +hgetall +hkeys +hvals +hlen +hexists +hstrlen +hscan +hset +hsetnx +hmset +hdel +hincrby +hincrbyfloat +lrange +llen +lindex +lpos +lpush +rpush +lpushx +rpushx +lpop +rpop +lset +lrem +ltrim +linsert +rpoplpush +lmove +smembers +sismember +smismember +scard +srandmember +sscan +sinter +sunion +sdiff +sadd +srem +spop +smove +sinterstore +sunionstore +sdiffstore +zrange +zrevrange +zrangebyscore +zrevrangebyscore +zrangebylex +zrevrangebylex +zcard +zscore +zmscore +zrank +zrevrank +zcount +zlexcount +zrandmember +zscan +zunion +zinter +zdiff +zadd +zrem +zincrby +zpopmin +zpopmax +zremrangebyscore +zremrangebyrank +zremrangebylex +zunionstore +zinterstore +zdiffstore +zrangestore +xadd +xdel +xtrim +xlen +xrange +xrevrange +evalsha
+# Meter user:
+#   keys      only acmi:cloud:meter:{tenant}:* (Redis also checks the keys a
+#             script declares, so the reserve script is held to the same pattern)
+#   commands  PING, GET (quota reads), INCRBY (count and refund), EXPIRE (TTL),
+#             EVALSHA (the reserve script). No EVAL, so an unloaded script fails
+#             closed instead of running caller-supplied Lua.
+#
+# Placeholders: {{TENANT}} tenant id; {{PASSWORD_SHA256}} / {{METER_PASSWORD_SHA256}}
+# sha256 hex of each password.
+user acmi-t-{{TENANT}} reset on #{{PASSWORD_SHA256}} resetkeys ~acmi:t-{{TENANT}}:* ~lm:t-{{TENANT}}:* resetchannels -@all +ping +del +unlink +exists +touch +type +ttl +pttl +expire +pexpire +expireat +pexpireat +persist +rename +renamenx +copy +scan +get +getrange +strlen +mget +set +setnx +setex +psetex +setrange +getset +getdel +getex +append +incr +incrby +incrbyfloat +decr +decrby +mset +msetnx +hget +hmget +hgetall +hkeys +hvals +hlen +hexists +hstrlen +hscan +hset +hsetnx +hmset +hdel +hincrby +hincrbyfloat +lrange +llen +lindex +lpos +lpush +rpush +lpushx +rpushx +lpop +rpop +lset +lrem +ltrim +linsert +rpoplpush +lmove +smembers +sismember +smismember +scard +srandmember +sscan +sinter +sunion +sdiff +sadd +srem +spop +smove +sinterstore +sunionstore +sdiffstore +zrange +zrevrange +zrangebyscore +zrevrangebyscore +zrangebylex +zrevrangebylex +zcard +zscore +zmscore +zrank +zrevrank +zcount +zlexcount +zrandmember +zscan +zunion +zinter +zdiff +zadd +zrem +zincrby +zpopmin +zpopmax +zremrangebyscore +zremrangebyrank +zremrangebylex +zunionstore +zinterstore +zdiffstore +zrangestore +xadd +xdel +xtrim +xlen +xrange +xrevrange
+user acmi-meter-{{TENANT}} reset on #{{METER_PASSWORD_SHA256}} resetkeys ~acmi:cloud:meter:{{TENANT}}:* resetchannels -@all +ping +get +incrby +expire +evalsha
