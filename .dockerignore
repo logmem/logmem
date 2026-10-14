@@ -1,0 +1,26 @@
+# Build context hygiene for cloud/bridge/Dockerfile (and any future image).
+# Only what the Dockerfiles COPY should reach the daemon; secrets never do.
+**/node_modules
+node_modules
+.git
+.github
+.vercel
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+**/*.secret*
+**/*-export*.json
+coverage
+reference
+public
+docs
+test
+scripts
+api
+.planning
+.claude
+.agents
+*.log
