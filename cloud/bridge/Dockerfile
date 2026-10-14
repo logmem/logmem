@@ -2,9 +2,10 @@
 # Build from the repository root (see /.dockerignore):
 #   docker build -f cloud/bridge/Dockerfile -t acmi-bridge:0.1.0 .
 #
-# TODO(deploy): pin the base image by digest before production, e.g.
-#   FROM node:22-alpine@sha256:<digest from `docker buildx imagetools inspect node:22-alpine`>
-FROM node:22-alpine
+# Base pinned by digest: the multi-arch index of node:22-alpine, read from the
+# Docker Hub registry API on 2026-10-14 (HEAD /v2/library/node/manifests/22-alpine).
+# To bump: `docker buildx imagetools inspect node:22-alpine` and replace the digest.
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 
 ENV NODE_ENV=production
 WORKDIR /app

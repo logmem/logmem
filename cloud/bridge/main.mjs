@@ -7,6 +7,9 @@
 //   ACMI_REDIS_URL            redis://acmi-t-{tenant}:pw@redis:6379 (native RESP, per-tenant ACL user),
 //                             rediss://..., or http(s)://... (an upstream Redis REST endpoint)
 //   ACMI_REDIS_TOKEN          bearer for an http(s) upstream only
+//   ACMI_METER_REDIS_URL      redis://acmi-meter:pw@redis:6379, the meter's OWN connection and ACL user
+//                             (only ~acmi:cloud:meter:*). Required with a meter and a redis:// upstream.
+//   ACMI_METER_REDIS_TOKEN    bearer when ACMI_METER_REDIS_URL is http(s)
 //   ACMI_BRIDGE_PORT          listen port (default 8080)
 //   ACMI_BRIDGE_HOST          listen address (default 0.0.0.0)
 //   ACMI_PLAN_QUOTAS          plan for quota checks: a plan id from cloud/plans.json, or a JSON plan
@@ -29,20 +32,52 @@ function fail(msg) {
   process.exit(1);
 }
 
+function warn(msg) {
+  process.stdout.write(`${JSON.stringify({ level: "warn", msg })}\n`);
+}
+
 function info(msg, extra = {}) {
   process.stdout.write(`${JSON.stringify({ level: "info", msg, ...extra })}\n`);
 }
 
-/** Build the canonical Redis runner from ACMI_REDIS_URL. */
-export async function redisFromEnv(env = process.env, { commandTimeoutMs = DEFAULT_LIMITS.commandTimeoutMs } = {}) {
-  const url = env.ACMI_REDIS_URL || "";
-  if (/^rediss?:\/\//i.test(url)) return createRespRunner(url, { timeoutMs: commandTimeoutMs });
-  if (/^https?:\/\//i.test(url)) {
-    if (!env.ACMI_REDIS_TOKEN) throw new Error("ACMI_REDIS_TOKEN is required for an http(s) ACMI_REDIS_URL");
-    const { createRedis } = await import("../../src/lib/redis-rest.mjs");
-    return createRedis({ url, token: env.ACMI_REDIS_TOKEN });
+async function runnerFor(url, token, name, { commandTimeoutMs, maxReplyBytes }) {
+  if (/^rediss?:\/\//i.test(url)) {
+    try {
+      return createRespRunner(url, { timeoutMs: commandTimeoutMs, maxReplyBytes });
+    } catch (e) {
+      // e.g. a user with no password: never fall back to Redis's default user
+      throw new Error(`${name}: ${String(e?.message || "invalid url").replace(/^invalid redis url:? ?/, "invalid redis url ").trim()}`);
+    }
   }
-  throw new Error("ACMI_REDIS_URL must be redis://, rediss://, http:// or https://");
+  if (/^https?:\/\//i.test(url)) {
+    if (!token) throw new Error(`${name.replace("_URL", "_TOKEN")} is required for an http(s) ${name}`);
+    const { createRedis } = await import("../../src/lib/redis-rest.mjs");
+    return createRedis({ url, token });
+  }
+  throw new Error(`${name} must be redis://, rediss://, http:// or https://`);
+}
+
+/** Build the canonical Redis runner (tenant commands) from ACMI_REDIS_URL. */
+export async function redisFromEnv(env = process.env, { commandTimeoutMs = DEFAULT_LIMITS.commandTimeoutMs, maxReplyBytes } = {}) {
+  return runnerFor(env.ACMI_REDIS_URL || "", env.ACMI_REDIS_TOKEN, "ACMI_REDIS_URL", { commandTimeoutMs, maxReplyBytes });
+}
+
+/**
+ * The meter's own runner (A1): a separate connection as a separate ACL user
+ * that can touch only acmi:cloud:meter:*, so the tenant's user needs no meter
+ * access and no EVALSHA. Required when the tenant upstream is redis://.
+ * A REST upstream without ACMI_METER_REDIS_URL shares the REST runner (no ACL
+ * split is possible there).
+ */
+export async function meterRedisFromEnv(env = process.env, tenantRedis, { commandTimeoutMs = DEFAULT_LIMITS.commandTimeoutMs } = {}) {
+  const url = env.ACMI_METER_REDIS_URL || "";
+  if (!url) {
+    if (tenantRedis?.kind === "resp") throw new Error("ACMI_METER_REDIS_URL is required with a meter and a redis:// ACMI_REDIS_URL");
+    return tenantRedis;
+  }
+  if (url === env.ACMI_REDIS_URL) throw new Error("ACMI_METER_REDIS_URL must be a different Redis user than ACMI_REDIS_URL");
+  const r = await runnerFor(url, env.ACMI_METER_REDIS_TOKEN, "ACMI_METER_REDIS_URL", { commandTimeoutMs });
+  return r.kind === "resp" ? meterRunner(r) : r;
 }
 
 const sha1 = (s) => createHash("sha1").update(String(s)).digest("hex");
@@ -159,10 +194,24 @@ export async function selfTest({ redis, meterRedis = redis, meter, plan, tenant,
   });
   if (refusingPlan(plan) && meter.reserveScript) {
     await step("meter reserve", async () => {
+      // n = 1 against a cap of -1: the script refuses before it increments, so
+      // this proves the script runs (EVALSHA) without changing any counter.
       const add = `acmi:cloud:meter:${tenant}:${utcMonth(now)}:add`;
-      const r = await meterRedis("EVAL", meter.reserveScript, 2, add, total, "0", "0", "-1", ttl);
+      const r = await meterRedis("EVAL", meter.reserveScript, 2, add, total, "1", "0", "-1", ttl);
       if (!Array.isArray(r) || Number(r[0]) !== 0) throw new Error();
     });
+  }
+  // A1: with a separate meter connection, the tenant's Redis user should not
+  // reach the meter's keys. Not fatal (a dev Redis has no ACLs), but loud.
+  if (meterRedis !== redis) {
+    let reachable = false;
+    try {
+      await redis("TTL", total);
+      reachable = true;
+    } catch {
+      /* NOPERM expected */
+    }
+    if (reachable) warn("tenant Redis user can reach meter keys: apply cloud/bridge/acl.template.txt");
   }
   if (plan !== null) {
     await step("quota check", async () => {
@@ -207,7 +256,7 @@ export async function start(env = process.env) {
   // Quotas configured but no meter to enforce them: refuse to start rather
   // than silently run unmetered.
   if (plan !== null && !meter) throw new Error("ACMI_PLAN_QUOTAS is set but no meter module is available");
-  const meterRedis = redis.kind === "resp" ? meterRunner(redis) : redis;
+  const meterRedis = meter ? await meterRedisFromEnv(env, redis) : redis;
   await selfTest({ redis, meterRedis, meter, plan, tenant });
 
   // The meter gets the EVALSHA-first runner; tenant commands never reach it.
@@ -227,7 +276,7 @@ export async function start(env = process.env) {
   info("acmi-bridge listening", { tenant, port, version: VERSION, metered: Boolean(meter) });
 
   const stop = () => {
-    server.close(() => bridge.close().finally(() => process.exit(0)));
+    server.close(() => Promise.allSettled([bridge.close(), meterRedis !== redis && meterRedis?.close?.()]).finally(() => process.exit(0)));
     setTimeout(() => process.exit(0), 5000).unref();
   };
   process.on("SIGTERM", stop);

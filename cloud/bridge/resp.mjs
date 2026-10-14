@@ -10,6 +10,9 @@
 //   const redis = createRespRunner("redis://acmi-t-acme:pw@redis:6379/0", { timeoutMs: 5000 });
 //   await redis("SET", "acmi:t-acme:k", "v");
 //
+// Replies: bulk strings are UTF-8 strings when valid UTF-8, otherwise
+// { "$base64": "..." } (BINARY_KEY); integers beyond 2^53 are decimal strings.
+//
 // One connection, commands pipelined in order. A command timeout or socket
 // error drops the connection (replies could no longer be matched to requests)
 // and fails everything in flight; the next command reconnects. Error messages
@@ -17,6 +20,7 @@
 
 import net from "node:net";
 import tls from "node:tls";
+import { isUtf8 } from "node:buffer";
 
 const CRLF = "\r\n";
 
@@ -38,71 +42,171 @@ export function encodeCommand(cmd) {
   return Buffer.from(parts.join(""), "utf8");
 }
 
-/**
- * Incremental RESP2 parser. feed(buf) returns the replies completed so far.
- * Server errors come back as RespError instances in the reply list.
- */
-export function createParser({ maxBulkBytes = 64 * 1024 * 1024 } = {}) {
-  let buf = Buffer.alloc(0);
+// Strict lengths and integers: ASCII digits with an optional leading '-' only
+// (no spaces, '+', hex, exponents or decimals).
+const INT_RE = /^-?\d{1,20}$/;
+const MAX_LINE_BYTES = 64 * 1024; // a type line ("$123", "+OK", "-ERR ...") never needs more
+const EMPTY = Buffer.alloc(0);
 
-  function line(at) {
-    const end = buf.indexOf(CRLF, at);
-    if (end < 0) return null;
-    return { text: buf.toString("utf8", at, end), next: end + 2 };
+export const DEFAULT_MAX_REPLY_BYTES = 8 * 1024 * 1024;
+export const DEFAULT_MAX_DEPTH = 32;
+
+/**
+ * Key that marks a binary (non-UTF-8) bulk string in a reply:
+ *   { "$base64": "<base64 of the raw bytes>" }
+ * Valid UTF-8 comes back as a plain string. JSON has no byte type, and an
+ * object can never be mistaken for a string value, so the marker is unambiguous.
+ */
+export const BINARY_KEY = "$base64";
+
+export function decodeBulk(bytes) {
+  return isUtf8(bytes) ? bytes.toString("utf8") : { [BINARY_KEY]: bytes.toString("base64") };
+}
+
+/** RESP integer: a Number when exactly representable, else the decimal string. */
+function decodeInt(text) {
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : text;
+}
+
+/**
+ * Incremental RESP2 parser. feed(chunk) returns the top-level replies
+ * completed so far; server errors come back as RespError instances.
+ *
+ * Parsing is O(bytes): the read position and the partially built arrays are
+ * kept between chunks, nothing already parsed is read again, and a large bulk
+ * string is collected chunk by chunk and joined once. Each top-level reply is
+ * capped at maxReplyBytes (wire bytes) and maxDepth nesting; anything over,
+ * or any malformed frame (bad length, missing CRLF after a bulk, unknown type)
+ * throws, and the caller drops the connection.
+ */
+export function createParser({ maxReplyBytes = DEFAULT_MAX_REPLY_BYTES, maxDepth = DEFAULT_MAX_DEPTH } = {}) {
+  let buf = EMPTY;
+  let pos = 0;
+  let replyBytes = 0; // wire bytes of the top-level reply in progress
+  const stack = []; // open arrays: { n, items }
+  let bulk = null; // waiting for a bulk payload: { len, parts, got }
+  let out = [];
+
+  const protocol = () => new RespError("redis protocol error");
+  const tooLarge = () => new RespError("redis reply too large");
+
+  function account(n) {
+    replyBytes += n;
+    if (replyBytes > maxReplyBytes) throw tooLarge();
   }
 
-  // Returns { value, next } or null when more bytes are needed.
-  function parse(at) {
-    if (at >= buf.length) return null;
-    const type = String.fromCharCode(buf[at]);
-    const l = line(at + 1);
-    if (!l) return null;
-    switch (type) {
-      case "+":
-        return { value: l.text, next: l.next };
-      case "-":
-        return { value: new RespError(l.text, { server: true }), next: l.next };
-      case ":":
-        return { value: Number(l.text), next: l.next };
-      case "$": {
-        const len = Number(l.text);
-        if (len === -1) return { value: null, next: l.next };
-        if (!Number.isInteger(len) || len < 0 || len > maxBulkBytes) throw new RespError("protocol error");
-        if (buf.length < l.next + len + 2) return null;
-        return { value: buf.toString("utf8", l.next, l.next + len), next: l.next + len + 2 };
+  function emit(v) {
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      top.items.push(v);
+      if (top.items.length < top.n) return;
+      stack.pop();
+      v = top.items;
+    }
+    out.push(v);
+    replyBytes = 0;
+  }
+
+  function finishBulk(all, len) {
+    if (all[len] !== 13 || all[len + 1] !== 10) throw protocol();
+    emit(decodeBulk(all.subarray(0, len)));
+  }
+
+  function parseLoop() {
+    while (pos < buf.length) {
+      const end = buf.indexOf("\r\n", pos, "latin1");
+      if (end < 0) {
+        if (buf.length - pos > MAX_LINE_BYTES) throw protocol();
+        return;
       }
-      case "*": {
-        const n = Number(l.text);
-        if (n === -1) return { value: null, next: l.next };
-        if (!Number.isInteger(n) || n < 0) throw new RespError("protocol error");
-        const out = [];
-        let p = l.next;
-        for (let i = 0; i < n; i++) {
-          const r = parse(p);
-          if (!r) return null;
-          out.push(r.value);
-          p = r.next;
+      const type = buf[pos];
+      const text = buf.toString("utf8", pos + 1, end);
+      account(end + 2 - pos);
+      pos = end + 2;
+      switch (type) {
+        case 0x2b: // +
+          emit(text);
+          break;
+        case 0x2d: // -
+          emit(new RespError(text, { server: true }));
+          break;
+        case 0x3a: // :
+          if (!INT_RE.test(text)) throw protocol();
+          emit(decodeInt(text));
+          break;
+        case 0x24: { // $
+          if (!INT_RE.test(text)) throw protocol();
+          const len = Number(text);
+          if (len === -1) {
+            emit(null);
+            break;
+          }
+          if (len < 0) throw protocol();
+          account(len + 2);
+          if (buf.length - pos >= len + 2) {
+            const all = buf.subarray(pos, pos + len + 2);
+            pos += len + 2;
+            finishBulk(all, len);
+          } else {
+            bulk = { len, parts: [buf.subarray(pos)], got: buf.length - pos };
+            buf = EMPTY;
+            pos = 0;
+            return;
+          }
+          break;
         }
-        return { value: out, next: p };
+        case 0x2a: { // *
+          if (!INT_RE.test(text)) throw protocol();
+          const n = Number(text);
+          if (n === -1) {
+            emit(null);
+            break;
+          }
+          if (n < 0) throw protocol();
+          if (n === 0) {
+            emit([]);
+            break;
+          }
+          // every element needs at least 3 more wire bytes ("+\r\n")
+          if (replyBytes + n * 3 > maxReplyBytes) throw tooLarge();
+          if (stack.length >= maxDepth) throw protocol();
+          stack.push({ n, items: [] });
+          break;
+        }
+        default:
+          throw protocol();
       }
-      default:
-        throw new RespError("protocol error");
     }
   }
 
   return {
     feed(chunk) {
-      buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
-      const replies = [];
-      let at = 0;
-      for (;;) {
-        const r = parse(at);
-        if (!r) break;
-        replies.push(r.value);
-        at = r.next;
+      out = [];
+      if (bulk) {
+        bulk.parts.push(chunk);
+        bulk.got += chunk.length;
+        if (bulk.got < bulk.len + 2) return out;
+        const all = Buffer.concat(bulk.parts, bulk.got);
+        const { len } = bulk;
+        bulk = null;
+        finishBulk(all, len);
+        buf = all.subarray(len + 2);
+        pos = 0;
+      } else if (pos >= buf.length) {
+        buf = chunk;
+        pos = 0;
+      } else {
+        // only an incomplete type line (< MAX_LINE_BYTES) is ever carried over
+        buf = Buffer.concat([buf.subarray(pos), chunk]);
+        pos = 0;
       }
-      if (at > 0) buf = buf.subarray(at);
-      return replies;
+      parseLoop();
+      if (pos >= buf.length) {
+        buf = EMPTY;
+        pos = 0;
+      }
+      return out;
     },
   };
 }
@@ -118,6 +222,9 @@ export function parseRedisUrl(uri) {
   if (u.protocol !== "redis:" && u.protocol !== "rediss:") throw new RespError("invalid redis url");
   const db = u.pathname && u.pathname !== "/" ? Number(u.pathname.slice(1)) : 0;
   if (!Number.isInteger(db) || db < 0 || db > 15) throw new RespError("invalid redis url");
+  // A user with no password would skip AUTH and run as Redis's `default`
+  // user: refuse it instead of silently connecting with other privileges.
+  if (u.username && !u.password) throw new RespError("invalid redis url: user without password");
   return {
     tls: u.protocol === "rediss:",
     host: u.hostname.replace(/^\[|\]$/g, ""),
@@ -133,9 +240,11 @@ export function parseRedisUrl(uri) {
  *   timeoutMs      per-command deadline (default 5000)
  *   connectTimeoutMs
  *   maxPending     cap on in-flight commands (default 1000)
+ *   maxReplyBytes  cap on one reply's wire size (default 8 MB); over it, the
+ *                  command fails and the connection is dropped
  *   connect        test hook: () => Duplex (replaces net/tls)
  */
-export function createRespRunner(uri, { timeoutMs = 5000, connectTimeoutMs = 4000, maxPending = 1000, connect = null } = {}) {
+export function createRespRunner(uri, { timeoutMs = 5000, connectTimeoutMs = 4000, maxPending = 1000, maxReplyBytes = DEFAULT_MAX_REPLY_BYTES, connect = null } = {}) {
   const opt = parseRedisUrl(uri);
   let sock = null;
   let ready = null; // Promise for the current connection's handshake
@@ -186,17 +295,19 @@ export function createRespRunner(uri, { timeoutMs = 5000, connectTimeoutMs = 400
           ? tls.connect({ host: opt.host, port: opt.port, servername: net.isIP(opt.host) ? undefined : opt.host })
           : net.connect({ host: opt.host, port: opt.port });
       sock = s;
-      parser = createParser();
+      parser = createParser({ maxReplyBytes });
       const ct = setTimeout(() => drop(new RespError("redis connect timed out")), connectTimeoutMs);
       s.on("data", (chunk) => {
         let replies;
         try {
           replies = parser.feed(chunk);
-        } catch {
-          return drop(new RespError("redis protocol error"));
+        } catch (e) {
+          // Too large or malformed: the stream can no longer be trusted.
+          return drop(new RespError(e instanceof RespError ? e.message : "redis protocol error"));
         }
         for (const r of replies) {
           const x = pending.shift();
+          // A reply nobody asked for means the stream is out of step.
           if (!x) return drop(new RespError("redis protocol error"));
           clearTimeout(x.timer);
           if (r instanceof RespError) x.reject(r);

@@ -14,8 +14,9 @@ import {
   createBridge, classify, keyArgs, checkCommand, tokenMatches, sha256Hex,
   COMMANDS, DENIED, DEFAULT_LIMITS, tenantPrefixes, genericRedisError, validateLimits, utcMonth,
 } from "../cloud/bridge/bridge.mjs";
-import { createRespRunner, createParser, encodeCommand } from "../cloud/bridge/resp.mjs";
-import { selfTest, meterRunner, limitsFromEnv } from "../cloud/bridge/main.mjs";
+import { createRespRunner, createParser, encodeCommand, parseRedisUrl, BINARY_KEY, RespError } from "../cloud/bridge/resp.mjs";
+import { selfTest, meterRunner, limitsFromEnv, meterRedisFromEnv } from "../cloud/bridge/main.mjs";
+import { isServerRejection } from "../cloud/bridge/bridge.mjs";
 import { translate } from "../src/lib/redis-native.mjs";
 import * as sliceA from "../cloud/meter/index.mjs";
 
@@ -887,15 +888,17 @@ function respEncode(v) {
  *   users       { name: password } for AUTH user pass
  *   deny(cmd)   true -> NOPERM (a stand-in for a Redis ACL)
  */
-async function startFakeRedis({ mem = withMulti(), users = null, deny = () => false, handle = null } = {}) {
+async function startFakeRedis({ mem = withMulti(), users = null, deny = () => false, acl = null, handle = null } = {}) {
   const scripts = new Map();
   const seen = [];
   const sockets = new Set();
   const server = net.createServer((sock) => {
     sockets.add(sock);
+    sock.on("error", () => {});
     sock.on("close", () => sockets.delete(sock));
     const parser = createParser();
     let authed = !users;
+    let user = "default";
     let chain = Promise.resolve();
     sock.on("data", (chunk) => {
       let cmds;
@@ -911,9 +914,10 @@ async function startFakeRedis({ mem = withMulti(), users = null, deny = () => fa
               const [u, pw] = cmd.length === 3 ? [cmd[1], cmd[2]] : ["default", cmd[1]];
               if (users?.[u] !== pw) throw new Error("WRONGPASS invalid username-password pair or user is disabled.");
               authed = true;
+              user = u;
               reply = "OK";
             } else if (!authed) throw new Error("NOAUTH Authentication required.");
-            else if (deny(cmd)) throw new Error(`NOPERM User has no permissions to run the '${cmd[0]}' command`);
+            else if (deny(cmd, user) || (acl && !acl(user, cmd))) throw new Error(`NOPERM User has no permissions to run the '${cmd[0]}' command`);
             else if (name === "SELECT") reply = "OK";
             else if (name === "SCRIPT" && String(cmd[1]).toUpperCase() === "LOAD") {
               scripts.set(sha1(cmd[2]), cmd[2]);
@@ -940,6 +944,37 @@ async function startFakeRedis({ mem = withMulti(), users = null, deny = () => fa
     mem, seen, scripts,
     url: (auth = "") => `redis://${auth}127.0.0.1:${server.address().port}`,
     close: () => { for (const s of sockets) s.destroy(); return new Promise((r) => server.close(r)); },
+  };
+}
+
+/**
+ * Parse cloud/bridge/acl.template.txt into an ACL check for the fake Redis:
+ * acl(user, cmd) -> allowed. Supports exactly what the template uses:
+ * reset, on, #hash, resetkeys, ~pattern, resetchannels, -@all, +command.
+ */
+function aclFromTemplate(tenant) {
+  const text = readFileSync(new URL("../cloud/bridge/acl.template.txt", import.meta.url), "utf8").replaceAll("{{TENANT}}", tenant);
+  const users = {};
+  for (const line of text.split("\n").filter((l) => l.startsWith("user "))) {
+    const [, name, ...rules] = line.split(" ");
+    const u = { keys: [], cmds: new Set() };
+    for (const r of rules) {
+      if (r.startsWith("~")) u.keys.push(new RegExp(`^${r.slice(1).replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`));
+      else if (r.startsWith("+")) u.cmds.add(r.slice(1).toUpperCase());
+    }
+    users[name] = u;
+  }
+  return (user, cmd) => {
+    const u = users[user];
+    if (!u) return true; // the default user of a dev Redis
+    const name = String(cmd[0]).toUpperCase();
+    if (!u.cmds.has(name)) return false;
+    let keys;
+    if (name === "EVALSHA") keys = cmd.slice(3, 3 + Number(cmd[2]));
+    else if (name === "PING" || name === "SCAN") keys = [];
+    else if (Object.hasOwn(COMMANDS, name)) keys = keyArgs(cmd);
+    else keys = [cmd[1]];
+    return keys.every((k) => u.keys.some((re) => re.test(String(k))));
   };
 }
 
@@ -1459,23 +1494,45 @@ describe("deploy artifacts", () => {
     assert.doesNotMatch(c, /internal: true\s*$/m, "no claim the template cannot enforce");
   });
 
-  test("ACL template: tenant, lm and meter key trees only; no dangerous, admin or scripting categories", () => {
+  test("ACL template: tenant user (data only) and meter user (own counters only), both reset-first", () => {
     const acl = read("../cloud/bridge/acl.template.txt");
-    const rule = acl.split("\n").find((l) => l.startsWith("user "));
-    assert.ok(rule);
-    assert.match(rule, /^user acmi-t-\{\{TENANT\}\} on /);
-    assert.match(rule, / resetkeys ~acmi:t-\{\{TENANT\}\}:\* ~lm:t-\{\{TENANT\}\}:\* ~acmi:cloud:meter:\{\{TENANT\}\}:\* /);
-    assert.match(rule, / resetchannels /);
-    assert.match(rule, / -@all /);
-    assert.doesNotMatch(rule, /\+@(all|dangerous|admin|scripting|keyspace|write|read)\b/);
-    assert.doesNotMatch(rule, /\+(eval|keys|flushall|flushdb|config|script|function|debug|acl|module|monitor|select|migrate|sort|object)\b/i);
-    assert.match(rule, /\+evalsha\b/);
-    assert.match(rule, /#\{\{PASSWORD_SHA256\}\}/, "password as a hash, never plaintext");
-    const granted = new Set([...rule.matchAll(/\+([a-z]+)/g)].map((m) => m[1].toUpperCase()));
-    for (const c of Object.keys(COMMANDS)) assert.ok(granted.has(c), `ACL misses ${c}`);
-    for (const c of ["INCRBY", "EXPIRE", "GET", "EVALSHA", "PING"]) assert.ok(granted.has(c), `meter needs ${c}`);
-    // EVALSHA is denied to tenants by the bridge; the ACL grants it for the meter's reserve script only.
-    for (const c of DENIED) if (c !== "EVALSHA") assert.ok(!granted.has(c), `ACL grants denied ${c}`);
+    const rules = acl.split("\n").filter((l) => l.startsWith("user "));
+    assert.equal(rules.length, 2);
+    const [tenantRule, meterRule] = rules;
+    for (const rule of rules) {
+      // A2: `reset` first, so re-applying (rotation) replaces the user instead of merging into it
+      assert.match(rule, /^user \S+ reset on #\{\{(METER_)?PASSWORD_SHA256\}\} resetkeys /);
+      assert.match(rule, / resetchannels -@all /);
+      assert.doesNotMatch(rule, /\+@|allkeys|allcommands|~\*|&\*|nopass|>/);
+      assert.doesNotMatch(rule, /\+(eval|keys|flushall|flushdb|config|script|function|debug|acl|module|monitor|select|migrate|sort|object)\b/i);
+    }
+    // tenant user: its own data only; no meter keys, no EVALSHA (A1)
+    assert.match(tenantRule, /^user acmi-t-\{\{TENANT\}\} reset on #\{\{PASSWORD_SHA256\}\} resetkeys ~acmi:t-\{\{TENANT\}\}:\* ~lm:t-\{\{TENANT\}\}:\* resetchannels /);
+    assert.doesNotMatch(tenantRule, /meter|\+evalsha/);
+    const granted = new Set([...tenantRule.matchAll(/\+([a-z]+)/g)].map((m) => m[1].toUpperCase()));
+    assert.deepEqual([...granted].sort(), Object.keys(COMMANDS).sort(), "exactly the bridge command table");
+    for (const c of DENIED) assert.ok(!granted.has(c), `tenant ACL grants denied ${c}`);
+    // meter user: only this tenant's counters, only the meter's commands
+    assert.match(meterRule, /^user acmi-meter-\{\{TENANT\}\} reset on #\{\{METER_PASSWORD_SHA256\}\} resetkeys ~acmi:cloud:meter:\{\{TENANT\}\}:\* resetchannels -@all /);
+    const meterCmds = [...meterRule.matchAll(/\+([a-z]+)/g)].map((m) => m[1].toUpperCase()).sort();
+    assert.deepEqual(meterCmds, ["EVALSHA", "EXPIRE", "GET", "INCRBY", "PING"]);
+  });
+
+  test("the ACL template, enforced by a fake Redis: tenant user cannot touch meter keys, meter user cannot touch data", async () => {
+    const check = aclFromTemplate(TENANT);
+    const month = utcMonth(Date.now());
+    const meterKey = `acmi:cloud:meter:${TENANT}:${month}:add`;
+    assert.equal(check("acmi-t-acme", ["SET", K("a"), "1"]), true);
+    assert.equal(check("acmi-t-acme", ["INCRBY", meterKey, "-5"]), false, "no meter rewrite");
+    assert.equal(check("acmi-t-acme", ["SET", meterKey, "0"]), false);
+    assert.equal(check("acmi-t-acme", ["EVALSHA", "x", "2", meterKey, meterKey, "-5"]), false, "no EVALSHA");
+    assert.equal(check("acmi-t-acme", ["GET", "acmi:t-other:a"]), false);
+    assert.equal(check("acmi-meter-acme", ["INCRBY", meterKey, "1"]), true);
+    assert.equal(check("acmi-meter-acme", ["EVALSHA", "x", "2", meterKey, meterKey.replace(":add", ":ops_total"), "1"]), true);
+    assert.equal(check("acmi-meter-acme", ["INCRBY", `acmi:cloud:meter:other:${month}:add`, "-5"]), false, "other tenant's counters");
+    assert.equal(check("acmi-meter-acme", ["GET", K("a")]), false, "no tenant data");
+    assert.equal(check("acmi-meter-acme", ["SET", meterKey, "0"]), false, "no SET on counters");
+    assert.equal(check("acmi-meter-acme", ["EVAL", "return 1", "0"]), false, "no EVAL");
   });
 
   test("Dockerfile installs nothing and copies only what the bridge needs; .dockerignore exists", () => {
@@ -1525,14 +1582,18 @@ describe("main.mjs", () => {
     return { child, ready, exited, out: () => out };
   };
 
-  test("process smoke: redis:// upstream with an ACL user, slice A meter, dev plan; no secrets in output", { timeout: 20_000 }, async () => {
+  test("process smoke: two ACL users (tenant + meter), slice A meter, dev plan; no secrets in output", { timeout: 20_000 }, async () => {
     const PW = "acl_pw_SECRET_123";
-    const fake = await startFakeRedis({ users: { "acmi-t-acme": PW } });
+    const MPW = "meter_pw_SECRET_456";
+    const fake = await startFakeRedis({ users: { "acmi-t-acme": PW, "acmi-meter-acme": MPW }, acl: aclFromTemplate(TENANT) });
+    const sha = sha1(sliceA.RESERVE_LUA);
+    fake.scripts.set(sha, sliceA.RESERVE_LUA); // slice D's SCRIPT LOAD
     const port = 40000 + Math.floor(Math.random() * 20000);
     const p = await spawnMain({
       ACMI_TENANT: TENANT,
       ACMI_BRIDGE_TOKEN_SHA256: HASH,
       ACMI_REDIS_URL: fake.url(`acmi-t-acme:${PW}@`),
+      ACMI_METER_REDIS_URL: fake.url(`acmi-meter-acme:${MPW}@`),
       ACMI_BRIDGE_PORT: String(port),
       ACMI_BRIDGE_HOST: "127.0.0.1",
       ACMI_PLAN_QUOTAS: "dev",
@@ -1551,8 +1612,10 @@ describe("main.mjs", () => {
       assert.equal(u.add, 3, "SET + MSET of 2, counted through the reserve script");
       assert.equal(u.read, 3, "GET + MGET of 2");
       assert.ok(fake.seen.some((c) => c[0] === "EVALSHA"), "meter used EVALSHA");
+      assert.ok(!fake.seen.some((c) => c[0] === "EVAL"), "never EVAL");
+      assert.doesNotMatch(p.out(), /"level":"warn"/, "the ACL split is in place, so no isolation warning");
       const out = p.out();
-      for (const s of ["SMOKE_VALUE", HASH, PW, "acmi-t-acme", String(fake.port)]) assert.ok(!out.includes(s), `leaked ${s}`);
+      for (const s2 of ["SMOKE_VALUE", HASH, PW, MPW, "acmi-t-acme", "acmi-meter-acme", String(fake.port)]) assert.ok(!out.includes(s2), `leaked ${s2}`);
     } finally {
       p.child.kill("SIGTERM");
       await p.exited;
@@ -1560,23 +1623,320 @@ describe("main.mjs", () => {
     }
   });
 
-  test("process: refuses to start when the meter self-test fails (no INCRBY on meter keys)", { timeout: 20_000 }, async () => {
-    const fake = await startFakeRedis({ deny: (c) => String(c[0]).toUpperCase() === "INCRBY" && String(c[1]).startsWith("acmi:cloud:") });
-    const p = await spawnMain({
+  test("process: refuses to start without a meter URL on redis://, or when the meter self-test fails", { timeout: 20_000 }, async () => {
+    const fake = await startFakeRedis({
+      users: { "acmi-t-acme": "x", "acmi-meter-acme": "y" },
+      deny: (c) => String(c[0]).toUpperCase() === "INCRBY" && String(c[1]).startsWith("acmi:cloud:"),
+    });
+    const base = {
       ACMI_TENANT: TENANT,
       ACMI_BRIDGE_TOKEN_SHA256: HASH,
-      ACMI_REDIS_URL: fake.url(),
-      ACMI_BRIDGE_PORT: String(40000 + Math.floor(Math.random() * 20000)),
+      ACMI_REDIS_URL: fake.url("acmi-t-acme:x@"),
       ACMI_BRIDGE_HOST: "127.0.0.1",
       ACMI_PLAN_QUOTAS: "pro",
-    });
+    };
     try {
-      await assert.rejects(() => p.ready);
-      assert.equal(await p.exited, 1);
-      assert.match(p.out(), /"self-test failed: meter counter"/);
+      for (const [env, msg] of [
+        [{}, /ACMI_METER_REDIS_URL is required/],
+        [{ ACMI_METER_REDIS_URL: base.ACMI_REDIS_URL }, /must be a different Redis user/],
+        [{ ACMI_METER_REDIS_URL: fake.url("acmi-meter-acme:y@") }, /"self-test failed: meter counter"/],
+        [{ ACMI_METER_REDIS_URL: fake.url("acmi-meter-acme@") }, /ACMI_METER_REDIS_URL: invalid redis url user without password/],
+        [{ ACMI_REDIS_URL: fake.url("acmi-t-acme@"), ACMI_METER_REDIS_URL: fake.url("acmi-meter-acme:y@") }, /ACMI_REDIS_URL: invalid redis url user without password/],
+      ]) {
+        const p = await spawnMain({ ...base, ACMI_BRIDGE_PORT: String(40000 + Math.floor(Math.random() * 20000)), ...env });
+        await assert.rejects(() => p.ready);
+        assert.equal(await p.exited, 1);
+        assert.match(p.out(), msg);
+        assert.ok(!/x@|y@|127\.0\.0\.1/.test(p.out()), "no URL in the fatal message");
+      }
     } finally {
-      p.child.kill();
       await fake.close();
+    }
+  });
+});
+
+// ---- hardening before untrusted tenants (cloud/b-bridge-hardening) -------------------
+
+describe("A1: the meter has its own connection and user; reserves need n >= 1", () => {
+  test("meterRedisFromEnv: required on redis://, must differ from the tenant user, shared only on REST", async () => {
+    const tenantResp = createRespRunner("redis://acmi-t-acme:a@127.0.0.1:1");
+    await assert.rejects(() => meterRedisFromEnv({}, tenantResp), /ACMI_METER_REDIS_URL is required/);
+    await assert.rejects(
+      () => meterRedisFromEnv({ ACMI_REDIS_URL: "redis://acmi-t-acme:a@h:1", ACMI_METER_REDIS_URL: "redis://acmi-t-acme:a@h:1" }, tenantResp),
+      /different Redis user/,
+    );
+    const m = await meterRedisFromEnv({ ACMI_REDIS_URL: "redis://acmi-t-acme:a@h:1", ACMI_METER_REDIS_URL: "redis://acmi-meter-acme:b@h:1" }, tenantResp);
+    assert.notEqual(m, tenantResp);
+    const rest = createRedis({ url: "http://127.0.0.1:1", token: "t" });
+    assert.equal(await meterRedisFromEnv({}, rest), rest, "REST upstream: no ACL split possible, shared");
+  });
+
+  test("tenant commands and meter calls go over separate connections as separate users", async () => {
+    const fake = await startFakeRedis({ users: { "acmi-t-acme": "a", "acmi-meter-acme": "b" }, acl: aclFromTemplate(TENANT) });
+    fake.scripts.set(sha1(sliceA.RESERVE_LUA), sliceA.RESERVE_LUA);
+    const tenantRedis = createRespRunner(fake.url("acmi-t-acme:a@"));
+    const meterRedis = meterRunner(createRespRunner(fake.url("acmi-meter-acme:b@")));
+    const plans = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
+    const plan = { grace_ratio: plans.grace_ratio, ...plans.plans.dev, id: "dev" };
+    const meter = {
+      meter: (_r, ...a) => sliceA.meter(meterRedis, ...a),
+      checkQuota: (_r, ...a) => sliceA.checkQuota(meterRedis, ...a),
+    };
+    const b = await startBridge({ redis: tenantRedis, meter, plan });
+    try {
+      assert.equal((await b.exec(["SET", K("a"), "1"])).status, 200);
+      assert.equal((await b.exec(["GET", K("a")])).status, 200);
+      assert.deepEqual(await sliceA.usage(fake.mem, TENANT), { month: utcMonth(Date.now()), add: 1, read: 1, recall: 0, ops_total: 2 });
+      // the tenant user itself is refused on meter keys and EVALSHA
+      const mk = `acmi:cloud:meter:${TENANT}:${utcMonth(Date.now())}:add`;
+      await assert.rejects(() => tenantRedis("INCRBY", mk, -1), /NOPERM/);
+      await assert.rejects(() => tenantRedis("EVALSHA", sha1(sliceA.RESERVE_LUA), 2, mk, mk, "-5", "0", "0", "1"), /NOPERM/);
+      // and the self-test proves the split (no isolation warning) and still passes
+      assert.deepEqual(await selfTest({ redis: tenantRedis, meterRedis, meter: { ...sliceA, reserveScript: sliceA.RESERVE_LUA, ttlSeconds: 60 }, plan, tenant: TENANT }), { metered: true });
+    } finally {
+      await b.close();
+      await meterRedis.close();
+      await tenantRedis.close();
+      await fake.close();
+    }
+  });
+
+  test("the reserve script refuses n < 1 (Lua text and its in-process twin)", async () => {
+    assert.match(sliceA.RESERVE_LUA, /if not n or n < 1 or n ~= math\.floor\(n\) then return redis\.error_reply\("ERR invalid count"\) end/);
+    const redis = createMemoryRedis();
+    const k = `acmi:cloud:meter:${TENANT}:${utcMonth(Date.now())}`;
+    await redis("SET", `${k}:add`, "10");
+    for (const n of ["-5", "0", "1.5", "x"]) {
+      await assert.rejects(() => redis("EVAL", sliceA.RESERVE_LUA, 2, `${k}:add`, `${k}:ops_total`, n, "100", "110", "60"), /ERR invalid count/, n);
+    }
+    assert.equal(await redis("GET", `${k}:add`), "10", "no decrement");
+    const ok = await redis("EVAL", sliceA.RESERVE_LUA, 2, `${k}:add`, `${k}:ops_total`, "1", "100", "110", "60");
+    assert.equal(Number(ok[0]), 1);
+  });
+});
+
+describe("R1: reply size cap and an incremental parser", () => {
+  test("a reply over maxReplyBytes fails the command and drops the connection", async () => {
+    const big = Array.from({ length: 5000 }, (_, i) => `v${i}`);
+    const fake = await startFakeRedis({ handle: async (cmd) => (cmd[0] === "LRANGE" ? big : "OK") });
+    const r = createRespRunner(fake.url(), { maxReplyBytes: 16 * 1024 });
+    try {
+      await assert.rejects(() => r("LRANGE", K("l"), 0, -1), /^RespError: redis reply too large$/);
+      assert.equal(await r("PING"), "OK", "reconnected on a fresh connection");
+    } finally {
+      await r.close();
+      await fake.close();
+    }
+    const p = createParser({ maxReplyBytes: 100 });
+    assert.throws(() => p.feed(Buffer.from("$200\r\n")), /too large/, "a bulk header over the cap fails before its bytes arrive");
+    assert.throws(() => createParser({ maxReplyBytes: 100 }).feed(Buffer.from("*1000\r\n")), /too large/);
+    assert.throws(() => createParser({ maxDepth: 4 }).feed(Buffer.from("*1\r\n".repeat(5))), /protocol/);
+  });
+
+  test("linear time: a 200k-element reply in 64 KB chunks parses in well under a second", () => {
+    const parts = ["*200000\r\n"];
+    for (let i = 0; i < 200000; i++) parts.push(`$7\r\nv${String(i).padStart(6, "0")}\r\n`);
+    const wire = Buffer.from(parts.join(""));
+    const p = createParser({ maxReplyBytes: 32 * 1024 * 1024 });
+    const t0 = performance.now();
+    let got = [];
+    for (let i = 0; i < wire.length; i += 65536) got = got.concat(p.feed(wire.subarray(i, i + 65536)));
+    const ms = performance.now() - t0;
+    assert.equal(got.length, 1);
+    assert.equal(got[0].length, 200000);
+    assert.equal(got[0][199999], "v199999");
+    assert.ok(ms < 1000, `${ms.toFixed(0)} ms`);
+    // a single 4 MB bulk in 1 KB chunks: collected, joined once
+    const bulk = Buffer.concat([Buffer.from(`$${4 * 1024 * 1024}\r\n`), Buffer.alloc(4 * 1024 * 1024, 97), Buffer.from("\r\n")]);
+    const q = createParser();
+    const t1 = performance.now();
+    let out = [];
+    for (let i = 0; i < bulk.length; i += 1024) out = out.concat(q.feed(bulk.subarray(i, i + 1024)));
+    assert.equal(out[0].length, 4 * 1024 * 1024);
+    assert.ok(performance.now() - t1 < 1000);
+  });
+});
+
+describe("R2: strict framing", () => {
+  const bad = (wire) => assert.throws(() => createParser().feed(Buffer.from(wire)), /protocol error/, JSON.stringify(wire));
+  test("bulk CRLF terminator is checked", () => {
+    bad("$3\r\nabcXY:7\r\n");
+    bad("$3\r\nabc\n\r");
+    assert.deepEqual(createParser().feed(Buffer.from("$3\r\nabc\r\n:7\r\n")), ["abc", 7]);
+  });
+  test("lengths and integers: ASCII digits with an optional leading '-' only", () => {
+    for (const t of ["$ 3\r\nabc\r\n", "$0x3\r\nabc\r\n", "$+3\r\nabc\r\n", "$3.0\r\nabc\r\n", "$3e0\r\nabc\r\n", "$\r\n", "$-2\r\n", "*-2\r\n", "* 1\r\n:1\r\n", ":1.5\r\n", ": 7\r\n", ":0x10\r\n", ":\r\n", "!3\r\nabc\r\n"]) bad(t);
+    assert.deepEqual(createParser().feed(Buffer.from("$-1\r\n*-1\r\n:-7\r\n")), [null, null, -7]);
+  });
+  test("a reply nobody asked for drops the connection and fails what is in flight", async () => {
+    let sockRef;
+    const server = net.createServer((sock) => {
+      sockRef = sock;
+      sock.on("data", () => sock.write("+OK\r\n+INJECTED\r\n"));
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    server.on("connection", (c) => c.on("error", () => {}));
+    const r = createRespRunner(`redis://127.0.0.1:${server.address().port}`);
+    try {
+      // first command gets its OK, then the extra reply arrives with nobody waiting
+      const first = await r("PING").catch((e) => e);
+      assert.ok(first === "OK" || /protocol error/.test(first.message));
+      await new Promise((res) => setTimeout(res, 50));
+      assert.ok(sockRef.destroyed || sockRef.readableEnded || sockRef.closed, "connection dropped");
+    } finally {
+      await r.close();
+      await new Promise((res) => server.close(res));
+    }
+  });
+});
+
+describe("R3: a user without a password is refused", () => {
+  test("parseRedisUrl and createRespRunner refuse user@host, never fall back to the default user", () => {
+    assert.throws(() => parseRedisUrl("redis://acmi-t-acme@redis:6379"), /user without password/);
+    assert.throws(() => createRespRunner("redis://acmi-t-acme@redis:6379"), /user without password/);
+    assert.equal(parseRedisUrl("redis://redis:6379").username, null, "no user at all is the explicit default-user case");
+    assert.equal(parseRedisUrl("redis://:pw@redis:6379").password, "pw");
+    assert.deepEqual(parseRedisUrl("redis://u:p%40ss@redis:6380/1"), { tls: false, host: "redis", port: 6380, username: "u", password: "p@ss", db: 1 });
+  });
+});
+
+describe("R4: binary-safe values and big integers", () => {
+  test("invalid UTF-8 comes back as {$base64}; valid UTF-8 as a string; ints over 2^53 as strings", async () => {
+    assert.equal(BINARY_KEY, "$base64");
+    const raw = Buffer.from([0x00, 0xff, 0xfe, 0x41]);
+    const p = createParser();
+    const out = p.feed(Buffer.concat([Buffer.from("*4\r\n$4\r\n"), raw, Buffer.from("\r\n$3\r\né!\r\n:9007199254740993\r\n:9007199254740991\r\n")]));
+    assert.deepEqual(out, [[{ $base64: raw.toString("base64") }, "é!", "9007199254740993", 9007199254740991]]);
+    // through the bridge, the marker survives JSON
+    const fake = await startFakeRedis({ handle: async (cmd) => (cmd[0] === "GET" ? "x" : "OK") });
+    const server = net.createServer((sock) => sock.on("data", () => sock.write(Buffer.concat([Buffer.from("$4\r\n"), raw, Buffer.from("\r\n")]))));
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    const runner = createRespRunner(`redis://127.0.0.1:${server.address().port}`);
+    const b = await startBridge({ redis: runner });
+    try {
+      assert.deepEqual((await b.exec(["GET", K("bin")])).body, { result: { $base64: raw.toString("base64") } });
+    } finally {
+      await b.close();
+      await runner.close();
+      await new Promise((r) => server.close(r));
+      await fake.close();
+    }
+  });
+});
+
+describe("F1: refunds only on a definite Redis refusal", () => {
+  test("isServerRejection: error replies yes; timeouts, dropped connections, protocol errors no", () => {
+    assert.equal(isServerRejection(new RespError("WRONGTYPE x", { server: true })), true);
+    assert.equal(isServerRejection(new RespError("redis connection closed")), false);
+    assert.equal(isServerRejection(new RespError("redis SET: timed out")), false);
+    assert.equal(isServerRejection(new RespError("ERR looks like a reply", { server: false })), false);
+    assert.equal(isServerRejection(new Error("WRONGTYPE Operation against a key")), true, "memory-redis style");
+    assert.equal(isServerRejection(new Error("Redis REST SET: timed out after 5000ms")), false);
+    assert.equal(isServerRejection(new Error("Redis REST SET: HTTP 502")), false);
+    assert.equal(isServerRejection(null), false);
+  });
+
+  test("a dropped connection or timeout keeps the add counted (it may have landed); an error reply refunds", async () => {
+    for (const [name, err, refunded] of [
+      ["dropped", new RespError("redis connection closed"), false],
+      ["timeout", new RespError("redis SET: timed out"), false],
+      ["rejected", new RespError("WRONGTYPE no", { server: true }), true],
+    ]) {
+      const meter = fakeMeter();
+      const b = await startBridge({ redis: async () => { throw err; }, meter, plan: { name: "p" } });
+      try {
+        await b.exec(["SET", K("a"), "1"]);
+        assert.equal(meter.used.add, refunded ? 0 : 1, name);
+        assert.equal((meter.calls.refund ?? []).length, refunded ? 1 : 0, name);
+      } finally {
+        await b.close();
+      }
+    }
+  });
+
+  test("end to end: resp.mjs drops a connection mid-pipeline; nothing refunded, every write stays counted", async () => {
+    let n = 0;
+    const server = net.createServer((sock) => sock.on("data", () => { if (++n === 1) sock.write("+OK\r\n"); else sock.destroy(); }));
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    const meter = fakeMeter();
+    const runner = createRespRunner(`redis://127.0.0.1:${server.address().port}`);
+    const b = await startBridge({ redis: runner, meter, plan: { name: "p" } });
+    try {
+      await b.exec(["SET", K("a"), "1"]);
+      const r = await b.exec(["SET", K("b"), "1"]);
+      assert.equal(r.status, 400);
+      assert.equal(meter.used.add, 2);
+      assert.equal((meter.calls.refund ?? []).length, 0);
+    } finally {
+      await b.close();
+      await runner.close();
+      await new Promise((res) => server.close(res));
+    }
+  });
+});
+
+describe("F2: in-flight slots are taken after auth", () => {
+  const slowBadUpload = (port) => {
+    const sock = net.connect(port, "127.0.0.1");
+    sock.on("error", () => {});
+    sock.write("POST /exec HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer wrong\r\nContent-Length: 1000000\r\n\r\n");
+    const iv = setInterval(() => !sock.destroyed && sock.write("x"), 20);
+    sock.on("close", () => clearInterval(iv));
+    return sock;
+  };
+
+  test("unauthenticated slow uploads never take the slots a valid request needs", async () => {
+    const b = await startBridge({ limits: { maxInFlight: 2, maxUnauthInFlight: 8, authFailBurst: 100 } });
+    const port = Number(new URL(b.base).port);
+    const socks = Array.from({ length: 6 }, () => slowBadUpload(port));
+    try {
+      await new Promise((r) => setTimeout(r, 150));
+      const r = await b.exec(["PING"]);
+      assert.equal(r.status, 200, "valid request served while 6 unauthenticated uploads drain");
+    } finally {
+      for (const s2 of socks) s2.destroy();
+      await b.close();
+    }
+  });
+
+  test("the unauthenticated pool is small: over it, replies are sent and the socket closed at once (no drain)", async () => {
+    const b = await startBridge({ limits: { maxUnauthInFlight: 2, authFailBurst: 100 } });
+    const port = Number(new URL(b.base).port);
+    const held = [slowBadUpload(port), slowBadUpload(port)];
+    try {
+      await new Promise((r) => setTimeout(r, 150));
+      const t0 = Date.now();
+      const third = await new Promise((resolve) => {
+        const sock = slowBadUpload(port);
+        let got = "";
+        sock.on("data", (d) => (got += d));
+        sock.on("close", () => resolve({ got, ms: Date.now() - t0 }));
+      });
+      assert.match(third.got, /^HTTP\/1\.1 401/);
+      assert.ok(third.ms < 1000, `closed in ${third.ms} ms, not after the 2 s drain`);
+      assert.ok(held.every((x) => !x.destroyed), "the first two are still draining");
+    } finally {
+      for (const s2 of held) s2.destroy();
+      await b.close();
+    }
+  });
+});
+
+describe("T1: the request deadline is deterministic", () => {
+  test("after the deadline is hit, no later command runs (20 runs)", async () => {
+    for (let i = 0; i < 20; i++) {
+      let calls = 0;
+      const redis = (...c) => { calls++; return c[1] === K("slow") ? new Promise(() => {}) : Promise.resolve("OK"); };
+      const meter = fakeMeter();
+      const b = await startBridge({ redis, meter, plan: { name: "p" }, limits: { requestDeadlineMs: 40, commandTimeoutMs: 1000 } });
+      try {
+        const r = await b.pipe([["SET", K("a"), "1"], ["SET", K("slow"), "1"], ["SET", K("b"), "1"], ["SET", K("c"), "1"]]);
+        assert.deepEqual(r.body.map((x) => x.result ?? x.error), ["OK", "timeout", "timeout", "timeout"], `run ${i}`);
+        assert.equal(calls, 2, `run ${i}`);
+        assert.equal(meter.used.add, 2, `run ${i}: the 2 never-run writes refunded`);
+      } finally {
+        await b.close();
+      }
     }
   });
 });
