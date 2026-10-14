@@ -62,7 +62,7 @@ control plane (acmi-cloud CLI + API): tenants, plans, keys, provisioning, quotas
 ### 2. Metering and quotas (`cloud/meter`)
 - **Ops:** `add` (any write), `read` (any read command), `recall` (vector search), `ops_total`.
 - **Counter:** `INCRBY acmi:cloud:meter:{tenant}:{yyyymm}:{op}`, with the TTL at 400 days.
-- **Quotas:** soft cap at 100%, plus a 10% grace margin. After that, writes are refused with `quota_exceeded` and
+- **Quotas:** soft cap at 100%, plus a 10% grace margin. After that, writes are refused with `upgrade_required` and
   reads still work. On Free and Dev (no billed overage) the check and the increment are one atomic reservation,
   so concurrent callers cannot pass the grace cap; a refusal does not increment. Paid plans bill overage and are
   not refused. This matches docs/PRICING.md's rule that writes are never dropped silently.

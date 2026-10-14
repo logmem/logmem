@@ -767,7 +767,7 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
       } catch {
         return { ok: false, status: 503, error: "unavailable" };
       }
-      if (q?.ok === false && q.code === "quota_exceeded") return { ok: false, status: 429, error: "quota_exceeded" };
+      if (q?.ok === false && q.code === "upgrade_required") return { ok: false, status: 429, error: "upgrade_required" };
       if (q?.ok !== true) return { ok: false, status: 503, error: "unavailable" };
       reserved = q.reserved === true;
     }

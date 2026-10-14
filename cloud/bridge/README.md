@@ -24,7 +24,7 @@ Statuses:
 | 401 | `{"error":"unauthorized"}` | missing or wrong token |
 | 403 | `{"error":"forbidden"}` | refused command, or a key outside the jail |
 | 413 | `payload_too_large`, `value_too_large`, `command_too_large`, `too_many_arguments`, `too_many_keys`, `pipeline_too_large` | body over 1 MB, an argument over 512 KB, one command over 1 MB, over 2001 arguments, over 1000 keys, or over 100 commands |
-| 429 | `{"error":"rate_limited"}` or `{"error":"quota_exceeded"}` | rate bucket empty (also: too many failed auths from one address), or the plan's write quota is used up (reads still work) |
+| 429 | `{"error":"rate_limited"}` or `{"error":"upgrade_required"}` | rate bucket empty (also: too many failed auths from one address), or the plan's write quota is used up (reads still work) |
 | 503 | `{"error":"unavailable"}` or `{"error":"busy"}` | the quota or meter state is unknown, so writes fail closed; or too many requests in flight |
 | 504 | `{"error":"timeout"}` | the upstream command exceeded its deadline |
 
@@ -33,7 +33,7 @@ Error bodies are fixed strings. They never echo a key, a value or the token. Red
 
 **Pipelines are all-or-nothing on admission.** The jail, the size limits, the rate bucket and the quota are all checked
 before any command runs. If any of them refuses, nothing runs. The reply carries the code and the index of the command
-that caused it, for example `{"error":"quota_exceeded","index":1}` or `{"error":"forbidden","index":2}`. Read-only
+that caused it, for example `{"error":"upgrade_required","index":1}` or `{"error":"forbidden","index":2}`. Read-only
 pipelines are never refused for quota. Once admitted, commands run in order, not inside `MULTI`: a failing command
 doesn't roll back the ones before it, and its slot holds `{"error": ...}`.
 
@@ -74,7 +74,7 @@ pairs counts as N adds, and `MGET` of N keys counts as N reads. A pipeline count
 
 - **Writes are admitted before they run, and the bridge fails closed.**
   - With a plan, the bridge calls `checkQuota(n)` first:
-    - `{ok:false, code:"quota_exceeded"}` gets a 429.
+    - `{ok:false, code:"upgrade_required"}` gets a 429.
     - Any other non-ok answer, or a throw, gets a 503.
     - `{ok:true, reserved:true}` means the meter already counted the writes (a refusing plan, through slice A's atomic
       reserve).

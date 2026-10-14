@@ -97,8 +97,8 @@ test("checkQuota: free plan grace boundary (10k adds, 11k with grace, then refus
   assert.deepEqual(await at(9999), { ok: true, used: 9999, limit: 10000, grace: false, reserved: true }, "the 10000th add is within limit");
   assert.deepEqual(await at(10000), { ok: true, used: 10000, limit: 10000, grace: true, reserved: true }, "10001st add is grace");
   assert.deepEqual(await at(10999), { ok: true, used: 10999, limit: 10000, grace: true, reserved: true }, "11000th add is the last grace add");
-  assert.deepEqual(await at(11000), { ok: false, code: "quota_exceeded", used: 11000, limit: 10000, reserved: false });
-  assert.deepEqual(await at(50000), { ok: false, code: "quota_exceeded", used: 50000, limit: 10000, reserved: false });
+  assert.deepEqual(await at(11000), { ok: false, code: "upgrade_required", used: 11000, limit: 10000, reserved: false });
+  assert.deepEqual(await at(50000), { ok: false, code: "upgrade_required", used: 50000, limit: 10000, reserved: false });
 
   // n > 1: a batch that would cross the grace edge is refused whole, and not reserved.
   const addKey = "acmi:cloud:meter:acme:202610:add";
@@ -124,7 +124,7 @@ test("checkQuota: add refused past grace, read never refused", async () => {
   const plan = planFor("dev");
   await redis("SET", "acmi:cloud:meter:acme:202610:add", "1000000");
   await redis("SET", "acmi:cloud:meter:acme:202610:read", "99999999");
-  assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).code, "quota_exceeded");
+  assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).code, "upgrade_required");
   const r = await checkQuota(redis, "acme", "read", plan, { now: OCT, n: 1000 });
   assert.equal(r.ok, true);
   assert.equal(r.grace, false);
@@ -140,7 +140,7 @@ test("checkQuota: recall follows the same grace rule on no-overage plans", async
   const plan = planFor("free");
   const lim = plan.limits.recall;
   await redis("SET", "acmi:cloud:meter:acme:202610:recall", String(lim + Math.floor(lim / 10)));
-  assert.equal((await checkQuota(redis, "acme", "recall", plan, { now: OCT })).code, "quota_exceeded");
+  assert.equal((await checkQuota(redis, "acme", "recall", plan, { now: OCT })).code, "upgrade_required");
 });
 
 test("checkQuota: paid plans bill overage instead of refusing", async () => {
@@ -197,14 +197,14 @@ test("checkQuota: a refusing plan reserves atomically and stops at the grace cap
   for (let i = 0; i < 20; i++) {
     const q = await checkQuota(redis, "acme", "add", plan, { now: OCT });
     if (!q.ok) {
-      assert.equal(q.code, "quota_exceeded");
+      assert.equal(q.code, "upgrade_required");
       break;
     }
     accepted++;
   }
   assert.equal(accepted, 11, "10 + 10% grace");
   assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11);
-  assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).code, "quota_exceeded");
+  assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).code, "upgrade_required");
   assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11, "a refusal does not increment");
 
   await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");
@@ -213,7 +213,7 @@ test("checkQuota: a refusing plan reserves atomically and stops at the grace cap
     checkQuota(redis, "acme", "add", plan, { now: OCT }),
   ]);
   assert.equal(pair.filter((r) => r.ok).length, 1, "only one of two concurrent reserves fits");
-  assert.equal(pair.filter((r) => r.code === "quota_exceeded").length, 1);
+  assert.equal(pair.filter((r) => r.code === "upgrade_required").length, 1);
   assert.equal(await redis("GET", "acmi:cloud:meter:acme:202610:add"), "11");
 });
 
@@ -226,12 +226,12 @@ test("meter: a refusing plan re-checks and will not pass the grace cap", async (
       await meter(redis, "acme", "add", 1, { now: OCT, plan });
       accepted++;
     } catch (e) {
-      assert.equal(e.code, "quota_exceeded");
+      assert.equal(e.code, "upgrade_required");
       break;
     }
   }
   assert.equal(accepted, 11);
-  await assert.rejects(meter(redis, "acme", "add", 1, { now: OCT, plan }), { code: "quota_exceeded" });
+  await assert.rejects(meter(redis, "acme", "add", 1, { now: OCT, plan }), { code: "upgrade_required" });
   assert.equal((await usage(redis, "acme", { month: "202610" })).add, 11);
 
   await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");

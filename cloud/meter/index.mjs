@@ -12,14 +12,15 @@
 //   - grace_ratio, if given, must be in [0, 1]; default 0.1.
 //   - up to 100% of the limit: ok.
 //   - plans without overage (free, dev): a 10% grace margin, then refuse with
-//     quota_exceeded. The check and the increment are one EVAL, so concurrent
+//     upgrade_required. The check and the increment are one EVAL, so concurrent
 //     callers cannot both pass the grace cap. A refusal does not increment.
 //     Nothing is dropped silently; the caller surfaces the error.
 //   - plans with billed overage (pro, team, agency, enterprise): never refused;
 //     past the limit checkQuota returns {ok:true, overage:true} for billing
 //     and does not reserve. meter() counts those after the op.
-//   - recall caps and the quota_exceeded code are unchanged (pending a pricing
-//     decision). Do not rename the refusal to upgrade_required here.
+//   - the refusal code is upgrade_required (Mikey, 2026-10-14; matches
+//     docs/PRICING.md). Recall caps in plans.json stay placeholders until he
+//     sets the numbers.
 
 import { validTenantId } from "../tenants/index.mjs";
 import { registerEvalScript } from "../../src/lib/lua-scripts.mjs";
@@ -58,7 +59,7 @@ function checkN(n) {
 
 /** Count n ops. Returns the new monthly count for `op`.
  *  Pass `plan` for a refusing plan (no billed overage): the increment is then
- *  the same atomic reserve as checkQuota, and a cap breach throws quota_exceeded
+ *  the same atomic reserve as checkQuota, and a cap breach throws upgrade_required
  *  without changing the counter. Omit `plan` to count unconditionally. */
 export async function meter(redis, tenant, op, n = 1, { now, plan } = {}) {
   checkTenant(tenant);
@@ -67,7 +68,7 @@ export async function meter(redis, tenant, op, n = 1, { now, plan } = {}) {
   const month = monthKey(now ?? Date.now());
   if (plan && refuses(plan, op)) {
     const r = await reserve(redis, tenant, op, n, month, plan);
-    if (!r.ok) throw fail("quota_exceeded");
+    if (!r.ok) throw fail("upgrade_required");
     return r.usedAfter;
   }
   return count(redis, tenant, month, op, n);
@@ -174,7 +175,7 @@ async function reserve(redis, tenant, op, n, month, plan) {
   );
   if (!Array.isArray(res) || Number(res[0]) !== 1) {
     const used = Number(res?.[1]);
-    return { ok: false, code: "quota_exceeded", used: Number.isFinite(used) ? used : 0, limit };
+    return { ok: false, code: "upgrade_required", used: Number.isFinite(used) ? used : 0, limit };
   }
   return {
     ok: true,
@@ -204,7 +205,7 @@ async function readUsed(redis, tenant, month, op) {
  *   {ok:true,  used, limit, grace:false, reserved}
  *   {ok:true,  used, limit, grace:true,  reserved:true}                 (inside the 10% margin)
  *   {ok:true,  used, limit, grace:false, overage:true, reserved:false}  (billed-overage plan, past the limit)
- *   {ok:false, code:"quota_exceeded", used, limit, reserved:false}
+ *   {ok:false, code:"upgrade_required", used, limit, reserved:false}
  */
 export async function checkQuota(redis, tenant, op, plan, { now, n = 1 } = {}) {
   checkTenant(tenant);
@@ -222,6 +223,6 @@ export async function checkQuota(redis, tenant, op, plan, { now, n = 1 } = {}) {
     return { ok: true, used, limit, grace: false, overage: true, reserved: false };
   }
   const reserved = await reserve(redis, tenant, op, n, month, plan);
-  if (!reserved.ok) return { ok: false, code: "quota_exceeded", used: reserved.used, limit, reserved: false };
+  if (!reserved.ok) return { ok: false, code: "upgrade_required", used: reserved.used, limit, reserved: false };
   return { ok: true, used: reserved.used, limit, grace: reserved.grace, reserved: true };
 }

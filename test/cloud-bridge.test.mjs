@@ -585,7 +585,7 @@ function fakeMeter({ addLimit = Infinity } = {}) {
       const limit = op === "add" ? addLimit : Infinity;
       return used[op] + n <= limit
         ? { ok: true, used: used[op], limit }
-        : { ok: false, code: "quota_exceeded", used: used[op], limit, grace: 0 };
+        : { ok: false, code: "upgrade_required", used: used[op], limit, grace: 0 };
     },
   };
 }
@@ -599,7 +599,7 @@ describe("metering", () => {
       assert.equal((await b.exec(["SET", K("q2"), "2"])).status, 200);
       const r = await b.exec(["SET", K("q3"), "3"]);
       assert.equal(r.status, 429);
-      assert.deepEqual(r.body, { error: "quota_exceeded" });
+      assert.deepEqual(r.body, { error: "upgrade_required" });
       assert.equal(await b.redis("GET", K("q3")), null, "refused write did not land");
 
       // reads still work over quota
@@ -655,11 +655,11 @@ describe("metering", () => {
     }
   });
 
-  test("billed overage {ok:true, overage:true} is not refused; only {ok:false, code:quota_exceeded} is a 429", async () => {
+  test("billed overage {ok:true, overage:true} is not refused; only {ok:false, code:upgrade_required} is a 429", async () => {
     const answers = [
       { ok: true, used: 10, limit: 10, grace: false, overage: true },
       { ok: true, used: 10, limit: 10, grace: true },
-      { ok: false, code: "quota_exceeded", used: 11, limit: 10 },
+      { ok: false, code: "upgrade_required", used: 11, limit: 10 },
       { ok: false, code: "something_else" },
       { ok: false },
       null,
@@ -1302,15 +1302,15 @@ describe("M2: arguments per command capped; multi-key writes metered per key", (
 });
 
 describe("L1: a pipeline whose writes are refused runs nothing, and says why", () => {
-  test("over quota: 429 quota_exceeded with the first write's index; reads did not run", async () => {
+  test("over quota: 429 upgrade_required with the first write's index; reads did not run", async () => {
     const calls = [];
     const redis = async (...c) => (calls.push(c), "OK");
-    const meter = { meter: async () => {}, checkQuota: async () => ({ ok: false, code: "quota_exceeded", used: 10, limit: 10 }) };
+    const meter = { meter: async () => {}, checkQuota: async () => ({ ok: false, code: "upgrade_required", used: 10, limit: 10 }) };
     const b = await startBridge({ redis, meter, plan: { limits: { add: 10 } } });
     try {
       const r = await b.pipe([["GET", K("a")], ["SET", K("b"), "1"], ["GET", K("c")]]);
       assert.equal(r.status, 429);
-      assert.deepEqual(r.body, { error: "quota_exceeded", index: 1 });
+      assert.deepEqual(r.body, { error: "upgrade_required", index: 1 });
       assert.equal(calls.length, 0);
       assert.equal((await b.pipe([["GET", K("a")], ["GET", K("c")]])).status, 200, "a read-only pipeline still runs");
       const m2 = { meter: async () => {}, checkQuota: async () => { throw new Error("down"); } };
