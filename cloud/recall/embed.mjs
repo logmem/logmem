@@ -2,7 +2,7 @@
 //
 // An embedder is `async (texts: string[]) => number[][]` with a `dim` property.
 // No real provider is wired: Mikey picks one (open question 2 in BACKPLANE.md).
-// A real one must be called with redacted text only; the indexer guarantees it.
+// A real one must be called with redacted text only; the indexer and recall() guarantee it.
 
 import { createHash } from "node:crypto";
 

@@ -48,6 +48,7 @@ await enqueue(redis, tenant, { ref: logRef(key, score, member), kind: entry.kind
   When an entry shrinks, its stale higher-index chunks are deleted.
 - **Payload:** `{tenant_id, ref, kind, ts_ms, chunk, chunk_index, index_version: 1, content_hash}`.
   - `chunk` holds the redacted text, and `content_hash` is the sha256 of the redacted text.
+  - `kind` is redacted the same way. It is free text from the entry, so a secret in the kind does not land on the point.
 - **Missing entries:** when a canonical entry no longer exists in Redis, its points are deleted the next time its ref
   is indexed. Recall also drops it at hydration time.
 - **Failures:** a failed item is retried with exponential backoff (`backoffMs * 2^(n-1)`). The retry state is in
@@ -116,9 +117,9 @@ or by `content_hash` when there is no trail.
 ## Embedder
 
 No provider is chosen yet. Mikey picks one (open question 2). An embedder is `async (texts: string[]) =>
-number[][]`, with an integer `dim` property. The indexer passes it only redacted text. Changing the model or the
-dimension requires a new collection (`acmi_memory_v2`) and a rebuild for every tenant. `ensureCollection` refuses a
-dimension mismatch.
+number[][]`, with an integer `dim` property. The indexer passes it only redacted entry text, and `recall()`
+redacts the caller's query before calling it. Changing the model or the dimension requires a new collection
+(`acmi_memory_v2`) and a rebuild for every tenant. `ensureCollection` refuses a dimension mismatch.
 
 ## Recall API
 

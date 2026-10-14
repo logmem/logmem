@@ -825,6 +825,74 @@ test("search (review L5): recall before the collection exists returns [] and the
   await assert.rejects(recall({ redis, qdrant: { search: async () => { throw Object.assign(new Error("x"), { status: 503 }); } }, embed, tenant: "acme", query: "x" }));
 });
 
+test("indexer (review M): a secret-shaped entry kind is redacted on the Qdrant point", async () => {
+  const ctx = await setup();
+  const { redis, qdrant } = ctx;
+  const jwt = REVIEW_SHAPES.jwt_bare[0];
+  const npm = REVIEW_SHAPES.npm[0];
+  const slack = REVIEW_SHAPES.slack_webhook[0];
+  // The outbox kind is a safe label. The canonical entry kind is the secret,
+  // and that is what indexRef writes onto the point (chunk redaction does not cover it).
+  const cases = [
+    { trail: "kindJwt", kind: jwt, expect: REDACTED, fragments: ["eyJhbGci", "SflKxwRJ", "eyJzdWIi"] },
+    { trail: "kindNpm", kind: npm, expect: REDACTED, fragments: ["npm_", "A1b2A1b2"] },
+    { trail: "kindSlack", kind: slack, expect: REDACTED, fragments: ["hooks.slack.com", "T00000000", "XXXXXXXX"] },
+    { trail: "kindMix", kind: `note ${npm}`, expect: `note ${REDACTED}`, fragments: ["npm_", "A1b2A1b2"] },
+  ];
+  const seen = [];
+  const spy = async (texts) => {
+    seen.push(...texts);
+    return embed(texts);
+  };
+  spy.dim = embed.dim;
+  for (const [i, c] of cases.entries()) {
+    const key = "lm:t-acme:channel:ops:log";
+    const ts = 1791731538100 + i;
+    const member = JSON.stringify({ ts, trail: c.trail, kind: c.kind, summary: "ordinary deploy note" });
+    await redis("ZADD", key, ts, member);
+    await enqueue(redis, "acme", { ref: logRef(key, ts, member), kind: "memo", ts });
+  }
+  await drain(ctx, "acme", { embed: spy });
+  const pts = qdrant.points(COLLECTION);
+  assert.equal(pts.length, cases.length);
+  const blob = JSON.stringify(pts.map((p) => p.payload)) + seen.join("\n");
+  for (const c of cases) {
+    const pt = pts.find((p) => p.payload.ref.endsWith(`#${c.trail}`));
+    assert.ok(pt, c.trail);
+    assert.equal(pt.payload.kind, c.expect, `${c.trail} kind`);
+    for (const f of c.fragments) assert.ok(!blob.includes(f), `${c.trail} leaked ${f.slice(0, 8)}`);
+  }
+});
+
+test("search (review M): recall redacts JWT, Slack webhook and npm_ before the embedder", async () => {
+  const redis = redisWithLists();
+  const qdrant = createMemoryQdrant();
+  const jwt = REVIEW_SHAPES.jwt_bare[0];
+  const slack = REVIEW_SHAPES.slack_webhook[0];
+  const npm = REVIEW_SHAPES.npm[0];
+  const seen = [];
+  const spy = async (texts) => {
+    seen.push(...texts);
+    return embed(texts);
+  };
+  spy.dim = embed.dim;
+  const query = `find the deploy note ${jwt} also ${slack} and ${npm}`;
+  // No collection yet: search 404s after embed, and recall returns []. The embedder still ran.
+  assert.deepEqual(await recall({ redis, qdrant, embed: spy, tenant: "acme", query }), []);
+  assert.equal(seen.length, 1);
+  const got = seen[0];
+  assert.notEqual(got, query);
+  assert.match(got, /^find the deploy note /);
+  assert.ok(got.includes(REDACTED));
+  for (const frag of ["eyJhbGci", "SflKxwRJ", "eyJzdWIi", "hooks.slack.com", "T00000000", "XXXXXXXX", "npm_", "A1b2A1b2"]) {
+    assert.ok(!got.includes(frag), `embedder saw ${frag}`);
+  }
+  seen.length = 0;
+  const plain = "find the deploy note from tuesday";
+  await recall({ redis, qdrant, embed: spy, tenant: "acme", query: plain });
+  assert.deepEqual(seen, [plain]);
+});
+
 test("qdrant (review info): http:// with an api key is refused except on loopback or an explicit private-network opt-in", () => {
   const fetch = async () => ({});
   assert.throws(() => createQdrant({ url: "http://qdrant.public.example:6333", apiKey: "k", fetch }), { code: "bad_config" });

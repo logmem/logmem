@@ -8,6 +8,7 @@
 
 import { checkTenant, refInTenant, RecallError } from "./outbox.mjs";
 import { loadEntry as defaultLoadEntry } from "./refs.mjs";
+import { redact } from "./redact.mjs";
 import { normTs } from "../../src/core/store.mjs";
 import { COLLECTION, tenantFilter, errCode } from "./indexer.mjs";
 
@@ -58,7 +59,8 @@ export function buildFilter(tenant, { kinds, sinceMs } = {}) {
 export async function recall({ redis, qdrant, embed, tenant, query, limit = 10, kinds, since, collection = COLLECTION, loadEntry = defaultLoadEntry }) {
   checkTenant(tenant);
   const q = validateQuery({ query, limit, kinds, since });
-  const [vector] = await embed([q.query]);
+  // embed.mjs accepts redacted text only. The query is caller-supplied prose.
+  const [vector] = await embed([redact(q.query)]);
   // Several chunks of one entry can hit; over-fetch, then keep the best per ref.
   let hits;
   try {

@@ -101,7 +101,9 @@ export async function indexRef({ redis, qdrant, embed, tenant, ref, kind, collec
   }
   const content_hash = sha256(clean);
   const ts_ms = Number.isFinite(loaded.ts_ms) ? loaded.ts_ms : 0;
-  const k = String(loaded.kind ?? kind ?? "memo");
+  // kind is free text from the entry. prepareText redacts the chunk, not this field.
+  // ref, tenant_id, ts_ms and content_hash are an identifier, a tenant id, a number and a hash.
+  const k = redact(String(loaded.kind ?? kind ?? "memo"));
   const points = chunks.map((chunk, i) => ({
     id: pointId(tenant, ref, i),
     vector: vectors[i],
