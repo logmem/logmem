@@ -148,3 +148,50 @@ test("site: /onboarding has every step, /probe.sh is served, and the probe pairs
   const quiet = execFileSync("sh", [join(root, "public/probe.sh")], { env: { ...env, LOGMEM_PAIR: "" }, encoding: "utf8", timeout: 20000 });
   assert.match(quiet, /Nothing was sent/);
 });
+
+test("homepage: no unpublished self-host pitch, ask-first matches what is built, plain how-it-works", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  const js = readFileSync(new URL("../public/home.js", import.meta.url), "utf8");
+  const between = (from, to) => {
+    const start = html.indexOf(from);
+    assert.ok(start >= 0, `missing ${from}`);
+    const end = html.indexOf(to, start + from.length);
+    assert.ok(end > start, `missing ${to} after ${from}`);
+    return html.slice(start, end);
+  };
+
+  assert.match(html, /<title>LogMem:/);
+  assert.equal(html.includes("Want it today"), false);
+  assert.equal(html.includes("Self-host it on your own Redis"), false);
+  assert.equal(html.includes("Run it on your own Redis"), false);
+  assert.equal(html.includes("Set it up on my Redis"), false);
+  assert.equal(html.includes("updates-form"), false, "the homepage form that saved nothing stays gone");
+  assert.doesNotMatch(html, /nothing that can[’']t be undone runs until a person says yes/);
+  assert.equal(html.includes("If your AI tools can connect to an MCP server"), false);
+  assert.equal(html.includes("they can share LogMem"), false);
+
+  const pause = "LogMem does not stop an agent that skips that ask yet.";
+  for (const [name, chunk] of [
+    ["hero", between('class="h-lede"', 'id="connect"')],
+    ["step 4", between(">Ask first<", ">Wrap up<")],
+    ["trust", between(">The agent pauses and asks<", ">A read-only web app<")],
+  ]) {
+    assert.ok(chunk.includes("pauses and asks"), `${name} says the agent pauses and asks`);
+    assert.ok(chunk.includes(pause), `${name} says LogMem does not enforce the pause yet`);
+  }
+
+  const heroCta = between('class="h-cta-row"', 'class="h-fine"');
+  const close = between('id="updates"', "<footer");
+  for (const [name, chunk] of [["hero", heroCta], ["close", close]]) {
+    assert.equal((chunk.match(/<a\b/g) || []).length, 1, `${name} has a single call to action`);
+    assert.match(chunk, /href="\/onboarding"[^>]*>Join the waitlist</);
+  }
+
+  const howIntro = between('id="how-title"', "</p>");
+  assert.doesNotMatch(howIntro, /MCP|Redis|logmem_/);
+  assert.match(howIntro, /Catch up on what already happened/);
+
+  // home.js only binds the old updates form when that form is on the page.
+  assert.match(js, /var form = \$\('#updates-form'\);\n  if \(form\)/);
+});

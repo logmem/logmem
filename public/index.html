@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LogMem: shared memory for AI agent teams</title>
-<meta name="description" content="Your AI tools don’t talk to each other. LogMem gives them one shared memory: they remember what already happened, hand work to each other, and ask you first before anything that can’t be undone.">
+<meta name="description" content="Your AI tools don’t talk to each other. LogMem gives them one shared memory: they remember what already happened and hand work to each other. Before anything that can’t be undone, the agent pauses and asks. LogMem does not stop an agent that skips that ask yet.">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
@@ -39,17 +39,16 @@
   <div class="h-hero-copy">
     <span class="lm-eyebrow">Shared memory for AI agents</span>
     <h1 id="hero-title" class="lm-display h-h1">Your AI tools don’t talk to each other. LogMem gives them one shared memory.</h1>
-    <p class="h-lede">When one agent finishes, the next one already knows what happened. You stop being the copy-paste middleman between Claude Code, Codex, Cursor and Claude, and nothing that can’t be undone runs until a person says yes.</p>
+    <p class="h-lede">When one agent finishes, the next one already knows what happened. You stop being the copy-paste middleman between Claude Code, Codex, Cursor and Claude. Before anything that can’t be undone, the agent pauses and asks a person. LogMem does not stop an agent that skips that ask yet.</p>
     <ul class="h-ticks h-rules">
       <li>They remember what already happened.</li>
       <li>They hand work to each other, and the handoff stays open until someone picks it up.</li>
-      <li>They ask you first before anything that can’t be undone, like sending, paying, deleting or publishing.</li>
+      <li>They are meant to pause and ask you before sending, paying, deleting or publishing. LogMem does not stop an agent that skips that ask yet.</li>
     </ul>
     <div class="h-cta-row">
       <a href="/onboarding" class="lm-btn lm-btn--primary h-btn-lg">Join the waitlist</a>
-      <a href="/onboarding" class="lm-btn lm-btn--ghost h-btn-lg">Run it on your own Redis <i class="lm-i" data-i="arrow-right" aria-hidden="true"></i></a>
     </div>
-    <p class="h-fine">Early. Running on our own agent team today. Self-host it on your own Redis. Hosted version: waitlist only. No launch date or pricing yet.</p>
+    <p class="h-fine">Early. Running on our own agent team today. Hosted version: waitlist only. No launch date or pricing yet.</p>
   </div>
 
   <div class="h-connect lm-panel" id="connect">
@@ -162,7 +161,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
   <div class="h-section-head">
     <span class="lm-eyebrow">How it works</span>
     <h2 id="how-title" class="lm-display h-h2">Five habits, shared by every agent.</h2>
-    <p class="h-sub">Under the hood: LogMem is an MCP server with tools called Start, Brief, Note, Handoff, Ask and Recap, storing entries in your Redis.</p>
+    <p class="h-sub">Catch up on what already happened, write down what changed, hand the work to the next agent, pause and ask a person, and leave a recap when the work stops.</p>
   </div>
   <div class="h-phases">
     <div class="h-phase lm-panel">
@@ -183,7 +182,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     <div class="h-phase lm-panel">
       <span class="lm-eyebrow h-brand">Step 4</span>
       <h3 class="lm-title-1">Ask first</h3>
-      <p>Before anything that can’t be undone, the agent stops and shows a person the exact action. (Today the agent waits on its own; enforcement on our side is coming.)</p>
+      <p>Before anything that can’t be undone, the agent pauses and asks, and shows a person the exact action. LogMem does not stop an agent that skips that ask yet.</p>
     </div>
     <div class="h-phase lm-panel">
       <span class="lm-eyebrow h-brand">Step 5</span>
@@ -231,7 +230,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
           <span class="lm-avatar" data-human="">NO</span>
         </div>
         <h3 class="lm-title-1">Small teams with someone who approves</h3>
-        <p>Agents do the work, and one person signs off on sending, paying, deleting and publishing. Approvals, rejections and “not now” decisions all stay on the record.</p>
+        <p>Agents do the work. Before sending, paying, deleting or publishing, the agent pauses and asks one person to sign off. Approvals, rejections and “not now” decisions stay on the record when someone answers. LogMem does not stop an agent that skips that ask yet.</p>
         <ul class="h-ticks">
           <li>Approved and completed are tracked separately</li>
           <li>Rejections and deferrals stay on the record</li>
@@ -249,7 +248,6 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
         </ul>
       </article>
     </div>
-    <p class="h-sub">If your AI tools can connect to an MCP server, they can share LogMem.</p>
   </div>
 </section>
 
@@ -273,8 +271,8 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     </div>
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="decisions" aria-hidden="true"></i>
-      <h3 class="lm-title-2">Approvals before irreversible actions</h3>
-      <p>An agent asks before anything it can’t undo, then waits for an entry that records the decision. In v0 the agent honours the wait; server-side enforcement is planned.</p>
+      <h3 class="lm-title-2">The agent pauses and asks</h3>
+      <p>Before anything that can’t be undone, the agent pauses and asks, then waits for the decision to be written down. LogMem does not stop an agent that skips that ask yet.</p>
     </div>
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="eye" aria-hidden="true"></i>
@@ -319,11 +317,10 @@ origin         parentCorrelationId</pre>
 <section id="updates" class="wrap h-section h-updates" aria-labelledby="updates-title">
   <div class="h-updates-copy">
     <h2 id="updates-title" class="lm-display h-h2">Want your agents to share one memory?</h2>
-    <p class="h-sub">The hosted version isn’t open yet. Leave your email and we’ll write once, when you can try it. Want it today? Run the server on your own Redis.</p>
+    <p class="h-sub">The hosted version isn’t open yet. Leave your email and we’ll write once, when you can try it.</p>
   </div>
   <div class="h-cta-row">
     <a href="/onboarding" class="lm-btn lm-btn--primary h-btn-lg">Join the waitlist</a>
-    <a href="/onboarding" class="lm-btn lm-btn--ghost h-btn-lg">Set it up on my Redis <i class="lm-i" data-i="arrow-right" aria-hidden="true"></i></a>
   </div>
 </section>
 </main>
