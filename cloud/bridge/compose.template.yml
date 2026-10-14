@@ -1,0 +1,73 @@
+# acmi-bridge compose template: one service per tenant.
+#
+# The control plane (`acmi-cloud bridge render <id>`, slice D) fills the
+# {{...}} placeholders. ${...} values are injected at deploy time from
+# Infisical; this file never holds a secret. Only the bridge token's sha256
+# reaches the container, and each tenant connects to Redis as its own ACL user
+# (cloud/bridge/acl.template.txt), and the meter uses a second user that only
+# reaches that tenant's counters, so a jail bug is still contained by Redis.
+#
+#   {{TENANT}}      tenant id, e.g. acme  (keys: acmi:t-acme:*, lm:t-acme:*)
+#   {{TENANT_ENV}}  tenant id upper-cased, dashes to underscores, e.g. ACME
+#   {{PORT}}        this tenant's bridge port (registry: bridge_port)
+#   {{PLAN}}        plan id from cloud/plans.json, e.g. dev
+#
+# Ingress: ONE mode. Default (below): the TLS reverse proxy runs as a container
+# on the acmi-edge network and reaches acmi-bridge-{{TENANT}}:{{PORT}}; no host
+# port is published.
+# Alternative, when the proxy runs on the host instead: drop acmi-edge from
+# this service and publish loopback only:
+#     ports: ["127.0.0.1:{{PORT}}:{{PORT}}"]
+# Never both, and never a non-loopback host port.
+#
+# Networks are external and created once per VM by the platform stack.
+# Requirements `acmi-cloud bridge render` must verify (docker network inspect)
+# before deploying, because this file cannot enforce them:
+#   acmi-redis  Internal (no external route); Redis/Valkey and bridges only.
+#   acmi-edge   The proxy and bridges only; Redis is not attached to it.
+
+services:
+  acmi-bridge-{{TENANT}}:
+    image: ${ACMI_BRIDGE_IMAGE:-acmi-bridge:0.1.0}
+    container_name: acmi-bridge-{{TENANT}}
+    restart: unless-stopped
+    environment:
+      ACMI_TENANT: "{{TENANT}}"
+      ACMI_BRIDGE_PORT: "{{PORT}}"
+      ACMI_BRIDGE_HOST: "0.0.0.0"
+      ACMI_PLAN_QUOTAS: "{{PLAN}}"
+      ACMI_BRIDGE_TOKEN_SHA256: "${ACMI_BRIDGE_TOKEN_SHA256_{{TENANT_ENV}}:?set from Infisical}"
+      # redis://acmi-t-{{TENANT}}:<password>@redis:6379, the tenant's own ACL user.
+      ACMI_REDIS_URL: "${ACMI_REDIS_URL_{{TENANT_ENV}}:?per-tenant ACL user URL, from Infisical}"
+      # redis://acmi-meter-{{TENANT}}:<password>@redis:6379, the meter's own user and connection.
+      ACMI_METER_REDIS_URL: "${ACMI_METER_REDIS_URL_{{TENANT_ENV}}:?per-tenant meter ACL user URL, from Infisical}"
+      ACMI_BRIDGE_RATE_CAPACITY: "${ACMI_BRIDGE_RATE_CAPACITY:-2000}"
+      ACMI_BRIDGE_RATE_PER_SEC: "${ACMI_BRIDGE_RATE_PER_SEC:-500}"
+      ACMI_BRIDGE_MAX_CONNECTIONS: "${ACMI_BRIDGE_MAX_CONNECTIONS:-256}"
+      ACMI_BRIDGE_MAX_IN_FLIGHT: "${ACMI_BRIDGE_MAX_IN_FLIGHT:-64}"
+    expose:
+      - "{{PORT}}"
+    networks:
+      - acmi-redis
+      - acmi-edge
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  acmi-redis:
+    external: true
+  acmi-edge:
+    external: true
