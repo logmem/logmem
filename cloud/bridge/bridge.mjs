@@ -765,8 +765,10 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
 
   async function runOne(c, deadline) {
     const t0 = performance.now();
-    const left = Math.min(L.commandTimeoutMs, deadline - performance.now());
-    if (left <= 0) return { out: { error: "timeout" }, ran: false };
+    const remaining = deadline - t0;
+    const left = Math.min(L.commandTimeoutMs, remaining);
+    // left <= 0: the request deadline is already spent. Nothing runs, so the op is refundable.
+    if (left <= 0) return { out: { error: "timeout" }, ran: false, deadlineHit: true };
     let r;
     try {
       r = await withDeadline(redis(...c.cmd), left);
@@ -777,7 +779,11 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     if (r === TIMEOUT) {
       emit(c.op, c.name, false, t0);
       // Outcome unknown (the write may have landed): no refund.
-      return { out: { error: "timeout" }, ran: true, failed: false, timedOut: true };
+      // setTimeout can fire a few ms before performance.now() reaches `deadline`.
+      // When this command was bounded by the request deadline (not commandTimeoutMs),
+      // later commands must not start.
+      const deadlineHit = left < L.commandTimeoutMs;
+      return { out: { error: "timeout" }, ran: true, failed: false, timedOut: true, deadlineHit };
     }
     emit(c.op, c.name, true, t0);
     return { out: { result: r === undefined ? null : r }, ran: true, failed: false };
@@ -815,9 +821,11 @@ export function createBridge({ tenant, tokenSha256, redis, meter = null, plan = 
     const results = [];
     let failedAdds = 0;
     let okReads = 0;
+    let deadlineSpent = false;
     for (const c of checked) {
-      const r = await runOne(c, deadline);
+      const r = deadlineSpent ? { out: { error: "timeout" }, ran: false, failed: false } : await runOne(c, deadline);
       results.push(r.out);
+      if (r.deadlineHit) deadlineSpent = true;
       if (c.op === "add" && (r.failed || !r.ran)) failedAdds += c.weight;
       if (c.op === "read" && !r.out.error) okReads += c.weight;
     }
