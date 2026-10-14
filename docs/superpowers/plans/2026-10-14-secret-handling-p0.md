@@ -70,7 +70,7 @@ test("guard: refuses a key inside prose", () => {
 });
 
 test("guard: allows trails and hashes", () => {
-  for (const ok of ["handoffIssue14-1791988665997-0425b8b35e8b16fbd334f90b", "commit 98698cb", "sha256 3294043fd6407f895457038acb561c56fed1ed751988e2d855ea9305562425d5", "/fleet-shared/acmi ACMI_BRIDGE_TOKEN length 64"])
+  for (const ok of ["handoffIssue14-1791988665997-0425b8b35e8b16fbd334f90b", "commit 98698cb", "sha256 3294043fd6407f895457038acb561c56fed1ed751988e2d855ea9305562425d5", "/fleet-shared/acmi ACMI_BRIDGE_TOKEN length 64", "OPENAI_API_KEY: /shared/openai/OPENAI_API_KEY", "ACMI_BRIDGE_TOKEN=/fleet-shared/acmi/ACMI_BRIDGE_TOKEN", "CRON_SECRET=see-infisical-fleet-secrets-prod"])
     assert.equal(findSecret(ok), null, ok);
 });
 
@@ -110,7 +110,7 @@ const RULES = [
   ["slack_token", /\bxox[abpors]-[0-9A-Za-z-]{10,}\b/],
   ["private_key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["bearer_jwt", /\bBearer\s+eyJ[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}/],
-  ["assigned_secret", /\b[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*\s*[=:]\s*["']?[0-9A-Za-z+/_.-]{20,}/],
+  ["assigned_secret", /\b[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*\s*[=:]\s*["']?(?![\/])(?=[0-9A-Za-z+_.-]*\d)(?=[0-9A-Za-z+_.-]*[A-Za-z])[0-9A-Za-z+\/_.-]{20,}/],
 ];
 
 export function findSecret(text) {
@@ -619,7 +619,7 @@ git commit -m "feat(keymaster): publish the access matrix on job:secrets"
 - Test: `test/keymaster-apply.test.mjs`
 
 **Interfaces:**
-- Consumes: `parseRequest` (Task 4); `Infisical.addTemporaryGrant`, `Infisical.revokeGrant`, `Infisical.listIdentityGrants` (Task 2); `store.append`, `store.readLog` (`src/core/store.mjs`).
+- Consumes: `parseRequest` (Task 4); `Infisical.addTemporaryGrant`, `Infisical.revokeGrant({ token, grantId, identityId })` (as shipped in #42), `Infisical.listIdentityGrants` (Task 2); `store.append`, `store.readLog` (`src/core/store.mjs`).
 - Produces: `applyApproved({ store, inf, token, ask, now }) → Promise<{ ok, applied: boolean, error? }>` where `ask = { trail, verdict, payload }` (`verdict` from the Brief's `answered_asks`); `revoke({ store, inf, token, grant, reason, now }) → Promise<{ ok, error? }>`.
 - Writes to `job:secrets`: `progress` entries with summaries `granted …` / `revoked …`, payload `{ secret_ref, agent, scope, ttl, expires_at, ask_trail }`; `problem` on failure.
 
@@ -672,7 +672,7 @@ test("apply: a failed grant logs problem and reports not ok", async () => {
 
 test("revoke: runs without an ask and logs it", async () => {
   const store = createStore(createMemoryRedis(), { space: "fieldnotes" }), inf = fakeInf();
-  const r = await revoke({ store, inf, token: "t", grant: { identity: "agent-codex", path: "/shared/openai", grantId: "g1" }, reason: "expired", now: NOW });
+  const r = await revoke({ store, inf, token: "t", grant: { identity: "agent-codex", identityId: "i1", path: "/shared/openai", grantId: "g1" }, reason: "expired", now: NOW });
   assert.equal(r.ok, true);
   assert.match((await store.readLog("job", "secrets"))[0].summary, /^Revoked/);
 });
@@ -711,7 +711,7 @@ export async function applyApproved({ store, inf, token, ask, now = Date.now() }
 }
 
 export async function revoke({ store, inf, token, grant, reason, now = Date.now() }) {
-  const r = await inf.revokeGrant({ token, grantId: grant.grantId });
+  const r = await inf.revokeGrant({ token, grantId: grant.grantId, identityId: grant.identityId });
   const payload = { secret_ref: grant.path, agent: grant.identity, reason };
   if (!r.ok) {
     await log(store, now, "problem", `revokeFailed-${grant.identity}-${now}`, `Revoke for ${grant.identity} on ${grant.path} failed.`, { ...payload, error: r.error });
