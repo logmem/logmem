@@ -195,3 +195,39 @@ test("homepage: no unpublished self-host pitch, ask-first matches what is built,
   // home.js only binds the old updates form when that form is on the page.
   assert.match(js, /var form = \$\('#updates-form'\);\n  if \(form\)/);
 });
+
+test("site: probe.sh names a login wall (Vercel preview protection) instead of blaming the code", async (t) => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { createServer } = await import("node:http");
+  const run = promisify(execFile); // async: the fake server lives in this process
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  for (const [status, headers] of [[302, { location: "https://vercel.com/login" }], [401, {}]]) {
+    const srv = createServer((req, res) => { res.writeHead(status, headers); res.end("<!DOCTYPE html><html>login</html>"); });
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    t.after(() => srv.close());
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const { stdout } = await run("sh", ["-c", `sh "${join(root, "public/probe.sh")}" 2>&1 || echo EXIT=$?`], {
+      env: { PATH: "/usr/bin:/bin", LOGMEM_PAIR: "LOGIN1", LOGMEM_URL: base, HOME: "/tmp" }, timeout: 20000,
+    });
+    assert.match(stdout, /asked for a login, so nothing was sent/, `status ${status}`);
+    assert.match(stdout, /EXIT=1/);
+    assert.doesNotMatch(stdout, /already used/);
+  }
+});
+
+test("site: the onboarding probe command always fetches probe.sh from logmem.si except on local dev", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const js = readFileSync(join(root, "public/onboarding.js"), "utf8");
+  const fn = js.slice(js.indexOf("var CANON"), js.indexOf("function startProbe"));
+  const probeCommand = new Function("location", `${fn}; return probeCommand;`);
+  assert.equal(probeCommand({ origin: "https://logmem.si" })("ABC123"), "curl -fsSL https://logmem.si/probe.sh | LOGMEM_PAIR=ABC123 sh");
+  assert.equal(probeCommand({ origin: "https://logmem-abc-mad-ez-media.vercel.app" })("ABC123"), "curl -fsSL https://logmem.si/probe.sh | LOGMEM_PAIR=ABC123 sh");
+  assert.equal(probeCommand({ origin: "http://localhost:4317" })("ABC123"), "curl -fsSL http://localhost:4317/probe.sh | LOGMEM_URL=http://localhost:4317 LOGMEM_PAIR=ABC123 sh");
+});

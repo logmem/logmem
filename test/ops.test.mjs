@@ -128,6 +128,19 @@ test("REST: network errors retry reads; 4xx and Redis errors never retry", async
   assert.equal(n, 1);
 
   n = 0;
+  globalThis.fetch = async () => {
+    n++;
+    return new Response(JSON.stringify({ error: `NOAUTH ${URL_} Bearer ${TOKEN} token=${TOKEN}` }), { status: 200 });
+  };
+  await assert.rejects(r("GET", "k"), (e) => {
+    assert.match(e.message, /^Redis REST GET: /);
+    assertNoSecrets(e);
+    assert.ok(!e.message.includes("https://"), "upstream data.error URL is not passed through");
+    return true;
+  });
+  assert.equal(n, 1, "Redis errors are not retried");
+
+  n = 0;
   globalThis.fetch = async () => { n++; return new Response("busy", { status: 503 }); };
   await assert.rejects(r("DEL", "k"), /Redis REST DEL: HTTP 503/);
   assert.equal(n, 1, "writes are not retried even on 5xx");

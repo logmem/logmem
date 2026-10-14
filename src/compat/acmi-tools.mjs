@@ -14,6 +14,7 @@ import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
 import { SLOTS, checkAgentId } from "../core/keys.mjs";
 import { HUMAN_ONLY, ASK_ONLY, HANDOFF_ONLY, HANDOFF_WRITE_ONLY, isDecidedKind, isAskKind, isHandoffKind, handoffSettlement, assertDeclinedType, capEntry, capJson, capText, onlyMe, me } from "../core/tools.mjs";
 import { agentRef, byline } from "../core/session.mjs";
+import { appendLogWarnings, readWarning } from "../lib/redact.mjs";
 
 /** Rollups are cross-session summaries; they get more room than one entry's payload. */
 const ROLLUP_MAX = 64 * 1024;
@@ -188,7 +189,11 @@ export const ACMI_TOOLS = [
         store.getNow(ns, id),
         store.readLog(ns, id, { reverse: true, limit: 10 }),
       ]);
-      return { profile, signals: Object.keys(signals).length ? signals : null, timeline_recent: toAcmiList(log) };
+      const read_warnings = [];
+      appendLogWarnings(read_warnings, "key", `${namespace}:${id}`, log);
+      const out = { profile, signals: Object.keys(signals).length ? signals : null, timeline_recent: toAcmiList(log) };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {
@@ -277,7 +282,11 @@ export const ACMI_TOOLS = [
         store.readLog("job", id, { reverse: true, limit: 50 }),
         store.jobSessions(id),
       ]);
-      return { work_id: id, profile, signals: Object.keys(signals).length ? signals : null, timeline: toAcmiList(log), sessions: sessions || [] };
+      const read_warnings = [];
+      appendLogWarnings(read_warnings, "key", `work:${id}`, log);
+      const out = { work_id: id, profile, signals: Object.keys(signals).length ? signals : null, timeline: toAcmiList(log), sessions: sessions || [] };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {
@@ -303,13 +312,23 @@ export const ACMI_TOOLS = [
     async run({ keys, since, limit }, { store }) {
       const sinceMs = since ? Date.now() - parseSince(since) : undefined;
       const merged = [];
+      const read_warnings = [];
       for (const raw of keys) {
-        const ref = String(raw)
-          .replace(/^acmi:/, "")
-          .replace(new RegExp(`^${store.space}:`), "")
-          .replace(/:timeline$/, "");
-        const { ns, id } = parseRef(ref);
-        for (const e of await store.readLog(ns, id, { sinceMs })) merged.push({ e, src: `${ns}:${id}` });
+        try {
+          const ref = String(raw)
+            .replace(/^acmi:/, "")
+            .replace(new RegExp(`^${store.space}:`), "")
+            .replace(/:timeline$/, "");
+          const { ns, id } = parseRef(ref);
+          const log = await store.readLog(ns, id, { sinceMs });
+          for (const e of log) merged.push({ e, src: `${ns}:${id}` });
+          appendLogWarnings(read_warnings, "key", String(raw), log);
+        } catch (e) {
+          if (e?.code === "bad_agent_id") throw e;
+          // ACMI's acmi_cat failed the whole call (Redis REST 500) on one bad key.
+          // The warning is a fixed code plus a sanitized message.
+          read_warnings.push(readWarning("key", String(raw), e));
+        }
       }
       merged.sort((a, b) => b.e.ts - a.e.ts);
       const events = merged.slice(0, limit || 50).map(({ e, src }) => {
@@ -321,7 +340,7 @@ export const ACMI_TOOLS = [
           summary: a.summary || JSON.stringify(a),
         };
       });
-      return { ok: true, events };
+      return read_warnings.length ? { ok: true, events, read_warnings } : { ok: true, events };
     },
   },
   {
@@ -365,10 +384,12 @@ export const ACMI_TOOLS = [
         store.readLog("agent", agentId, { reverse: true, limit: 20 }),
         store.recentShifts(agentId, 5),
       ]);
+      const read_warnings = [];
+      appendLogWarnings(read_warnings, "key", `agent:${agentId}`, log);
       const activeAcmi = Object.fromEntries(
         Object.entries(active).map(([k, v]) => [k.replace(/^channel:/, "").replace(/^job:/, "work:"), v]),
       );
-      return {
+      const out = {
         agent_id: agentId,
         tenant: store.space,
         bootstrapped_at: new Date().toISOString(),
@@ -379,6 +400,8 @@ export const ACMI_TOOLS = [
         timeline_recent: toAcmiList(log),
         recent_spawns: spawns,
       };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {

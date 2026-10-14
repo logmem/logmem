@@ -9,6 +9,8 @@
 //
 // Read-only: api/* never writes to ACMI. All endpoints are GET-only.
 
+import { sanitizeWarningMessage } from "./redact.mjs";
+
 export function resolveInstance(req) {
   const url = new URL(req.url);
   const queryId = url.searchParams.get("instance");
@@ -136,7 +138,8 @@ async function restAttempt(endpoint, token, cmd, name, timeoutMs) {
       { transient: timedOut },
     );
   }
-  if (data?.error) throw new RedisRestError(`Redis REST ${name}: ${data.error}`);
+  // data.error is upstream text and may echo the endpoint or the token.
+  if (data?.error) throw new RedisRestError(`Redis REST ${name}: ${sanitizeWarningMessage(data.error)}`);
   return data?.result;
 }
 
