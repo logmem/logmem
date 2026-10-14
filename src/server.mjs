@@ -46,11 +46,13 @@ export { INSTRUCTIONS };
 export { mirrorConfigFromEnv };
 export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());
 
-export function toResult(data) {
+export function toResult(data, tool) {
   const structured = data !== null && typeof data === "object" && !Array.isArray(data) ? data : { ok: true, value: data };
-  // Plain-writing check (docs/spec/WRITING.md): warn on the entry just written, never block.
-  const written = structured.entry?.summary ?? structured.entries?.[0]?.summary;
-  if (structured.ok !== false && typeof written === "string" && !structured.style) {
+  // Plain-writing check (docs/spec/WRITING.md): warn on text this call just wrote. Never block.
+  // Only write tools. Feed, recall and other reads return text another agent wrote.
+  const write = tool?.annotations?.readOnlyHint === false;
+  const written = write ? (structured.entry?.summary ?? structured.entries?.[0]?.summary) : undefined;
+  if (write && structured.ok !== false && typeof written === "string" && !structured.style) {
     const style = styleFor(written);
     if (style) structured.style = style;
   }
@@ -146,9 +148,9 @@ export function createLogmem({
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
   const byName = new Map(tools.map((t) => [t.name, t]));
 
-  function degradedMark(result) {
+  function degradedMark(result, tool) {
     if (!live || snapshot().kind !== "memory") return result;
-    return toResult({ ...result.structuredContent, degraded: true });
+    return toResult({ ...result.structuredContent, degraded: true }, tool);
   }
 
   function callTool(name, args = {}) {
@@ -172,7 +174,7 @@ export function createLogmem({
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
       }
-      return degradedMark(toResult(out));
+      return degradedMark(toResult(out, tool), tool);
     } catch (e) {
       return degradedMark(toResult(toolError(e, name)));
     }
