@@ -8,6 +8,14 @@
 // Only the commands LogMem uses are implemented. Anything else throws, so a
 // new call site fails loudly in tests instead of silently doing nothing.
 
+// EVAL runs scripts registered in lua-scripts.mjs (the ACMI cloud control plane).
+// The body runs synchronously against this process's map, which is the atomicity
+// the tests rely on. A real Redis runs the same script text via EVAL.
+import { evalScriptFor } from "./lua-scripts.mjs";
+
+// Kept for existing importers; the registry itself lives in lua-scripts.mjs.
+export { registerEvalScript } from "./lua-scripts.mjs";
+
 function globToRegex(glob) {
   const esc = String(glob).replace(/[.+^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^${esc.replace(/\*/g, ".*").replace(/\?/g, ".")}$`);
@@ -79,6 +87,15 @@ export function createMemoryRedis() {
       data.set(k, { type: "string", value: String(n) });
       return n;
     },
+    INCRBY: (k, by) => {
+      const e = get(k, "string");
+      const n = (e ? Number(e.value) : 0) + Number(by);
+      if (!Number.isSafeInteger(n) || !Number.isInteger(Number(by))) {
+        throw new Error("ERR value is not an integer or out of range");
+      }
+      data.set(k, { type: "string", value: String(n) });
+      return n;
+    },
     EXPIRE: (k) => (data.has(k) ? 1 : 0),
     TTL: (k) => (data.has(k) ? -1 : -2),
     DBSIZE: () => data.size,
@@ -129,6 +146,16 @@ export function createMemoryRedis() {
       }
       return added;
     },
+    HSETNX: (k, f, v) => {
+      let e = get(k, "hash");
+      if (e?.value.has(String(f))) return 0;
+      if (!e) {
+        e = { type: "hash", value: new Map() };
+        data.set(k, e);
+      }
+      e.value.set(String(f), String(v));
+      return 1;
+    },
     HGET: (k, f) => get(k, "hash")?.value.get(String(f)) ?? null,
     HDEL: (k, ...fields) => {
       const e = get(k, "hash");
@@ -155,7 +182,13 @@ export function createMemoryRedis() {
       e.value.push(...vals.map(String));
       return e.value.length;
     },
-    ZADD: (k, ...args) => {
+    ZADD: (k, ...rest) => {
+      // Leading flags: NX | XX | LT | GT (Redis 6.2+). LT/GT = write-if-lower/higher.
+      const flags = new Set();
+      while (rest.length && ["NX", "XX", "LT", "GT"].includes(String(rest[0]).toUpperCase())) {
+        flags.add(String(rest.shift()).toUpperCase());
+      }
+      const args = rest;
       let e = get(k, "zset");
       if (!e) {
         e = { type: "zset", value: new Map() };
@@ -164,9 +197,15 @@ export function createMemoryRedis() {
       let added = 0;
       for (let i = 0; i < args.length; i += 2) {
         const member = String(args[i + 1]);
-        if (!e.value.has(member)) added++;
-        e.value.set(member, Number(args[i]));
+        const score = Number(args[i]);
+        const has = e.value.has(member);
+        if ((flags.has("NX") && has) || (flags.has("XX") && !has)) continue;
+        if (has && flags.has("LT") && !(score < e.value.get(member))) continue;
+        if (has && flags.has("GT") && !(score > e.value.get(member))) continue;
+        if (!has) added++;
+        e.value.set(member, score);
       }
+      if (!e.value.size) data.delete(k);
       return added;
     },
     ZREM: (k, ...members) => {
@@ -189,6 +228,14 @@ export function createMemoryRedis() {
       if (!e) return [];
       const withScores = opts.some((o) => String(o).toUpperCase() === "WITHSCORES");
       return flat(sliceRange(zsorted(e).reverse(), start, stop), withScores);
+    },
+    EVAL: (script, numkeys, ...rest) => {
+      const fn = evalScriptFor(script);
+      if (!fn) throw new Error("memory-redis: unsupported EVAL script");
+      const n = Number(numkeys);
+      if (!Number.isInteger(n) || n < 0 || n > rest.length) throw new Error("ERR wrong number of keys");
+      const call = (cmd, ...a) => commands[String(cmd).toUpperCase()](...a.map((x) => (typeof x === "number" ? x : String(x))));
+      return fn(call, rest.slice(0, n), rest.slice(n));
     },
     ZRANGEBYSCORE: (k, min, max, ...opts) => {
       const e = get(k, "zset");
