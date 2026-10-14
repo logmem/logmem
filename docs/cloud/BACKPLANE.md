@@ -4,8 +4,13 @@ The hosted product, built on the approved Elestio VM backplane. Sources: the Ele
 the LogMem Cloud PRD (in Muse's workspace, not yet in this repo), Decision 3 (MIT open core) and Mikey's directive of
 2026-10-13.
 
-**Public naming is ACMI** until the code and package rename lands. Every name a customer can see uses ACMI: binaries,
-packages, env vars, API paths, headers, error messages and docs. Internal code in this repo may still say LogMem.
+**Naming (Mikey, decision B, 2026-10-14 08:23 ET):** LogMem is the public working name, used on logmem.si and in
+customer copy. ACMI stays the internal protocol and fleet name.
+- **Customer-facing surfaces say LogMem:** docs, the API key prefix (`lm_live_`, which replaces `acmi_live_` before
+  any key is issued), error messages and the CLI name shown to customers.
+- **Internal names stay ACMI:** the `acmi:t-{id}:*` / `acmi:cloud:*` keys, the `acmi-bridge` binary, `ACMI_*` env
+  vars and the protocol.
+- Customer-facing ACMI strings left in merged code are renamed in slice D.
 
 ## Rules (from the directive, non-negotiable)
 
