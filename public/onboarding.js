@@ -23,9 +23,9 @@
 
   // ---- steps -----------------------------------------------------------------
   var STEPS = {
-    choose: ['Choose how to run it', 'Cloud or your own Redis'],
-    plan: ['Pick a plan', 'Proposed pricing'],
-    detect: ['Detect your agents', 'Local probe, read-only'],
+    choose: ['Choose how to run it', 'Waitlist or your own Redis'],
+    plan: ['What it’s for', 'No pricing yet'],
+    detect: ['Find your AI tools', 'Local probe, read-only'],
     waitlist: ['Join the waitlist', 'Email and agent count'],
     space: ['Name your space', 'One walled-off memory'],
     redis: ['Connect your Redis', 'Upstash or rediss://'],
@@ -106,7 +106,7 @@
   }
 
   // ---- plan ------------------------------------------------------------------
-  var PLAN_NAMES = { free: 'Free · $0', dev: 'Dev · $19 / month', pro: 'Pro · $49 / month', team: 'Team · $99 / month', agency: 'Agency · $199 / month', enterprise: 'Enterprise · contact sales' };
+  var PLAN_NAMES = { free: 'Just trying it', dev: 'One person, several AI tools', pro: 'Small team with someone who approves', team: 'Bigger team', agency: 'Agency, one space per client', enterprise: 'Company with its own requirements' };
   function plan() { var r = $('input[name="plan"]:checked'); return r ? r.value : 'free'; }
   // The whole card picks the plan; the radio stays the real control.
   $$('.ob-plan').forEach(function (card) {
@@ -117,7 +117,7 @@
       r.focus();
     });
   });
-  function planLabel() { return PLAN_NAMES[plan()] + ' (proposed)'; }
+  function planLabel() { return PLAN_NAMES[plan()]; }
 
   // ---- agents + probe ----------------------------------------------------------
   var AGENTS = [
@@ -483,7 +483,7 @@
     }).then(function (r) {
       var box = $('#wl-status');
       if (r.status === 200) {
-        show(box, alertBox('success', 'check', [el('strong', { text: 'You’re on the waitlist.' }), ' We’ll email ' + email + ' when LogMem Cloud opens. Nothing is charged and no account was created.']));
+        show(box, alertBox('success', 'check', [el('strong', { text: 'You’re on the waitlist.' }), ' We’ll email ' + email + ' once, when you can try the hosted version. No account was created.']));
       } else if (r.status === 400) {
         err.hidden = false; err.textContent = 'Enter a valid email address.'; $('#wl-email').setAttribute('aria-invalid', 'true'); $('#wl-email').focus();
         show(box, null);
