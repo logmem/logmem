@@ -109,7 +109,8 @@ test("site: /onboarding has every step, /probe.sh is served, and the probe pairs
   for (const step of ["choose", "plan", "detect", "waitlist", "space", "redis", "acmi", "connect", "first", "handoff", "approver"]) {
     assert.ok(html.includes(`data-step="${step}"`), `step ${step}`);
   }
-  assert.ok(html.includes("Proposed pricing, not final"));
+  assert.ok(html.includes("No pricing yet"));
+  assert.doesNotMatch(html, /\$\d/, "no prices on /onboarding");
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, "no inline scripts (CSP)");
   assert.doesNotMatch(html, /\son[a-z]+=/i, "no inline event handlers");
   assert.doesNotMatch(html, /https?:\/\/(?!logmem\.si)[a-z0-9.-]+\.[a-z]{2,}\/[^"]*\.(?:js|css|woff2?)/i, "no external scripts, styles or fonts");
