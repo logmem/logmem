@@ -105,7 +105,7 @@
   <ul>
     <li>PostHog: product analytics. <span class="legal-mark">[VERIFY: self-hosted PostHog on our servers or PostHog Cloud, and which region]</span></li>
     <li>Vercel Web Analytics: page view counts on logmem.si. It does not use cookies, and it runs before you answer the cookie banner. <span class="legal-mark">[LAWYER REVIEW: confirm cookieless analytics can run without consent, or gate it behind the banner.]</span></li>
-    <li>Google Analytics: website traffic analytics, run by Google.</li>
+    <li>Google Analytics: website traffic analytics, run by Google. <span class="legal-mark">[VERIFY: GA is live and gated by the banner]</span></li>
   </ul>
   <p>Analytics is off until you accept it. When you first visit, a cookie banner asks you to accept or decline. Both buttons are the same size and are equally easy to click. If you decline or ignore the banner, we don't load PostHog or Google Analytics, and we don't set their cookies. <span class="legal-mark">[VERIFY: the banner must actually block both scripts until accept. Test this before publish.]</span></p>
   <p>We always use a small number of strictly necessary cookies, for example to keep you signed in and to remember your cookie choice. You can't turn these off, because the site doesn't work without them.</p>
