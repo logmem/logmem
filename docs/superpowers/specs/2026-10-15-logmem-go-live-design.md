@@ -78,7 +78,9 @@ Rules: no performance or revenue claims in any offer copy. Ladder 2 sells throug
 ## What is missing today (gaps)
 
 1. **Privacy policy and terms.** `/privacy` and `/terms` return 404. These are required before taking emails at scale,
-   payments, cookies or SMS. Bentley has an outline. A lawyer reviews them. **[Mikey]**
+   payments, cookies or SMS. Bentley's drafts (2026-10-15): [Privacy](https://docs.google.com/document/d/1tPjPHR_qxmIdDR9VJxPKOYS5MmsH53m8U00Kl7UHLpU/edit),
+   [Terms](https://docs.google.com/document/d/1wqmZm8eqEebW48laMMrci8nsReq4rWaaaIpd4MJXLdM/edit). Payments there = Square. A lawyer reviews every
+   `[LAWYER REVIEW]` tag. **[Mikey]**
 2. **Cookie consent** for PostHog and Google Analytics. Decline by default.
 3. **Sending-domain DNS** for Resend (SPF, DKIM, DMARC).
 4. **Error tracking and uptime.** No alerting exists for logmem.si or the bridges. Add a status check per tenant
