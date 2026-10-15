@@ -32,6 +32,10 @@ export function createInfisical({ baseUrl, fetch, projectId, env, projectSlug = 
       const r = await call(EP.login, { body: { clientId, clientSecret } });
       return r.ok && r.data?.accessToken ? { ok: true, token: r.data.accessToken } : { ok: false, error: r.error || "login returned no token" };
     },
+    async identityIdFor({ token, identity }) {
+      const m = await call(EP.memberships, { token });
+      return m.ok ? (m.data?.identityMemberships || []).find((x) => x.identity?.name === identity)?.identity?.id ?? null : null;
+    },
     async getSecretLength({ token, path, name }) {
       const r = await call(EP.secret, { token, params: { secretName: name }, query: { workspaceId: projectId, environment: env, secretPath: path } });
       if (!r.ok) return r;
