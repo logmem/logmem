@@ -160,3 +160,41 @@ export function envBlobPut(env = process.env) {
     await put(path, body, { access: "private", contentType: "application/json", addRandomSuffix: false });
   };
 }
+
+const FIELD_RE = /^[0-9a-f]{64}$/;
+const READ_CHUNK = 200;
+
+/**
+ * Every stored sign-up, newest first, flattened for the admin view. Rows come
+ * from the index plus one MGET per 200 members. Members whose row is gone (an
+ * old row that expired) or is not JSON are skipped. Old rows read with
+ * last_ts = ts, count = 1 and no attribution.
+ */
+export async function listSignups(redis) {
+  const raw = await redis("ZRANGE", KEYS.waitlistIndex, "0", "-1");
+  const ids = (Array.isArray(raw) ? raw : []).map(String).filter((m) => FIELD_RE.test(m));
+  const rows = [];
+  for (let i = 0; i < ids.length; i += READ_CHUNK) {
+    const vals = await redis("MGET", ...ids.slice(i, i + READ_CHUNK).map((id) => KEYS.waitlistEntry(id)));
+    for (const v of Array.isArray(vals) ? vals : []) {
+      const r = v == null ? null : parseRow(v);
+      if (!r || typeof r.email !== "string" || !Number.isFinite(r.ts)) continue;
+      const a = r.attribution && typeof r.attribution === "object" ? r.attribution : {};
+      const str = (x) => (typeof x === "string" && x ? x : null);
+      rows.push({
+        email: r.email,
+        plan: str(r.plan),
+        agents: Number.isInteger(r.agents) ? r.agents : null,
+        ts: r.ts,
+        last_ts: Number.isFinite(r.last_ts) ? r.last_ts : r.ts,
+        count: Number.isSafeInteger(r.count) && r.count >= 1 ? r.count : 1,
+        utm_source: str(a.utm_source),
+        utm_medium: str(a.utm_medium),
+        utm_campaign: str(a.utm_campaign),
+        referrer_host: str(a.referrer_host),
+        landing_path: str(a.landing_path),
+      });
+    }
+  }
+  return rows.sort((x, y) => y.ts - x.ts || (x.email < y.email ? -1 : 1));
+}

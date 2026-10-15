@@ -73,6 +73,10 @@ export function createMemoryRedis() {
       data.set(k, { type: "string", value: String(v) });
       return "OK";
     },
+    MGET: (...keys) => keys.map((k) => {
+      const e = data.get(k);
+      return e && e.type === "string" ? e.value : null;
+    }),
     DEL: (...keys) => keys.reduce((n, k) => n + (data.delete(k) ? 1 : 0), 0),
     EXISTS: (...keys) => keys.reduce((n, k) => n + (data.has(k) ? 1 : 0), 0),
     TYPE: (k) => (data.get(k)?.type ?? "none"),

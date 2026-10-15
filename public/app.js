@@ -42,7 +42,7 @@
   function table(head, rows) { return '<div class="lm-table-wrap"><table class="lm-table"><thead><tr>' + head.map(function (h) { return '<th scope="col">' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'; }
 
   // ─── shell ────────────────────────────────────────────────────────
-  var NAV = [['overview', 'Overview', 'overview'], ['log', 'Log', 'timeline'], ['agents', 'Agents', 'agents'], ['jobs', 'Jobs', 'work'], ['channels', 'Channels', 'link'], ['decisions', 'Decisions', 'decisions'], ['recall', 'Recall', 'recall'], ['settings', 'Settings', 'settings'], ['audit', 'Audit', 'eye']];
+  var NAV = [['overview', 'Overview', 'overview'], ['log', 'Log', 'timeline'], ['agents', 'Agents', 'agents'], ['jobs', 'Jobs', 'work'], ['channels', 'Channels', 'link'], ['decisions', 'Decisions', 'decisions'], ['recall', 'Recall', 'recall'], ['settings', 'Settings', 'settings'], ['audit', 'Audit', 'eye'], ['waitlist', 'Waitlist', 'globe']];
   function shell(route, crumbs, body, waitingCount) {
     var demo = state.space === 'fieldnotes';
     return '<div class="shell"><nav class="lm-rail" aria-label="LogMem">' +
@@ -171,6 +171,17 @@
         render('audit', ['Audit'], head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.') +
           '<section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">' + (g.pass ? 'Pass' : 'Not yet: ' + (g.days_passing || 0) + ' of last 7 passing') + '</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span></div><div style="flex:2 1 420px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">' + strip + '</div><div style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">Deliverable</span>' + stage((d.deliverable || {}).stage) + '<span class="mono subtle" style="font-size:12px">job:' + esc((d.deliverable || {}).job || '') + '</span></div></section>' +
           (rows.length ? table(['Day', 'Result', 'Agents', 'Entries', 'Handoffs accepted', 'Mirror mismatches', 'Unanswered >24h', 'Degraded'], rows) : emptyState('No checks yet.', 'The first daily check writes its result here.')));
+      });
+    },
+    // The hosted waitlist. Same deployment, not a space, so it reads /api/waitlist.
+    waitlist: function () {
+      return fetch('/api/waitlist', { credentials: 'same-origin' }).then(function (r) { return r.json().then(function (j) { j.__status = r.status; return j; }); }).then(function (d) {
+        if (!ok(d)) return;
+        var counts = function (title, list, key) { return panel(title, list.length ? '<dl class="lm-kv">' + list.map(function (x) { return '<dt>' + esc(x[key]) + '</dt><dd>' + num(x.n) + '</dd>'; }).join('') + '</dl>' : '<span class="subtle" style="font-size:13px">None yet.</span>'); };
+        var rows = (d.rows || []).map(function (x) { return '<tr style="font-variant-numeric:tabular-nums"><td>' + esc(x.email) + '</td><td>' + esc(x.plan || '—') + '</td><td>' + (x.agents == null ? '—' : num(x.agents)) + '</td><td>' + esc(x.utm_source || 'direct') + '</td><td>' + esc(x.referrer_host || '—') + '</td><td>' + esc(new Date(x.ts).toISOString().slice(0, 10)) + '</td><td>' + num(x.count) + '</td></tr>'; });
+        render('waitlist', ['Waitlist'], head('Waitlist', num(d.total) + ' sign-ups. Each row keeps the first visit’s source.', '<a class="lm-btn lm-btn--secondary" href="/api/waitlist?format=csv" download>Download CSV</a>') +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">' + counts('By source', d.by_source || [], 'source') + counts('By plan', d.by_plan || [], 'plan') + counts('By day', (d.by_day || []).slice(-14), 'day') + '</div>' +
+          (rows.length ? table(['Email', 'Plan', 'Agents', 'Source', 'Referrer', 'First sign-up', 'Times'], rows) : emptyState('No sign-ups yet.', 'Sign-ups from /onboarding appear here.')));
       });
     }
   };
