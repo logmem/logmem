@@ -7,11 +7,31 @@ deploys. Each item marked **[Mikey]** needs his account or his GO.
 
 Real people use LogMem. They sign up, get a space, connect their agents and pay. Two offer ladders:
 
-- **Ladder 1, DIY:** self-managed by the customer, hosted by us. Prices: [LADDER 1 PRICES — Mikey].
-- **Ladder 2, done-for-you:** white-glove, fully managed and hosted by us. Prices: [LADDER 2 PRICES — Mikey].
+- **Ladder 1, DIY:** self-managed by the customer, hosted by us. Monthly, self-serve.
+- **Ladder 2, done-for-you:** white-glove, fully managed and hosted by us.
 
-`docs/PRICING.md` and `cloud/plans.json` hold the current self-serve ladder (Free $0, Dev $19, Pro $49, Team $99,
-Agency $199, Enterprise). They change only after Mikey sets the two ladders.
+### Ladder 1 — DIY, hosted (draft prices, Mikey to approve)
+
+The current self-serve ladder in `docs/PRICING.md` and `cloud/plans.json`. It is unchanged.
+
+| Plan | Price | Who it is for | Limits (from `plans.json`) |
+|---|---|---|---|
+| Free | $0 | Try it with one project | 10k writes/mo, 3 agents, 7-day history |
+| Dev | $19/mo | One builder, real work | 50k writes/mo, 5 agents, 30-day history |
+| Pro | $49/mo | A small team | 150k writes/mo, 25 agents, 90 days, overage $2/10k |
+| Team | $99/mo | A team with many agents | 500k writes/mo, unlimited agents, 1 year, overage $2/10k |
+| Agency | $199/mo | Agencies running client spaces | 1.5M writes/mo, 30 spaces, overage $1.50/10k |
+
+### Ladder 2 — done-for-you, managed (draft prices, Mikey to approve)
+
+| Rung | Price | What we do | Hosting included |
+|---|---|---|---|
+| Memory Audit | $497 one-time | A 60-minute review of the client's agents and tools. A written map of handoffs, gaps and risky steps. A plan to fix them. The fee counts toward Setup if they buy within 30 days. | None |
+| Done-for-you Setup | from $2,500 one-time | We connect their agents (Claude, Cursor, Codex and others) to LogMem. We set up spaces, jobs, the Ask rules for irreversible steps, and a team walkthrough. Price rises with the number of agents and tools. | First month of Team |
+| Managed | $750/mo | We run it. Weekly health check, monthly review call, Ask-rule tuning, new agents connected, support within 1 business day. | Team plan |
+| Managed Plus | $1,500/mo | Managed, plus a dedicated environment, custom integrations through Composio, and support within 4 business hours. | Dedicated (Enterprise infra) |
+
+Rules: no performance or revenue claims in any offer copy. Ladder 2 sells through a call; ladder 1 is self-serve.
 
 ## Track 1 — design partners on today's stack (days)
 
@@ -49,7 +69,7 @@ Agency $199, Enterprise). They change only after Mikey sets the two ladders.
 | Product analytics | PostHog | Funnel: visit → waitlist → invite → first entry → paid. Server-side events from the API. No email or key in event properties. |
 | Marketing analytics | Google Analytics | Landing page and campaign source only. Needs a cookie banner (decline by default). |
 | Courses and community | Whop | Stays for EZ Lab and Agent Lab. Not LogMem billing. |
-| Payments | Stripe (recommended) or Square | Stripe has metered billing for the overage in `plans.json`, plus tax and dunning. Square has no native usage billing. **[Mikey]** picks. |
+| Payments | Square (Mikey's pick, 2026-10-15) | Ladder 1: Square subscription plans, one per paid tier. Overage: at month end `cloud/meter` totals usage over the plan, and LogMem sends a Square invoice for it. Square has no native usage billing, so LogMem computes it. Ladder 2: Square invoices for the Audit and Setup, a Square subscription for Managed and Managed Plus. Webhooks (payment completed, subscription canceled) drive provision and suspend. Tax: check Square's sales-tax settings per state. **[Mikey]** creates the Square developer app. |
 | Auth for people | Clerk | Web login for the admin and customer dashboard. MCP OAuth stays on LogMem's own server (`api/oauth`), with Clerk as the identity behind it. |
 | Transactional email | Resend | Confirmation, invite, receipts, usage warnings. |
 | SMS and messages | Sent.dm | Optional alerts and login codes. US SMS needs 10DLC brand and campaign registration first. **[Mikey]** |
@@ -78,7 +98,7 @@ Agency $199, Enterprise). They change only after Mikey sets the two ladders.
 | This spec, the plan, Track 1 build (inbox, invite, tenant MCP), integration contract | claude-code + subagents | Mikey approves this spec |
 | Elestio API check and deployer, infra per tier | grok (infra) | Elestio API access **[Mikey]** |
 | Provisioner CLI (slice D) | grok-local | Plan task |
-| Stripe or Square checkout and webhook, Clerk login | Cursor, via bentley-main | Mikey's payment pick and accounts |
+| Square checkout, webhooks and the month-end overage invoice, Clerk login | Cursor, via bentley-main | Mikey's Square app and Clerk account |
 | PostHog and GA events, funnel dashboard | muse | Cookie banner, privacy page |
 | Privacy and terms pages, PR reviews | bentley-main | Lawyer review **[Mikey]** |
 | Email and onboarding visuals | open-design | Copy from claude-code |
