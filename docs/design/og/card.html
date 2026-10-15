@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:SG;font-weight:800;src:url('../../../public/ds/fonts/schibsted-grotesk-latin-800-normal.woff2')}
+@font-face{font-family:SG;font-weight:600;src:url('../../../public/ds/fonts/schibsted-grotesk-latin-600-normal.woff2')}
+@font-face{font-family:Plex;font-weight:400;src:url('../../../public/ds/fonts/ibm-plex-sans-latin-400-normal.woff2')}
+@font-face{font-family:Plex;font-weight:600;src:url('../../../public/ds/fonts/ibm-plex-sans-latin-600-normal.woff2')}
+@font-face{font-family:Mono;font-weight:500;src:url('../../../public/ds/fonts/ibm-plex-mono-latin-500-normal.woff2')}
+@font-face{font-family:Mono;font-weight:400;src:url('../../../public/ds/fonts/ibm-plex-mono-latin-400-normal.woff2')}
+*{margin:0;box-sizing:border-box}
+body{width:1200px;height:630px;background:#121A19;color:#E9EEEC;font-family:Plex;overflow:hidden;position:relative;
+ background-image:radial-gradient(rgba(233,238,236,.05) 1px,transparent 1px);background-size:6px 6px}
+.wrap{position:absolute;inset:0;padding:64px 72px;display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:center}
+.logo{height:44px;display:block;margin-bottom:40px}
+h1{font-family:SG;font-weight:800;font-size:60px;line-height:1.04;letter-spacing:-.015em}
+h1 em{font-style:normal;color:#4FC3B8}
+p{margin-top:22px;font-size:24px;line-height:1.4;color:#B3BEBA;max-width:30ch}
+.url{position:absolute;left:72px;bottom:48px;font-family:Mono;font-weight:500;font-size:20px;color:#97A4A0;letter-spacing:.02em}
+.card{background:#19231F;border:1px solid #2B3835;border-radius:14px;padding:22px 24px;box-shadow:0 18px 56px rgba(0,0,0,.55)}
+.head{display:flex;justify-content:space-between;font-family:Mono;font-size:15px;color:#97A4A0;padding-bottom:14px;border-bottom:1px solid #2B3835}
+.row{display:grid;grid-template-columns:62px 1fr;gap:12px;padding:15px 0;border-bottom:1px solid #2B3835;align-items:start}
+.row:last-child{border-bottom:0;padding-bottom:4px}
+.t{font-family:Mono;font-size:14px;color:#97A4A0;padding-top:3px}
+.b{display:inline-block;font-family:Mono;font-size:13px;border:1px solid #6B7975;border-radius:999px;padding:1px 9px;color:#E9EEEC;margin-right:8px}
+.k{font-family:Mono;font-size:13px;color:#4FC3B8;text-transform:uppercase;letter-spacing:.06em}
+.k.ask{color:#C6A0F0}
+.s{font-size:17px;line-height:1.35;margin-top:6px;color:#E9EEEC}
+</style></head><body><div class="wrap"><div>
+<img class="logo" src="../../../public/ds/logos/logmem-lockup-reversed.svg">
+<h1>Your AI tools, <em>one shared memory.</em></h1>
+<p>Each agent picks up where the last one stopped, and asks you before anything it can’t undo.</p>
+</div>
+<div class="card"><div class="head"><span>job:issue-14</span><span>shared log</span></div>
+<div class="row"><span class="t">08:02</span><div><span class="b">via claude-web</span><span class="k">started</span><div class="s">Planned the checkout fix</div></div></div>
+<div class="row"><span class="t">08:41</span><div><span class="b">via cursor</span><span class="k">handoff</span><div class="s">Fix written, handed to Claude Code</div></div></div>
+<div class="row"><span class="t">08:43</span><div><span class="b">via claude-code</span><span class="k">accepted</span><div class="s">Picked up with the full trail</div></div></div>
+<div class="row"><span class="t">09:10</span><div><span class="b">via claude-code</span><span class="k ask">ask</span><div class="s">Merge to main? Waiting for a person</div></div></div>
+</div></div><div class="url">logmem.si</div></body></html>
