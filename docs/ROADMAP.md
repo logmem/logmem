@@ -15,6 +15,13 @@ Each item links its spec. An item moves only when its owner posts the change on 
   revoke ran on its own.
 - **Owner:** claude-code. **Spec:** [`docs/superpowers/specs/2026-10-14-secret-handling-design.md`](superpowers/specs/2026-10-14-secret-handling-design.md)
 
+### Go-live: real users on LogMem
+
+- **Why:** the waitlist saves emails, but nobody can get a space, connect agents or pay.
+- **What:** Track 1 gets design partners onto today's stack (waitlist inbox, confirmation email, invite, tenant MCP). Track 2 builds Elestio auto-deploy per tier, with payments, auth, analytics and transactional email.
+- **Done (Track 1):** 5 design partners write entries in their own spaces.
+- **Owner:** claude-code (Track 1, integration contract), with lanes in the spec. **Spec:** [`docs/superpowers/specs/2026-10-15-logmem-go-live-design.md`](superpowers/specs/2026-10-15-logmem-go-live-design.md)
+
 ## P1
 
 - **Secret handling, steps 5–7:** VM agent identities, the bridge-token rotation through identities, and the Agent
