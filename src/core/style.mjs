@@ -10,9 +10,9 @@ export const MAX_SENTENCE_WORDS = 25;
 
 const WEAK_MODALS = /\b(should|would|may|might|could)\b/i;
 // Passive heuristic: a form of "be", a past participle, then a clause end or a
-// preposition ("was merged.", "is sent to Mikey", "were fixed by atlas").
+// preposition ("was merged.", "is sent to Mikey", "were fixed by atlas", "is bound to one space").
 // "is shared memory" (participle used as an adjective before a noun) is not flagged.
-const PASSIVE = /\b(is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?(\w+ed|done|made|sent|built|written|given|taken|seen|shown|known|set|put|run|kept|left|found|held|told|paid|lost|won|split|cut)(?=\s*(?:[.,;:!?)]|$)|\s+(?:by|to|in|on|for|at|from|with|into|onto|after|before|during|yet|already|today|now|and|or|but)\b)/i;
+const PASSIVE = /\b(is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?(\w+ed|done|made|sent|built|written|given|taken|seen|shown|known|set|put|run|kept|left|found|held|told|paid|lost|won|split|cut|bound)(?=\s*(?:[.,;:!?)]|$)|\s+(?:by|to|in|on|for|at|from|with|into|onto|after|before|during|yet|already|today|now|and|or|but)\b)/i;
 const FILLER = /\b(delve|tapestry|testament|leverage[ds]?|robust|seamless(?:ly)?|synergy|game[- ]changer|in order to|it'?s worth noting|please note|i hope this|great question|needless to say|at the end of the day)\b/i;
 
 /** Plain sentences: code spans removed, split on . ! ? followed by space or end. */

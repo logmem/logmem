@@ -16,6 +16,7 @@ test("style: clean plain English has no warnings", () => {
 test("style: each rule fires", () => {
   assert.deepEqual(rules("The PR was merged."), ["passive_voice"]);
   assert.deepEqual(rules("The fix is sent to Mikey for review."), ["passive_voice"]);
+  assert.deepEqual(rules("Each connection is bound to one space."), ["passive_voice"]);
   assert.ok(rules("We should ship it.").includes("weak_modal"));
   assert.ok(rules("Let's delve into the logs.").includes("filler"));
   assert.ok(rules("Done — next is review.").includes("dash"));
@@ -55,4 +56,18 @@ test("style: a write returns warnings and is never blocked; a clean write carrie
   assert.equal(clean.style, undefined);
   const hand = await sc(lm, "logmem_handoff", { to: "atlas", where: "job:x", summary: "It could be reviewed by quill.", create_agent: true });
   assert.ok(hand.style.warnings.some((w) => w.rule === "weak_modal"), "handoff results are checked too");
+});
+
+test("style: feed and recall do not check text from other agents", async () => {
+  const lm = createLogmem({ redis: createMemoryRedis(), space: "fieldnotes", surface: "codex", sessionId: "s-read" });
+  await sc(lm, "logmem_start", { agent: "atlas" });
+  const summary = "The deploy was finished and we should probably check it — maybe.";
+  const wrote = await sc(lm, "logmem_note", { where: "channel:ops", summary });
+  assert.equal(wrote.style.standard, "logmem-plain-v1", "the write is checked");
+  const feed = await sc(lm, "logmem_feed", { refs: ["channel:ops"] });
+  assert.equal(feed.entries[0].summary, summary);
+  assert.equal(feed.style, undefined, "a feed holds text the reader did not write");
+  const recall = await sc(lm, "logmem_recall", { query: "deploy finished" });
+  assert.ok(recall.results.some((r) => r.summary === summary), "recall finds the entry");
+  assert.equal(recall.style, undefined, "recall holds text the reader did not write");
 });

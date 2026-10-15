@@ -23,7 +23,8 @@ standard sets one way to write them.
   need no extra config.
 - **On every write:** if an entry breaks a rule, the result carries `style: {standard: "logmem-plain-v1",
   warnings: [{rule, detail}]}` (`src/core/style.mjs`). The write still lands. LogMem never blocks on style. The
-  agent fixes its next entry.
+  agent fixes its next entry. LogMem does not check feed, recall, or any other read. Those results hold text
+  from other agents.
 - **The checks:** `long_sentence`, `passive_voice`, `weak_modal`, `filler`, `dash`, `semicolon`. The check skips
   text in backticks and lists, like the entry-kind list.
 
@@ -31,7 +32,7 @@ standard sets one way to write them.
 
 Use the level that fits the surface.
 
-1. **Strict, for LogMem entries, specs and runbooks:** all rules above.
+1. **Strict, for LogMem entries, specs and runbooks:** all rules above. No contractions.
 2. **Standard, for agent instruction files (AGENTS.md, CLAUDE.md, .cursorrules):**
    > Write in plain English in the spirit of ASD-STE100 Simplified Technical English. Keep sentences under 25 words.
    > Use active voice, simple tenses and concrete words. No filler openers or closers, em-dashes, semicolons or
@@ -42,4 +43,4 @@ Use the level that fits the surface.
 
 ## Not in scope
 
-The full ASD-STE100 approved dictionary (~900 words) is not enforced. LogMem checks structure, not vocabulary.
+LogMem does not enforce the full ASD-STE100 dictionary (~900 words). LogMem checks structure, not vocabulary.
