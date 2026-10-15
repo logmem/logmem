@@ -19,6 +19,7 @@ import { parseRef, lmDecisionKey, lmAskKey } from "./keys.mjs";
 import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
+import { assertNoSecret } from "./secrets-guard.mjs";
 import { appendLogWarnings, readWarning } from "../lib/redact.mjs";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -56,6 +57,8 @@ export function capEntry({ summary, payload, trail, origin } = {}) {
   capText("trail", trail, LIMITS.trail);
   capText("origin", origin, LIMITS.trail);
   capJson("payload", payload);
+  assertNoSecret("summary", summary);
+  assertNoSecret("payload", payload);
 }
 
 // ─── Human-only decisions (S2) ───────────────────────────────────────────
