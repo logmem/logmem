@@ -8,14 +8,26 @@
 // in seconds / microseconds / nanoseconds are normalised to ms (normTs).
 
 import { lmKey, lmIndexKey, acmiKey, acmiIndexKey, PROTECTED } from "./keys.mjs";
-import { asEntry, normalizeKind } from "./vocab.mjs";
+import { asEntry, normalizeKind, stageFromStatus } from "./vocab.mjs";
 import { isProtectedKey } from "../lib/helpers.mjs";
+import { unreadableTypeWarning } from "../lib/redact.mjs";
 
 export function normTs(n) {
+  // ISO / date strings ("2026-10-12T20:52:00Z", "2026-10-12 20:52Z") were
+  // turned into 0 here, so the entry was stored at 1970 and dropped out of
+  // every time window. Parse them; a numeric string still goes through Number.
+  if (typeof n === "string" && n.trim() !== "" && !Number.isFinite(Number(n))) {
+    const s = n.trim();
+    const p = Date.parse(s) || Date.parse(s.replace(" ", "T"));
+    return Number.isFinite(p) ? p : 0;
+  }
   const x = Number(n);
   if (!Number.isFinite(x)) return 0;
-  if (x > 1e17) return Math.floor(x / 1e6); // ns -> ms
-  if (x > 1e14) return Math.floor(x / 1e3); // us -> ms
+  // Round to whole microseconds first: x / 1e6 in floating point can land a
+  // hair under the true value (1791853034186000000 / 1e6 = ...185.99999),
+  // and flooring that moves the entry 1 ms early.
+  if (x > 1e17) return Math.floor(Math.round(x / 1e3) / 1e3); // ns -> ms
+  if (x > 1e14) return Math.floor(Math.round(x) / 1e3); // us -> ms
   // Seconds only when the value is a plausible epoch-seconds reading
   // (2001..5138). Smaller numbers are left alone: fixtures and relative
   // clocks use them, and scaling would reorder nothing but break equality.
@@ -72,6 +84,67 @@ async function readObject(redis, key) {
   return {};
 }
 
+/**
+ * Read a legacy acmi:* doc slot (profile, rollup) whatever its type: a JSON
+ * STRING (normal) or a HASH (seen in the madez dry run). Missing -> null.
+ */
+async function readLegacyDoc(redis, key) {
+  const t = await typeOf(redis, key);
+  if (t === "string") return tryParse(await redis("GET", key)) ?? null;
+  if (t === "hash") return parseHash(await redis("HGETALL", key));
+  return null;
+}
+
+/**
+ * Read a legacy acmi:* timeline as {score, member} rows whatever its type.
+ * ACMI left some timelines as a JSON array in a STRING (45 keys in the
+ * 2026-10-11 madez dry run) and a few as LISTs; ZRANGE on those throws
+ * WRONGTYPE and used to fail the whole read. A missing key (type none) reads
+ * as empty. Any other type reads as empty and carries an unreadable-type
+ * warning so a missing log and an unreadable one do not look the same.
+ */
+function markUnreadable(type) {
+  const rows = [];
+  Object.defineProperty(rows, "unreadableType", { value: type, enumerable: false });
+  return rows;
+}
+
+async function readLegacyLog(redis, key) {
+  const t = await typeOf(redis, key);
+  if (t === "none") return [];
+  if (t === "zset") return parseZ(await redis("ZRANGE", key, 0, -1, "WITHSCORES"));
+  let items = [];
+  if (t === "string") {
+    const v = tryParse(await redis("GET", key));
+    items = Array.isArray(v) ? v : v && typeof v === "object" ? [v] : [];
+  } else if (t === "list") {
+    items = (await redis("LRANGE", key, 0, -1)).map(tryParse);
+  } else {
+    return markUnreadable(t);
+  }
+  return items
+    .filter((e) => e != null && e !== "")
+    .map((e) => {
+      const obj = typeof e === "object" ? e : { summary: String(e) };
+      return { score: normTs(obj.ts ?? obj.timestamp), member: JSON.stringify(obj) };
+    });
+}
+
+/**
+ * A legacy job with only an ACMI `status` gets the LogMem `stage` it maps
+ * to (vocab STAGE_FROM_STATUS), marked `stage_from: "acmi_status"`. A stage
+ * written in LogMem always wins, and then the marker is absent. `status`
+ * itself is kept as-is.
+ */
+function legacyStage(ns, old, own = {}) {
+  if (ns !== "job" || old.stage != null || own.stage != null) return {};
+  const stage = stageFromStatus(old.status);
+  return stage ? { stage, stage_from: "acmi_status" } : {};
+}
+
+/** A ZSET member that carries nothing (an empty or whitespace-only string). */
+const isBlankMember = (m) => m == null || (typeof m === "string" && m.trim() === "");
+
 async function readIds(redis, key) {
   const t = await typeOf(redis, key);
   if (t === "set") return redis("SMEMBERS", key);
@@ -112,7 +185,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     // ─── Who ────────────────────────────────────────────────────────────
     async getWho(ns, id) {
       let v = tryParse(await redis("GET", k(ns, id, "who")));
-      if (v == null && compat) v = tryParse(await redis("GET", legacy(ns, id, "who")));
+      if (v == null && compat) v = await readLegacyDoc(redis, legacy(ns, id, "who"));
       return v ?? null;
     },
     async setWho(ns, id, doc) {
@@ -134,7 +207,8 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       const own = await readObject(redis, k(ns, id, "now"));
       if (!compat) return own;
       const old = await readObject(redis, legacy(ns, id, "now"));
-      return { ...old, ...own };
+      const merged = { ...old, ...legacyStage(ns, old, own), ...own };
+      return merged;
     },
     async setNow(ns, id, fields) {
       const pairs = Object.entries(fields).flatMap(([f, v]) => [f, JSON.stringify(v)]);
@@ -203,10 +277,12 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       const min = sinceMs != null ? normTs(sinceMs) : "-inf";
       const max = untilMs != null ? normTs(untilMs) : "+inf";
       const rows = parseZ(await redis("ZRANGEBYSCORE", k(ns, id, "log"), min, max, "WITHSCORES"));
+      let unreadableType = null;
       if (compat) {
         // Legacy scores may be in s/us/ns, so scan the whole key and filter
         // after normalising (a score-range query would miss mixed units).
-        const old = parseZ(await redis("ZRANGE", legacy(ns, id, "log"), 0, -1, "WITHSCORES"));
+        const old = await readLegacyLog(redis, legacy(ns, id, "log"));
+        if (old.unreadableType) unreadableType = old.unreadableType;
         // After the migration copy, an entry exists in both places. The lm
         // copy wins; the legacy twin (same ts + trail + summary) is skipped.
         const sig = (e) => `${normTs(e.ts)}|${e.trail ?? ""}|${e.summary ?? ""}`;
@@ -219,7 +295,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
           }
         }
       }
-      let entries = rows.map((r, i) => {
+      let entries = rows.filter((r) => !isBlankMember(r.member)).map((r, i) => {
         const e = asEntry(tryParse(r.member));
         const { _o, ...obj } = e && typeof e === "object" ? e : { summary: String(e) };
         const out = { ...obj, ts: normTs(obj.ts ?? r.score) };
@@ -234,11 +310,17 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       entries = entries.map((x) => x.e);
       if (reverse) entries.reverse();
       if (limit != null) entries = entries.slice(0, limit);
+      if (unreadableType) {
+        Object.defineProperty(entries, "warnings", {
+          value: [unreadableTypeWarning(unreadableType)],
+          enumerable: false,
+        });
+      }
       return entries;
     },
     async logSize(ns, id) {
       let n = Number(await redis("ZCARD", k(ns, id, "log"))) || 0;
-      if (compat) n += Number(await redis("ZCARD", legacy(ns, id, "log"))) || 0;
+      if (compat) n += (await readLegacyLog(redis, legacy(ns, id, "log"))).filter((r) => !isBlankMember(r.member)).length;
       return n;
     },
 
@@ -252,7 +334,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     // ─── Agent-only slots ───────────────────────────────────────────────
     async getRecap(agent) {
       let v = tryParse(await redis("GET", k("agent", agent, "recap")));
-      if (v == null && compat) v = tryParse(await redis("GET", legacy("agent", agent, "recap")));
+      if (v == null && compat) v = await readLegacyDoc(redis, legacy("agent", agent, "recap"));
       return v ?? null;
     },
     async setRecap(agent, recap) {

@@ -19,6 +19,7 @@ import { parseRef, lmDecisionKey, lmAskKey } from "./keys.mjs";
 import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
+import { appendLogWarnings, readWarning } from "../lib/redact.mjs";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -530,7 +531,11 @@ export const TOOLS = [
         ctx.store.getNow(ns, id),
         ctx.store.readLog(ns, id, { reverse: true, limit: limit || 10 }),
       ]);
-      return { ok: true, ref: `${ns}:${id}`, who, now, log };
+      const read_warnings = [];
+      appendLogWarnings(read_warnings, "ref", `${ns}:${id}`, log);
+      const out = { ok: true, ref: `${ns}:${id}`, who, now, log };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {
@@ -557,12 +562,26 @@ export const TOOLS = [
     async run({ refs, since, limit }, ctx) {
       const sinceMs = since ? clock(ctx) - parseSince(since) : undefined;
       const merged = [];
+      const read_warnings = [];
+      // One unreadable log (bad ref, wrong Redis type, a timed-out read) is
+      // reported and skipped; it no longer fails the whole merge. Warnings
+      // are a fixed code plus a sanitized message (never the Redis token or URL).
       for (const r of refs) {
-        const { ns, id } = parseRef(r);
-        for (const e of await ctx.store.readLog(ns, id, { sinceMs })) merged.push({ ...e, from: `${ns}:${id}` });
+        let ns, id;
+        try {
+          ({ ns, id } = parseRef(r));
+          const log = await ctx.store.readLog(ns, id, { sinceMs });
+          for (const e of log) merged.push({ ...e, from: `${ns}:${id}` });
+          appendLogWarnings(read_warnings, "ref", String(r), log);
+        } catch (e) {
+          if (e?.code === "bad_agent_id") throw e;
+          read_warnings.push(readWarning("ref", String(r), e));
+        }
       }
       merged.sort((a, b) => b.ts - a.ts);
-      return { ok: true, entries: merged.slice(0, limit || 50) };
+      const out = { ok: true, entries: merged.slice(0, limit || 50) };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {
@@ -674,21 +693,46 @@ export const TOOLS = [
         ctx.store.readLog("job", id, { reverse: true, limit: limit || 50 }),
         ctx.store.jobSessions(id),
       ]);
-      return { ok: true, job: id, who, now, log, shifts };
+      const read_warnings = [];
+      appendLogWarnings(read_warnings, "ref", `job:${id}`, log);
+      const out = { ok: true, job: id, who, now, log, shifts };
+      if (read_warnings.length) out.read_warnings = read_warnings;
+      return out;
     },
   },
   {
     name: "logmem_jobs",
     title: "Jobs",
-    description: "List every job in this space, optionally only those at one stage. Read only.",
-    params: params({ stage: { enum: STAGES, desc: "Only jobs at this stage", optional: true } }),
+    description: "List the jobs in this space. Done jobs are hidden unless include_done is true or stage is 'done'. Optionally only those at one stage. Read only.",
+    params: params({
+      stage: { enum: STAGES, desc: "Only jobs at this stage", optional: true },
+      include_done: { type: "boolean", desc: "Also list done jobs (default false)", optional: true },
+    }),
     annotations: READ,
-    async run({ stage }, ctx) {
+    async run({ stage, include_done }, ctx) {
       const ids = await ctx.store.list("job");
-      if (!stage) return { ok: true, jobs: ids };
-      const out = [];
-      for (const id of ids) if ((await ctx.store.getNow("job", id)).stage === stage) out.push(id);
-      return { ok: true, stage, jobs: out };
+      // Read stages in small parallel batches, not one round trip per job:
+      // the per-key cascade is what produced ACMI's "fetch failed" warnings.
+      // A failed getNow is not a stage: the job is not treated as done, and
+      // it does not match a stage filter. The failure is reported, not swallowed.
+      const stages = new Map();
+      const read_warnings = [];
+      for (let i = 0; i < ids.length; i += 25) {
+        const batch = ids.slice(i, i + 25);
+        const nows = await Promise.all(batch.map((id) => ctx.store.getNow("job", id).catch((e) => {
+          read_warnings.push(readWarning("ref", `job:${id}`, e));
+          return {};
+        })));
+        batch.forEach((id, j) => stages.set(id, nows[j]?.stage));
+      }
+      const finish = (out) => {
+        if (read_warnings.length) out.read_warnings = read_warnings;
+        return out;
+      };
+      if (stage) return finish({ ok: true, stage, jobs: ids.filter((id) => stages.get(id) === stage) });
+      if (include_done) return finish({ ok: true, jobs: ids });
+      const jobs = ids.filter((id) => stages.get(id) !== "done");
+      return finish({ ok: true, jobs, hidden_done: ids.length - jobs.length });
     },
   },
 
