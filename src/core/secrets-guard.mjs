@@ -10,7 +10,7 @@ const RULES = [
   ["slack_token", /\bxox[abpors]-[0-9A-Za-z-]{10,}\b/],
   ["private_key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["bearer_jwt", /\bBearer\s+eyJ[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}/],
-  ["assigned_secret", /\b[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*\s*[=:]\s*["']?[0-9A-Za-z+/_.-]{20,}/],
+  ["assigned_secret", /\b[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*\s*[=:]\s*["']?(?![\/])(?=[0-9A-Za-z+_.-]*\d)(?=[0-9A-Za-z+_.-]*[A-Za-z])[0-9A-Za-z+\/_.-]{20,}/],
 ];
 
 export function findSecret(text) {

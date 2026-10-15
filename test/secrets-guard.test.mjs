@@ -13,6 +13,8 @@ const fakes = {
   pem: "-----BEGIN " + "PRIVATE KEY-----",
   bearer: "Bearer " + "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijklmnop",
   assign: "API_KEY=" + "Zx9" + "q".repeat(28),
+  dbpass: "DB_PASSWORD: \"" + "a8Fk2pQz9LmN3xRt7vWy" + "\"",
+  hex: "TOKEN=" + "0123456789abcdef".repeat(2),
 };
 
 test("guard: refuses each fake key shape", () => {
@@ -24,7 +26,7 @@ test("guard: refuses a key inside prose", () => {
 });
 
 test("guard: allows trails and hashes", () => {
-  for (const ok of ["handoffIssue14-1791988665997-0425b8b35e8b16fbd334f90b", "commit 98698cb", "sha256 3294043fd6407f895457038acb561c56fed1ed751988e2d855ea9305562425d5", "/fleet-shared/acmi ACMI_BRIDGE_TOKEN length 64"])
+  for (const ok of ["handoffIssue14-1791988665997-0425b8b35e8b16fbd334f90b", "commit 98698cb", "sha256 3294043fd6407f895457038acb561c56fed1ed751988e2d855ea9305562425d5", "/fleet-shared/acmi ACMI_BRIDGE_TOKEN length 64", "OPENAI_API_KEY: /shared/openai/OPENAI_API_KEY", "ACMI_BRIDGE_TOKEN=/fleet-shared/acmi/ACMI_BRIDGE_TOKEN", "CRON_SECRET=see-infisical-fleet-secrets-prod"])
     assert.equal(findSecret(ok), null, ok);
 });
 
