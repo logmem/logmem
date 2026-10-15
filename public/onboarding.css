@@ -10,6 +10,11 @@
 .ob-count{margin-left:auto;font-size:13px;color:var(--text-muted)}
 
 .ob-layout{display:flex;flex-wrap:wrap;gap:32px;padding-top:40px;padding-bottom:64px}
+.ob-footer{border-top:1px solid var(--border);background:var(--surface);font-size:14px}
+.ob-footer-in{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;padding-top:20px;padding-bottom:24px;color:var(--text-muted)}
+.ob-footer nav{display:flex;flex-wrap:wrap;gap:8px 16px}
+.ob-footer a{color:var(--text);text-decoration:none}
+.ob-footer a:hover{color:var(--link);text-decoration:underline}
 .ob-rail{flex:1 1 240px;max-width:280px;min-width:0}
 .ob-main{flex:999 1 560px;min-width:0}
 

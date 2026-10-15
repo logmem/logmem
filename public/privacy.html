@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy Policy — LogMem (draft)</title>
+<meta name="description" content="Draft privacy policy for LogMem. Lawyer review needed. Not final legal copy.">
+<link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/home.css">
+</head>
+<body class="lm legal">
+<a class="skip" href="#top">Skip to content</a>
+<p class="legal-draft" role="note">DRAFT — lawyer review needed. Not final legal copy.</p>
+
+<header class="h-header">
+  <div class="wrap h-header-in">
+    <a href="/" aria-label="LogMem home" class="h-logo"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" width="145" height="32"></a>
+    <nav aria-label="Main" class="h-nav">
+      <a href="/#demo">Demo</a>
+      <a href="/#how">How it works</a>
+      <a href="/#cases">Use cases</a>
+      <a href="/#trust">Trust</a>
+    </nav>
+    <span class="h-header-cta">
+      <a href="/app" class="lm-btn lm-btn--secondary">Sign in</a>
+      <a href="/onboarding" class="lm-btn lm-btn--primary">Join the waitlist</a>
+    </span>
+  </div>
+</header>
+
+<main id="top">
+<article class="wrap legal-doc">
+  <h1 class="lm-display">LogMem Privacy Policy (DRAFT, not for publish)</h1>
+  <p class="legal-meta">Effective date: <span class="legal-mark">[MIKEY PICK: date of publish]</span> Last updated: <span class="legal-mark">[MIKEY PICK: date of publish]</span></p>
+  <p>This policy explains what personal data LogMem collects, why we collect it, and the choices you have. LogMem is a shared memory service for people and the AI tools they use.</p>
+
+  <h2 id="who">1. Who we are</h2>
+  <p>LogMem is run by MAD EZ MEDIA AND TECHNOLOGY PARTNERS LLC ("we", "us"), a North Carolina limited liability company. <span class="legal-mark">[LAWYER REVIEW: confirm state of formation and exact legal name line]</span></p>
+  <ul>
+    <li>Mailing address: 8320 University Exec Park Dr #439, Charlotte, NC, USA <span class="legal-mark">[VERIFY: confirm this is the address to publish]</span></li>
+    <li>Privacy contact: <span class="legal-mark">[MIKEY PICK: privacy contact email, for example privacy@logmem.si]</span></li>
+  </ul>
+  <p>We act as the "controller" of the personal data on our website, waitlist, and accounts. For memory content you store in LogMem, we act as your "processor" and handle it only to run the service for you. <span class="legal-mark">[LAWYER REVIEW: controller/processor roles and whether a Data Processing Addendum (DPA) is needed for business customers]</span></p>
+
+  <h2 id="covers">2. What this policy covers</h2>
+  <p>This policy covers:</p>
+  <ul>
+    <li>the website at logmem.si and its pages, including /onboarding</li>
+    <li>the waitlist</li>
+    <li>LogMem accounts, when accounts open</li>
+    <li>the hosted LogMem service on both of our plan ladders:
+      <ul>
+        <li>Self-managed plans: you run your own setup, and we host it.</li>
+        <li>Managed plans: we set it up, run it, and host it for you.</li>
+      </ul>
+    </li>
+  </ul>
+  <p>It doesn't cover the open-source LogMem or ACMI code that you run on your own servers. When you self-host the code, you control that data, and we don't receive it. <span class="legal-mark">[VERIFY: confirm the open-source package sends no telemetry to us]</span></p>
+
+  <h2 id="collect">3. Data we collect</h2>
+  <h3 id="you-give">3.1 Data you give us</h3>
+  <ul>
+    <li>Waitlist sign-up: your email address, how many agents you run, and the plan you're interested in. <span class="legal-mark">[VERIFY: match the live form fields in api/onboarding/waitlist.mjs, currently email, agents, plan]</span></li>
+    <li>Account data (when accounts open): your name, email address, company name, and login details.</li>
+    <li>Memory content: the text, events, and files that you or your AI agents write into LogMem.</li>
+    <li>Messages to us: what you send when you email us or ask for support.</li>
+    <li>Phone number (optional): only if you choose to get text messages from us. See <a href="#messages">section 6</a>.</li>
+  </ul>
+  <p>Please don't store passwords, API keys, tokens, or other secrets as memory content. <span class="legal-mark">[VERIFY: if the write-path secret guard (PR #43 and related) is merged and live, add: "LogMem tries to block common secret formats when they're written." Do not publish this sentence before it's live, and do not promise it catches every secret.]</span></p>
+
+  <h3 id="automatic">3.2 Data we collect automatically</h3>
+  <ul>
+    <li>Service logs: IP address, request times, the API calls you make, and error records. We use these to run and secure the service.</li>
+    <li>Analytics data: pages you visit, clicks, the referring site, device and browser type, and approximate location from your IP address. We collect this only if you accept analytics cookies. See <a href="#cookies">section 5</a>.</li>
+  </ul>
+
+  <h3 id="payment">3.3 Payment data</h3>
+  <p>Our payment processor, Square, handles payments. (Stripe may be added later for metered overage. Whop is not used for LogMem.) The processor collects your card details. We don't receive or store your full card number. We receive a record of the payment, such as the amount, date, plan, and the last four digits of the card. <span class="legal-mark">[LAWYER REVIEW]</span></p>
+
+  <h2 id="use">4. How we use your data</h2>
+  <p>We use personal data to:</p>
+  <ul>
+    <li>run the service, store your memory content, and return it when you or your agents ask for it</li>
+    <li>manage the waitlist and tell you when a spot opens</li>
+    <li>set up and support your account, including managed-plan setup</li>
+    <li>take payments and keep billing records</li>
+    <li>send service email, such as sign-in links, receipts, security notices, and changes to these terms</li>
+    <li>send product news, but only where you agreed or where the law allows it, with an unsubscribe link in every message <span class="legal-mark">[LAWYER REVIEW: CAN-SPAM and consent rules]</span></li>
+    <li>protect the service, find abuse, and fix errors</li>
+    <li>understand how people use the site, if you accepted analytics cookies</li>
+    <li>meet our legal duties</li>
+  </ul>
+  <p>We don't sell your personal data. We don't share it for cross-context behavioral advertising. <span class="legal-mark">[LAWYER REVIEW: confirm, given the Google Analytics setup, and check US state privacy law wording such as CCPA/CPRA "sale" and "share"]</span></p>
+  <p>We don't use your memory content to train AI models. <span class="legal-mark">[MIKEY PICK: confirm this promise before publish]</span> <span class="legal-mark">[LAWYER REVIEW]</span></p>
+
+  <h3 id="legal-bases">Legal bases (EU and UK visitors)</h3>
+  <p>If EU or UK law applies, we rely on these legal bases: contract (to run the service you asked for), legitimate interests (security, fixing errors, service email), consent (analytics cookies, marketing, text messages), and legal duty. <span class="legal-mark">[LAWYER REVIEW: confirm whether we target EU/UK users at all, and whether we need an EU/UK representative]</span></p>
+
+  <h2 id="cookies">5. Cookies and analytics</h2>
+  <p>We use two analytics tools:</p>
+  <ul>
+    <li>PostHog: product analytics. <span class="legal-mark">[VERIFY: self-hosted PostHog on our servers or PostHog Cloud, and which region]</span></li>
+    <li>Vercel Web Analytics: page view counts on logmem.si. It does not use cookies, and it runs before you answer the cookie banner. <span class="legal-mark">[LAWYER REVIEW: confirm cookieless analytics can run without consent, or gate it behind the banner. It is live on / and /onboarding now; draft PR #52 adds it to /app and /scorecard. Added by Bentley 2026-10-15.]</span></li>
+    <li>Google Analytics: website traffic analytics, run by Google.</li>
+  </ul>
+  <p>Analytics is off until you accept it. When you first visit, a cookie banner asks you to accept or decline. Both buttons are the same size and are equally easy to click. If you decline or ignore the banner, we don't load PostHog or Google Analytics, and we don't set their cookies. <span class="legal-mark">[VERIFY: the banner must actually block both scripts until accept. Test this before publish.]</span></p>
+  <p>We always use a small number of strictly necessary cookies, for example to keep you signed in and to remember your cookie choice. You can't turn these off, because the site doesn't work without them.</p>
+  <p>You can change your choice at any time with the "Cookie settings" link in the site footer. <span class="legal-mark">[VERIFY: footer link exists]</span></p>
+  <p><span class="legal-mark">[LAWYER REVIEW: cookie list with names, purposes, and durations; Google Analytics data-sharing settings; Global Privacy Control signal handling]</span></p>
+
+  <h2 id="messages">6. Email and text messages</h2>
+  <ul>
+    <li>Email: we send email through Resend, our email delivery provider.</li>
+    <li>Text messages (optional): if you give us your phone number and agree to texts, we send account and service alerts by SMS. <span class="legal-mark">[MIKEY PICK: SMS provider, and whether texts include marketing]</span> Message and data rates can apply. Reply STOP to stop texts. Reply HELP for help. We don't sell or share your phone number for marketing. <span class="legal-mark">[LAWYER REVIEW: TCPA consent wording and carrier (CTIA/10DLC) rules]</span></li>
+  </ul>
+
+  <h2 id="share">7. Who we share data with</h2>
+  <p>We share personal data only with service providers that help us run LogMem, and only for that work. These providers include:</p>
+  <div class="lm-table-wrap">
+    <table class="lm-table">
+      <thead>
+        <tr>
+          <th scope="col">Provider</th>
+          <th scope="col">What they do</th>
+          <th scope="col"><span class="legal-mark">[VERIFY: confirm each one]</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Vercel</td>
+          <td>Website and API hosting</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Upstash or our own Redis host on Elestio</td>
+          <td>Memory and waitlist storage</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Elestio</td>
+          <td>Hosting for managed and self-managed plans</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Qdrant (on our Elestio servers)</td>
+          <td>Search for memory content</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Square</td>
+          <td>Payments</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Resend</td>
+          <td>Email delivery</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td><span class="legal-mark">[MIKEY PICK: SMS provider]</span></td>
+          <td>Text messages, if you opt in</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PostHog</td>
+          <td>Product analytics, only after you accept</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Google</td>
+          <td>Google Analytics, only after you accept</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>We also share data when the law requires it, to protect our rights or the safety of others, or as part of a merger or sale of the business. <span class="legal-mark">[LAWYER REVIEW]</span></p>
+
+  <h2 id="retention">8. How long we keep data</h2>
+  <ul>
+    <li>Waitlist entries: up to 180 days, then we delete them, unless you create an account. <span class="legal-mark">[VERIFY: the waitlist store uses a 180-day expiry]</span></li>
+    <li>Account data and memory content: while your account is open. After you close your account, we keep it for <span class="legal-mark">[MIKEY PICK: for example 30]</span> days so you can export it, then we delete it.</li>
+    <li>Service logs: <span class="legal-mark">[MIKEY PICK: for example 30 to 90]</span> days.</li>
+    <li>Billing records: as long as tax and accounting law requires. <span class="legal-mark">[LAWYER REVIEW]</span></li>
+  </ul>
+  <p>Backups can hold deleted data for a short extra time until they rotate out. <span class="legal-mark">[VERIFY: backup rotation period]</span></p>
+
+  <h2 id="security">9. Security</h2>
+  <p>We protect data with access controls, encryption in transit (HTTPS), and limited staff access. <span class="legal-mark">[VERIFY: encryption at rest status on each store before you add it here]</span> No system is fully secure, so we can't promise that your data will never be accessed without permission. If a breach affects your personal data, we'll tell you as the law requires. <span class="legal-mark">[LAWYER REVIEW: breach notice wording]</span></p>
+
+  <h2 id="rights">10. Your choices and rights</h2>
+  <p>You can ask us to:</p>
+  <ul>
+    <li>show you the personal data we hold about you</li>
+    <li>correct it</li>
+    <li>delete it</li>
+    <li>give you a copy in a common format</li>
+    <li>stop marketing email or texts</li>
+  </ul>
+  <p>To ask, email <span class="legal-mark">[MIKEY PICK: privacy contact email]</span>. We'll confirm your identity before we act, and we'll reply within <span class="legal-mark">[LAWYER REVIEW: for example 30]</span> days. Depending on where you live, you might have more rights, such as the right to complain to a data protection authority. We won't treat you differently for using your rights. <span class="legal-mark">[LAWYER REVIEW: state-specific rights (for example California, Virginia, Colorado) and GDPR/UK GDPR rights]</span></p>
+
+  <h2 id="children">11. Children</h2>
+  <p>LogMem is not for children. We don't knowingly collect data from anyone under 13, or under 16 where local law sets that age. If you think a child gave us data, email us and we'll delete it. <span class="legal-mark">[LAWYER REVIEW: age threshold, COPPA]</span></p>
+
+  <h2 id="transfers">12. International transfers</h2>
+  <p>We're based in the United States, and our providers process data in the United States and possibly other countries. If you use LogMem from outside the US, your data moves to the US. <span class="legal-mark">[LAWYER REVIEW: transfer mechanism, for example Standard Contractual Clauses]</span> <span class="legal-mark">[VERIFY: provider regions]</span></p>
+
+  <h2 id="changes">13. Changes to this policy</h2>
+  <p>When we change this policy, we post the new version here and update the effective date. For big changes, we'll also tell account holders by email before the change takes effect. <span class="legal-mark">[LAWYER REVIEW]</span></p>
+
+  <h2 id="contact">14. Contact us</h2>
+  <address>
+    MAD EZ MEDIA AND TECHNOLOGY PARTNERS LLC<br>
+    8320 University Exec Park Dr #439, Charlotte, NC, USA<br>
+    Email: <span class="legal-mark">[MIKEY PICK: privacy contact email]</span>
+  </address>
+</article>
+</main>
+
+<footer class="h-footer">
+  <div class="wrap h-footer-in">
+    <div class="h-footer-brand">
+      <img class="logo-l" src="/ds/logos/logmem-symbol.svg" alt="" width="28" height="28"><img class="logo-d" src="/ds/logos/logmem-symbol-reversed.svg" alt="" width="28" height="28">
+      <p>Shared memory for AI agent teams.<br>A Mad EZ Media product.</p>
+    </div>
+    <nav class="h-footer-cols" aria-label="Footer">
+      <div>
+        <h2 class="lm-eyebrow">Product</h2>
+        <ul>
+          <li><a href="/#demo">Demo</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2 class="lm-eyebrow">Company</h2>
+        <ul>
+          <li><a href="/onboarding">Join the waitlist</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2 class="lm-eyebrow">Legal</h2>
+        <ul>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="#">Cookie settings</a></li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap h-footer-base">
+    <span>LogMem is a working name; trademark clearance pending.</span>
+    <span>MAD EZ MEDIA AND TECHNOLOGY PARTNERS LLC, 8320 University Exec Park Dr #439, Charlotte, NC.</span>
+  </div>
+</footer>
+</body>
+</html>

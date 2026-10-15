@@ -194,9 +194,11 @@ test("homepage: no unpublished self-host pitch, ask-first matches what is built,
   const footer = between("<footer", "</footer>");
   assert.doesNotMatch(footer, /soon/i);
   assert.equal(footer.includes("h-soon"), false);
-  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "/onboarding"]);
+  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "/onboarding", "/privacy", "/terms", "#"]);
   assert.match(footer, />Demo</);
   assert.match(footer, />Join the waitlist</);
+  assert.match(footer, /href="\/privacy"[^>]*>Privacy</);
+  assert.match(footer, /href="\/terms"[^>]*>Terms</);
   assert.match(footer, /A Mad EZ Media product/);
 
   const connect = between('id="connect"', 'id="demo"');
@@ -244,6 +246,35 @@ test("homepage: visible text does not name ACMI", async () => {
   const { readFileSync } = await import("node:fs");
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.doesNotMatch(visibleText(html), /ACMI/);
+});
+
+test("legal pages: draft banner, review markers, and footer links stay visible", async () => {
+  const { readFileSync } = await import("node:fs");
+  const banner = "DRAFT — lawyer review needed. Not final legal copy.";
+  const onboarding = readFileSync(new URL("../public/onboarding.html", import.meta.url), "utf8");
+  assert.match(onboarding, /href="\/privacy"[^>]*>Privacy</);
+  assert.match(onboarding, /href="\/terms"[^>]*>Terms</);
+  for (const file of ["privacy.html", "terms.html"]) {
+    const html = readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8");
+    const text = visibleText(html);
+    assert.ok(text.includes(banner), `${file} shows the draft banner`);
+    assert.match(text, /\[LAWYER REVIEW/);
+    assert.match(text, /\[MIKEY PICK/);
+    assert.match(text, /\[VERIFY/);
+    assert.match(html, /href="\/ds\/tokens\/logmem\.css"/);
+    assert.match(html, /href="\/ds\/components\/bundle\.css"/);
+    assert.match(html, /href="\/site\.css"/);
+    assert.match(html, /href="\/privacy"[^>]*>Privacy</);
+    assert.match(html, /href="\/terms"[^>]*>Terms</);
+    assert.match(text, /Square/);
+    assert.match(text, /Whop is not used for LogMem/);
+    assert.match(text, /MAD EZ MEDIA AND TECHNOLOGY PARTNERS LLC/);
+    assert.match(text, /8320 University Exec Park Dr #439, Charlotte, NC/);
+    assert.doesNotMatch(html, /<script\b/i);
+  }
+  const privacy = visibleText(readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8"));
+  assert.match(privacy, /Vercel Web Analytics/);
+  assert.match(privacy, /does not use cookies/);
 });
 
 test("site: probe.sh names a login wall (Vercel preview protection) instead of blaming the code", async (t) => {

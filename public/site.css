@@ -25,3 +25,21 @@ pre.code{margin:0;padding:12px 14px;background:var(--surface-sunken);border:1px 
 /* logos: dark ink files on light grounds, reversed files on dark grounds */
 .logo-d{display:none!important}
 @media (prefers-color-scheme:dark){.logo-l{display:none!important}.logo-d{display:inline-block!important}}
+
+/* Draft legal pages (/privacy, /terms). Header and footer chrome stay in home.css. */
+.legal-draft{margin:0;padding:12px 24px;background:var(--warning-subtle);color:var(--text);border-bottom:1px solid var(--border);font-size:14px;line-height:20px;font-weight:600;text-align:center}
+.legal-doc{max-width:760px;padding-top:48px;padding-bottom:80px}
+.legal-doc h1{font-size:40px;line-height:1.05;margin:0 0 16px}
+.legal-doc h2{margin:2.2rem 0 .6rem}
+.legal-doc h3{margin:1.5rem 0 .4rem}
+.legal-doc p,.legal-doc li{font-size:16px;line-height:1.6}
+.legal-doc p{margin:0 0 .9rem}
+.legal-doc ul{margin:0 0 .9rem;padding-left:1.25rem}
+.legal-doc li{margin:.3rem 0}
+.legal-doc li ul{margin:.35rem 0 .2rem}
+.legal-meta{color:var(--text-muted)}
+.legal-mark{font-family:var(--font-mono);font-size:.92em;background:var(--surface-sunken);padding:0 .2em;border-radius:3px}
+.legal-doc address{font-style:normal;line-height:1.6;margin:0 0 .9rem}
+.legal .lm-table th,.legal .lm-table td{height:auto;white-space:normal;padding:10px 12px;vertical-align:top}
+.legal-doc .lm-table-wrap{margin:0 0 1rem}
+.legal .lm-btn{text-decoration:none}
