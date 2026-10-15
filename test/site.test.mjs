@@ -194,7 +194,8 @@ test("homepage: no unpublished self-host pitch, ask-first matches what is built,
   const footer = between("<footer", "</footer>");
   assert.doesNotMatch(footer, /soon/i);
   assert.equal(footer.includes("h-soon"), false);
-  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "/onboarding", "/privacy", "/terms", "#"]);
+  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map((m) => m[1]), ["#demo", "/onboarding", "/privacy", "/terms"]);
+  assert.equal(footer.includes("Cookie settings"), false, "no cookie-settings link until a banner can reopen");
   assert.match(footer, />Demo</);
   assert.match(footer, />Join the waitlist</);
   assert.match(footer, /href="\/privacy"[^>]*>Privacy</);
@@ -254,6 +255,7 @@ test("legal pages: draft banner, review markers, and footer links stay visible",
   const onboarding = readFileSync(new URL("../public/onboarding.html", import.meta.url), "utf8");
   assert.match(onboarding, /href="\/privacy"[^>]*>Privacy</);
   assert.match(onboarding, /href="\/terms"[^>]*>Terms</);
+  assert.doesNotMatch(onboarding, /href="#"[^>]*>\s*Cookie settings/, "no dead cookie-settings link");
   for (const file of ["privacy.html", "terms.html"]) {
     const html = readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8");
     const text = visibleText(html);
@@ -261,6 +263,8 @@ test("legal pages: draft banner, review markers, and footer links stay visible",
     assert.match(text, /\[LAWYER REVIEW/);
     assert.match(text, /\[MIKEY PICK/);
     assert.match(text, /\[VERIFY/);
+    assert.match(html, /<meta name="robots" content="noindex">/, `${file} stays out of search indexes while it is a draft`);
+    assert.doesNotMatch(html, /href="#"[^>]*>\s*Cookie settings/, `${file} has no dead cookie-settings link`);
     assert.match(html, /href="\/ds\/tokens\/logmem\.css"/);
     assert.match(html, /href="\/ds\/components\/bundle\.css"/);
     assert.match(html, /href="\/site\.css"/);
@@ -273,8 +277,13 @@ test("legal pages: draft banner, review markers, and footer links stay visible",
     assert.doesNotMatch(html, /<script\b/i);
   }
   const privacy = visibleText(readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8"));
+  assert.match(privacy, /We use three analytics tools/);
+  assert.doesNotMatch(privacy, /We use two analytics tools/);
   assert.match(privacy, /Vercel Web Analytics/);
   assert.match(privacy, /does not use cookies/);
+  assert.match(privacy, /confirm cookieless analytics can run without consent/);
+  assert.doesNotMatch(privacy, /draft PR #52/);
+  assert.doesNotMatch(privacy, /Added by Bentley/);
 });
 
 test("site: probe.sh names a login wall (Vercel preview protection) instead of blaming the code", async (t) => {

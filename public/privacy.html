@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Privacy Policy — LogMem (draft)</title>
 <meta name="description" content="Draft privacy policy for LogMem. Lawyer review needed. Not final legal copy.">
+<meta name="robots" content="noindex">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
@@ -100,10 +101,10 @@
   <p>If EU or UK law applies, we rely on these legal bases: contract (to run the service you asked for), legitimate interests (security, fixing errors, service email), consent (analytics cookies, marketing, text messages), and legal duty. <span class="legal-mark">[LAWYER REVIEW: confirm whether we target EU/UK users at all, and whether we need an EU/UK representative]</span></p>
 
   <h2 id="cookies">5. Cookies and analytics</h2>
-  <p>We use two analytics tools:</p>
+  <p>We use three analytics tools:</p>
   <ul>
     <li>PostHog: product analytics. <span class="legal-mark">[VERIFY: self-hosted PostHog on our servers or PostHog Cloud, and which region]</span></li>
-    <li>Vercel Web Analytics: page view counts on logmem.si. It does not use cookies, and it runs before you answer the cookie banner. <span class="legal-mark">[LAWYER REVIEW: confirm cookieless analytics can run without consent, or gate it behind the banner. It is live on / and /onboarding now; draft PR #52 adds it to /app and /scorecard. Added by Bentley 2026-10-15.]</span></li>
+    <li>Vercel Web Analytics: page view counts on logmem.si. It does not use cookies, and it runs before you answer the cookie banner. <span class="legal-mark">[LAWYER REVIEW: confirm cookieless analytics can run without consent, or gate it behind the banner.]</span></li>
     <li>Google Analytics: website traffic analytics, run by Google.</li>
   </ul>
   <p>Analytics is off until you accept it. When you first visit, a cookie banner asks you to accept or decline. Both buttons are the same size and are equally easy to click. If you decline or ignore the banner, we don't load PostHog or Google Analytics, and we don't set their cookies. <span class="legal-mark">[VERIFY: the banner must actually block both scripts until accept. Test this before publish.]</span></p>
@@ -244,7 +245,6 @@
         <ul>
           <li><a href="/privacy">Privacy</a></li>
           <li><a href="/terms">Terms</a></li>
-          <li><a href="#">Cookie settings</a></li>
         </ul>
       </div>
     </nav>
