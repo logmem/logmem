@@ -32,7 +32,9 @@ export function oauthRedis({ getdel = true } = {}) {
       if (up.includes("NX") && data.has(k)) return null;
       data.set(k, { type: "string", value: String(v) });
       const ex = up.indexOf("EX");
+      // Like Redis: a SET without EX or KEEPTTL clears any earlier expiry.
       if (ex >= 0) ttls.set(k, Number(opts[ex + 1]));
+      else if (!up.includes("KEEPTTL")) ttls.delete(k);
       return "OK";
     }
     if (C === "TTL") {

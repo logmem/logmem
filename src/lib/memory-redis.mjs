@@ -216,6 +216,29 @@ export function createMemoryRedis() {
       if (!e.value.size) data.delete(k);
       return n;
     },
+    // Streams: only XADD with an auto id ("*"), XLEN, and a full XRANGE - +.
+    // Ids are <ms>-<seq> and only grow, like a real Redis stream.
+    XADD: (k, id, ...pairs) => {
+      if (id !== "*") throw new Error('memory-redis: XADD supports only "*" ids');
+      if (!pairs.length || pairs.length % 2) throw new Error("ERR wrong number of arguments for 'xadd' command");
+      let e = get(k, "stream");
+      if (!e) {
+        e = { type: "stream", value: [], last: [0, -1] };
+        data.set(k, e);
+      }
+      const ms = Math.max(Date.now(), e.last[0]);
+      const seq = ms === e.last[0] ? e.last[1] + 1 : 0;
+      e.last = [ms, seq];
+      const entryId = `${ms}-${seq}`;
+      e.value.push([entryId, pairs.map(String)]);
+      return entryId;
+    },
+    XLEN: (k) => get(k, "stream")?.value.length ?? 0,
+    XRANGE: (k, start, end) => {
+      if (start !== "-" || end !== "+") throw new Error("memory-redis: XRANGE supports only - +");
+      const e = get(k, "stream");
+      return e ? e.value.map(([id, f]) => [id, [...f]]) : [];
+    },
     ZCARD: (k) => get(k, "zset")?.value.size ?? 0,
     ZRANGE: (k, start, stop, ...opts) => {
       const e = get(k, "zset");
