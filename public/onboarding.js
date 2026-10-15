@@ -482,7 +482,7 @@
     fetch('/api/onboarding/waitlist', {
       method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email: email, agents: Number.isFinite(agents) ? agents : null, plan: plan() })
+      body: JSON.stringify({ email: email, agents: Number.isFinite(agents) ? agents : null, plan: plan(), attribution: window.lmAttribution ? window.lmAttribution() : null })
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (body) { return { status: r.status, body: body || {} }; });
     }).then(function (r) {
