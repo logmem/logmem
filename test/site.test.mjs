@@ -281,3 +281,76 @@ test("site: the onboarding probe command always fetches probe.sh from logmem.si 
   assert.equal(probeCommand({ origin: "https://logmem-abc-mad-ez-media.vercel.app" })("ABC123"), "curl -fsSL https://logmem.si/probe.sh | LOGMEM_PAIR=ABC123 sh");
   assert.equal(probeCommand({ origin: "http://localhost:4317" })("ABC123"), "curl -fsSL http://localhost:4317/probe.sh | LOGMEM_URL=http://localhost:4317 LOGMEM_PAIR=ABC123 sh");
 });
+
+test("site: both pages load /attrib.js in the head, and onboarding.js sends attribution with the waitlist signup", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  for (const page of ["public/index.html", "public/onboarding.html"]) {
+    const html = readFileSync(join(root, page), "utf8");
+    const head = html.slice(html.indexOf("<head>"), html.indexOf("</head>"));
+    assert.ok(head.includes('<script src="/attrib.js" defer></script>'), `${page} loads attrib.js in <head>`);
+  }
+  const js = readFileSync(join(root, "public/onboarding.js"), "utf8");
+  const post = js.slice(js.indexOf("fetch('/api/onboarding/waitlist'"), js.indexOf("}).then(", js.indexOf("fetch('/api/onboarding/waitlist'")));
+  assert.match(post, /attribution: window\.lmAttribution \? window\.lmAttribution\(\) : null/);
+});
+
+test("site: attrib.js keeps the first visit's source in sessionStorage, host only, and never breaks without storage", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const vm = await import("node:vm");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const src = readFileSync(join(root, "public/attrib.js"), "utf8");
+  assert.doesNotMatch(src, /fetch\(|XMLHttpRequest|sendBeacon|document\.cookie|localStorage/, "no network, no cookies, no localStorage");
+
+  const store = () => {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), _m: m };
+  };
+  const run = ({ search = "", pathname = "/", referrer = "", host = "logmem.si", sessionStorage = store(), now = 1000 } = {}) => {
+    const window = {};
+    const ctx = {
+      window,
+      location: { search, pathname, host, hostname: host },
+      document: { referrer },
+      sessionStorage,
+      URL,
+      URLSearchParams,
+      JSON,
+      Date: { now: () => now },
+    };
+    window.sessionStorage = sessionStorage;
+    vm.runInNewContext(src, ctx);
+    return { window, sessionStorage };
+  };
+
+  const first = run({ search: "?utm_source=hn&utm_medium=social&utm_campaign=launch&email=a@b.com", pathname: "/onboarding", referrer: "https://news.ycombinator.com/item?id=1" });
+  assert.deepEqual(first.window.lmAttribution(), {
+    utm_source: "hn",
+    utm_medium: "social",
+    utm_campaign: "launch",
+    utm_term: null,
+    utm_content: null,
+    referrer_host: "news.ycombinator.com",
+    landing_path: "/onboarding",
+    first_seen: 1000,
+  });
+  assert.doesNotMatch(first.sessionStorage._m.get("lm_attr"), /email|a@b/, "only utm values are kept from the query");
+
+  const second = run({ search: "?utm_source=other", pathname: "/", sessionStorage: first.sessionStorage, now: 2000 });
+  assert.equal(second.window.lmAttribution().utm_source, "hn", "the first visit wins for this tab");
+  assert.equal(second.window.lmAttribution().first_seen, 1000);
+
+  const self = run({ referrer: "https://logmem.si/" });
+  assert.equal(self.window.lmAttribution().referrer_host, null, "same-host referrer is empty");
+
+  const long = run({ search: `?utm_source=${"x".repeat(500)}` });
+  assert.equal(long.window.lmAttribution().utm_source.length, 100, "values are cut before they are sent");
+
+  const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  const off = run({ search: "?utm_source=hn", sessionStorage: broken });
+  assert.equal(off.window.lmAttribution(), null, "blocked storage gives null, never a throw");
+});

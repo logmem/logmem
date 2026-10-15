@@ -254,7 +254,7 @@ test("probe: a lock that expires before the insert does not store a code", async
 test("waitlist: email shape, hashing by lowercased email, idempotent, only {ok:true}", async () => {
   const redis = oauthRedis();
   let t = 1000;
-  const h = waitlistHandler({ redis: () => redis, now: () => t, log: quiet });
+  const h = waitlistHandler({ redis: () => redis, now: () => t, log: quiet, blobPut: null });
   for (const email of ["", "nope", "a@b", "a b@c.com", "<x>@y.com", 42, "a@-b.com", `${"a".repeat(250)}@b.com`]) {
     assert.equal((await call(h, { method: "POST", body: { email, agents: 3, plan: "pro" } })).status, 400, String(email));
   }
@@ -266,10 +266,13 @@ test("waitlist: email shape, hashing by lowercased email, idempotent, only {ok:t
   const field = createHash("sha256").update("mikey@example.com").digest("hex");
   assert.equal(emailKey("mikey@example.com"), field);
   const entryKey = KEYS.waitlistEntry(field);
-  const exp = 1000 + WAITLIST_TTL_S * 1000;
-  assert.deepEqual(JSON.parse(redis.data.get(entryKey).value), { email: "mikey@example.com", hash: field, agents: 4, plan: "pro", ts: 1000, exp });
-  assert.equal(redis.ttls.get(entryKey), WAITLIST_TTL_S, "retention TTL on the entry");
-  assert.equal(redis.data.get(KEYS.waitlistIndex).value.get(field), exp / 1000);
+  const first = JSON.parse(redis.data.get(entryKey).value);
+  assert.deepEqual(
+    { ...first, attribution: undefined },
+    { email: "mikey@example.com", hash: field, agents: 4, plan: "pro", ts: 1000, last_ts: 1000, count: 1, attribution: undefined },
+  );
+  assert.equal(redis.ttls.has(entryKey), false, "no expiry on the entry");
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.get(field), 1, "index score is the first signup second");
 
   t = 5000;
   const r2 = await call(h, { method: "POST", body: { email: "MIKEY@example.COM", agents: 4, plan: "pro" } });
@@ -277,142 +280,85 @@ test("waitlist: email shape, hashing by lowercased email, idempotent, only {ok:t
   assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1, "one record per normalized email");
   const again = JSON.parse(redis.data.get(entryKey).value);
   assert.equal(again.ts, 1000, "first ts kept: same request twice, same record");
-  assert.equal(again.exp, exp, "a repeat does not extend retention");
-  assert.equal(redis.ttls.get(entryKey), WAITLIST_TTL_S - 4, "TTL counts down from the original expiry");
+  assert.equal(again.last_ts, 5000);
+  assert.equal(again.count, 2);
+  assert.equal(redis.ttls.has(entryKey), false, "a repeat adds no expiry");
 
   const r3 = await call(h, { method: "POST", body: { email: "mikey@example.com", agents: "lots", plan: "platinum" }, headers: { "x-forwarded-for": "198.51.100.2" } });
-  assert.equal(r3.status, 200, "(10 requests from the first IP used up its minute)");
-  assert.deepEqual(JSON.parse(redis.data.get(entryKey).value), { email: "mikey@example.com", hash: field, agents: null, plan: null, ts: 1000, exp }, "bad agents/plan become null");
+  assert.equal(r3.status, 200);
+  const third = JSON.parse(redis.data.get(entryKey).value);
+  assert.equal(third.agents, null, "bad agents become null");
+  assert.equal(third.plan, null, "bad plan becomes null");
+  assert.equal(third.ts, 1000);
   assert.equal(normalizeEmail("x@y.co"), "x@y.co");
 });
 
-test("waitlist: rate limited to 10 per IP per minute; 503 without a backend", async () => {
+test("waitlist: rate limited to 30 per IP per minute; 503 without a backend", async () => {
   const redis = oauthRedis();
-  const h = waitlistHandler({ redis: () => redis, log: quiet });
+  const h = waitlistHandler({ redis: () => redis, log: quiet, blobPut: null });
   const req = (i) => ({ method: "POST", body: { email: `u${i}@example.com` }, headers: { "x-forwarded-for": "203.0.113.9, 10.0.0.1" } });
-  for (let i = 0; i < 10; i++) assert.equal((await call(h, req(i))).status, 200);
-  const r = await call(h, req(11));
+  for (let i = 0; i < 30; i++) assert.equal((await call(h, req(i))).status, 200);
+  const r = await call(h, req(31));
   assert.equal(r.status, 429);
   assert.equal(r.headers["retry-after"], "60");
   assert.equal(redis.ttls.get("lm:onboard:rl:wl:203.0.113.9"), 60);
-  assert.equal((await call(h, { ...req(12), headers: { "x-forwarded-for": "198.51.100.7" } })).status, 200, "other IPs unaffected");
+  assert.equal((await call(h, { ...req(32), headers: { "x-forwarded-for": "198.51.100.7" } })).status, 200, "other IPs unaffected");
   assert.equal((await call(waitlistHandler({ redis: () => null, log: quiet }), req(1))).status, 503);
   assert.equal((await call(h, { method: "GET" })).status, 405);
 });
 
-test("waitlist: size cap, and retention deletes the plaintext email", async () => {
+test("waitlist: no size cap and no expiry, rows stay after the old retention window", async () => {
   const redis = oauthRedis();
   let now = 10_000;
-  const ttlS = 50;
-  const h = waitlistHandler({ redis: () => redis, now: () => now, maxEntries: 2, ttlS, log: quiet });
+  // maxEntries and ttlS were options of the capped version. They are ignored now.
+  const h = waitlistHandler({ redis: () => redis, now: () => now, maxEntries: 2, ttlS: 50, log: quiet, blobPut: null });
   const post = (email, ip = "203.0.113.40") => call(h, { method: "POST", body: { email, agents: 1, plan: "dev" }, headers: { "x-forwarded-for": ip } });
-  assert.equal((await post("a@example.com")).status, 200);
-  assert.equal((await post("A@Example.com")).status, 200, "normalized duplicate does not take a second slot");
-  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1);
-  assert.equal((await post("b@example.com")).status, 200);
-  const full = await post("c@example.com");
-  assert.equal(full.status, 503);
-  assert.equal(full.body.error, "waitlist is full");
-  assert.equal([...redis.data.values()].some((e) => e.type === "string" && String(e.value).includes("c@example.com")), false);
-  assert.equal((await post("a@example.com", "203.0.113.41")).status, 200, "an address already on the list can still update");
-
-  const aField = emailKey("a@example.com");
-  const before = JSON.parse(redis.data.get(KEYS.waitlistEntry(aField)).value);
-  now += 40 * 1000;
-  assert.equal((await post("a@example.com", "203.0.113.42")).status, 200);
-  const mid = JSON.parse(redis.data.get(KEYS.waitlistEntry(aField)).value);
-  assert.equal(mid.exp, before.exp, "retention stays anchored to the first signup");
-  assert.equal(redis.ttls.get(KEYS.waitlistEntry(aField)), 10);
-
-  now = before.exp;
-  assert.equal((await post("c@example.com", "203.0.113.43")).status, 200, "expired rows free a slot");
-  const dumped = [...redis.data.entries()].filter(([k]) => k.startsWith("lm:onboard:waitlist:")).map(([, e]) => e.value);
-  assert.equal(dumped.some((v) => String(v).includes("a@example.com") || String(v).includes("b@example.com")), false, "plaintext emails past retention are deleted");
-  assert.equal(JSON.parse(redis.data.get(KEYS.waitlistEntry(emailKey("c@example.com"))).value).email, "c@example.com");
+  for (const e of ["a@example.com", "b@example.com", "c@example.com", "d@example.com"]) assert.equal((await post(e)).status, 200, e);
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 4, "past the old cap of 2");
+  now += (WAITLIST_TTL_S + 60) * 1000;
+  assert.equal((await post("e@example.com")).status, 200);
+  for (const e of ["a@example.com", "b@example.com", "c@example.com", "d@example.com", "e@example.com"]) {
+    const key = KEYS.waitlistEntry(emailKey(e));
+    assert.equal(JSON.parse(redis.data.get(key).value).email, e, `${e} is still stored`);
+    assert.equal(redis.ttls.has(key), false, `${e} has no expiry`);
+  }
+  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 5);
 });
 
-test("waitlist: a parallel burst never stores more than the size cap", async () => {
+test("waitlist: a parallel burst stores every signup and takes no lock", async () => {
   const raw = oauthRedis();
-  const stored = () => {
-    const rows = [...raw.data.keys()].filter((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)).length;
-    const index = raw.data.get(KEYS.waitlistIndex)?.value.size ?? 0;
-    return Math.max(rows, index);
-  };
-  const redis = observe(raw, stored);
-  const cap = 3;
-  const h = waitlistHandler({ redis: () => redis, maxEntries: cap, log: quiet });
+  const h = waitlistHandler({ redis: () => raw, log: quiet, blobPut: null });
   const n = 30;
   const results = await Promise.all(Array.from({ length: n }, (_, i) => call(h, {
     method: "POST",
     body: { email: `burst${i}@example.com`, agents: 1, plan: "dev" },
     headers: { "x-forwarded-for": `198.51.100.${i + 1}` },
   })));
-  assert.equal(stored(), cap, "final rows and index sit on the cap");
-  assert.ok(redis.high() <= cap, `high-water ${redis.high()} exceeded cap ${cap}`);
-  assert.equal(results.filter((r) => r.status === 200).length, cap);
-  const blocked = results.filter((r) => r.status === 503);
-  assert.equal(blocked.length, n - cap);
-  assert.ok(blocked.every((r) => r.body.error === "waitlist is full"));
-  assert.equal(raw.data.has(KEYS.waitlistLock), false, "the lock is released");
-  const kept = [...raw.data.entries()].find(([k, e]) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k) && e.type === "string");
-  const email = JSON.parse(kept[1].value).email;
-  const again = await call(h, {
-    method: "POST",
-    body: { email, agents: 2, plan: "pro" },
-    headers: { "x-forwarded-for": "198.51.100.200" },
-  });
-  assert.equal(again.status, 200, "an address already on the list can still update when full");
-  assert.deepEqual(again.body, { ok: true });
-  assert.equal(stored(), cap, "the update does not take another slot");
-  assert.ok(redis.high() <= cap);
+  assert.equal(results.filter((r) => r.status === 200).length, n);
+  assert.equal([...raw.data.keys()].filter((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)).length, n);
+  assert.equal(raw.data.get(KEYS.waitlistIndex).value.size, n);
+  assert.equal(raw.data.has(KEYS.waitlistLock), false, "no lock key is written");
 });
 
-test("waitlist: a busy lock is 429 store busy, separate from the rate limit", async () => {
+test("waitlist: a leftover lock key does not block signups", async () => {
   const raw = oauthRedis();
   raw.data.set(KEYS.waitlistLock, { type: "string", value: "holder-token" });
-  const h = waitlistHandler({ redis: () => raw, lockWaitMs: 80, log: quiet });
+  const h = waitlistHandler({ redis: () => raw, log: quiet, blobPut: null });
   const r = await call(h, { method: "POST", body: { email: "busy@example.com" }, headers: { "x-forwarded-for": "203.0.113.82" } });
-  assert.equal(r.status, 429);
-  assert.equal(r.body.error, LOCK_BUSY_ERROR);
-  assert.notEqual(r.body.error, "too many requests");
-  assert.equal(r.headers["retry-after"], "1");
-  assert.equal([...raw.data.keys()].some((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)), false);
-  assert.equal(raw.data.get(KEYS.waitlistLock).value, "holder-token");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { ok: true });
+  assert.equal(JSON.parse(raw.data.get(KEYS.waitlistEntry(emailKey("busy@example.com"))).value).email, "busy@example.com");
+  assert.equal(raw.data.get(KEYS.waitlistLock).value, "holder-token", "the stale key is left alone");
 });
 
-test("waitlist: a lock that expires before the insert does not store the email", async () => {
-  const raw = oauthRedis();
-  let zcards = 0;
-  const redis = async (cmd, ...args) => {
-    const result = await raw(cmd, ...args);
-    if (String(cmd).toUpperCase() === "ZCARD" && args[0] === KEYS.waitlistIndex && ++zcards >= 2) raw.data.delete(KEYS.waitlistLock);
-    return result;
-  };
-  const h = waitlistHandler({ redis: () => redis, lockWaitMs: 200, log: quiet });
-  const r = await call(h, { method: "POST", body: { email: "expired-lock@example.com", agents: 1, plan: "dev" }, headers: { "x-forwarded-for": "203.0.113.83" } });
-  assert.equal(r.status, 429);
-  assert.equal(r.body.error, LOCK_BUSY_ERROR);
-  assert.equal([...raw.data.keys()].some((k) => /^lm:onboard:waitlist:[0-9a-f]{64}$/.test(k)), false);
-  assert.equal(raw.data.get(KEYS.waitlistIndex)?.value.size ?? 0, 0);
-});
-
-test("waitlist: unparseable JSON takes the cap path", async () => {
+test("waitlist: unparseable JSON is replaced by a fresh row", async () => {
   const redis = oauthRedis();
-  const h = waitlistHandler({ redis: () => redis, maxEntries: 1, log: quiet });
+  const h = waitlistHandler({ redis: () => redis, log: quiet, blobPut: null });
   const post = (email, ip) => call(h, { method: "POST", body: { email, agents: 1, plan: "dev" }, headers: { "x-forwarded-for": ip } });
   const field = emailKey("a@example.com");
   redis.data.set(KEYS.waitlistEntry(field), { type: "string", value: "{not-json" });
-  assert.equal((await post("a@example.com", "203.0.113.70")).status, 200, "under the cap, a corrupt row is replaced");
+  assert.equal((await post("a@example.com", "203.0.113.70")).status, 200, "a corrupt row is replaced");
   assert.equal(JSON.parse(redis.data.get(KEYS.waitlistEntry(field)).value).email, "a@example.com");
-  assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1);
-
-  const other = emailKey("b@example.com");
-  redis.data.set(KEYS.waitlistEntry(other), { type: "string", value: "not json either" });
-  const full = await post("b@example.com", "203.0.113.71");
-  assert.equal(full.status, 503);
-  assert.equal(full.body.error, "waitlist is full");
-  assert.equal(redis.data.has(KEYS.waitlistEntry(other)), false, "the corrupt row is removed and the cap still refuses the signup");
-  assert.equal([...redis.data.values()].some((e) => e.type === "string" && String(e.value).includes("b@example.com")), false);
   assert.equal(redis.data.get(KEYS.waitlistIndex).value.size, 1);
 });
 

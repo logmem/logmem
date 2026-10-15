@@ -18,11 +18,14 @@ export const KEYS = {
   // Serializes the probe cap. Value is a random holder token, never a code.
   probeLock: "lm:onboard:lock:probe",
   rate: (ip, bucket = "") => `lm:onboard:rl:${bucket ? `${bucket}:` : ""}${ip}`,
-  // One string per signup, EX the retention window. The index score is the
-  // unix expiry second; the member is sha256(normalized email).
+  // One string per signup, with no expiry. The index score is the unix
+  // second of the first signup. The member is sha256(normalized email).
+  // Rows from before 2026-10-15 carry an expiry second as their score.
   waitlistEntry: (field) => `lm:onboard:waitlist:${field}`,
   waitlistIndex: "lm:onboard:waitlist:index",
-  // Serializes the waitlist cap. Value is a random holder token, never an email.
+  // Stream with one entry per signup, repeats too. Never trimmed.
+  waitlistLog: "lm:onboard:waitlist:log",
+  // Was the waitlist cap lock. Nothing takes it now. A stale holder expires by EX.
   waitlistLock: "lm:onboard:lock:waitlist",
 };
 
@@ -42,6 +45,8 @@ export async function sweepIndex(redis, indexKey, nowSec) {
 
 export const RATE_LIMIT = 10; // requests
 export const RATE_WINDOW_S = 60; // per window
+/** The waitlist has no lock or cap, so it allows more per IP than the default. */
+export const WAITLIST_RATE_LIMIT = 30;
 
 /**
  * Client-facing 429 for a busy cap lock. Kept apart from the per-IP limiter's
@@ -88,9 +93,9 @@ const sleep = (ms) => new Promise((resolve) => {
 /**
  * Run `fn` while this caller is the only holder of `key` on the shared store.
  *
- * The probe and waitlist caps are a read of the live count followed by a
- * write. Each of those commands is atomic, and the gap between them is not:
- * overlapping requests can all observe "under the cap" and all insert.
+ * The probe cap is a read of the live count followed by a write. Each of
+ * those commands is atomic, and the gap between them is not: overlapping
+ * requests can all observe "under the cap" and all insert.
  * SET key token NX EX is one atomic command on every backend this runner
  * talks to (REST, TCP, and the in-memory double). The admit (count, then
  * insert) runs only while holding that key. `fn` receives `{ requireHeld }`,
