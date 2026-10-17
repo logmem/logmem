@@ -43,6 +43,23 @@ export function scorecardKey(space) {
 }
 const lockKey = (space) => `lm:${space}:dogfood:lock`;
 
+/**
+ * The pause switch (Mikey, 2026-10-17). JSON {since: "YYYY-MM-DD", reason, by}.
+ * While it is set the check still runs, but days from `since` on are marked
+ * paused: they do not count toward the 7-day bar and do not break the streak,
+ * and the check writes no stuck alerts. Delete the key to resume.
+ */
+export function pauseKey(space) {
+  validateKeySegments(space);
+  return `lm:${space}:dogfood:pause`;
+}
+
+/** The pause record, or null when there is none or it is not usable. */
+export async function readPause(redis, space) {
+  const p = tryParse(await redis("GET", pauseKey(space)));
+  return p && typeof p === "object" && /^\d{4}-\d{2}-\d{2}$/.test(String(p.since)) ? { since: p.since, reason: String(p.reason || ""), by: String(p.by || "") } : null;
+}
+
 /** ACMI twins of one mirrored checkup (same ts, same trail, written by the mirror). */
 async function removeAcmiTwins(redis, space, entry) {
   const key = acmiKey(space, "job", CHECK_JOB, "log");
@@ -84,6 +101,7 @@ export async function runCheck(redis, {
   windowMs = DAY_MS,
   lookbackMs = 7 * DAY_MS,
   write = true,
+  stuck = true,
 } = {}) {
   const store = createStore(redis, { space, compat: false });
   const from = now - windowMs;
@@ -156,7 +174,7 @@ export async function runCheck(redis, {
   let replaced = 0;
   if (write) {
     const writer = createStore(redis, { space, mirror: mirrored ? createMirror(redis, space) : null });
-    for (const { trail, h } of stuckToWrite) {
+    for (const { trail, h } of stuck ? stuckToWrite : []) {
       await writer.append(h.ns, h.id, {
         ts: now, kind: "stuck", by: BY, via: "dogfood-check", byline: "logmem-check (via dogfood-check)",
         trail: `stuckHandoff-${now}`, origin: trail, summary: `Handoff to ${h.to} unanswered for more than 24h`,
@@ -196,10 +214,15 @@ export async function runDaily(redis, { space, mirrorSpaces = ["madez"], now = D
   const token = randomUUID();
   if ((await redis("SET", lock, token, "NX", "EX", String(lockTtlS))) == null) return { space, skipped: "locked" };
   try {
-    const res = await runCheck(redis, { space, mirrorSpaces, now, write: true });
+    const pause = await readPause(redis, space);
+    const res = await runCheck(redis, { space, mirrorSpaces, now, write: true, stuck: !pause });
     const prev = tryParse(await redis("GET", key));
     const usable = prev && typeof prev === "object" && prev.space === space && Array.isArray(prev.days) ? prev : null;
     const card = updateScorecard(usable, res, new Date(now).toISOString());
+    if (pause) {
+      for (const d of card.days) if (d.date >= pause.since) d.paused = true;
+      card.pause = pause;
+    }
     card.gate = gate(card);
     card.by = BY;
     await redis("SET", key, JSON.stringify(card));
@@ -224,9 +247,18 @@ export function updateScorecard(card, { day, deliverable }, generatedAt = new Da
 
 /** The 7-day bar: 7 consecutive passing days ending at the newest, plus the deliverable done. */
 export function gate(card) {
-  const last7 = (card.days || []).slice(-7);
-  const consecutive = last7.length === 7 && last7.every((d, i) => i === 0 || Date.parse(d.date) - Date.parse(last7[i - 1].date) === DAY_MS);
-  return { days_passing: last7.filter((d) => d.pass).length, consecutive, deliverable_done: card.deliverable?.stage === "done", pass: consecutive && last7.every((d) => d.pass) && card.deliverable?.stage === "done" };
+  const all = card.days || [];
+  const paused = new Set(all.filter((d) => d.paused).map((d) => d.date));
+  const last7 = all.filter((d) => !d.paused).slice(-7);
+  // Two counted days are back to back when every date between them is a paused day.
+  const adjacent = (a, b) => {
+    for (let t = Date.parse(a.date) + DAY_MS; t < Date.parse(b.date); t += DAY_MS) {
+      if (!paused.has(new Date(t).toISOString().slice(0, 10))) return false;
+    }
+    return Date.parse(b.date) > Date.parse(a.date);
+  };
+  const consecutive = last7.length === 7 && last7.every((d, i) => i === 0 || adjacent(last7[i - 1], d));
+  return { days_passing: last7.filter((d) => d.pass).length, consecutive, ...(paused.size ? { paused_days: paused.size } : {}), deliverable_done: card.deliverable?.stage === "done", pass: consecutive && last7.every((d) => d.pass) && card.deliverable?.stage === "done" };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
