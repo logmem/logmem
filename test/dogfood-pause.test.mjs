@@ -144,3 +144,43 @@ test("ack lookup: a decline answers the handoff (LogMem and ACMI)", async () => 
   r = await runCheck(redis2, { space: "madez", now: Date.now() + DAY_MS + 60_000 });
   assert.equal(r.day.unanswered_24h, 0, "an ACMI decline is an answer");
 });
+
+// Re-review fixes (codex at d2d7b38), Oct 18.
+import { mkdtempSync, readFileSync as readFile } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createStore } from "../src/core/store.mjs";
+import { updateScorecardFile, scorecardKey, CHECK_JOB, CHECK_BY } from "../scripts/dogfood-check.mjs";
+
+test("pause: the API keeps counted days from before a 40-day pause", async () => {
+  const redis = createMemoryRedis();
+  const store = createStore(redis, { space: "madez" });
+  const iso = (t) => new Date(t).toISOString().slice(0, 10);
+  const start = Date.now() - 47 * DAY_MS;
+  const days = [];
+  for (let i = 0; i <= 46; i++) {
+    const ts = start + i * DAY_MS, date = iso(ts);
+    const paused = i >= 6 && i < 46;
+    const row = { date, space: "madez", ran: true, pass: !paused, health_pass: !paused, volume_pass: !paused, agents: [], mismatch_examples: [] };
+    await store.append("job", CHECK_JOB, { ts, kind: "checkup", by: CHECK_BY, trail: `chk-${date}`, summary: date, payload: row });
+    days.push(paused ? { ...row, paused: true } : row);
+  }
+  await redis("SET", scorecardKey("madez"), JSON.stringify({ by: CHECK_BY, space: "madez", generated_at: new Date().toISOString(), days }));
+  const card = await buildScorecard(redis, "madez");
+  assert.equal(card.days.filter((d) => !d.paused).length, 7, "all 7 counted days survive");
+  assert.equal(card.gate.consecutive, true);
+  assert.equal(card.gate.days_passing, 7);
+});
+
+test("pause: the --scorecard file gets the same pause marks as Redis", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "dogfood-")), "scorecard.json");
+  const pause = { since: "2026-10-16", reason: "parked", by: "human:mikey" };
+  const res = (date, pass) => ({ day: { date, pass, space: "madez", mismatch_examples: [] }, deliverable: { stage: "done" } });
+  updateScorecardFile(path, "madez", res("2026-10-15", true), null);
+  updateScorecardFile(path, "madez", res("2026-10-16", false), pause);
+  const card = updateScorecardFile(path, "madez", res("2026-10-17", false), pause);
+  const file = JSON.parse(readFile(path, "utf8"));
+  assert.deepEqual(file.days.map((d) => [d.date, !!d.paused]), [["2026-10-15", false], ["2026-10-16", true], ["2026-10-17", true]]);
+  assert.equal(file.pause.since, "2026-10-16");
+  assert.equal(card.gate.paused_days, 2);
+});

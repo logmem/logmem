@@ -55,6 +55,24 @@ export function pauseKey(space) {
   return `lm:${space}:dogfood:pause`;
 }
 
+/** Mark every day since the pause began as paused. Days stay paused after the key is removed. */
+export function applyPause(card, pause) {
+  if (!pause) return card;
+  for (const d of card.days || []) if (d.date >= pause.since) d.paused = true;
+  card.pause = pause;
+  return card;
+}
+
+/** Upsert a day into the optional scorecard file, with the same pause marks as Redis. */
+export function updateScorecardFile(path, space, res, pause) {
+  const prev = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  const card = applyPause(updateScorecard(prev?.space === space ? prev : null, res), pause);
+  card.gate = gate(card);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(card, null, 2)}\n`);
+  return card;
+}
+
 /** A real YYYY-MM-DD date: 2026-99-99 and 2026-02-30 are not. */
 export function isCalendarDate(v) {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
@@ -238,10 +256,7 @@ export async function runDaily(redis, { space, mirrorSpaces = ["madez"], now = D
     const prev = tryParse(await redis("GET", key));
     const usable = prev && typeof prev === "object" && prev.space === space && Array.isArray(prev.days) ? prev : null;
     const card = updateScorecard(usable, res, new Date(now).toISOString());
-    if (pause) {
-      for (const d of card.days) if (d.date >= pause.since) d.paused = true;
-      card.pause = pause;
-    }
+    applyPause(card, pause);
     card.gate = gate(card);
     card.by = BY;
     await redis("SET", key, JSON.stringify(card));
@@ -312,12 +327,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     res = out.res;
     console.error(`${space} ${out.date} ${out.pass ? "PASS" : "FAIL"}; scorecard written to ${scorecardKey(space)}${out.replaced ? ` (replaced ${out.replaced} earlier checkup today)` : ""}`);
   }
-  if (path) {
-    const prev = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
-    const card = updateScorecard(prev?.space === space ? prev : null, res);
-    card.gate = gate(card);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(card, null, 2)}\n`);
-  }
+  if (path) updateScorecardFile(path, space, res, await readPause(redis, space));
   console.log(JSON.stringify(res, null, 2));
 }
