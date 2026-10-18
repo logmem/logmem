@@ -146,7 +146,7 @@ test("ack lookup: a decline answers the handoff (LogMem and ACMI)", async () => 
 });
 
 // Re-review fixes (codex at d2d7b38), Oct 18.
-import { mkdtempSync, readFileSync as readFile } from "node:fs";
+import { mkdtempSync, readFileSync as readFile, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStore } from "../src/core/store.mjs";
@@ -183,4 +183,27 @@ test("pause: the --scorecard file gets the same pause marks as Redis", () => {
   assert.deepEqual(file.days.map((d) => [d.date, !!d.paused]), [["2026-10-15", false], ["2026-10-16", true], ["2026-10-17", true]]);
   assert.equal(file.pause.since, "2026-10-16");
   assert.equal(card.gate.paused_days, 2);
+});
+
+// Second re-review fix (codex at 1f9671a), Oct 18.
+test("pause: a backdated pause marks rows before trimming (Redis and file)", async () => {
+  const iso = (t) => new Date(t).toISOString().slice(0, 10);
+  const start = Date.parse("2026-09-01T00:00:00Z");
+  const rows = [];
+  for (let i = 0; i < 30; i++) rows.push({ date: iso(start + i * DAY_MS), pass: i < 6, space: "madez", mismatch_examples: [] });
+  const pause = { since: iso(start + 6 * DAY_MS), reason: "backdated", by: "human:mikey" };
+  const next = iso(start + 30 * DAY_MS);
+
+  // Redis path
+  const redis = createMemoryRedis();
+  await redis("SET", scorecardKey("madez"), JSON.stringify({ by: CHECK_BY, space: "madez", days: rows }));
+  await redis("SET", pauseKey("madez"), JSON.stringify(pause));
+  const r = await runDaily(redis, { space: "madez", mirrorSpaces: [], now: Date.parse(next + "T13:00:00Z") });
+  assert.equal(r.card.days.filter((d) => !d.paused).length, 6, "Redis keeps all 6 counted days");
+
+  // File path
+  const path = join(mkdtempSync(join(tmpdir(), "dogfood-")), "scorecard.json");
+  writeFileSync(path, JSON.stringify({ space: "madez", days: rows }));
+  const card = updateScorecardFile(path, "madez", { day: { date: next, pass: false, space: "madez", mismatch_examples: [] }, deliverable: null }, pause);
+  assert.equal(card.days.filter((d) => !d.paused).length, 6, "the file keeps all 6 counted days");
 });

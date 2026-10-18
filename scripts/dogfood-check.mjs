@@ -63,10 +63,19 @@ export function applyPause(card, pause) {
   return card;
 }
 
+/** Mark the stored rows before trimming, so a backdated pause never trims counted days first. */
+function markPaused(card, pause) {
+  if (card && pause) for (const d of card.days || []) if (d.date >= pause.since) d.paused = true;
+  return card;
+}
+function markPausedDay(res, pause) {
+  return pause && res.day.date >= pause.since ? { ...res, day: { ...res.day, paused: true } } : res;
+}
+
 /** Upsert a day into the optional scorecard file, with the same pause marks as Redis. */
 export function updateScorecardFile(path, space, res, pause) {
   const prev = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
-  const card = applyPause(updateScorecard(prev?.space === space ? prev : null, res), pause);
+  const card = applyPause(updateScorecard(markPaused(prev?.space === space ? prev : null, pause), markPausedDay(res, pause)), pause);
   card.gate = gate(card);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(card, null, 2)}\n`);
@@ -255,8 +264,7 @@ export async function runDaily(redis, { space, mirrorSpaces = ["madez"], now = D
     const res = await runCheck(redis, { space, mirrorSpaces, now, write: true, stuck: !pause });
     const prev = tryParse(await redis("GET", key));
     const usable = prev && typeof prev === "object" && prev.space === space && Array.isArray(prev.days) ? prev : null;
-    const card = updateScorecard(usable, res, new Date(now).toISOString());
-    applyPause(card, pause);
+    const card = applyPause(updateScorecard(markPaused(usable, pause), markPausedDay(res, pause), new Date(now).toISOString()), pause);
     card.gate = gate(card);
     card.by = BY;
     await redis("SET", key, JSON.stringify(card));
