@@ -15,7 +15,7 @@
 import { createStore, tryParse } from "../src/core/store.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { readOnly } from "../src/lib/read-only.mjs";
-import { updateScorecard, gate, scorecardKey, CHECK_JOB, CHECK_BY, DELIVERABLE_JOB } from "../scripts/dogfood-check.mjs";
+import { updateScorecard, gate, readPause, scorecardKey, CHECK_JOB, CHECK_BY, DELIVERABLE_JOB } from "../scripts/dogfood-check.mjs";
 import { mayRead, viewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
@@ -29,6 +29,7 @@ export function cleanDay(p, space) {
     agents: Array.isArray(p.agents) ? p.agents.map(String).slice(0, 50) : [],
     entries: N(p.entries), handoffs: N(p.handoffs), accepted: N(p.accepted), mirror_mismatches: N(p.mirror_mismatches),
     unanswered_24h: N(p.unanswered_24h), degraded_sessions: N(p.degraded_sessions), stuck_written: N(p.stuck_written), mismatch_examples: [],
+    ...(p.paused === true ? { paused: true } : {}),
   };
 }
 
@@ -79,6 +80,12 @@ export async function buildScorecard(redis, space) {
   card = card || { space, days: [] };
   card.space = space;
   card.deliverable = deliverable;
+  // The pause key is the source of truth for days since the pause began.
+  const pause = await readPause(r, space);
+  if (pause) {
+    for (const d of card.days) if (d.date >= pause.since) d.paused = true;
+    card.pause = pause;
+  }
   card.gate = gate(card);
   card.checks = checks.length;
   card.source = source;
