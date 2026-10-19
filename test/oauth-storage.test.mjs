@@ -317,3 +317,23 @@ test("oauth storage: deploy Redis fetch has a timeout and checks res.ok", async 
     globalThis.fetch = realFetch;
   }
 });
+
+test("oauth storage: LOGMEM_DEPLOY_REDIS_URI (official Redis) is preferred and must be rediss:// in production", async () => {
+  __setRedisForTests(null);
+  const realFetch = globalThis.fetch;
+  let fetched = 0;
+  globalThis.fetch = async () => { fetched++; return new Response("{}", { status: 200 }); };
+  try {
+    // Plaintext redis:// is refused outside local dev.
+    await withEnv({ VERCEL_ENV: "production", LOGMEM_DEPLOY_REDIS_URI: "redis://default:pw@203.0.113.9:6379", LOGMEM_DEPLOY_REST_URL: undefined, LOGMEM_DEPLOY_REST_TOKEN: undefined }, async () => {
+      await assert.rejects(() => getClient("cli_x"), (e) => e instanceof StorageConfigError && /rediss:\/\//.test(e.message));
+    });
+    // rediss:// wins over the REST pair: no HTTP call is made.
+    await withEnv({ VERCEL_ENV: "production", LOGMEM_DEPLOY_REDIS_URI: "rediss://default:pw@203.0.113.9:1", LOGMEM_DEPLOY_REST_URL: "https://deploy.example", LOGMEM_DEPLOY_REST_TOKEN: "t", LOGMEM_REDIS_TIMEOUT_MS: "300" }, async () => {
+      await assert.rejects(() => getClient("cli_x"), (e) => !(e instanceof StorageConfigError), "a connection error, not a config error");
+    });
+    assert.equal(fetched, 0, "the REST bridge is not used when a Redis URI is set");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

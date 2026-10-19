@@ -28,7 +28,7 @@
     detect: ['Find your AI tools', 'Local probe, read-only'],
     waitlist: ['Join the waitlist', 'Email and agent count'],
     space: ['Name your space', 'One walled-off memory'],
-    redis: ['Connect your Redis', 'Upstash or rediss://'],
+    redis: ['Connect your Redis', 'Official Redis (rediss://) or a REST bridge'],
     acmi: ['Existing history', 'Optional · ACMI compatible'],
     connect: ['Connect agents', 'A snippet per host'],
     first: ['First entries', 'See the log fill'],
@@ -294,7 +294,7 @@
   $('#ws').addEventListener('input', function () { if ($('#ws').getAttribute('aria-invalid') === 'true') checkWorkspace(); });
 
   // ---- Redis + real connection test ----------------------------------------------
-  var backend = 'rest';
+  var backend = 'redis';
   function setBackend(kind) {
     backend = kind;
     $('#b-rest').setAttribute('aria-pressed', String(kind === 'rest'));

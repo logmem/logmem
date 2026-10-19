@@ -72,7 +72,7 @@
         </div>
         <div class="lm-panel ob-choice ob-choice--rec">
           <div class="lm-row"><h2 class="lm-title-2">Run it on your own Redis</h2><span class="lm-badge">Self-hosted</span></div>
-          <p class="ob-note ob-note--muted">Run the LogMem server against an Upstash (REST) or rediss:// Redis you own. Your data stays there.</p>
+          <p class="ob-note ob-note--muted">Run the LogMem server against a Redis you own: the official Redis server over rediss://, or an HTTP REST bridge. Your data stays there.</p>
           <ul class="ob-list"><li>Find the AI tools on this machine.</li><li>Name a space, test your Redis, and choose whether to bring existing ACMI history.</li><li>Get a snippet for each tool, then try a first handoff.</li></ul>
           <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-choose="byo">Set it up on my Redis</button></div>
         </div>
@@ -154,12 +154,12 @@
     <!-- BYO: Redis -->
     <section class="lm-panel ob-card" data-step="redis" aria-labelledby="h-redis" hidden>
       <div><h1 id="h-redis" tabindex="-1">Connect your Redis.</h1><p class="ob-lede">LogMem stores everything in a Redis you control. The test sends three read-only commands: PING, then TYPE and EXISTS on a random key that doesn’t exist. It writes nothing.</p></div>
-      <div class="lm-seg ob-seg" role="group" aria-label="Backend type"><button type="button" id="b-rest" aria-pressed="true">HTTP REST (Upstash)</button><button type="button" id="b-tcp" aria-pressed="false">rediss:// over TCP</button></div>
-      <div id="f-rest" class="ob-grid2">
-        <div class="lm-field"><label class="lm-label" for="ru">REST URL</label><input class="lm-input mono" id="ru" type="url" placeholder="https://….upstash.io" spellcheck="false" autocomplete="off"></div>
+      <div class="lm-seg ob-seg" role="group" aria-label="Backend type"><button type="button" id="b-tcp" aria-pressed="true">Redis (rediss://)</button><button type="button" id="b-rest" aria-pressed="false">HTTP REST bridge</button></div>
+      <div id="f-rest" class="ob-grid2" hidden>
+        <div class="lm-field"><label class="lm-label" for="ru">REST URL</label><input class="lm-input mono" id="ru" type="url" placeholder="https://your-redis-bridge/exec" spellcheck="false" autocomplete="off"></div>
         <div class="lm-field"><label class="lm-label" for="rt">REST token</label><input class="lm-input" id="rt" type="password" autocomplete="off"></div>
       </div>
-      <div id="f-tcp" class="lm-field" hidden><label class="lm-label" for="uri">Redis URI</label><input class="lm-input mono" id="uri" type="password" placeholder="rediss://:password@host:6379/0" autocomplete="off" spellcheck="false" aria-describedby="uri-help"><span class="lm-help" id="uri-help">TLS (rediss://) on a public host, port 6379 or 6380.</span></div>
+      <div id="f-tcp" class="lm-field"><label class="lm-label" for="uri">Redis URI</label><input class="lm-input mono" id="uri" type="password" placeholder="rediss://:password@host:6379/0" autocomplete="off" spellcheck="false" aria-describedby="uri-help"><span class="lm-help" id="uri-help">TLS (rediss://) on a public host, port 6379 or 6380.</span></div>
       <div id="test-status" role="status" aria-live="polite"></div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--secondary" id="test">Test connection</button><button type="button" class="lm-btn lm-btn--primary" data-next id="redis-next" disabled>Continue</button><button type="button" class="ob-linkbtn" data-next>Skip the test for now</button></div>
       <p class="ob-note">Your URL and token go to <span class="mono">/api/onboarding/test</span> once, are used for those three commands, and are dropped. This page doesn’t save them: they go into your agent’s own config in the next steps. Private and internal addresses are refused.</p>

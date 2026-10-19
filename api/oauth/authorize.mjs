@@ -2,7 +2,7 @@
 //
 // GET  /api/oauth/authorize?response_type=code&client_id=...&redirect_uri=...
 //        &code_challenge=...&code_challenge_method=S256&state=...&scope=mcp
-//   → renders consent HTML form (user pastes Upstash URL + Token to authorize)
+//   → renders consent HTML form (user enters a Redis URI, or a REST bridge URL + token)
 // POST /api/oauth/authorize
 //   form-encoded — issues auth code, redirects to redirect_uri with ?code=...&state=...
 //
@@ -163,14 +163,14 @@ button:hover{background:var(--accent)}
 
   <label>Redis backend</label>
   <div class="backends">
-    <label class="radio"><input type="radio" name="backend" value="upstash" ${params.backend === "redis" ? "" : "checked"}> HTTP REST (Polar exec or Upstash)</label>
-    <label class="radio"><input type="radio" name="backend" value="redis" ${params.backend === "redis" ? "checked" : ""}> Self-hosted Redis TCP</label>
+    <label class="radio"><input type="radio" name="backend" value="redis" ${params.backend === "upstash" ? "" : "checked"}> Redis (rediss://, the official Redis server)</label>
+    <label class="radio"><input type="radio" name="backend" value="upstash" ${params.backend === "upstash" ? "checked" : ""}> HTTP Redis REST bridge</label>
   </div>
 
   <div id="fields-upstash">
     <label for="upstash_url">HTTP Redis REST URL</label>
     <input type="text" id="upstash_url" name="upstash_url" placeholder="https://your-redis-rest-host/exec" value="${htmlEscape(params.upstash_url_prefill || "")}">
-    <div class="hint">Polar exec: no trailing slash. Upstash Cloud REST URLs still work. Native :26379 does not.</div>
+    <div class="hint">For hosts that only allow HTTP. Use the bridge's exec URL, with no trailing slash.</div>
 
     <label for="upstash_token">HTTP Redis REST token</label>
     <input type="password" id="upstash_token" name="upstash_token" placeholder="REST token">
@@ -200,7 +200,7 @@ button:hover{background:var(--accent)}
   <button type="submit" name="action" value="approve">Authorize</button>
   <button type="submit" name="action" value="deny" class="deny">Deny</button>
 
-  <div class="foot">Your Redis credentials are stored on this server encrypted at rest, bound to this access token, and dropped when the token expires. Rotate your Redis password or Upstash token any time to revoke out-of-band.</div>
+  <div class="foot">Your Redis credentials are stored on this server encrypted at rest, bound to this access token, and dropped when the token expires. Rotate your Redis password or REST token any time to revoke out-of-band.</div>
 </form>
 </body>
 </html>`;

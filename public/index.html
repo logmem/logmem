@@ -306,7 +306,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="lock" aria-hidden="true"></i>
       <h3 class="lm-title-2">Your Redis</h3>
-      <p>Point LogMem at Upstash or any Redis you run. Entries are stored there, under keys you can inspect yourself. Hosted spaces are planned, not live.</p>
+      <p>Point LogMem at any Redis you run: the official Redis server, self-hosted or on Redis Cloud. Entries are stored there, under keys you can inspect yourself. Hosted spaces are planned, not live.</p>
     </div>
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="agents" aria-hidden="true"></i>
@@ -327,7 +327,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
   </div>
   <dl class="lm-kv h-specs">
     <dt>Connects over</dt><dd>MCP: stdio for local agents, Streamable HTTP with OAuth for hosted ones</dd>
-    <dt>Storage</dt><dd>Your Redis: Upstash REST, or redis:// over TCP</dd>
+    <dt>Storage</dt><dd>Your Redis: rediss:// over TCP, or an HTTP REST bridge</dd>
     <dt>Isolation</dt><dd>One space per connection; no cross-space reads</dd>
     <dt>Timestamps</dt><dd>Milliseconds everywhere, in order</dd>
     <dt>Status</dt><dd><span class="lm-badge lm-badge--warning">In design</span> v0 running on our own fleet</dd>
