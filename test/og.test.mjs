@@ -28,7 +28,33 @@ for (const [file, path] of [["index.html", "/"], ["onboarding.html", "/onboardin
     assert.equal(meta(html, "name", "twitter:card"), "summary_large_image");
     assert.equal(meta(html, "name", "twitter:image"), "https://logmem.si/og/logmem-og.png");
     assert.match(html, new RegExp(`<link rel="canonical" href="https://logmem.si${path}">`));
-    assert.match(html, /<script defer src="\/_vercel\/insights\/script.js"><\/script>/);
+    assert.match(html, /<script defer src="\/_vercel\/insights\/script\.js"><\/script>/);
     assert.ok(!/ACMI/.test(meta(html, "property", "og:title") + meta(html, "property", "og:description")));
+    const ldMatch = /<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/.exec(html);
+    assert.ok(ldMatch, `${file} has application/ld+json structured data`);
+    const ld = JSON.parse(ldMatch[1]);
+    assert.equal(ld["@context"], "https://schema.org");
+    assert.ok(!/ACMI/.test(ldMatch[1]), `${file} JSON-LD does not name ACMI`);
+    assert.doesNotMatch(ldMatch[1], /\$\d/, `${file} JSON-LD has no prices`);
   });
 }
+
+test("seo: robots.txt and sitemap.xml cover public routes and exclude internal pages", () => {
+  const robots = page("robots.txt");
+  assert.match(robots, /^User-agent: \*/m);
+  assert.match(robots, /^Allow: \/$/m);
+  assert.match(robots, /^Disallow: \/app$/m);
+  assert.match(robots, /^Disallow: \/scorecard$/m);
+  assert.match(robots, /^Disallow: \/api\/$/m);
+  assert.match(robots, /^Sitemap: https:\/\/logmem\.si\/sitemap\.xml$/m);
+
+  const sitemap = page("sitemap.xml");
+  assert.match(sitemap, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+  assert.match(sitemap, /<loc>https:\/\/logmem\.si\/<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/logmem\.si\/onboarding<\/loc>/);
+  assert.doesNotMatch(sitemap, /\/app\b|\/scorecard\b|\/api\b/);
+
+  for (const internal of ["app.html", "scorecard.html"]) {
+    assert.match(page(internal), /<meta name="robots" content="noindex">/);
+  }
+});

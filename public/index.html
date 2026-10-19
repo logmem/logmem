@@ -28,6 +28,37 @@
 <link rel="stylesheet" href="/home.css">
 <script src="/attrib.js" defer></script>
 <script src="/home.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://logmem.si/#organization",
+      "name": "Mad EZ Media",
+      "url": "https://logmem.si/"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://logmem.si/#website",
+      "url": "https://logmem.si/",
+      "name": "LogMem",
+      "description": "Shared memory for AI agent teams.",
+      "publisher": { "@id": "https://logmem.si/#organization" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://logmem.si/#software",
+      "name": "LogMem",
+      "url": "https://logmem.si/",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Cross-platform",
+      "description": "LogMem gives AI tools like Claude Code, Codex, Cursor and Claude one shared memory so they remember what already happened, hand work to each other, and ask a person before anything irreversible.",
+      "publisher": { "@id": "https://logmem.si/#organization" }
+    }
+  ]
+}
+</script>
 </head>
 <body class="lm home">
 <a class="skip" href="#top">Skip to content</a>
