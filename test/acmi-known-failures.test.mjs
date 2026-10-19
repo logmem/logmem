@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createStore, normTs } from "../src/core/store.mjs";
 import { createLogmem } from "../src/server.mjs";
+import { buildView } from "../src/http/view.mjs";
 
 const S = "madez";
 const call = async (lm, name, args) => (await lm.callTool(name, args)).structuredContent;
@@ -228,3 +229,31 @@ test("read_warnings use a fixed code and never carry a Redis REST token or endpo
     assert.ok(!body.read_warnings.some((w) => "error" in w));
   }
 });
+
+test("recall and views: a legacy index id containing colons is reported or skipped, not fatal", async () => {
+  const redis = createMemoryRedis();
+  await redis("SADD", `acmi:${S}:work:list`, "client:duane:duane-lead-pipeline", "logmem-google-search-setup");
+  await redis("SADD", `lm:${S}:job:list`, "client:duane:duane-lead-pipeline", "logmem-google-search-setup");
+  await redis("ZADD", `lm:${S}:job:logmem-google-search-setup:log`, 1792380116655, JSON.stringify({
+    ts: 1792380116655,
+    by: "agent:antigravity",
+    kind: "progress",
+    trail: "t-seo",
+    summary: "Opened PR 55 for sitemap and JSON-LD baseline",
+  }));
+  const lm = createLogmem({ redis, space: S, surface: "test", sessionId: "s1", defaultAgent: "antigravity", compat: true });
+  const recall = await call(lm, "logmem_recall", { query: "sitemap JSON-LD baseline", limit: 5 });
+  assert.equal(recall.ok, true);
+  assert.equal(recall.results.length, 1);
+  assert.equal(recall.results[0].from, "job:logmem-google-search-setup");
+  assert.deepEqual(
+    recall.read_warnings?.map((w) => `${w.ref}:${w.code}`),
+    ["job:client:duane:duane-lead-pipeline:read_failed"],
+  );
+
+  const jobsView = await buildView(redis, S, "jobs");
+  assert.deepEqual(jobsView.jobs.map((j) => j.id), ["logmem-google-search-setup"]);
+  const overview = await buildView(redis, S, "overview");
+  assert.deepEqual(overview.jobs.map((j) => j.id), ["logmem-google-search-setup"]);
+});
+

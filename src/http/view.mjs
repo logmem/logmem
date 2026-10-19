@@ -92,10 +92,14 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const ids = await store.list("agent");
     const agents = [];
     for (const id of ids) {
-      const [who, nowSlot, last, recap, shifts] = await Promise.all([
-        store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 }), store.getRecap(id), store.recentShifts(id, 1),
-      ]);
-      agents.push({ id, who, now: nowSlot, last: last[0] ? slim(last[0], `agent:${id}`) : null, seen: seen(last[0]?.ts, now), recap: recap ? { summary: recap.summary, mode: recap.mode, reason: recap.reason, ended_at: recap.ended_at } : null, shift: shifts[0] || null });
+      try {
+        const [who, nowSlot, last, recap, shifts] = await Promise.all([
+          store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 }), store.getRecap(id), store.recentShifts(id, 1),
+        ]);
+        agents.push({ id, who, now: nowSlot, last: last[0] ? slim(last[0], `agent:${id}`) : null, seen: seen(last[0]?.ts, now), recap: recap ? { summary: recap.summary, mode: recap.mode, reason: recap.reason, ended_at: recap.ended_at } : null, shift: shifts[0] || null });
+      } catch {
+        continue;
+      }
     }
     agents.sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
     if (what === "agents") return { agents };
@@ -138,8 +142,12 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const ids = await store.list("channel");
     const channels = [];
     for (const id of ids) {
-      const last = await store.readLog("channel", id, { reverse: true, limit: 1 });
-      channels.push({ id, last: last[0] ? slim(last[0], `channel:${id}`) : null });
+      try {
+        const last = await store.readLog("channel", id, { reverse: true, limit: 1 });
+        channels.push({ id, last: last[0] ? slim(last[0], `channel:${id}`) : null });
+      } catch {
+        continue;
+      }
     }
     const pick = params.id || channels[0]?.id;
     const log = pick ? (await store.readLog("channel", pick, { reverse: true, limit: 100 })).map((e) => slim(e, `channel:${pick}`)) : [];
@@ -169,8 +177,12 @@ async function jobsView(store) {
   const ids = await store.list("job");
   const jobs = [];
   for (const id of ids) {
-    const [who, nowSlot, last] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 1 })]);
-    jobs.push({ id, title: who?.title || id, owner: nowSlot.owner || who?.owner || null, stage: nowSlot.stage || "open", due: who?.due || null, last: last[0] ? slim(last[0], `job:${id}`) : null });
+    try {
+      const [who, nowSlot, last] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 1 })]);
+      jobs.push({ id, title: who?.title || id, owner: nowSlot.owner || who?.owner || null, stage: nowSlot.stage || "open", due: who?.due || null, last: last[0] ? slim(last[0], `job:${id}`) : null });
+    } catch {
+      continue;
+    }
   }
   jobs.sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
   return jobs;
