@@ -175,16 +175,51 @@
     },
     // The hosted waitlist. Same deployment, not a space, so it reads /api/waitlist.
     waitlist: function () {
+      var invitesP = fetch('/api/invites', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
       return fetch('/api/waitlist', { credentials: 'same-origin' }).then(function (r) { return r.json().then(function (j) { j.__status = r.status; return j; }); }).then(function (d) {
         if (!ok(d)) return;
-        var counts = function (title, list, key) { return panel(title, list.length ? '<dl class="lm-kv">' + list.map(function (x) { return '<dt>' + esc(x[key]) + '</dt><dd>' + num(x.n) + '</dd>'; }).join('') + '</dl>' : '<span class="subtle" style="font-size:13px">None yet.</span>'); };
-        var rows = (d.rows || []).map(function (x) { return '<tr style="font-variant-numeric:tabular-nums"><td>' + esc(x.email) + '</td><td>' + esc(x.plan || '—') + '</td><td>' + (x.agents == null ? '—' : num(x.agents)) + '</td><td>' + esc(x.utm_source || 'direct') + '</td><td>' + esc(x.referrer_host || '—') + '</td><td>' + esc(new Date(x.ts).toISOString().slice(0, 10)) + '</td><td>' + num(x.count) + '</td></tr>'; });
-        render('waitlist', ['Waitlist'], head('Waitlist', num(d.total) + ' sign-ups. Each row keeps the first visit’s source.', '<a class="lm-btn lm-btn--secondary" href="/api/waitlist?format=csv" download>Download CSV</a>') +
-          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">' + counts('By source', d.by_source || [], 'source') + counts('By plan', d.by_plan || [], 'plan') + counts('By day', (d.by_day || []).slice(-14), 'day') + '</div>' +
-          (rows.length ? table(['Email', 'Plan', 'Agents', 'Source', 'Referrer', 'First sign-up', 'Times'], rows) : emptyState('No sign-ups yet.', 'Sign-ups from /onboarding appear here.')));
+        return invitesP.then(function (inv) {
+          return markInvited(d.rows || [], inv).then(function (invited) {
+            var canInvite = !!inv;
+            var counts = function (title, list, key) { return panel(title, list.length ? '<dl class="lm-kv">' + list.map(function (x) { return '<dt>' + esc(x[key]) + '</dt><dd>' + num(x.n) + '</dd>'; }).join('') + '</dl>' : '<span class="subtle" style="font-size:13px">None yet.</span>'); };
+            var pending = (d.rows || []).filter(function (x, i) { return !invited[i]; }).map(function (x) { return x.email; });
+            var rows = (d.rows || []).map(function (x, i) {
+              var cell = !canInvite ? '—' : invited[i] ? '<span class="subtle">Invited</span>' : '<button type="button" class="lm-btn lm-btn--secondary" data-invite="' + esc(x.email) + '">Invite</button>';
+              return '<tr style="font-variant-numeric:tabular-nums"><td>' + esc(x.email) + '</td><td>' + esc(x.plan || '—') + '</td><td>' + (x.agents == null ? '—' : num(x.agents)) + '</td><td>' + esc(x.utm_source || 'direct') + '</td><td>' + esc(x.referrer_host || '—') + '</td><td>' + esc(new Date(x.ts).toISOString().slice(0, 10)) + '</td><td>' + num(x.count) + '</td><td>' + cell + '</td></tr>';
+            });
+            var right = '<span style="display:flex;gap:8px">' + (canInvite && pending.length ? '<button type="button" class="lm-btn lm-btn--primary" id="invite-all">Invite all ' + num(pending.length) + ' not invited</button>' : '') + '<a class="lm-btn lm-btn--secondary" href="/api/waitlist?format=csv" download>Download CSV</a></span>';
+            var note = canInvite ? (inv.open ? ' Sign-up is open to everyone.' : ' Invite people into the managed beta.') : ' Invites need the customer Redis on this deploy.';
+            render('waitlist', ['Waitlist'], head('Waitlist', num(d.total) + ' sign-ups. Each row keeps the first visit’s source.' + note, right) +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">' + counts('By source', d.by_source || [], 'source') + counts('By plan', d.by_plan || [], 'plan') + counts('By day', (d.by_day || []).slice(-14), 'day') + '</div>' +
+              (rows.length ? table(['Email', 'Plan', 'Agents', 'Source', 'Referrer', 'First sign-up', 'Times', 'Beta'], rows) : emptyState('No sign-ups yet.', 'Sign-ups from /onboarding appear here.')));
+            var send = function (emails, btn) {
+              if (btn) btn.disabled = true;
+              fetch('/api/invites', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': 'invites' }, body: JSON.stringify({ emails: emails }) })
+                .then(function () { route_(); })
+                .catch(function () { if (btn) btn.disabled = false; });
+            };
+            Array.prototype.forEach.call(document.querySelectorAll('[data-invite]'), function (b) { b.onclick = function () { send([b.getAttribute('data-invite')], b); }; });
+            var all = document.getElementById('invite-all');
+            if (all) all.onclick = function () { if (window.confirm('Invite ' + pending.length + ' people to the beta?')) send(pending.slice(0, 200), all); };
+          });
+        });
       });
     }
   };
+
+  // sha256 of each row's normalized email, compared with the invited hashes. Emails never leave this page.
+  function markInvited(rows, inv) {
+    if (!inv || !window.crypto || !crypto.subtle) return Promise.resolve(rows.map(function () { return false; }));
+    var set = {};
+    (inv.invites || []).forEach(function (x) { set[x.hash] = true; });
+    return Promise.all(rows.map(function (x) {
+      var e = String(x.email || '').trim().toLowerCase();
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(e)).then(function (buf) {
+        var h = Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+        return !!set[h];
+      });
+    }));
+  }
 
   var VERDICT = { approve: 'approved', reject: 'rejected', defer: 'deferred' };
   function askCard(a) {
