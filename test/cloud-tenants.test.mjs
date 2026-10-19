@@ -169,8 +169,9 @@ test("getTenant / setStatus: validation, transitions, deleted is terminal", asyn
 
 // ---------- plans ----------
 
-test("plans.json: PRICING.md ladder, recall placeholders flagged, aliases", () => {
+test("plans.json: PRICING.md ladder, Free recall confirmed, other recall placeholders flagged, aliases", () => {
   const raw = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
+  assert.match(raw._note, /Free recall is 1,000 a month, confirmed by Mikey on 2026-10-19/);
   assert.match(raw._note, /Mikey to confirm/);
   const doc = loadPlans();
   assert.deepEqual(Object.keys(doc.plans), ["free", "dev", "pro", "team", "agency", "enterprise"]);
@@ -181,7 +182,13 @@ test("plans.json: PRICING.md ladder, recall placeholders flagged, aliases", () =
     assert.equal(p.limits.add, adds, id);
     assert.equal(p.limits.read, null, `${id}: reads unmetered for quota`);
     assert.ok(Number.isInteger(p.limits.recall), id);
-    assert.match(p._note, /Mikey to confirm/, id);
+    if (id === "free") {
+      assert.equal(p.limits.recall, 1000);
+      assert.match(p._note, /1,000 a month, confirmed by Mikey on 2026-10-19/);
+      assert.doesNotMatch(p._note, /Mikey to confirm/);
+    } else {
+      assert.match(p._note, /Mikey to confirm/, id);
+    }
     assert.equal(p.history_days, days, id);
     assert.ok("spaces" in p && "agents" in p, id);
   }
