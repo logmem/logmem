@@ -137,6 +137,7 @@ export function createMemoryRedis() {
       return e ? [...e.value].sort() : [];
     },
     SISMEMBER: (k, m) => (get(k, "set")?.value.has(String(m)) ? 1 : 0),
+    SCARD: (k) => get(k, "set")?.value.size ?? 0,
     HSET: (k, ...pairs) => {
       let e = get(k, "hash");
       if (!e) {

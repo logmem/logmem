@@ -8,6 +8,7 @@
 // The stdio entry (src/stdio/index.mjs) and the HTTP route (api/mcp.mjs)
 // are thin shells around this.
 
+import { applyLimits } from "./http/limits.mjs";
 import { createStore } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
@@ -105,6 +106,8 @@ export function createLogmem({
   defaultAgent,
   // An agent key binds the connection to one agent: other agent ids are refused.
   lockedAgent = null,
+  // A managed account's plan limits (src/http/limits.mjs createLimits). Off for the fleet and self-hosted.
+  limits = null,
   recall,
   idleMs,
   now,
@@ -134,7 +137,7 @@ export function createLogmem({
 
   const mirrorOn = !!mirrorCfg.enabled && (mirrorCfg.spaces || []).includes(space);
   const mirror = mirrorOn ? createMirror(redis, space, { now }) : null;
-  const store = createStore(redis, { space, compat, mirror });
+  const store = applyLimits(createStore(redis, { space, compat, mirror }), limits);
   const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, lockedAgent, idleMs, now });
   const ctx = {
     store,
