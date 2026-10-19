@@ -16,10 +16,36 @@ import { createTenant, getTenant, namespaceFor, validTenantId } from "../../clou
 import { isInvited } from "./invites.mjs";
 import { normalizeEmail } from "../../api/onboarding/waitlist.mjs";
 import { saveSignup } from "./waitlist-store.mjs";
+import { registerEvalScript } from "../lib/lua-scripts.mjs";
 
 const CLERK_ID_RE = /^user_[A-Za-z0-9]{10,64}$/;
 const K = { byClerk: (u) => `lm:account:clerk:${u}`, owner: (t) => `lm:account:tenant:${t}` };
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+// Reserve the owner and mapping together. Never adopt an existing tenant.
+const CLAIM_ACCOUNT = `
+local mapped = redis.call("GET", KEYS[1])
+if mapped then return {"mapped", mapped} end
+if redis.call("EXISTS", KEYS[2]) == 1 or redis.call("EXISTS", KEYS[3]) == 1 then
+  return {"collision", ""}
+end
+redis.call("SET", KEYS[2], ARGV[2])
+redis.call("SET", KEYS[1], ARGV[1])
+return {"claimed", ARGV[1]}
+`;
+registerEvalScript(CLAIM_ACCOUNT, (call, keys, argv) => {
+  const mapped = call("GET", keys[0]);
+  if (mapped) return ["mapped", mapped];
+  if (call("EXISTS", keys[1]) || call("EXISTS", keys[2])) return ["collision", ""];
+  call("SET", keys[1], argv[1]);
+  call("SET", keys[0], argv[0]);
+  return ["claimed", argv[0]];
+});
+
+async function ensureOwner(redis, tenant, user) {
+  await redis("SET", K.owner(tenant), user, "NX");
+  if (await redis("GET", K.owner(tenant)) !== user) throw new AccountError("account owner does not match");
+}
 
 export class AccountError extends Error {
   constructor(message) {
@@ -65,6 +91,7 @@ export async function accountFor({ clerkUserId, email } = {}, { redis, waitlistR
   const mapped = await redis("GET", key);
   if (mapped) {
     if (!validTenantId(mapped)) throw new AccountError("account record is not valid");
+    await ensureOwner(redis, mapped, clerkUserId);
     return { ...shape(await ensureTenant(redis, mapped)), created: false };
   }
 
@@ -74,14 +101,19 @@ export async function accountFor({ clerkUserId, email } = {}, { redis, waitlistR
     return { waitlist: true };
   }
 
-  const id = newId();
-  if (!validTenantId(id)) throw new AccountError("generated tenant id is not valid");
-  const claimed = (await redis("SET", key, id, "NX")) === "OK";
-  const tenantId = claimed ? id : await redis("GET", key);
+  let result;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const id = newId();
+    if (!validTenantId(id)) throw new AccountError("generated tenant id is not valid");
+    result = await redis("EVAL", CLAIM_ACCOUNT, 3, key, K.owner(id), `acmi:cloud:tenant:${id}`, id, clerkUserId);
+    if (result[0] !== "collision") break;
+  }
+  if (result[0] === "collision") throw new AccountError("account could not be allocated");
+  const [outcome, tenantId] = result;
   if (!validTenantId(tenantId)) throw new AccountError("account record is not valid");
+  await ensureOwner(redis, tenantId, clerkUserId);
   const t = await ensureTenant(redis, tenantId);
-  if (claimed) await redis("SET", K.owner(tenantId), clerkUserId);
-  return { ...shape(t), created: claimed };
+  return { ...shape(t), created: outcome === "claimed" };
 }
 
 /** The Clerk user who owns a tenant, or null. */
