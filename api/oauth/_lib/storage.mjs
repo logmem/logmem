@@ -519,8 +519,61 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
   await r("SADD", KEY.family(family), `at:${hAt}`, `rt:${hRt}`);
   await r("EXPIRE", KEY.family(family), String(TTL.refresh));
+  if (backend?.kind === "managed") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend });
 
   return { access_token: access, token_type: "Bearer", expires_in: TTL.access, refresh_token: refresh, scope };
+}
+
+// ───── Managed connected apps (one-click connect, task 5) ─────
+// One record per grant family, so the account owner can see and disconnect
+// each app. The record holds no token and no credential.
+//   lm:account:app:{fid}       — { fid, tenant, agent, client_id, client_name, created_at, last_used }
+//   lm:account:apps:{tenant}   — SET of fids
+const APP_KEY = { app: (fid) => `lm:account:app:${fid}`, apps: (tenant) => `lm:account:apps:${tenant}` };
+
+async function recordManagedApp(r, { family, isNew, client_id, backend }) {
+  const now = Math.floor(Date.now() / 1000);
+  const prev = parse(await r("GET", APP_KEY.app(family)));
+  if (prev) {
+    await r("SET", APP_KEY.app(family), JSON.stringify({ ...prev, last_used: now }), "EX", String(TTL.refresh));
+    return;
+  }
+  if (!isNew && !prev) return; // a refresh of a grant that was disconnected: do not resurrect it
+  let client_name = null;
+  try {
+    client_name = (await getClient(client_id))?.client_name || null;
+  } catch {
+    // name is cosmetic
+  }
+  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now };
+  await r("SET", APP_KEY.app(family), JSON.stringify(rec), "EX", String(TTL.refresh));
+  await r("SADD", APP_KEY.apps(backend.tenant), family);
+}
+
+/** The connected apps of one managed tenant, newest use first. */
+export async function listManagedApps(tenant) {
+  const r = deployRedis();
+  const out = [];
+  for (const fid of (await r("SMEMBERS", APP_KEY.apps(tenant))) || []) {
+    if (!isFid(fid)) continue;
+    const rec = parse(await r("GET", APP_KEY.app(fid)));
+    if (rec && rec.tenant === tenant) out.push(rec);
+    else await r("SREM", APP_KEY.apps(tenant), fid); // expired or foreign: drop the stale id
+  }
+  return out.sort((a, b) => (b.last_used || 0) - (a.last_used || 0));
+}
+
+/** Disconnect one app of `tenant`: every token of its grant goes. Returns the app record, or null. */
+export async function revokeManagedApp(tenant, fid) {
+  if (!isFid(fid)) return null;
+  const r = deployRedis();
+  const rec = parse(await r("GET", APP_KEY.app(fid)));
+  if (!rec || rec.tenant !== tenant) return null;
+  await r("SET", KEY.familyRevoked(fid), "1", "EX", String(TTL.refreshGrace));
+  await revokeFamilySet(r, fid);
+  await r("DEL", APP_KEY.app(fid));
+  await r("SREM", APP_KEY.apps(tenant), fid);
+  return rec;
 }
 
 export async function lookupAccessToken(access_token) {
