@@ -5,11 +5,9 @@ Shared memory for agent teams, as an MCP server. LogMem implements
 MIT under its own names.
 
 The public package name is `@logmem/mcp` (version 0.1.0). It is **not on npm
-yet**. Trademark review is deferred and is not a publish blocker. Publishing
-still waits on a LICENSE file: none is in this repo, and `package.json` stays
-`UNLICENSED` until one is chosen. Docs mention Decision 3 (MIT open core,
-approved 2026-10-10) as the intended direction; that license text is not added
-here.
+yet**. Trademark review is deferred and is not a publish blocker. The license
+in this repo is MIT (Copyright 2026 Mad EZ Media). First publish still waits
+on G-14, where Mikey confirms that license.
 
 ## Install
 
@@ -93,5 +91,4 @@ reports `degraded: true`.
 
 ## License
 
-No `LICENSE` file yet. The package stays `UNLICENSED` until a license is
-chosen and committed. Do not publish before that.
+[MIT](LICENSE). Copyright (c) 2026 Mad EZ Media.

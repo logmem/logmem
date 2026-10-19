@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "description": "LogMem MCP server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "src/server.mjs",
   "bin": {
     "logmem-mcp": "src/stdio/index.mjs"
   },
   "files": [
+    "LICENSE",
     "src/stdio/index.mjs",
     "src/server.mjs",
     "src/core/",
