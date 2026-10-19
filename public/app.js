@@ -42,7 +42,7 @@
   function table(head, rows) { return '<div class="lm-table-wrap"><table class="lm-table"><thead><tr>' + head.map(function (h) { return '<th scope="col">' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'; }
 
   // ─── shell ────────────────────────────────────────────────────────
-  var NAV = [['overview', 'Overview', 'overview'], ['log', 'Log', 'timeline'], ['agents', 'Agents', 'agents'], ['jobs', 'Jobs', 'work'], ['channels', 'Channels', 'link'], ['decisions', 'Decisions', 'decisions'], ['recall', 'Recall', 'recall'], ['settings', 'Settings', 'settings'], ['audit', 'Audit', 'eye'], ['waitlist', 'Waitlist', 'globe']];
+  var NAV = [['overview', 'Overview', 'overview'], ['log', 'Log', 'timeline'], ['agents', 'Agents', 'agents'], ['jobs', 'Jobs', 'work'], ['channels', 'Channels', 'link'], ['blockers', 'Blockers', 'decisions'], ['plan', 'Plan', 'work'], ['decisions', 'Decisions', 'decisions'], ['recall', 'Recall', 'recall'], ['settings', 'Settings', 'settings'], ['audit', 'Audit', 'eye'], ['waitlist', 'Waitlist', 'globe']];
   function shell(route, crumbs, body, waitingCount) {
     var demo = state.space === 'fieldnotes';
     return '<div class="shell"><nav class="lm-rail" aria-label="LogMem">' +
@@ -174,6 +174,65 @@
       });
     },
     // The hosted waitlist. Same deployment, not a space, so it reads /api/waitlist.
+    // Work agents handed to a person, with a step-by-step walkthrough (logmem_handoff to human:<id>).
+    blockers: function () {
+      return fetch('/api/blockers?space=' + encodeURIComponent(state.space || ''), { credentials: 'same-origin' }).then(function (r) { return r.json().then(function (j) { j.__status = r.status; return j; }); }).then(function (d) {
+        if (!ok(d)) return;
+        if (d.__status !== 200) { render('blockers', ['Blockers'], head('Blockers', '') + emptyState('Could not load blockers.', d.error || '')); return; }
+        var cards = (d.blockers || []).map(function (b) {
+          var w = b.walkthrough || {}, steps = w.steps || [], done = b.steps_done || [];
+          var meta = [w.time ? 'Time: ' + esc(w.time) : '', w.place ? 'Where: ' + esc(w.place) : '', w.due ? 'Due: ' + esc(w.due) : '', 'From ' + esc(String(b.by || '').replace(/^agent:/, ''))].filter(Boolean).join(' · ');
+          var list = steps.map(function (st, i) {
+            var on = done.indexOf(i) >= 0;
+            return '<li style="display:flex;gap:10px;align-items:flex-start;padding:6px 0"><input type="checkbox" data-step="' + i + '" data-trail="' + esc(b.trail) + '"' + (on ? ' checked' : '') + ' aria-label="Step ' + (i + 1) + ' done" style="margin-top:4px"><div style="min-width:0"><b>' + esc(st.title) + '</b>' + (st.detail ? '<div class="muted" style="font-size:13px">' + esc(st.detail) + '</div>' : '') + (st.cmd ? '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap"><code class="mono" style="font-size:12px;overflow-wrap:anywhere">' + esc(st.cmd) + '</code><button type="button" class="lm-btn lm-btn--ghost" data-copy="' + esc(st.cmd) + '">Copy</button></div>' : '') + '</div></li>';
+          }).join('');
+          var pct = steps.length ? Math.round(done.length / steps.length * 100) : 0;
+          return panel(b.summary, '<p class="subtle" style="margin:0 0 8px;font-size:13px">' + meta + ' · ' + done.length + ' of ' + steps.length + ' steps (' + pct + '%)</p>' +
+            (steps.length ? '<ol style="list-style:none;margin:0;padding:0">' + list + '</ol>' : '') +
+            (w.done_when ? '<p style="font-size:13px;margin:10px 0 0"><b>Done when:</b> ' + esc(w.done_when) + '</p>' : '') +
+            (w.reply ? '<div style="margin-top:10px"><span class="lm-label">Message to send when done</span><pre class="mono" style="white-space:pre-wrap;font-size:12px;margin:4px 0">' + esc(w.reply) + '</pre><button type="button" class="lm-btn lm-btn--ghost" data-copy="' + esc(w.reply) + '">Copy message</button></div>' : '') +
+            '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><input class="lm-input" data-note="' + esc(b.trail) + '" placeholder="Note for the agent (optional)" maxlength="1000" style="flex:1 1 220px;width:auto"><button type="button" class="lm-btn lm-btn--primary" data-done="' + esc(b.trail) + '">Mark done</button></div>',
+            '<span class="lm-badge ' + (pct === 100 ? 'lm-badge--success' : 'lm-badge--warning') + '">' + (pct === 100 ? 'Ready to close' : 'Waiting on you') + '</span>');
+        });
+        render('blockers', ['Blockers'], head('Blockers', 'Work agents handed to you. Tick each step as you go; agents see your progress in their Brief. Yes/no questions are on Decisions.') +
+          (cards.length ? '<div style="display:flex;flex-direction:column;gap:16px">' + cards.join('') + '</div>' : emptyState('Nothing is waiting on you.', 'When an agent hands you work with logmem_handoff to human:<id>, it shows here.')));
+        var post = function (body) {
+          return fetch('/api/blockers', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': 'blockers' }, body: JSON.stringify(Object.assign({ space: state.space }, body)) });
+        };
+        Array.prototype.forEach.call(document.querySelectorAll('[data-step]'), function (c) {
+          c.onchange = function () { c.disabled = true; post({ action: 'step', trail: c.getAttribute('data-trail'), step: Number(c.getAttribute('data-step')), checked: c.checked }).then(function () { route_(); }); };
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-done]'), function (b) {
+          b.onclick = function () {
+            var t = b.getAttribute('data-done'), n = document.querySelector('[data-note="' + CSS.escape(t) + '"]');
+            b.disabled = true;
+            post({ action: 'done', trail: t, note: n && n.value ? n.value : undefined }).then(function () { route_(); });
+          };
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (b) {
+          b.onclick = function () { navigator.clipboard.writeText(b.getAttribute('data-copy')).then(function () { b.textContent = 'Copied'; }); };
+        });
+      });
+    },
+
+    // A plan: jobs with plan/track/gate/due in their Who, grouped by track, with milestones.
+    plan: function (name) {
+      return api('plan', name ? { id: name } : {}).then(function (d) {
+        if (!ok(d)) return;
+        if (!d.plan) { render('plan', ['Plan'], head('Plan', 'A plan groups jobs into tracks and milestones.') + emptyState('No plans yet.', 'Open jobs with logmem_assign and details { plan, track, gate, due }. A milestone is a job with { plan, milestone: true, date, criteria }.')); return; }
+        var pick = d.plans.length > 1 ? '<select class="lm-select" id="planpick">' + d.plans.map(function (p) { return '<option' + (p === d.plan ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>' : '';
+        var rail = d.milestones.length ? '<div class="lm-table-wrap"><div style="display:grid;grid-template-columns:repeat(' + d.milestones.length + ',minmax(140px,1fr));gap:12px;min-width:' + (d.milestones.length * 150) + 'px">' + d.milestones.map(function (m) {
+          return '<div class="lm-panel" style="padding:12px;display:flex;flex-direction:column;gap:4px"><span class="mono subtle" style="font-size:12px">' + esc(m.date || '') + '</span><b>' + esc(m.title) + '</b><span style="font-size:12px" class="muted">' + esc(m.criteria) + '</span>' + stage(m.stage) + '</div>';
+        }).join('') + '</div></div>' : '';
+        var tracks = d.tracks.map(function (t) {
+          var rows = t.items.map(function (i) { return '<tr><td><a href="#/job/' + encodeURIComponent(i.id) + '" style="font-weight:600;text-decoration:none;color:var(--text)">' + esc(i.title) + '</a>' + (i.desc ? '<br><span class="muted" style="font-size:12px">' + esc(i.desc) + '</span>' : '') + '</td><td>' + esc(String(i.owner || '—').replace(/^agent:/, '')) + '</td><td class="mono" style="font-size:12px">' + esc(i.gate || i.due || '—') + '</td><td>' + stage(i.stage) + '</td></tr>'; });
+          return panel(t.title + ' · ' + t.percent + '%', table(['Item', 'Owner', 'Gate or due', 'Stage'], rows));
+        }).join('');
+        render('plan', ['Plan', d.plan], head('Plan: ' + d.plan, d.percent + '% done across ' + d.tracks.reduce(function (n, t) { return n + t.items.length; }, 0) + ' items. Agents update items with logmem_update and logmem_stage.', pick + ' <a class="lm-btn lm-btn--secondary" href="#/blockers">Waiting on you</a>') + rail + '<div style="display:flex;flex-direction:column;gap:16px">' + tracks + '</div>');
+        var p = document.getElementById('planpick'); if (p) p.onchange = function () { location.hash = '#/plan/' + encodeURIComponent(p.value); };
+      });
+    },
+
     waitlist: function () {
       var invitesP = fetch('/api/invites', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
       return fetch('/api/waitlist', { credentials: 'same-origin' }).then(function (r) { return r.json().then(function (j) { j.__status = r.status; return j; }); }).then(function (d) {

@@ -182,13 +182,13 @@
     {
       "name": "logmem_handoff",
       "title": "Handoff",
-      "description": "Pass work to another agent. Writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept.",
+      "description": "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): needs where, and takes an optional walkthrough (steps, time, place, done_when, reply, due). The person works through it on the web app's Blockers page; their progress shows in your Brief under person_blockers.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "to": {
             "type": "string",
-            "description": "Agent receiving the work, e.g. 'atlas'"
+            "description": "Agent receiving the work, e.g. 'atlas', or a person as 'human:<id>'"
           },
           "summary": {
             "type": "string",
@@ -209,6 +209,11 @@
           "create_agent": {
             "type": "boolean",
             "description": "Hand off to an agent that is not in the roster yet (default false: refuse unknown agents)"
+          },
+          "walkthrough": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Person handoffs only: { steps: [{ title, detail?, cmd? }], time?, place?, done_when?, reply?, due? }"
           }
         },
         "additionalProperties": false,

@@ -77,6 +77,24 @@ logmem_handoff { "to": "<agent id from logmem_roster>", "where": "job:<id>", "su
 
 The receiver must be in `logmem_roster`. They answer with `logmem_accept`.
 
+**To a person.** When only a person can do the work, hand it to them with a walkthrough. They see it on the web app's Blockers page, and you see their progress in your Brief under `person_blockers`:
+
+```text
+logmem_handoff {
+  "to": "human:mikey",
+  "where": "job:clerk-preview",
+  "summary": "Tick Preview on CLERK_PUBLISHABLE_KEY in Vercel",
+  "walkthrough": {
+    "steps": [{ "title": "Open Vercel", "detail": "Project logmem, Settings, Environment Variables." }, { "title": "Edit CLERK_PUBLISHABLE_KEY and tick Preview" }],
+    "time": "2 min", "place": "Vercel", "done_when": "The key shows Preview."
+  }
+}
+```
+
+Use a person handoff for work only a person can do. Use `logmem_ask` (see **logmem-decisions**) for a yes/no approval.
+
+**Plans.** To put a job on a plan, add details when you open it: `logmem_assign { "job": "jail", "title": "Customer Redis jail", "details": { "plan": "launch", "track": "Build", "gate": "G2" } }`. A milestone is a job with `{ "plan": "launch", "milestone": true, "date": "2026-10-23", "criteria": "..." }`. The web app's Plan page shows the tracks and milestones.
+
 ## 5. Read without writing
 
 These never write: `logmem_brief`, `logmem_view`, `logmem_roster`, `logmem_feed`, `logmem_open`, `logmem_jobs`, `logmem_recall`, `logmem_spaces`, `logmem_connection`.

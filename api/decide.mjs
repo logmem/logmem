@@ -24,7 +24,7 @@
 //   5. The ask must exist and must not already have a person's answer.
 
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
-import { createStore } from "../src/core/store.mjs";
+import { webStore } from "../src/http/web-store.mjs";
 import { writeDecision, DecisionError, VERDICTS, LIMITS } from "../src/core/tools.mjs";
 import { isAdmin, adminEnabled, viewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
@@ -92,7 +92,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
     runner = fromDescriptor(d).redis;
   }
   try {
-    const store = createStore(runner, { space });
+    const store = webStore(runner, space, env); // mirrored, so a decision is never a dogfood mirror mismatch
     const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", confirm: confirm === "approve", reclaim: true, ...(now ? { now } : {}) });
     return res.status(201).json({ ok: true, space, ...out });
   } catch (e) {

@@ -129,6 +129,8 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
 
   if (what === "jobs") return { jobs: await jobsView(store) };
 
+  if (what === "plan") return planView(store, String(params.id || ""));
+
   if (what === "job") {
     const id = String(params.id || "");
     const [who, nowSlot, log, sessions] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 100 }), store.jobSessions(id)]);
@@ -171,6 +173,45 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   }
 
   throw new Error(`unknown view: ${what}`);
+}
+
+/**
+ * A plan: jobs whose Who has plan=<name>, grouped by track, with milestones.
+ * Job Who fields (set with logmem_assign details): plan, track, gate, due,
+ * desc, and for a milestone job: milestone=true, date, criteria. Stage comes
+ * from Now. Percent is done over total. Spec: 2026-10-19 blockers and plans.
+ */
+export async function planView(store, name) {
+  const ids = await store.list("job");
+  const rows = [];
+  const names = new Set();
+  for (const id of ids) {
+    try {
+      const [who, nowSlot] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
+      if (!who?.plan) continue;
+      names.add(String(who.plan));
+      rows.push({ id, who, stage: nowSlot.stage || "open", owner: nowSlot.owner || who.owner || null });
+    } catch {
+      continue;
+    }
+  }
+  const plans = [...names].sort();
+  const plan = name && names.has(name) ? name : plans[0] || null;
+  const mine = rows.filter((r) => String(r.who.plan) === plan);
+  const milestones = mine
+    .filter((r) => r.who.milestone === true)
+    .map((r) => ({ id: r.id, title: r.who.title || r.id, date: r.who.date || null, criteria: r.who.criteria || "", stage: r.stage }))
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const tracks = new Map();
+  for (const r of mine.filter((x) => x.who.milestone !== true)) {
+    const t = String(r.who.track || "Other");
+    if (!tracks.has(t)) tracks.set(t, []);
+    tracks.get(t).push({ id: r.id, title: r.who.title || r.id, desc: r.who.desc || "", gate: r.who.gate || null, due: r.who.due || null, owner: r.owner, stage: r.stage, evidence: r.who.evidence || "" });
+  }
+  const pct = (items) => (items.length ? Math.round((items.filter((i) => i.stage === "done").length / items.length) * 100) : 0);
+  const trackList = [...tracks.entries()].map(([title, items]) => ({ title, percent: pct(items), items }));
+  const all = trackList.flatMap((t) => t.items);
+  return { plans, plan, percent: pct(all), milestones, tracks: trackList };
 }
 
 async function jobsView(store) {
