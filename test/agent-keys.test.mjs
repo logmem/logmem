@@ -117,3 +117,54 @@ test("agent keys API: admin only, intent header on writes, key shown once", asyn
   assert.deepEqual(rv.body, { revoked: true });
   assert.equal((await call(h, { headers: auth })).body.keys.length, 0);
 });
+
+// Codex review of PR #58 (98e5a62), Oct 19.
+import { scopedSessionId } from "../api/mcp.mjs";
+import { createStore } from "../src/core/store.mjs";
+import { createShifts } from "../src/core/session.mjs";
+import inboxHandler from "../api/inbox/[agent].mjs";
+
+test("agent keys: a locked connection cannot recap another agent's shift on a shared session", async () => {
+  const redis = createMemoryRedis();
+  const atlas = createLogmem({ redis, space: "madez", sessionId: "shared", surface: "http" });
+  await atlas.callTool("logmem_start", { agent: "atlas" });
+  const muse = createLogmem({ redis, space: "madez", sessionId: "shared", surface: "http", defaultAgent: "muse", lockedAgent: "muse" });
+  await muse.callTool("logmem_recap", { notes: "written as atlas?" });
+  const log = (await redis("ZRANGE", "lm:madez:agent:atlas:log", "0", "-1")).map((x) => JSON.parse(x));
+  assert.ok(!log.some((e) => e.kind === "recap"), "nothing is ever written as atlas");
+
+  // The race codex found: atlas takes the shared session between Muse's touch and recap.
+  const store = createStore(redis, { space: "madez" });
+  const locked = createShifts(store, { sessionId: "race", surface: "http", lockedAgent: "muse" });
+  await locked.touch("logmem_note");
+  await createShifts(store, { sessionId: "race", surface: "http" }).start("atlas");
+  await assert.rejects(() => locked.recap({ notes: "as atlas?" }), /no open shift for muse/);
+  assert.equal(await locked.current(), null, "another agent's shift is not shown to a locked connection");
+  const after = (await redis("ZRANGE", "lm:madez:agent:atlas:log", "0", "-1")).map((x) => JSON.parse(x));
+  assert.ok(!after.some((e) => e.kind === "recap"), "still nothing written as atlas");
+});
+
+test("agent keys: an agent key's session id is scoped to the key", () => {
+  assert.equal(scopedSessionId("http.abc", { source: "agent-key", keyId: "ak_0123456789ab" }), "http.abc~ak_0123456789ab");
+  assert.equal(scopedSessionId("http.abc", { source: "oauth" }), "http.abc");
+  assert.notEqual(scopedSessionId("s", { source: "agent-key", keyId: "ak_aaaaaaaaaaaa" }), scopedSessionId("s", { source: "agent-key", keyId: "ak_bbbbbbbbbbbb" }));
+});
+
+test("agent keys: the inbox refuses agent keys (it records a human writer)", async () => {
+  const redis = oauthRedis();
+  __setRedisForTests(redis);
+  const saved = { ...process.env };
+  Object.assign(process.env, ENV);
+  try {
+    const k = await createAgentKey({ space: "madez", agent: "muse" }, { env: ENV, redis });
+    const req = mockReq({ method: "POST", url: "/api/inbox/atlas", body: { summary: "hi" }, headers: { authorization: `Bearer ${k.key}` } });
+    req.query = { agent: "atlas" };
+    const res = mockRes();
+    await inboxHandler(req, res);
+    assert.equal(res.statusCode, 403);
+  } finally {
+    for (const key of Object.keys(ENV)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+    __setRedisForTests(null);
+  }
+});

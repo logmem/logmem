@@ -59,6 +59,11 @@ function send(res, wantsSSE, reply, headers = {}) {
   }
 }
 
+/** Bind session state to the credential: an agent key's sessions never share a record with any other caller. */
+export function scopedSessionId(sessionId, auth) {
+  return auth?.source === "agent-key" && auth.keyId ? `${sessionId}~${auth.keyId}` : sessionId;
+}
+
 export function buildInstance({ redis, kind, auth, sessionId, env = process.env }) {
   // Token-bound: exactly one space. Server's own Redis (break-glass): only the
   // spaces the deploy allows. Caller-supplied Redis: the caller owns it, so
@@ -156,6 +161,7 @@ export default async function handler(req, res) {
       headers["Mcp-Session-Id"] = sessionId;
     }
     if (!sessionId) sessionId = fallbackSession(req, auth);
+    sessionId = scopedSessionId(sessionId, auth);
 
     const reply = await dispatch(msg, {
       toolDefs,

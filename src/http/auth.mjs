@@ -79,7 +79,7 @@ export function bearerOf(req) {
 
 export async function resolveAuth(req, cfg = {}, env = process.env, opts = {}) {
   const defaultSpace = h(req, "x-logmem-space") || cfg.space || cfg.LOGMEM_SPACE || cfg.acmiDefaultTenant || env.LOGMEM_SPACE || "madez";
-  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null });
+  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null });
 
   // Raw Redis creds in headers or ?config= turn a public deploy into an open
   // relay to any host. Production accepts only OAuth (and break-glass).
@@ -116,7 +116,7 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
       try {
         const k = await (opts.lookupAgentKey || lookupAgentKey)(bearer);
         const d = k && keySpaces(env).includes(k.space) ? descriptorFromEnv(env) : null;
-        if (d) return out(d, "agent-key", { space: k.space, sub: `agent:${k.agent}`, agent: k.agent });
+        if (d) return out(d, "agent-key", { space: k.space, sub: `agent:${k.agent}`, agent: k.agent, keyId: k.id });
       } catch {
         // fall through: an unreadable key store is unauthenticated, never open
       }

@@ -133,7 +133,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     surface,
     idleMs,
 
-    current: load,
+    current: async () => {
+      const rec = await load();
+      return locked && rec && rec.agent !== locked ? null : rec;
+    },
 
     /**
      * Call before every tool. Handles idle Recap + auto Start. Returns the
@@ -188,6 +191,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     async recap({ notes, next, end = true } = {}) {
       const rec = await load();
       if (!rec || rec.ended || !validAgent(rec.agent)) throw new Error("no open shift to recap (call logmem_start first)");
+      if (locked && rec.agent !== locked) throw new Error(`no open shift for ${locked} to recap (call logmem_start first)`);
       const recap = await recapShift(rec, { notes, next, reason: "recap" });
       if (end) await save({ ...rec, ended: true, ended_at: now() });
       return recap;
@@ -197,6 +201,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     async sweep() {
       const rec = await load();
       if (rec && !validAgent(rec.agent)) return false;
+      if (rec && locked && rec.agent !== locked) return false;
       if (rec && !rec.ended && now() - rec.last_seen > idleMs) {
         await recapShift(rec, { reason: "idle" });
         await save({ ...rec, ended: true, ended_at: now() });
