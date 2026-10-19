@@ -1,4 +1,5 @@
-// OAuth storage on the deploy-owner Redis (LOGMEM_DEPLOY_REST_URL/_TOKEN).
+// OAuth storage on the deploy-owner Redis: LOGMEM_DEPLOY_REDIS_URI (rediss://,
+// any official Redis), or LOGMEM_DEPLOY_REST_URL/_TOKEN (an HTTP Redis REST bridge).
 // Fail closed by default: those are required, and there is no fallback to
 // UPSTASH_REDIS_REST_URL, so OAuth records never land in a shared user-data
 // Redis by accident. The UPSTASH_* fallback and plaintext creds (no KEK) are
@@ -146,9 +147,20 @@ export const storageNow = () => clock();
 export function deployRedis() {
   if (testRunner) return testRunner;
   const env = process.env;
+  const fallback = insecureAllowed(env);
+  // Official Redis over TCP first. TLS (rediss://) is required outside local dev.
+  const uri = String(env.LOGMEM_DEPLOY_REDIS_URI || "").trim();
+  if (uri) {
+    if (!/^rediss:\/\//i.test(uri) && !(fallback && /^redis:\/\//i.test(uri))) {
+      throw new StorageConfigError("LOGMEM_DEPLOY_REDIS_URI must start with rediss:// (TLS)");
+    }
+    return async (...cmd) => {
+      const { nativeRedisCall } = await import("../../../src/lib/redis-native.mjs");
+      return nativeRedisCall(uri, ...cmd);
+    };
+  }
   let url = env.LOGMEM_DEPLOY_REST_URL;
   let token = env.LOGMEM_DEPLOY_REST_TOKEN;
-  const fallback = insecureAllowed(env);
   if (fallback) {
     url = url || env.UPSTASH_REDIS_REST_URL;
     token = token || env.UPSTASH_REDIS_REST_TOKEN;
@@ -156,8 +168,8 @@ export function deployRedis() {
   if (!url || !token) {
     throw new StorageConfigError(
       fallback
-        ? "deploy missing LOGMEM_DEPLOY_REST_URL/_TOKEN"
-        : `${env.VERCEL_ENV || "this environment"} requires LOGMEM_DEPLOY_REST_URL/_TOKEN for OAuth storage`,
+        ? "deploy missing LOGMEM_DEPLOY_REDIS_URI or LOGMEM_DEPLOY_REST_URL/_TOKEN"
+        : `${env.VERCEL_ENV || "this environment"} requires LOGMEM_DEPLOY_REDIS_URI (rediss://) or LOGMEM_DEPLOY_REST_URL/_TOKEN for OAuth storage`,
     );
   }
   return async (...cmd) => {

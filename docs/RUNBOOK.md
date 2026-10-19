@@ -130,7 +130,7 @@ Treat any leak of the values below as a full compromise of that credential. Rota
 | `LOGMEM_OAUTH_KEK` | Vercel env (from the OAuth hardening track) | Set a new key, redeploy, then purge OAuth records (below): records sealed with the old key cannot be read. |
 | Bridge token (`LOGMEM_REST_TOKEN` / `ACMI_BRIDGE_TOKEN` / `LOGMEM_DEPLOY_REST_TOKEN`) | Vercel env and the bridge config on the VM | Issue a new token on the bridge (**TODO (infra)**), update every Vercel env that holds it, redeploy, then revoke the old token on the bridge. Update stdio clients' env. |
 | `LOGMEM_DIRECT_AUTH_TOKEN` (break-glass bearer) | Vercel env | Remove it, or set a new one, and redeploy. |
-| Upstash REST token | Upstash console | Reset the token in the console, update env, redeploy. |
+| Deploy Redis password (`LOGMEM_DEPLOY_REDIS_URI`) | Your Redis host (for example the Elestio VM) | Set a new password on the Redis server, update the URI in Vercel, redeploy. |
 
 **Purge OAuth state** after a KEK or deploy-Redis compromise. This logs out every OAuth client; they re-run the flow.
 Run it against the deploy-owner Redis only, from a trusted shell:
