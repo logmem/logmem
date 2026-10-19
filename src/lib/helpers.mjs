@@ -12,6 +12,9 @@ export function validateKeySegments(...segments) {
     if (v === "undefined" || v === "null") {
       throw new Error(`Invalid key segment: literal "${v}" — likely an unsubstituted JS variable`);
     }
+    if (/[*?[\]]/.test(v)) {
+      throw new Error(`Invalid key segment: "${v}" contains a glob character (* ? [ ]) — could widen a SCAN pattern`);
+    }
     if (v.includes(":")) {
       throw new Error(`Invalid key segment: "${v}" contains ":" — would corrupt key structure`);
     }
