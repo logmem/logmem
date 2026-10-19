@@ -35,8 +35,9 @@ const slug = (s) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
-export function createShifts(store, { sessionId, surface, defaultAgent, idleMs = IDLE_MS, now = Date.now } = {}) {
+export function createShifts(store, { sessionId, surface, defaultAgent, lockedAgent = null, idleMs = IDLE_MS, now = Date.now } = {}) {
   if (!sessionId) throw new Error("createShifts: sessionId required");
+  const locked = lockedAgent ? checkAgentId(String(lockedAgent)) : null;
   const key = lmSessionKey(store.space, slug(sessionId) || "default");
 
   async function load() {
@@ -58,6 +59,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
   }
 
   function fallbackAgent() {
+    if (locked) return locked;
     const raw = defaultAgent || slug(surface) || "guest";
     const id = validAgent(agentId(raw));
     // A configured default that is not an agent id fails closed. It must not
@@ -131,7 +133,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     surface,
     idleMs,
 
-    current: load,
+    current: async () => {
+      const rec = await load();
+      return locked && rec && rec.agent !== locked ? null : rec;
+    },
 
     /**
      * Call before every tool. Handles idle Recap + auto Start. Returns the
@@ -140,8 +145,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async touch(toolName) {
       const events = [];
       let rec = await load();
-      // A tampered or non-id agent must not be recapped or resumed.
+      // A tampered or non-id agent must not be recapped or resumed, and a
+      // locked connection never resumes another agent's shift.
       if (rec && !validAgent(rec.agent)) rec = null;
+      if (rec && locked && rec.agent !== locked) rec = null;
       const t = now();
       if (rec && !rec.ended && t - rec.last_seen > idleMs) {
         rec = { ...rec, agent: validAgent(rec.agent) };
@@ -162,8 +169,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async start(agent, { modelId } = {}) {
       const events = [];
       const a = checkAgentId(agent);
+      if (locked && a !== locked) throw new Error(`this connection's key is bound to agent ${locked}; start ${locked} instead`);
       let rec = await load();
       if (rec && !validAgent(rec.agent)) rec = null;
+      if (rec && locked && rec.agent !== locked) rec = null;
       if (rec && !rec.ended) {
         if (rec.agent === a) {
           await save({ ...rec, last_seen: now() });
@@ -182,6 +191,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async recap({ notes, next, end = true } = {}) {
       const rec = await load();
       if (!rec || rec.ended || !validAgent(rec.agent)) throw new Error("no open shift to recap (call logmem_start first)");
+      if (locked && rec.agent !== locked) throw new Error(`no open shift for ${locked} to recap (call logmem_start first)`);
       const recap = await recapShift(rec, { notes, next, reason: "recap" });
       if (end) await save({ ...rec, ended: true, ended_at: now() });
       return recap;
@@ -191,6 +201,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async sweep() {
       const rec = await load();
       if (rec && !validAgent(rec.agent)) return false;
+      if (rec && locked && rec.agent !== locked) return false;
       if (rec && !rec.ended && now() - rec.last_seen > idleMs) {
         await recapShift(rec, { reason: "idle" });
         await save({ ...rec, ended: true, ended_at: now() });

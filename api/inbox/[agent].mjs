@@ -33,6 +33,9 @@ export default async function handler(req, res) {
       res.setHeader("WWW-Authenticate", wwwAuthenticate(req));
       return res.status(401).json({ error: "authentication required" });
     }
+    // The inbox records a person as the writer. An agent key is an agent, so it
+    // must hand off through MCP (logmem_handoff), never as a human here.
+    if (auth.source === "agent-key") return res.status(403).json({ error: "agent keys cannot post to the inbox; use logmem_handoff over MCP" });
     const agent = String(req.query?.agent || "").toLowerCase();
     try {
       validateKeySegments(agent);
