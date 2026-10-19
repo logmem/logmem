@@ -15,7 +15,7 @@
 
 import { lmSessionKey, checkAgentId } from "./keys.mjs";
 import { tryParse } from "./store.mjs";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 
 export const IDLE_MS = 30 * 60 * 1000;
 /** Shift bookkeeping is dropped a week after the last call. */
@@ -28,17 +28,29 @@ export { checkAgentId };
 /** "quill (via claude-code)" — how every entry names its writer. */
 export const byline = (agent, surface) => `${agentId(agent)} (via ${surface || "unknown"})`;
 
-const slug = (s) =>
+const fullSlug = (s) =>
   String(s || "")
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+    .replace(/^-+|-+$/g, "");
+const slug = (s) => fullSlug(s).slice(0, 60);
+
+/**
+ * The stored-session key segment for a session id. Ids up to 60 slug
+ * characters keep their old key. Longer ids keep a 40-character prefix plus a
+ * hash of the whole id, so truncation can never merge two sessions (codex,
+ * review of PR #58: a long id cut the agent key's scope off the end).
+ */
+export function sessionKeyPart(sessionId) {
+  const full = fullSlug(sessionId) || "default";
+  if (full.length <= 60) return full;
+  return `${full.slice(0, 40)}-${createHash("sha256").update(String(sessionId)).digest("hex").slice(0, 19)}`;
+}
 
 export function createShifts(store, { sessionId, surface, defaultAgent, lockedAgent = null, idleMs = IDLE_MS, now = Date.now } = {}) {
   if (!sessionId) throw new Error("createShifts: sessionId required");
   const locked = lockedAgent ? checkAgentId(String(lockedAgent)) : null;
-  const key = lmSessionKey(store.space, slug(sessionId) || "default");
+  const key = lmSessionKey(store.space, sessionKeyPart(sessionId));
 
   async function load() {
     return tryParse(await store.redis("GET", key)) || null;
