@@ -35,7 +35,10 @@ export default async function handler(req, res) {
     }
     // The inbox records a person as the writer. An agent key is an agent, so it
     // must hand off through MCP (logmem_handoff), never as a human here.
-    if (auth.source === "agent-key") return res.status(403).json({ error: "agent keys cannot post to the inbox; use logmem_handoff over MCP" });
+    // Agent keys and managed accounts are agents, jailed to one space with plan
+    // limits: they hand off through MCP (logmem_handoff), never through this
+    // raw, unjailed route that records a human writer (grok-local, #62 review).
+    if (auth.source === "agent-key" || auth.source === "managed") return res.status(403).json({ error: "this credential cannot post to the inbox; use logmem_handoff over MCP" });
     const agent = String(req.query?.agent || "").toLowerCase();
     try {
       validateKeySegments(agent);
