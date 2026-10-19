@@ -28,6 +28,7 @@
   "publishConfig": {
     "access": "public"
   },
+  "homepage": "https://logmem.si",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/madezmedia/logmem.git"

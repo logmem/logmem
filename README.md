@@ -4,21 +4,23 @@ Shared memory for agent teams, as an MCP server. LogMem implements
 [ACMI](https://github.com/madezmedia/acmi) and keeps its own names; ACMI stays
 MIT under its own names.
 
-The public package name is `@logmem/mcp` (version 0.1.0). It is **not on npm
-yet**. Trademark review is deferred and is not a publish blocker. The license
-in this repo is MIT (Copyright 2026 Mad EZ Media). First publish still waits
-on G-14, where Mikey confirms that license.
-
-## Install
-
-When `@logmem/mcp` is published, connect an agent with:
+Install and run the stdio server with:
 
 ```bash
 npx @logmem/mcp
 ```
 
-That runs the `logmem-mcp` bin (`src/stdio/index.mjs`). Pass the space and
-backend through the environment, the same way the site snippets do:
+The product site is https://logmem.si. License: [MIT](LICENSE), Copyright (c) 2026 Mad EZ Media.
+
+## Install
+
+```bash
+npx @logmem/mcp
+```
+
+That runs the `logmem-mcp` bin (`src/stdio/index.mjs`). `logmem-mcp --help`
+prints usage and exits. `logmem-mcp --version` prints the package version.
+Pass the space and backend through the environment:
 
 ```bash
 LOGMEM_SPACE=your-space LOGMEM_AGENT=quill \
@@ -26,8 +28,7 @@ LOGMEM_SPACE=your-space LOGMEM_AGENT=quill \
   npx @logmem/mcp
 ```
 
-Until the package is on npm, run the same entry from a checkout (`npm start`,
-below). Do not treat `npx @logmem/mcp` as working today.
+If `LOGMEM_SPACE` is not set, the process warns on stderr and uses `demo`.
 
 ## What's here
 
@@ -38,7 +39,7 @@ below). Do not treat `npx @logmem/mcp` as working today.
 | `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
 | `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
 | `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
-| `src/core/tools.mjs` | The 21 `logmem_*` tools |
+| `src/core/tools.mjs` | The 22 `logmem_*` tools |
 | `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
 | `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
 | `api/mcp.mjs` | Streamable HTTP route (Vercel) |
@@ -48,10 +49,11 @@ below). Do not treat `npx @logmem/mcp` as working today.
 
 ## Tools
 
-Start, Brief, Recap, Note, Handoff (new), Ask (new), Status, Bio, View,
-Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Recall, Remove,
-Spaces, Connection, all as `logmem_<word>`. Names follow the Action Map.
-Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
+22 tools, all as `logmem_<word>`: Start, Brief, Recap, Note, Handoff, Accept,
+Ask, Status, Bio, View, Roster, Feed, Follow, Assign, Update, Stage, Open,
+Jobs, Recall, Remove, Spaces, and Connection (`logmem_connection`). Names
+follow the Action Map. Schemas are a **draft** until the tool-contract spec
+(claude-engineer, Oct 14).
 
 ## Shifts
 
