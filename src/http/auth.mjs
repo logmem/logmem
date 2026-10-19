@@ -22,6 +22,7 @@ import { lookupAccessToken, safeEqual, sha256hex } from "../../api/oauth/_lib/st
 import { descriptorFromEnv } from "../lib/backend.mjs";
 import { assertPublicTarget } from "./net-guard.mjs";
 import { lookupAgentKey, keySpaces, AGENT_KEY_PREFIX } from "./agent-keys.mjs";
+import { customerRedisUri } from "./jail.mjs";
 
 const TARGET_CACHE_MS = 60_000;
 const targetCache = new Map(); // sha256(target) -> { ok, until }
@@ -79,7 +80,7 @@ export function bearerOf(req) {
 
 export async function resolveAuth(req, cfg = {}, env = process.env, opts = {}) {
   const defaultSpace = h(req, "x-logmem-space") || cfg.space || cfg.LOGMEM_SPACE || cfg.acmiDefaultTenant || env.LOGMEM_SPACE || "madez";
-  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null });
+  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null, tenant: extra.tenant || null });
 
   // Raw Redis creds in headers or ?config= turn a public deploy into an open
   // relay to any host. Production accepts only OAuth (and break-glass).
@@ -106,6 +107,18 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
     try {
       const tok = await lookupAccessToken(bearer);
       if (tok && (tok.expires_at ?? 0) > Math.floor(Date.now() / 1000)) {
+        // Managed account (one-click connect): the server's customer Redis, jailed
+        // to the token's space and locked to its agent by the MCP route.
+        if (tok.backend?.kind === "managed") {
+          let uri = null;
+          try {
+            uri = customerRedisUri(env);
+          } catch {
+            // not configured: unauthenticated, never another backend
+          }
+          if (!uri || !tok.backend.tenant || !tok.backend.agent || !tok.space) return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
+          return out({ kind: "redis", uri }, "managed", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, tenant: tok.backend.tenant, keyId: `mf_${tok.fid || "x"}` });
+        }
         const b = tok.backend?.kind === "redis" ? { kind: "redis", uri: tok.backend.uri } : { url: tok.backend?.url || tok.upstash_url, token: tok.backend?.token || tok.upstash_token };
         if (await backendTargetAllowed(b, env, opts)) return out(b, "oauth", { sub: tok.sub, space: tok.space });
       }
