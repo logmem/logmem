@@ -111,7 +111,7 @@ test("site: /onboarding has every step, /probe.sh is served, and the probe pairs
   }
   assert.ok(html.includes("No pricing yet"));
   assert.doesNotMatch(html, /\$\d/, "no prices on /onboarding");
-  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, "no inline scripts (CSP)");
+  assert.doesNotMatch(html, /<script(?![^>]*\b(?:src=|type="application\/ld\+json"))[^>]*>/, "no inline scripts (CSP)");
   assert.doesNotMatch(html, /\son[a-z]+=/i, "no inline event handlers");
   assert.doesNotMatch(html, /https?:\/\/(?!logmem\.si)[a-z0-9.-]+\.[a-z]{2,}\/[^"]*\.(?:js|css|woff2?)/i, "no external scripts, styles or fonts");
   const js = await fetch(`${base}/onboarding.js`);
