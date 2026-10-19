@@ -1092,7 +1092,13 @@ export async function findAsk(store, trail, { secret = process.env.LOGMEM_DECIDE
   const ts = trailTs(trail);
   const hits = [];
   for (const id of [...(await store.list("agent"))].sort()) {
-    for (const e of await readTrail(store, "agent", id, ts)) if (isAskCandidate(e) && e.trail === trail) hits.push({ ask: e, log: `agent:${id}` });
+    let rows;
+    try {
+      rows = await readTrail(store, "agent", id, ts);
+    } catch {
+      continue;
+    }
+    for (const e of rows) if (isAskCandidate(e) && e.trail === trail) hits.push({ ask: e, log: `agent:${id}` });
   }
   const own = hits.filter((h) => agentId(h.ask.by) === h.log.slice("agent:".length));
   if (!own.length) {
@@ -1278,9 +1284,18 @@ export async function keywordRecall(store, query, limit) {
   const words = String(query).toLowerCase().split(/\W+/).filter((w) => w.length > 2);
   if (!words.length) return { mode: "keyword", results: [] };
   const hits = [];
+  const read_warnings = [];
   for (const ns of ["channel", "job", "agent"]) {
     for (const id of (await store.list(ns)).slice(0, 200)) {
-      for (const e of await store.readLog(ns, id, { reverse: true, limit: 500 })) {
+      let log;
+      try {
+        log = await store.readLog(ns, id, { reverse: true, limit: 500 });
+        appendLogWarnings(read_warnings, "ref", `${ns}:${id}`, log);
+      } catch (e) {
+        read_warnings.push(readWarning("ref", `${ns}:${id}`, e));
+        continue;
+      }
+      for (const e of log) {
         const text = `${e.summary || ""} ${JSON.stringify(e.payload ?? "")}`.toLowerCase();
         const score = words.filter((w) => text.includes(w)).length / words.length;
         if (score > 0) hits.push({ relevance: score, from: `${ns}:${id}`, ts: e.ts, kind: e.kind, summary: e.summary, trail: e.trail });
@@ -1288,5 +1303,7 @@ export async function keywordRecall(store, query, limit) {
     }
   }
   hits.sort((a, b) => b.relevance - a.relevance || b.ts - a.ts);
-  return { mode: "keyword", results: hits.slice(0, limit) };
+  const out = { mode: "keyword", results: hits.slice(0, limit) };
+  if (read_warnings.length) out.read_warnings = read_warnings;
+  return out;
 }
