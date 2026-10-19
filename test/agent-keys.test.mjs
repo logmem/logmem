@@ -168,3 +168,21 @@ test("agent keys: the inbox refuses agent keys (it records a human writer)", asy
     __setRedisForTests(null);
   }
 });
+
+// Codex re-review of PR #58 on main (f232800): a long session id must not lose the key scope.
+import { sessionKeyPart } from "../src/core/session.mjs";
+
+test("agent keys: long session ids keep their key scope in the stored session", async () => {
+  const redis = createMemoryRedis();
+  const store = createStore(redis, { space: "madez" });
+  const long = `${"x".repeat(77)}`;
+  const museSid = scopedSessionId(long, { source: "agent-key", keyId: "ak_aaaaaaaaaaaa" });
+  const atlasSid = scopedSessionId(long, { source: "agent-key", keyId: "ak_bbbbbbbbbbbb" });
+  assert.notEqual(sessionKeyPart(museSid), sessionKeyPart(atlasSid), "different keys, different stored sessions");
+  assert.ok(sessionKeyPart(museSid).length <= 60);
+  const muse = createShifts(store, { sessionId: museSid, surface: "http", lockedAgent: "muse" });
+  await muse.start("muse");
+  await createShifts(store, { sessionId: atlasSid, surface: "http", lockedAgent: "atlas" }).start("atlas");
+  assert.equal((await muse.current())?.agent, "muse", "atlas did not replace muse's session");
+  assert.equal(sessionKeyPart("claude-code.abc"), "claude-code-abc", "short ids keep their old key");
+});
