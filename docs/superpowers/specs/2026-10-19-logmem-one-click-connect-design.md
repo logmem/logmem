@@ -144,7 +144,7 @@ Plan numbers come from `cloud/plans.json` and are never hard-coded.
 | Who | What | Cost |
 |---|---|---|
 | Mikey | Create a Clerk application on the free plan with Google, GitHub and email sign-in. Put `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` in Infisical, then in Vercel (Preview first, Production at launch) | $0 |
-| Mikey | Confirm the Free numbers in `cloud/plans.json` (10k adds a month, 3 agents, 1 space, 7 days of history, recall placeholder) | none |
+| Mikey | Free numbers in `cloud/plans.json`: 10k adds a month, 3 agents, 1 space, 7 days of history. Free recall is 1,000 a month, confirmed by Mikey on 2026-10-19 | none |
 | Mikey | Send the first invites from `/app` | none |
 | Avery | Widen the brief `madezmedia/fleet docs/LOGMEM-OAUTH-REDIS.md` from "sign-in records" to "customer Redis" (see the ACL below). Same VM, TLS, AOF, `noeviction` | $0 extra |
 | claude-code | The build, in small PRs with tests. No merge or deploy without Mikey's GO | none |
@@ -187,5 +187,5 @@ Target: invites go out before the beta on Nov 16. Show HN on Nov 10 can say "bet
 
 ## 10. Open questions
 
-1. **Recall limit.** `cloud/plans.json` marks the Free recall limit as a placeholder (1,000). Mikey confirms it or sets a new number before the beta.
+1. **Recall limit.** Resolved. Free recall is 1,000 per month, confirmed by Mikey on 2026-10-19. `cloud/plans.json` keeps `free.limits.recall` at 1000.
 2. **Clerk session on `/app` for tenant users.** This spec adds it next to the admin password. Keep both, or move the admin to Clerk too? Default: keep both until after the beta.
