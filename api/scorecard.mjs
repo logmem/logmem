@@ -15,7 +15,7 @@
 import { createStore, tryParse } from "../src/core/store.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { readOnly } from "../src/lib/read-only.mjs";
-import { updateScorecard, gate, scorecardKey, CHECK_JOB, CHECK_BY, DELIVERABLE_JOB } from "../scripts/dogfood-check.mjs";
+import { updateScorecard, gate, readPause, applyPause, scorecardKey, CHECK_JOB, CHECK_BY, DELIVERABLE_JOB, MAX_ROWS, DAY_MS } from "../scripts/dogfood-check.mjs";
 import { mayRead, viewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
@@ -29,6 +29,7 @@ export function cleanDay(p, space) {
     agents: Array.isArray(p.agents) ? p.agents.map(String).slice(0, 50) : [],
     entries: N(p.entries), handoffs: N(p.handoffs), accepted: N(p.accepted), mirror_mismatches: N(p.mirror_mismatches),
     unanswered_24h: N(p.unanswered_24h), degraded_sessions: N(p.degraded_sessions), stuck_written: N(p.stuck_written), mismatch_examples: [],
+    ...(p.paused === true ? { paused: true } : {}),
   };
 }
 
@@ -52,24 +53,42 @@ export async function buildScorecard(redis, space) {
   const store = createStore(r, { space });
   // Only checkups written by the audit itself count, and only their known
   // fields survive: anyone can write to a job log, so payloads are untrusted.
-  const checks = (await store.readLog("job", CHECK_JOB, { sinceMs: Date.now() - 30 * 864e5 }))
+  // The window covers every row the scorecard can keep (MAX_ROWS days), so a
+  // long pause does not drop the counted days before it.
+  const checks = (await store.readLog("job", CHECK_JOB, { sinceMs: Date.now() - MAX_ROWS * DAY_MS }))
     .filter((e) => e.kind === "checkup" && e.by === CHECK_BY && e.payload && DATE_RE.test(String(e.payload.date)));
-  let card = null;
-  for (const e of checks) card = updateScorecard(card, { day: cleanDay(e.payload, space), deliverable: null }, new Date(e.ts).toISOString());
+  // Merge first, trim once: checkup rows, then trusted Redis rows (which carry
+  // the pause flags) date by date, then the pause key. Trimming per row would
+  // count paused days before their flags arrive and push older counted days out.
+  const rows = new Map();
+  const at = new Map();
+  for (const e of checks) {
+    rows.set(String(e.payload.date), cleanDay(e.payload, space));
+    at.set(String(e.payload.date), new Date(e.ts).toISOString());
+  }
 
   // Redis first: its rows replace the checkup-built rows date by date, but a
   // row is kept only when a trusted checkup exists for that date.
   let source = checks.length ? "checkups" : "none";
+  let generatedAt = null;
   const stored = await readStoredScorecard(r, space);
   if (stored) {
     const trusted = new Set(checks.map((e) => String(e.payload.date)));
-    const rows = stored.days.filter((d) => d && typeof d === "object" && DATE_RE.test(String(d.date)) && trusted.has(String(d.date)));
-    for (const d of rows) card = updateScorecard(card, { day: cleanDay(d, space), deliverable: null }, card?.generated_at);
-    if (rows.length) {
+    const good = stored.days.filter((d) => d && typeof d === "object" && DATE_RE.test(String(d.date)) && trusted.has(String(d.date)));
+    for (const d of good) rows.set(String(d.date), cleanDay(d, space));
+    if (good.length) {
       source = "redis";
-      card.generated_at = isoOrNull(stored.generated_at) || card.generated_at;
+      generatedAt = isoOrNull(stored.generated_at);
     }
   }
+  const pause = await readPause(r, space);
+  let card = null;
+  for (const date of [...rows.keys()].sort()) {
+    const day = rows.get(date);
+    if (pause && date >= pause.since) day.paused = true;
+    card = updateScorecard(card, { day, deliverable: null }, at.get(date));
+  }
+  if (card && generatedAt) card.generated_at = generatedAt;
 
   const deliverable = {
     job: DELIVERABLE_JOB,
@@ -79,6 +98,8 @@ export async function buildScorecard(redis, space) {
   card = card || { space, days: [] };
   card.space = space;
   card.deliverable = deliverable;
+  // The pause key is the source of truth for days since the pause began.
+  applyPause(card, pause);
   card.gate = gate(card);
   card.checks = checks.length;
   card.source = source;

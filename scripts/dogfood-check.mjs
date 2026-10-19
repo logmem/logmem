@@ -29,6 +29,7 @@ import { createMirror } from "../src/core/mirror.mjs";
 import { acmiKey } from "../src/core/keys.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { validateKeySegments } from "../src/lib/helpers.mjs";
+import { handoffSettlement, isDeclined } from "../src/core/tools.mjs";
 
 export const DAY_MS = 24 * 3600 * 1000;
 export const CHECK_JOB = "logmem-dogfood";
@@ -42,6 +43,57 @@ export function scorecardKey(space) {
   return `lm:${space}:dogfood:scorecard`;
 }
 const lockKey = (space) => `lm:${space}:dogfood:lock`;
+
+/**
+ * The pause switch (Mikey, 2026-10-17). JSON {since: "YYYY-MM-DD", reason, by}.
+ * While it is set the check still runs, but days from `since` on are marked
+ * paused: they do not count toward the 7-day bar and do not break the streak,
+ * and the check writes no stuck alerts. Delete the key to resume.
+ */
+export function pauseKey(space) {
+  validateKeySegments(space);
+  return `lm:${space}:dogfood:pause`;
+}
+
+/** Mark every day since the pause began as paused. Days stay paused after the key is removed. */
+export function applyPause(card, pause) {
+  if (!pause) return card;
+  for (const d of card.days || []) if (d.date >= pause.since) d.paused = true;
+  card.pause = pause;
+  return card;
+}
+
+/** Mark the stored rows before trimming, so a backdated pause never trims counted days first. */
+function markPaused(card, pause) {
+  if (card && pause) for (const d of card.days || []) if (d.date >= pause.since) d.paused = true;
+  return card;
+}
+function markPausedDay(res, pause) {
+  return pause && res.day.date >= pause.since ? { ...res, day: { ...res.day, paused: true } } : res;
+}
+
+/** Upsert a day into the optional scorecard file, with the same pause marks as Redis. */
+export function updateScorecardFile(path, space, res, pause) {
+  const prev = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  const card = applyPause(updateScorecard(markPaused(prev?.space === space ? prev : null, pause), markPausedDay(res, pause)), pause);
+  card.gate = gate(card);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(card, null, 2)}\n`);
+  return card;
+}
+
+/** A real YYYY-MM-DD date: 2026-99-99 and 2026-02-30 are not. */
+export function isCalendarDate(v) {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(v + "T00:00:00Z");
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v;
+}
+
+/** The pause record, or null when there is none or it is not usable. */
+export async function readPause(redis, space) {
+  const p = tryParse(await redis("GET", pauseKey(space)));
+  return p && typeof p === "object" && isCalendarDate(p.since) ? { since: p.since, reason: String(p.reason || ""), by: String(p.by || "") } : null;
+}
 
 /** ACMI twins of one mirrored checkup (same ts, same trail, written by the mirror). */
 async function removeAcmiTwins(redis, space, entry) {
@@ -70,6 +122,12 @@ function parseLogKey(key, space) {
   return m ? { ns: m[1], id: m[2] } : null;
 }
 
+/** An ACMI row that answers a handoff: an ack, an accept, or a decline (feedback marked declined). */
+function acmiAnswers(r) {
+  if (["handoff-ack", "accepted"].includes(r.kind)) return true;
+  return ["feedback", "review-note"].includes(r.kind) && isDeclined(r.payload);
+}
+
 async function acmiRows(redis, key, from, to) {
   const flat = (await redis("ZRANGEBYSCORE", key, from, to, "WITHSCORES")) || [];
   const out = [];
@@ -84,6 +142,7 @@ export async function runCheck(redis, {
   windowMs = DAY_MS,
   lookbackMs = 7 * DAY_MS,
   write = true,
+  stuck = true,
 } = {}) {
   const store = createStore(redis, { space, compat: false });
   const from = now - windowMs;
@@ -92,7 +151,7 @@ export async function runCheck(redis, {
 
   const day = { date: new Date(now).toISOString().slice(0, 10), window: [from, now], ran: true, space, mirror_checked: mirrored, entries: 0, agents: [], mirror_mismatches: 0, mismatch_examples: [], degraded_sessions: 0, handoffs: 0, accepted: 0, unanswered_24h: 0, stuck_written: 0 };
   const agents = new Set();
-  const handoffs = new Map(); // trail -> { ts, to, where, ns, id }
+  const handoffs = new Map(); // trail -> { ts, to, where, logs: [{ ns, id }] } (a handoff is written to more than one log)
   const accepts = new Set(); // trails accepted (lm side)
   const stuckAlready = new Set();
 
@@ -100,9 +159,13 @@ export async function runCheck(redis, {
     if (ns === "job" && id === CHECK_JOB) continue; // the audit log doesn't audit itself
     const recent = await store.readLog(ns, id, { sinceMs: now - lookbackMs, untilMs: now });
     for (const e of recent) {
-      if (e.kind === "accepted" && e.origin) accepts.add(e.origin);
+      if (e.origin && handoffSettlement(e.kind, e.payload)) accepts.add(e.origin); // accepted, or declined: both answer it
       if (e.kind === "stuck" && e.payload?.unanswered_handoff) stuckAlready.add(e.payload.unanswered_handoff);
-      if (e.kind === "handoff" && e.trail && !handoffs.has(e.trail)) handoffs.set(e.trail, { ts: e.ts, to: e.to, where: e.job, ns, id });
+      if (e.kind === "handoff" && e.trail) {
+        const h = handoffs.get(e.trail);
+        if (!h) handoffs.set(e.trail, { ts: e.ts, to: e.to, where: e.job, logs: [{ ns, id }] });
+        else if (!h.logs.some((l) => l.ns === ns && l.id === id)) h.logs.push({ ns, id });
+      }
       if (e.ts < from) continue;
       day.entries++;
       if (String(e.by || "").startsWith("agent:") && e.by !== BY) agents.add(e.by);
@@ -121,10 +184,11 @@ export async function runCheck(redis, {
   // ACMI-side accepts (VM agents answer with handoff-ack in acmi:* only).
   const acked = async (trail, h) => {
     if (accepts.has(trail)) return true;
-    const keys = [acmiKey(space, "agent", String(h.to || "").replace(/^agent:/, ""), "log"), acmiKey(space, h.ns, h.id, "log")];
+    // Every log the handoff was written to, plus the recipient's own timeline.
+    const keys = new Set([acmiKey(space, "agent", String(h.to || "").replace(/^agent:/, ""), "log"), ...h.logs.map((l) => acmiKey(space, l.ns, l.id, "log"))]);
     for (const k of keys) {
       const rows = await acmiRows(redis, k, h.ts, "+inf");
-      if (rows.some((r) => r.parentCorrelationId === trail && ["handoff-ack", "accepted"].includes(r.kind))) return true;
+      if (rows.some((r) => r.parentCorrelationId === trail && acmiAnswers(r))) return true;
     }
     return false;
   };
@@ -156,8 +220,8 @@ export async function runCheck(redis, {
   let replaced = 0;
   if (write) {
     const writer = createStore(redis, { space, mirror: mirrored ? createMirror(redis, space) : null });
-    for (const { trail, h } of stuckToWrite) {
-      await writer.append(h.ns, h.id, {
+    for (const { trail, h } of stuck ? stuckToWrite : []) {
+      await writer.append(h.logs[0].ns, h.logs[0].id, { // the first log the handoff was seen in, as before
         ts: now, kind: "stuck", by: BY, via: "dogfood-check", byline: "logmem-check (via dogfood-check)",
         trail: `stuckHandoff-${now}`, origin: trail, summary: `Handoff to ${h.to} unanswered for more than 24h`,
         payload: { unanswered_handoff: trail },
@@ -196,10 +260,11 @@ export async function runDaily(redis, { space, mirrorSpaces = ["madez"], now = D
   const token = randomUUID();
   if ((await redis("SET", lock, token, "NX", "EX", String(lockTtlS))) == null) return { space, skipped: "locked" };
   try {
-    const res = await runCheck(redis, { space, mirrorSpaces, now, write: true });
+    const pause = await readPause(redis, space);
+    const res = await runCheck(redis, { space, mirrorSpaces, now, write: true, stuck: !pause });
     const prev = tryParse(await redis("GET", key));
     const usable = prev && typeof prev === "object" && prev.space === space && Array.isArray(prev.days) ? prev : null;
-    const card = updateScorecard(usable, res, new Date(now).toISOString());
+    const card = applyPause(updateScorecard(markPaused(usable, pause), markPausedDay(res, pause), new Date(now).toISOString()), pause);
     card.gate = gate(card);
     card.by = BY;
     await redis("SET", key, JSON.stringify(card));
@@ -213,20 +278,36 @@ export async function runDaily(redis, { space, mirrorSpaces = ["madez"], now = D
   }
 }
 
-/** Upsert a day into scorecard JSON (keeps the newest 30 days). */
+/** Upsert a day into scorecard JSON (keeps the newest 30 counted days, plus paused days). */
+export const MAX_ROWS = 400;
 export function updateScorecard(card, { day, deliverable }, generatedAt = new Date().toISOString()) {
   const days = (card?.days || []).filter((d) => d.date !== day.date);
   const { mismatch_examples, window, ...slim } = day;
   days.push({ ...slim, mismatch_examples });
   days.sort((a, b) => a.date.localeCompare(b.date));
-  return { generated_at: generatedAt, space: day.space, days: days.slice(-30), deliverable };
+  // Keep the newest 30 counted days, and the paused days between and after them,
+  // so a long pause never pushes counted days out. Hard cap: MAX_ROWS rows.
+  const counted = days.filter((d) => !d.paused).slice(-30);
+  const floor = counted[0]?.date ?? "";
+  const keep = new Set(counted);
+  const kept = days.filter((d) => keep.has(d) || (d.paused && d.date >= floor)).slice(-MAX_ROWS);
+  return { generated_at: generatedAt, space: day.space, days: kept, deliverable };
 }
 
 /** The 7-day bar: 7 consecutive passing days ending at the newest, plus the deliverable done. */
 export function gate(card) {
-  const last7 = (card.days || []).slice(-7);
-  const consecutive = last7.length === 7 && last7.every((d, i) => i === 0 || Date.parse(d.date) - Date.parse(last7[i - 1].date) === DAY_MS);
-  return { days_passing: last7.filter((d) => d.pass).length, consecutive, deliverable_done: card.deliverable?.stage === "done", pass: consecutive && last7.every((d) => d.pass) && card.deliverable?.stage === "done" };
+  const all = card.days || [];
+  const paused = new Set(all.filter((d) => d.paused).map((d) => d.date));
+  const last7 = all.filter((d) => !d.paused).slice(-7);
+  // Two counted days are back to back when every date between them is a paused day.
+  const adjacent = (a, b) => {
+    for (let t = Date.parse(a.date) + DAY_MS; t < Date.parse(b.date); t += DAY_MS) {
+      if (!paused.has(new Date(t).toISOString().slice(0, 10))) return false;
+    }
+    return Date.parse(b.date) > Date.parse(a.date);
+  };
+  const consecutive = last7.length === 7 && last7.every((d, i) => i === 0 || adjacent(last7[i - 1], d));
+  return { days_passing: last7.filter((d) => d.pass).length, consecutive, ...(paused.size ? { paused_days: paused.size } : {}), deliverable_done: card.deliverable?.stage === "done", pass: consecutive && last7.every((d) => d.pass) && card.deliverable?.stage === "done" };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -254,12 +335,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     res = out.res;
     console.error(`${space} ${out.date} ${out.pass ? "PASS" : "FAIL"}; scorecard written to ${scorecardKey(space)}${out.replaced ? ` (replaced ${out.replaced} earlier checkup today)` : ""}`);
   }
-  if (path) {
-    const prev = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
-    const card = updateScorecard(prev?.space === space ? prev : null, res);
-    card.gate = gate(card);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(card, null, 2)}\n`);
-  }
+  if (path) updateScorecardFile(path, space, res, await readPause(redis, space));
   console.log(JSON.stringify(res, null, 2));
 }
