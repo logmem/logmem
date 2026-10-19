@@ -1,6 +1,6 @@
 # LogMem one-click connect and Free limits — design
 
-Status: DRAFT for Mikey's review, 2026-10-19. Owner: claude-code.
+Status: APPROVED by Mikey, 2026-10-19 (cid oneClickSpecApproved-20261019). Owner: claude-code.
 Scope: sub-project 1 (one-click connect) and sub-project 2 (Free limits) of the general release. Sub-project 3 (the Muse connector package) and sub-project 4 (legal pages and cookies) get their own specs.
 Builds on: `docs/cloud/BACKPLANE.md` (tenants, jail, meter), `cloud/plans.json`, the hosted MCP server (`api/mcp.mjs`, `api/oauth`), PR #57 (official Redis first) and PR #58 (agent keys).
 
@@ -185,7 +185,14 @@ Target: invites go out before the beta on Nov 16. Show HN on Nov 10 can say "bet
 - Privacy, terms and the cookie banner (sub-project 4, which builds on #53). The beta does not open to the public until sub-project 4 ships.
 - Per-user bridges, memory search (recall indexing), more than one space per user, invite emails, account export and deletion.
 
-## 10. Open questions
+## 10. Answered questions (Mikey, 2026-10-19)
 
-1. **Recall limit.** `cloud/plans.json` marks the Free recall limit as a placeholder (1,000). Mikey confirms it or sets a new number before the beta.
-2. **Clerk session on `/app` for tenant users.** This spec adds it next to the admin password. Keep both, or move the admin to Clerk too? Default: keep both until after the beta.
+1. **Recall limit.** Keep 1,000 a month on Free, as in `cloud/plans.json`.
+2. **Admin login.** Keep the admin password on `/app`, next to Clerk for tenant users.
+
+## 11. Clerk integration notes
+
+- **Application:** Mikey created the Clerk application `app_3Kv6QA8XcWPcWDsZ2wWdUMYddkw`. Its id is not a secret. Its keys are secrets and go to Infisical, then Vercel (Preview first).
+- **Do not run `clerk init` in this repo.** LogMem is plain Vercel functions and static pages, not Next.js, so `init` would scaffold a framework we do not use.
+- **Server side:** verify the session with `@clerk/backend` (`authenticateRequest` and `CLERK_SECRET_KEY`) inside `api/oauth/authorize.mjs`.
+- **Sign-in UI:** redirect to Clerk's hosted Account Portal and come back to the authorize URL. No Clerk front-end SDK on LogMem pages in this spec.
