@@ -75,7 +75,8 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     compat: compatFromEnv(env),
     surface: surfaceFromSession(sessionId) || "http",
     sessionId,
-    defaultAgent: env.LOGMEM_AGENT,
+    defaultAgent: auth.agent || env.LOGMEM_AGENT,
+    lockedAgent: auth.agent || null,
     mirror: mirrorConfigFromEnv(env),
   });
 }

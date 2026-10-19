@@ -35,8 +35,9 @@ const slug = (s) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
-export function createShifts(store, { sessionId, surface, defaultAgent, idleMs = IDLE_MS, now = Date.now } = {}) {
+export function createShifts(store, { sessionId, surface, defaultAgent, lockedAgent = null, idleMs = IDLE_MS, now = Date.now } = {}) {
   if (!sessionId) throw new Error("createShifts: sessionId required");
+  const locked = lockedAgent ? checkAgentId(String(lockedAgent)) : null;
   const key = lmSessionKey(store.space, slug(sessionId) || "default");
 
   async function load() {
@@ -58,6 +59,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
   }
 
   function fallbackAgent() {
+    if (locked) return locked;
     const raw = defaultAgent || slug(surface) || "guest";
     const id = validAgent(agentId(raw));
     // A configured default that is not an agent id fails closed. It must not
@@ -140,8 +142,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async touch(toolName) {
       const events = [];
       let rec = await load();
-      // A tampered or non-id agent must not be recapped or resumed.
+      // A tampered or non-id agent must not be recapped or resumed, and a
+      // locked connection never resumes another agent's shift.
       if (rec && !validAgent(rec.agent)) rec = null;
+      if (rec && locked && rec.agent !== locked) rec = null;
       const t = now();
       if (rec && !rec.ended && t - rec.last_seen > idleMs) {
         rec = { ...rec, agent: validAgent(rec.agent) };
@@ -162,8 +166,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, idleMs =
     async start(agent, { modelId } = {}) {
       const events = [];
       const a = checkAgentId(agent);
+      if (locked && a !== locked) throw new Error(`this connection's key is bound to agent ${locked}; start ${locked} instead`);
       let rec = await load();
       if (rec && !validAgent(rec.agent)) rec = null;
+      if (rec && locked && rec.agent !== locked) rec = null;
       if (rec && !rec.ended) {
         if (rec.agent === a) {
           await save({ ...rec, last_seen: now() });

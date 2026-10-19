@@ -103,6 +103,8 @@ export function createLogmem({
   surface = "unknown",
   sessionId,
   defaultAgent,
+  // An agent key binds the connection to one agent: other agent ids are refused.
+  lockedAgent = null,
   recall,
   idleMs,
   now,
@@ -133,7 +135,7 @@ export function createLogmem({
   const mirrorOn = !!mirrorCfg.enabled && (mirrorCfg.spaces || []).includes(space);
   const mirror = mirrorOn ? createMirror(redis, space, { now }) : null;
   const store = createStore(redis, { space, compat, mirror });
-  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, idleMs, now });
+  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, lockedAgent, idleMs, now });
   const ctx = {
     store,
     shifts,

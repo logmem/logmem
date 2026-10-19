@@ -4,6 +4,8 @@ Disallow: /app
 Disallow: /app.html
 Disallow: /scorecard
 Disallow: /scorecard.html
+Disallow: /keys
+Disallow: /keys.html
 Disallow: /api/
 
 Sitemap: https://logmem.si/sitemap.xml
