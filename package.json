@@ -33,6 +33,9 @@
     "type": "git",
     "url": "git+https://github.com/madezmedia/logmem.git"
   },
+  "bugs": {
+    "url": "https://github.com/madezmedia/logmem/issues"
+  },
   "engines": {
     "node": ">=22"
   },
@@ -48,11 +51,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
-    "@vercel/blob": "2.7.0",
     "redis": "^4.7.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@madezmedia/acmi": "1.2.0"
+    "@madezmedia/acmi": "1.2.0",
+    "@vercel/blob": "2.7.0"
   }
 }

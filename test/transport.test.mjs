@@ -158,7 +158,8 @@ test("stdio warns when LOGMEM_SPACE is unset and uses demo", async () => {
     });
     assert.match(stderr, /LOGMEM_SPACE is not set; using "demo"/);
     assert.match(stderr, /space=demo/);
-    assert.doesNotMatch(stderr, /space=madez/);
+    assert.match(stderr, /mirror=\{"enabled":false\}/);
+    assert.doesNotMatch(stderr, /madez/);
   } finally {
     child.kill("SIGTERM");
   }
