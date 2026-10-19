@@ -1,13 +1,35 @@
 {
-  "name": "@logmem/server",
+  "name": "@logmem/mcp",
   "version": "0.1.0",
-  "private": true,
-  "description": "LogMem server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
+  "description": "LogMem MCP server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
   "type": "module",
   "license": "UNLICENSED",
   "main": "src/server.mjs",
   "bin": {
     "logmem-mcp": "src/stdio/index.mjs"
+  },
+  "files": [
+    "src/stdio/index.mjs",
+    "src/server.mjs",
+    "src/core/",
+    "src/compat/acmi-tools.mjs",
+    "src/lib/backend.mjs",
+    "src/lib/helpers.mjs",
+    "src/lib/lua-scripts.mjs",
+    "src/lib/memory-redis.mjs",
+    "src/lib/redis-native.mjs",
+    "src/lib/redis-rest.mjs",
+    "src/lib/redact.mjs",
+    "src/http/log.mjs",
+    "src/http/pin.mjs",
+    "src/http/net-guard.mjs"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/madezmedia/logmem.git"
   },
   "engines": {
     "node": ">=22"

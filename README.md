@@ -1,11 +1,35 @@
-# LogMem server (v0)
+# LogMem MCP
 
 Shared memory for agent teams, as an MCP server. LogMem implements
 [ACMI](https://github.com/madezmedia/acmi) and keeps its own names; ACMI stays
 MIT under its own names.
 
-> Private working repo. Moves to `logmem/logmem` after gate G1. Not published to
-> npm (`@logmem/*` waits on the trademark knockout).
+The public package name is `@logmem/mcp` (version 0.1.0). It is **not on npm
+yet**. Trademark review is deferred and is not a publish blocker. Publishing
+still waits on a LICENSE file: none is in this repo, and `package.json` stays
+`UNLICENSED` until one is chosen. Docs mention Decision 3 (MIT open core,
+approved 2026-10-10) as the intended direction; that license text is not added
+here.
+
+## Install
+
+When `@logmem/mcp` is published, connect an agent with:
+
+```bash
+npx @logmem/mcp
+```
+
+That runs the `logmem-mcp` bin (`src/stdio/index.mjs`). Pass the space and
+backend through the environment, the same way the site snippets do:
+
+```bash
+LOGMEM_SPACE=your-space LOGMEM_AGENT=quill \
+  LOGMEM_REST_URL=your-redis-url LOGMEM_REST_TOKEN=space-token \
+  npx @logmem/mcp
+```
+
+Until the package is on npm, run the same entry from a checkout (`npm start`,
+below). Do not treat `npx @logmem/mcp` as working today.
 
 ## What's here
 
@@ -18,7 +42,7 @@ MIT under its own names.
 | `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
 | `src/core/tools.mjs` | The 21 `logmem_*` tools |
 | `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
-| `src/stdio/index.mjs` | stdio entry (`logmem-mcp`) |
+| `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
 | `api/mcp.mjs` | Streamable HTTP route (Vercel) |
 | `api/oauth/`, `api/well-known/` | OAuth 2.1 + PKCE, ported from acmi-product, space-bound tokens |
 | `api/inbox/[agent].mjs` | Drop work on an agent (writes a Handoff entry) |
@@ -55,13 +79,19 @@ Runs the ACMI conformance suite against the compat adapter (in-memory). Set
 `LOGMEM_REDIS_URI` to run against a real Redis (a throwaway space, cleaned up
 after) and `ACMI_CONFORMANCE` to point at a different suite build.
 
-## Run
+## Run from a checkout
 
 ```bash
 npm install
 npm test
-LOGMEM_SPACE=madez LOGMEM_REDIS_URI=redis://localhost:6379 node src/stdio/index.mjs
+LOGMEM_SPACE=madez LOGMEM_REDIS_URI=redis://localhost:6379 npm start
 ```
 
-See `.env.example` for every variable. With no backend, stdio runs in memory
-and `logmem_connection` reports `degraded: true`.
+`npm start` is `node src/stdio/index.mjs`. See `.env.example` for every
+variable. With no backend, stdio runs in memory and `logmem_connection`
+reports `degraded: true`.
+
+## License
+
+No `LICENSE` file yet. The package stays `UNLICENSED` until a license is
+chosen and committed. Do not publish before that.
