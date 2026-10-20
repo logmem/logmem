@@ -291,7 +291,14 @@ test("site: both pages load /attrib.js in the head, and onboarding.js sends attr
     const html = readFileSync(join(root, page), "utf8");
     const head = html.slice(html.indexOf("<head>"), html.indexOf("</head>"));
     assert.ok(head.includes('<script src="/attrib.js" defer></script>'), `${page} loads attrib.js in <head>`);
+    assert.ok(head.includes('<script src="/gtm.js" defer></script>'), `${page} loads gtm.js in <head>`);
+    assert.ok(html.includes('https://www.googletagmanager.com/ns.html?id=GTM-KW8M5T7H'), `${page} includes GTM noscript`);
   }
+  const gtm = readFileSync(join(root, "public/gtm.js"), "utf8");
+  assert.ok(gtm.includes("GTM-KW8M5T7H"), "gtm.js configures GTM-KW8M5T7H");
+  assert.ok(gtm.includes("G-7QMYZSXRJ1"), "gtm.js configures G-7QMYZSXRJ1");
+  const appHtml = readFileSync(join(root, "public/app.html"), "utf8");
+  assert.ok(!appHtml.includes("gtm.js") && !appHtml.includes("googletagmanager.com"), "/app stays free of GTM");
   const js = readFileSync(join(root, "public/onboarding.js"), "utf8");
   const post = js.slice(js.indexOf("fetch('/api/onboarding/waitlist'"), js.indexOf("}).then(", js.indexOf("fetch('/api/onboarding/waitlist'")));
   assert.match(post, /attribution: window\.lmAttribution \? window\.lmAttribution\(\) : null/);
