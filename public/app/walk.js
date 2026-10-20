@@ -29,11 +29,14 @@ const playerLink = (space, trail) => `${location.origin}/app#/walk/${encodeURICo
 // ─── writer ──────────────────────────────────────────────────────────
 let uid = 0;
 const blankStep = () => ({ k: ++uid, title: '', go: '', detail: '', cmd: '', see: '' });
-let draft = null; // { key, job, trail, to, summary, steps: [...], done_when, reply, saving }
+// The draft belongs to one space, job and trail. Its key includes the space, so switching spaces starts
+// a new draft, and the save goes to the draft's own space (codex review of PR 88).
+let draft = null; // { key, space, job, trail, to, summary, steps: [...], done_when, reply, saving }
+const draftKey = (space, job, trail) => [space || '', job, trail || ''].join('/');
 
-function fromRecord(job, rec) {
+function fromRecord(space, job, rec) {
   const w = rec.walkthrough || {};
-  return { key: job + '/' + rec.trail, job, trail: rec.trail, to: rec.to, summary: rec.summary || '', done_when: w.done_when || '', reply: w.reply || '',
+  return { key: draftKey(space, job, rec.trail), space, job, trail: rec.trail, to: rec.to, summary: rec.summary || '', done_when: w.done_when || '', reply: w.reply || '',
     steps: (w.steps || []).map((s) => ({ k: ++uid, title: s.title || '', go: s.go || '', detail: s.detail || '', cmd: s.cmd || '', see: s.see || '' })) };
 }
 /** The walkthrough body the API takes: empty fields left out. */
@@ -46,18 +49,19 @@ export async function writerPage(arg) {
   if (drawerOpen()) closeDrawer();
   const [job, trail] = String(arg || '').split('/');
   if (!job) { location.replace('#/jobs'); return; }
-  const key = job + '/' + (trail || '');
   const jobD = await getJSON('/api/view?' + new URLSearchParams({ what: 'job', id: job, space: state.space || '' }));
   if (!okHook(jobD)) return;
+  // On a fresh deep link the space is only known after the first reply, so bind the draft here.
+  const space = state.space;
+  const key = draftKey(space, job, trail);
   if (!draft || draft.key !== key) {
     if (trail) {
       const t = await getJSON('/api/tasks?' + new URLSearchParams({ space: state.space || '', trail }));
       if (!okHook(t)) return;
-      draft = fromRecord(job, t.blocker);
-      draft.key = key;
+      draft = fromRecord(space, job, t.blocker);
     } else {
       const me = await getJSON('/api/tasks?' + new URLSearchParams({ space: state.space || '' }));
-      draft = { key, job, trail: null, to: (me && me.person) || '', summary: '', done_when: '', reply: '', steps: [blankStep()] };
+      draft = { key, space, job, trail: null, to: (me && me.person) || '', summary: '', done_when: '', reply: '', steps: [blankStep()] };
     }
   }
   draft.jobTitle = (jobD.who && jobD.who.title) || job;
@@ -116,9 +120,10 @@ async function save() {
     const el = els[bad[2] || 0]; if (el) el.focus();
     return;
   }
+  if (d.space !== state.space) { toast(`This draft is for space ${d.space}. Switch back to it to save, or open the writer again here.`, true); return; }
   d.saving = true; drawWriter();
   try {
-    const j = await postJSON('/api/tasks', 'blockers', { action: 'write', job: d.job, to: d.to.trim(), summary: d.summary.trim(), walkthrough: toWalkthrough(d), ...(d.trail ? { trail: d.trail } : {}) });
+    const j = await postJSON('/api/tasks', 'blockers', { space: d.space, action: 'write', job: d.job, to: d.to.trim(), summary: d.summary.trim(), walkthrough: toWalkthrough(d), ...(d.trail ? { trail: d.trail } : {}) });
     const job = d.job;
     draft = null;
     toast(d.trail ? 'Walkthrough saved.' : `Saved. ${agentName(j.blocker.to)} sees it in Needs you. Copy the player link from the job page.`);

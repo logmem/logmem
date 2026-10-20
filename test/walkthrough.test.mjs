@@ -138,3 +138,66 @@ test("walkthrough player: links are http(s) only, and nothing writes raw HTML", 
   assert.match(src, /u\.protocol === 'https:' \|\| u\.protocol === 'http:'/);
   assert.match(src, /rel="noopener noreferrer"/);
 });
+
+// ─── codex review of PR 88 at 7ea5584 ───────────────────────────────
+// A Redis wrapper that runs `between()` once, right before the next EVAL (the compare-and-set),
+// so another write lands between a read and its write.
+function racing(base) {
+  let between = null;
+  const redis = async (cmd, ...args) => {
+    if (cmd === "EVAL" && between) { const h = between; between = null; await h(); }
+    return base(cmd, ...args);
+  };
+  return { redis, before: (fn) => { between = fn; } };
+}
+const raceSetup = async () => {
+  const base = createMemoryRedis();
+  await sc(lmFor(base), "logmem_assign", { job: "npm-publish", title: "Publish @logmem/mcp" });
+  const r = racing(base);
+  return { other: createStore(base, { space: "madez" }), store: createStore(r.redis, { space: "madez" }), before: r.before };
+};
+
+test("PR 88 finding 1: unticking every step does not unlock editing", async () => {
+  const { store } = await setup();
+  await writeWalkthrough(store, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-u" });
+  await setStep(store, "wt-u", { step: 0, checked: true, by: "human:mikey" });
+  await setStep(store, "wt-u", { step: 0, checked: false, by: "human:mikey" });
+  const rec = await getBlocker(store, "wt-u");
+  assert.deepEqual(rec.steps_done, []);
+  assert.ok(rec.started_at, "the started marker stays after unticking");
+  await assert.rejects(() => writeWalkthrough(store, { trail: "wt-u", to: "human:mikey", summary: "v2", walkthrough: W, by: "human:mikey" }), /started this walkthrough/);
+  assert.equal((await getBlocker(store, "wt-u")).summary, "v1");
+});
+
+test("PR 88 finding 2: an edit never erases a tick that lands while it is in flight", async () => {
+  const { store, other, before } = await raceSetup();
+  await writeWalkthrough(other, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-r" });
+  before(() => setStep(other, "wt-r", { step: 1, checked: true, by: "human:mikey" }));
+  await assert.rejects(() => writeWalkthrough(store, { trail: "wt-r", to: "human:mikey", summary: "v2", walkthrough: { steps: [{ title: "x" }] }, by: "human:mikey" }), /changed while you were editing/);
+  const rec = await getBlocker(other, "wt-r");
+  assert.deepEqual(rec.steps_done, [1]);
+  assert.equal(rec.summary, "v1");
+});
+
+test("PR 88 finding 2: an edit never reopens a task closed while it is in flight", async () => {
+  const { store, other, before } = await raceSetup();
+  await writeWalkthrough(other, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-c" });
+  before(() => markDone(other, "wt-c", { by: "human:mikey", note: "done" }));
+  await assert.rejects(() => writeWalkthrough(store, { trail: "wt-c", to: "human:mikey", summary: "v2", walkthrough: W, by: "human:mikey" }), /changed while you were editing/);
+  assert.equal((await getBlocker(other, "wt-c")).done, true);
+});
+
+test("PR 88 finding 2: two ticks at once both stay (the second retries)", async () => {
+  const { store, other, before } = await raceSetup();
+  await writeWalkthrough(other, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-t" });
+  before(() => setStep(other, "wt-t", { step: 1, checked: true, by: "human:mikey" }));
+  await setStep(store, "wt-t", { step: 0, checked: true, by: "human:mikey" });
+  assert.deepEqual((await getBlocker(other, "wt-t")).steps_done, [0, 1]);
+});
+
+test("PR 88 finding 3: writer drafts are keyed by space and save to their own space", () => {
+  const src = readFileSync(new URL("../public/app/walk.js", import.meta.url), "utf8");
+  assert.match(src, /const draftKey = \(space, job, trail\) =>/);
+  assert.match(src, /if \(d\.space !== state\.space\)/);
+  assert.match(src, /postJSON\('\/api\/tasks', 'blockers', \{ space: d\.space, action: 'write'/);
+});

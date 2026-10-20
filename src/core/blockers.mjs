@@ -12,6 +12,20 @@
 
 import { tryParse } from "./store.mjs";
 import { linkOpen, linkClose, jobOf } from "./links.mjs";
+import { registerEvalScript } from "../lib/lua-scripts.mjs";
+
+// Every change to a task record is one compare-and-set: it writes only if the
+// record is still exactly what the caller read. A tick, a done, a can't-do and
+// a walkthrough edit can't overwrite each other (codex review of PR 88).
+export const CAS_LUA = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2]) return 'ok' end
+return 'changed'
+`;
+registerEvalScript(CAS_LUA, (call, keys, argv) => {
+  if (call("GET", keys[0]) !== argv[0]) return "changed";
+  call("SET", keys[0], argv[1]);
+  return "ok";
+});
 
 export const PERSON_RE = /^human:[a-z0-9][a-z0-9_.-]{0,63}$/;
 export const WALKTHROUGH_LIMITS = { steps: 20, title: 120, detail: 1000, cmd: 500, field: 300 };
@@ -78,9 +92,32 @@ export async function createBlocker(store, rec) {
 }
 
 export async function getBlocker(store, trail) {
-  if (!TRAIL_RE.test(String(trail || ""))) return null;
-  const rec = tryParse(await store.redis("GET", K.rec(store.space, trail)));
-  return rec && typeof rec === "object" && rec.trail === trail ? rec : null;
+  return (await readRaw(store, trail)).rec;
+}
+
+/** The record and the exact stored text it came from (the compare-and-set value). */
+async function readRaw(store, trail) {
+  if (!TRAIL_RE.test(String(trail || ""))) return { raw: null, rec: null };
+  const raw = await store.redis("GET", K.rec(store.space, trail));
+  const rec = tryParse(raw);
+  return { raw, rec: rec && typeof rec === "object" && rec.trail === trail ? rec : null };
+}
+
+/**
+ * Change one record atomically. `change(rec)` returns the next record, or
+ * throws to refuse. On a concurrent write it re-reads and tries again, up to
+ * `tries` times; with tries = 1 a concurrent write is refused instead.
+ */
+async function updateRecord(store, trail, change, { tries = 5, changedMessage } = {}) {
+  for (let i = 0; i < tries; i++) {
+    const { raw, rec } = await readRaw(store, trail);
+    if (!rec) throw new BlockerError("no such blocker");
+    const next = await change(rec);
+    if (next === rec) return { rec, changed: false };
+    const res = await store.redis("EVAL", CAS_LUA, 1, K.rec(store.space, trail), raw, JSON.stringify(next));
+    if (res === "ok") return { rec: next, prev: rec, changed: true };
+  }
+  throw new BlockerError(changedMessage || "this task changed while saving. Try again");
 }
 
 /** Open blockers, optionally only those for one person or from one agent. Oldest first. */
@@ -120,16 +157,19 @@ function whereOf(rec) {
 /** A person ticks (or unticks) one step. Writes one entry by that person on the work's log. */
 export async function setStep(store, trail, { step, checked, by, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can tick a step");
-  const rec = await getBlocker(store, trail);
-  if (!rec) throw new BlockerError("no such blocker");
-  if (rec.done) throw new BlockerError("this blocker is already done");
-  const steps = rec.walkthrough?.steps || [];
-  if (!Number.isInteger(step) || step < 0 || step >= steps.length) throw new BlockerError("no such step");
-  const set = new Set(rec.steps_done || []);
-  if (checked) set.add(step);
-  else set.delete(step);
-  const next = { ...rec, steps_done: [...set].sort((a, b) => a - b), updated_at: now() };
-  await store.redis("SET", K.rec(store.space, trail), JSON.stringify(next));
+  let steps = [];
+  const { rec: next } = await updateRecord(store, trail, (rec) => {
+    if (rec.done) throw new BlockerError("this blocker is already done");
+    steps = rec.walkthrough?.steps || [];
+    if (!Number.isInteger(step) || step < 0 || step >= steps.length) throw new BlockerError("no such step");
+    const set = new Set(rec.steps_done || []);
+    if (checked) set.add(step);
+    else set.delete(step);
+    // started_at is permanent: once someone ticks a step, the walkthrough can't be edited, even after unticking.
+    const started = rec.started_at || (checked ? now() : undefined);
+    return { ...rec, steps_done: [...set].sort((a, b) => a - b), updated_at: now(), ...(started ? { started_at: started } : {}) };
+  });
+  const rec = next;
   const { ns, id } = whereOf(rec);
   const summary = `${checked ? "Done" : "Undone"} step ${step + 1} of ${steps.length}: ${steps[step].title}`.slice(0, 1000);
   await store.append(ns, id, personEntry(by, "progress", summary, trail, { blocker: trail, step, checked: !!checked }, now));
@@ -139,11 +179,9 @@ export async function setStep(store, trail, { step, checked, by, now = Date.now 
 /** A person marks the blocker done. Writes a Done entry by that person and closes it. */
 export async function markDone(store, trail, { by, note, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can mark a blocker done");
-  const rec = await getBlocker(store, trail);
-  if (!rec) throw new BlockerError("no such blocker");
-  if (rec.done) return rec;
-  const next = { ...rec, done: true, done_at: now(), done_by: by, ...(note ? { note: String(note).slice(0, 1000) } : {}) };
-  await store.redis("SET", K.rec(store.space, trail), JSON.stringify(next));
+  const out = await updateRecord(store, trail, (rec) => (rec.done ? rec : { ...rec, done: true, done_at: now(), done_by: by, ...(note ? { note: String(note).slice(0, 1000) } : {}) }));
+  if (!out.changed) return out.rec;
+  const rec = out.prev, next = out.rec;
   await store.redis("SREM", K.open(store.space), trail);
   const { ns, id } = whereOf(rec);
   await store.append(ns, id, personEntry(by, "done", `Done: ${rec.summary}`.slice(0, 1000), trail, { blocker: trail, ...(note ? { note: next.note } : {}) }, now));
@@ -155,12 +193,11 @@ export async function markDone(store, trail, { by, note, now = Date.now }) {
 export async function cantDo(store, trail, { by, reason, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can say a task can't be done");
   if (typeof reason !== "string" || !reason.trim()) throw new BlockerError("say why it can't be done, in one line");
-  const rec = await getBlocker(store, trail);
-  if (!rec) throw new BlockerError("no such blocker");
-  if (rec.done) throw new BlockerError("this task is already closed");
   const why = reason.trim().slice(0, 1000);
-  const next = { ...rec, done: true, done_at: now(), done_by: by, outcome: "cant_do", reason: why };
-  await store.redis("SET", K.rec(store.space, trail), JSON.stringify(next));
+  const { prev: rec, rec: next } = await updateRecord(store, trail, (r) => {
+    if (r.done) throw new BlockerError("this task is already closed");
+    return { ...r, done: true, done_at: now(), done_by: by, outcome: "cant_do", reason: why };
+  });
   await store.redis("SREM", K.open(store.space), trail);
   const { ns, id } = whereOf(rec);
   await store.append(ns, id, personEntry(by, "feedback", `Can't do: ${why}`.slice(0, 1000), trail, { task: trail, cant_do: true, reason: why }, now));
@@ -218,13 +255,15 @@ export async function writeWalkthrough(store, { job, to, summary, walkthrough, t
   refuseSecrets(w, title);
 
   if (trail) {
-    const rec = await getBlocker(store, String(trail));
-    if (!rec) throw new BlockerError("no such walkthrough");
-    if (rec.done) throw new BlockerError("this walkthrough is already closed");
-    if ((rec.steps_done || []).length) throw new BlockerError("someone has started this walkthrough, so it can't change now. Write a new one");
-    if (rec.by !== by) throw new BlockerError("only the person who wrote this walkthrough can edit it");
-    const next = { ...rec, to, summary: title, walkthrough: w, updated_at: now() };
-    await store.redis("SET", K.rec(store.space, rec.trail), JSON.stringify(next));
+    if (!(await getBlocker(store, String(trail)))) throw new BlockerError("no such walkthrough");
+    // One try: if a tick or a close lands while the edit is in flight, the edit is refused, never merged.
+    const { rec: next } = await updateRecord(store, String(trail), (rec) => {
+      if (rec.done) throw new BlockerError("this walkthrough is already closed");
+      if (rec.started_at || (rec.steps_done || []).length) throw new BlockerError("someone has started this walkthrough, so it can't change now. Write a new one");
+      if (rec.by !== by) throw new BlockerError("only the person who wrote this walkthrough can edit it");
+      return { ...rec, to, summary: title, walkthrough: w, updated_at: now() };
+    }, { tries: 1, changedMessage: "this walkthrough changed while you were editing (someone may have started it). Reload and check it" });
+    const rec = next;
     const { ns, id } = whereOf(rec);
     await store.append(ns, id, personEntry(by, "progress", `Walkthrough edited: ${title}`.slice(0, 1000), rec.trail, { blocker: rec.trail, steps: w.steps.length }, now));
     return next;
