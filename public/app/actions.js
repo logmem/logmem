@@ -26,9 +26,8 @@ export async function doWork(ev, op, job, agent) {
     toast(op === 'nudge' ? `Nudged ${j.to || 'the agent'}.` : 'Unblocked. The owner sees it in their Brief.');
     onChanged();
   } catch (e) {
-    if (card) card.style.opacity = '';
     toast('Not saved: ' + e.message, true);
-  } finally { busy(b, false); }
+  } finally { if (card) card.style.opacity = ''; busy(b, false); }
 }
 
 // ─── tasks: tick, done, can't do ─────────────────────────────────────
@@ -49,7 +48,7 @@ export async function doTask(ev, action, trail) {
     await postJSON('/api/tasks', 'blockers', action === 'done' ? { action: 'done', trail, note: note || undefined } : { action: 'cant_do', trail, reason: note });
     toast(action === 'done' ? 'Done. The job moves on.' : 'Sent back to the agent with your reason.');
     onChanged();
-  } catch (e) { if (card) card.style.opacity = ''; busy(b, false); toast('Not saved: ' + e.message, true); }
+  } catch (e) { toast('Not saved: ' + e.message, true); } finally { if (card) card.style.opacity = ''; busy(b, false); }
 }
 
 // ─── lanes ───────────────────────────────────────────────────────────
@@ -107,22 +106,27 @@ export async function decide(ev, a, verdict) {
   btns.forEach((b) => { b.disabled = true; });
   try {
     await sendOne(a, verdict, note, confirmed);
+    clearNote(key);
     toast(verdict === 'approve' ? 'Approved. The agent sees it in its Brief.' : verdict === 'reject' ? 'Rejected. The agent picks another way.' : 'Deferred. It stays open.');
     onChanged();
   } catch (e) {
-    btns.forEach((b) => { b.disabled = false; });
     toast(e.status === 409 ? 'Already answered: ' + e.message : 'Not recorded: ' + e.message + '. Nothing was written.', true);
+  } finally {
+    // lit keeps these nodes when the ask stays on screen (Defer), so they are always enabled again.
+    btns.forEach((b) => { b.disabled = false; });
   }
 }
 
 /** Approve or reject several decisions at once. Irreversible ones share one typed confirmation. */
 export async function decideBatch(asks, verdict) {
   if (!asks.length) return;
+  // Each ask keeps the note typed on its own card. Read them before the confirm dialog opens.
+  const notes = new Map(asks.map((a) => [a.trail, noteFor(`ask:${a.trail}`).slice(0, 1000)]));
   let confirmed = false;
   if (verdict === 'approve' && asks.some(irreversible)) { confirmed = await confirmIrreversible(asks.filter(irreversible)); if (!confirmed) return; }
   let ok = 0; const failed = [];
   for (const a of asks) {
-    try { await sendOne(a, verdict, '', confirmed); ok++; } catch (e) { failed.push(`${a.summary}: ${e.message}`); }
+    try { await sendOne(a, verdict, notes.get(a.trail), confirmed); ok++; clearNote(`ask:${a.trail}`); } catch (e) { failed.push(`${a.summary}: ${e.message}`); }
   }
   toast(`${verdict === 'approve' ? 'Approved' : 'Rejected'} ${ok} of ${asks.length}.${failed.length ? ' Not recorded: ' + failed.join('; ') : ''}`, failed.length > 0);
   onChanged();
