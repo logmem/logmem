@@ -28,8 +28,8 @@ test("vocab: field rename is lossless both ways", () => {
   assert.deepEqual(entryToAcmi(e), ev);
 });
 
-test("vocab: 22 logmem tools, single-word names", () => {
-  assert.equal(Object.keys(TOOLS).length, 22);
+test("vocab: 23 logmem tools, single-word names", () => {
+  assert.equal(Object.keys(TOOLS).length, 23);
   for (const n of Object.keys(TOOLS)) assert.match(n, /^logmem_[a-z]+$/);
 });
 

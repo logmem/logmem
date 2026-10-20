@@ -1,4 +1,4 @@
-// tools.mjs — the 22 logmem_* tools.
+// tools.mjs — the 23 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
@@ -880,7 +880,7 @@ export const TOOLS = [
   {
     name: "logmem_recall",
     title: "Recall",
-    description: "Search memory for something you didn't write. Finds entries by meaning when a semantic index is attached, otherwise by words. Read only.",
+    description: "Search memory for something you didn't write. Matches keywords in summaries and payloads. Read only.",
     params: params({
       query: { type: "string", desc: "What you're looking for, in plain words" },
       limit: { type: "number", desc: "Max results (default 5)", optional: true },
@@ -1421,7 +1421,7 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   return { ok: true, entry: final, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, reclaimed: priorRaw != null, ...(job ? { job: { id: w.id, stage: job.stage } } : {}), ...(reconciled ? { reconciled: true } : {}) };
 }
 
-/** Keyword recall over this space's logs. Bounded; used when no index is attached. */
+/** Keyword recall over this space's logs. Bounded to listed ids and recent entries. */
 export async function keywordRecall(store, query, limit) {
   const words = String(query).toLowerCase().split(/\W+/).filter((w) => w.length > 2);
   if (!words.length) return { mode: "keyword", results: [] };

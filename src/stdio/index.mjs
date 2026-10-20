@@ -10,6 +10,7 @@
 //   LOGMEM_REDIS_URI / LOGMEM_REST_URL + LOGMEM_REST_TOKEN   backend (see lib/backend.mjs)
 //   LOGMEM_REQUIRE_BACKEND=1  exit 1 instead of starting in degraded (in-memory) mode
 //   LOGMEM_REDIS_TIMEOUT_MS   per-command Redis timeout (default 5000)
+//   LOGMEM_WORK_RULES=warn    allow a task or decision off a job, or blocked with no reason (default strict)
 //
 // Degraded mode: if the backend is unreachable at startup (and
 // LOGMEM_REQUIRE_BACKEND is not set) this process runs on an in-memory store,
@@ -63,6 +64,7 @@ Environment:
   LOGMEM_REST_TOKEN         Redis REST token
   LOGMEM_REQUIRE_BACKEND=1  exit 1 instead of an in-memory store
   LOGMEM_REDIS_TIMEOUT_MS   per-command Redis timeout in ms (default 5000)
+  LOGMEM_WORK_RULES=warn    allow a task or decision off a job, or blocked with no reason
 
 If LOGMEM_SPACE is not set, the process warns on stderr and uses "demo"
 (or ACMI_DEFAULT_TENANT, or the first LOGMEM_SPACES entry).

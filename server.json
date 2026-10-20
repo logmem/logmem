@@ -84,6 +84,11 @@
           "isSecret": true
         },
         {
+          "name": "LOGMEM_WORK_RULES",
+          "description": "warn allows a task or decision off a job, or blocked with no reason. Default strict.",
+          "isRequired": false
+        },
+        {
           "name": "LOGMEM_ADMIN_ID",
           "description": "Agent id reserved for the human who answers asks. Default admin.",
           "isRequired": false

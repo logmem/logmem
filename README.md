@@ -49,6 +49,7 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 | `LOGMEM_MIRROR_ACMI` | no | no | off |
 | `LOGMEM_MIRROR_SPACES` | no | no | `madez`, only when mirroring is on |
 | `LOGMEM_DECIDE_SECRET` | no | yes | unset; decisions stay disabled |
+| `LOGMEM_WORK_RULES` | no | no | `strict`; `warn` allows a task or decision off a job, or blocked with no reason |
 | `LOGMEM_ADMIN_ID` | no | no | `admin` |
 | `ACMI_DEFAULT_TENANT` | no | no | none (legacy space fallback) |
 | `ACMI_REDIS_URI` | no | yes | none (legacy alias of `LOGMEM_REDIS_URI`) |
@@ -68,7 +69,7 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 | `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
 | `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
 | `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
-| `src/core/tools.mjs` | The 22 `logmem_*` tools |
+| `src/core/tools.mjs` | The 23 `logmem_*` tools |
 | `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
 | `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
 | `api/mcp.mjs` | Streamable HTTP route (Vercel) |
@@ -78,11 +79,15 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 
 ## Tools
 
-22 tools, all as `logmem_<word>`: Start, Brief, Recap, Note, Handoff, Accept,
-Ask, Status, Bio, View, Roster, Feed, Follow, Assign, Update, Stage, Open,
+23 tools, all as `logmem_<word>`: Start, Brief, Recap, Note, Handoff, Accept,
+Ask, Status, Bio, View, Roster, Feed, Follow, Assign, Plan, Update, Stage, Open,
 Jobs, Recall, Remove, Spaces, and Connection (`logmem_connection`). Names
 follow the Action Map. Schemas are a **draft** until the tool-contract spec
-(claude-engineer, Oct 14).
+(claude-engineer, Oct 14). Recall matches keywords in summaries and payloads.
+
+| Tool | What it does |
+|---|---|
+| `logmem_plan` | List the plans in this space, or create one. A plan is a named body of work, such as 'launch'. Every job belongs to one plan; 'general' holds work not yet filed. |
 
 ## Shifts
 

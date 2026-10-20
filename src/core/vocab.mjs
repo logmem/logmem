@@ -127,6 +127,7 @@ export const TOOLS = {
   logmem_feed: "acmi_cat",
   logmem_follow: "acmi_active",
   logmem_assign: "acmi_work_create",
+  logmem_plan: null,
   logmem_update: "acmi_work_event",
   logmem_stage: "acmi_work_signal",
   logmem_open: "acmi_work_get",
