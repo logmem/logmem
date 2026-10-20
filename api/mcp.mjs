@@ -72,12 +72,7 @@ const TENANT_TTL_MS = 60_000;
 
 /** A managed account's LogMem: jailed to its space, locked to its agent, with its plan's limits. */
 export async function buildManaged({ redis, auth, sessionId, now = Date.now }) {
-  let hit = tenantCache.get(auth.tenant);
-  if (!hit || now() - hit.at > TENANT_TTL_MS) {
-    hit = { at: now(), tenant: await getTenant(redis, auth.tenant) };
-    tenantCache.set(auth.tenant, hit);
-  }
-  const t = hit.tenant;
+  const t = await getTenant(redis, auth.tenant);
   if (!t || t.status !== "active") throw new Error("This LogMem account is paused.");
   return createLogmem({
     redis: createJail(redis, auth.tenant),

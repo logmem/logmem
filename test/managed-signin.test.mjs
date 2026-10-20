@@ -163,6 +163,10 @@ test("managed: the token resolves to the jailed customer Redis, locked to its ag
       for (const k of keys) assert.ok(k.startsWith(`lm:${rec.space}:`), `outside the space: ${k}`);
       assert.ok([...customer.data.keys()].some((k) => k.startsWith(`acmi:cloud:meter:${rec.backend.tenant}:`)), "adds are metered");
       assert.equal((await lm.callTool("logmem_start", { agent: "atlas" })).isError, true, "other agents are refused");
+
+      const { setStatus } = await import("../cloud/tenants/index.mjs");
+      await setStatus(customer, rec.backend.tenant, "suspended");
+      await assert.rejects(() => buildManaged({ redis: customer, auth, sessionId: "muse.s1" }), /paused/, "suspending a tenant takes effect immediately without waiting for a cache TTL");
     } finally {
       done();
     }
