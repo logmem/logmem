@@ -27,7 +27,10 @@ export function checkBlockedOn(b) {
   if (typeof b.note !== "string" || !b.note.trim()) throw new BlockedError(`blocked_on.note must say in one line what is needed, e.g. ${example}`);
   if (b.note.length > 300) throw new BlockedError("blocked_on.note is longer than 300 characters");
   if (b.ref != null && (typeof b.ref !== "string" || b.ref.length > 200)) throw new BlockedError("blocked_on.ref must be a trail or an agent id");
-  return { type: b.type, ...(b.ref ? { ref: b.ref } : {}), note: b.note.trim() };
+  if (b.parked != null && typeof b.parked !== "boolean") throw new BlockedError("blocked_on.parked must be true or false");
+  if (b.until != null && (typeof b.until !== "string" || b.until.length > 200)) throw new BlockedError("blocked_on.until must be text: when the job can move again");
+  // Parked (lanes spec): waits on purpose, not stuck. It shows under Parked, not Blocked.
+  return { type: b.type, ...(b.ref ? { ref: b.ref } : {}), note: b.note.trim(), ...(b.parked === true ? { parked: true } : {}), ...(b.until ? { until: b.until.trim() } : {}) };
 }
 
 const waitsOf = (now) => (Array.isArray(now?.waits) ? now.waits : []);

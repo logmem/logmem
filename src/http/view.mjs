@@ -8,7 +8,7 @@ import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
 import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk } from "../core/tools.mjs";
 import { listBlockers } from "../core/blockers.mjs";
-import { listPlans, getPlan } from "../core/plans.mjs";
+import { listPlans, getPlan, getPlans } from "../core/plans.mjs";
 import { lmDecisionKey } from "../core/keys.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
@@ -160,16 +160,18 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
       .sort((a, b) => String(a.who.date || "").localeCompare(String(b.who.date || "")))[0];
     const rec = registered.includes(name) ? await getPlan(store, name) : null;
     plans.push({
-      id: name, title: rec?.title || name, jobs: work.length, done,
+      id: name, title: rec?.title || name, lane: rec?.lane || null, jobs: work.length, done,
+      parked: work.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length,
       percent: work.length ? Math.round((done / work.length) * 100) : 0,
-      blocked: work.filter((j) => j.now.stage === "blocked").length,
+      blocked: work.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked !== true).length,
       next_milestone: next ? { id: next.id, title: next.who.title || next.id, date: next.who.date || null } : null,
     });
   }
-  // "general" goes last: it is the pile to file, not a plan of record.
-  plans.sort((a, b) => (a.id === "general") - (b.id === "general") || b.jobs - a.jobs);
+  // P0 lane first, then active, then parked; "general" last: it is the pile to file, not a plan of record.
+  const rank = (p) => (p.id === "general" ? 9 : { p0: 0, active: 1, parked: 3 }[p.lane?.status] ?? 2);
+  plans.sort((a, b) => rank(a) - rank(b) || b.jobs - a.jobs);
   const blocked = jobs
-    .filter((j) => j.now.stage === "blocked")
+    .filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked !== true)
     .map((j) => ({
       id: j.id, title: j.who.title || j.id, plan: j.who.plan || null, track: j.who.track || null,
       owner: j.now.owner || j.who.owner || null, blocked_on: j.now.blocked_on || null, since: j.now.stage_at || null,
@@ -189,7 +191,47 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
   const order = { active: 0, idle: 1, offline: 2, unknown: 3 };
   agents.sort((a, b) => (order[a.seen.state] ?? 9) - (order[b.seen.state] ?? 9) || a.id.localeCompare(b.id));
   const needs = await needsView(store, r, space, { secret, person });
-  return { plans, blocked, agents, needs_count: needs.count };
+  return { plans, blocked, parked_count: jobs.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length, agents, needs_count: needs.count };
+}
+
+/**
+ * The Lanes board (lanes spec): every plan as a lane with its status, what is
+ * moving in it, what is blocked, and what is parked inside it on purpose.
+ */
+export async function lanesView(store) {
+  const ids = await store.list("job");
+  const jobs = (await inBatches(ids, 25, async (id) => {
+    try {
+      const [who, n] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
+      return who ? { id, who, now: n || {} } : null;
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
+  const recs = await getPlans(store);
+  const names = [...new Set([...recs.map((p) => p.id), ...jobs.map((j) => j.who.plan).filter(Boolean)])];
+  const slimJob = (j) => ({ id: j.id, title: j.who.title || j.id, owner: j.now.owner || j.who.owner || null, track: j.who.track || null, since: j.now.stage_at || null, blocked_on: j.now.blocked_on || null });
+  const lanes = names.map((name) => {
+    const rec = recs.find((p) => p.id === name) || null;
+    const mine = jobs.filter((j) => j.who.plan === name);
+    const work = mine.filter((j) => j.who.milestone !== true);
+    const done = work.filter((j) => j.now.stage === "done").length;
+    const isParked = (j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true;
+    const next = mine.filter((j) => j.who.milestone === true && j.now.stage !== "done").sort((a, b) => String(a.who.date || "").localeCompare(String(b.who.date || "")))[0];
+    const latest = (xs) => xs.sort((a, b) => (b.now.stage_at || 0) - (a.now.stage_at || 0));
+    return {
+      id: name, title: rec?.title || name, desc: rec?.desc || null, lane: rec?.lane || null,
+      jobs: work.length, done, percent: work.length ? Math.round((done / work.length) * 100) : 0,
+      active: latest(work.filter((j) => j.now.stage === "active")).slice(0, 5).map(slimJob),
+      active_count: work.filter((j) => j.now.stage === "active").length,
+      blocked_count: work.filter((j) => j.now.stage === "blocked" && !isParked(j)).length,
+      parked_jobs: latest(work.filter(isParked)).map(slimJob),
+      next_milestone: next ? { id: next.id, title: next.who.title || next.id, date: next.who.date || null } : null,
+    };
+  });
+  const rank = (l) => (l.id === "general" ? 9 : { p0: 0, active: 1, parked: 3 }[l.lane?.status] ?? 2);
+  lanes.sort((a, b) => rank(a) - rank(b) || b.jobs - a.jobs);
+  return { lanes, p0: lanes.find((l) => l.lane?.status === "p0")?.id || null };
 }
 
 export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
@@ -206,6 +248,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   const annotate = async (rows, asks = rows) => annotateDecisions(rows, { ...verify, canon: (await stateOf(asks)).canon });
 
   if (what === "home") return homeView(store, r, space, { secret, person: params.person, now });
+  if (what === "lanes") return lanesView(store);
   if (what === "needs") return needsView(store, r, space, { secret, person: params.person });
 
   if (what === "log") {
@@ -340,7 +383,7 @@ export async function planView(store, name) {
   const trackList = [...tracks.entries()].map(([title, items]) => ({ title, percent: pct(items), items }));
   const all = trackList.flatMap((t) => t.items);
   const rec = plan ? await getPlan(store, plan) : null;
-  return { plans, plan, title: rec?.title || plan, desc: rec?.desc || null, percent: pct(all), milestones, tracks: trackList };
+  return { plans, plan, title: rec?.title || plan, desc: rec?.desc || null, lane: rec?.lane || null, percent: pct(all), milestones, tracks: trackList };
 }
 
 async function jobsView(store) {
