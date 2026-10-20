@@ -28,6 +28,7 @@ import { sendServerError } from "../src/http/log.mjs";
 import { createJail } from "../src/http/jail.mjs";
 import { createLimits } from "../src/http/limits.mjs";
 import { getTenant } from "../cloud/tenants/index.mjs";
+import { SCOPE_WRITE, ALL_SCOPES } from "../src/http/issuer.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
@@ -86,6 +87,7 @@ export async function buildManaged({ redis, auth, sessionId, now = Date.now }) {
     lockedAgent: auth.agent,
     mirror: { enabled: false, spaces: [] },
     limits: createLimits({ redis, tenant: auth.tenant, plan: t.plan, now }),
+    pureReads: true,
   });
 }
 export const __clearTenantCacheForTests = () => tenantCache.clear();
@@ -109,7 +111,19 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     defaultAgent: auth.agent || env.LOGMEM_AGENT,
     lockedAgent: auth.agent || null,
     mirror: mirrorConfigFromEnv(env),
+    pureReads: true,
   });
+}
+
+/**
+ * true when an OAuth token without logmem:write calls a tool that is not
+ * read only (unknown tools included). Agent keys and break-glass carry no
+ * scopes and are not limited here.
+ */
+export function insufficientScope(auth, msg, toolDefs) {
+  if (msg?.method !== "tools/call" || !Array.isArray(auth?.scopes) || auth.scopes.includes(SCOPE_WRITE)) return false;
+  const tool = toolDefs.find((t) => t.name === msg.params?.name);
+  return tool?.annotations?.readOnlyHint !== true;
 }
 
 export async function dispatch(msg, { lmFactory, toolDefs }) {
@@ -142,7 +156,7 @@ export async function dispatch(msg, { lmFactory, toolDefs }) {
       } catch (e) {
         return ok(toResult(toolError(markUnexpected(e), params?.name)));
       }
-      return ok(await lm.callTool(params?.name, params?.arguments || {}));
+      return ok(await lm.callTool(params?.name, params?.arguments, { validate: true }));
     }
     default:
       return fail(-32601, `Unknown method: ${method}`);
@@ -176,8 +190,14 @@ export default async function handler(req, res) {
     const auth = await resolveAuth(req, cfg);
     const b = auth.backend && fromDescriptor(auth.backend);
     if (!b && !PUBLIC.has(msg?.method)) {
-      res.setHeader("WWW-Authenticate", wwwAuthenticate(req));
+      res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: auth.error }));
       return res.status(401).json({ error: "authentication required for tool calls", hint: "OAuth 2.1 + PKCE via /.well-known/oauth-authorization-server, or ?config=<base64> with restUrl/restToken." });
+    }
+    // A read-only grant (logmem:read) may call read tools only. 403 lets the
+    // client ask the person for logmem:write (MCP step-up authorization).
+    if (insufficientScope(auth, msg, toolDefs())) {
+      res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: "insufficient_scope", scope: ALL_SCOPES }));
+      return res.status(403).json({ error: "insufficient_scope", hint: "This connection can only read. Reconnect and allow logmem:write to write." });
     }
 
     const headers = { "X-LogMem-Cred-Source": auth.source, "X-LogMem-Space": auth.space };

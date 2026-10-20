@@ -22,6 +22,12 @@
 // exp.HMAC(key, [nonce, exp, auth-request params]) where nonce lives in a
 // SameSite=Strict HttpOnly cookie set with the form. POST verifies both, so a
 // cross-site page cannot submit (or pre-fill) consent for the user.
+//
+// Plugin pilot (spec 2026-10-20-logmem-agent-plugin-design.md, section 8):
+// - resource (RFC 8707): bound into the CSRF token and stored on the code as
+//   the one canonical resource (<issuer>/mcp). Any other value is invalid_target.
+// - scope: stored as "logmem:read" or "logmem:read logmem:write" (normalizeScope).
+// - iss (RFC 9207): every redirect to the client, success or error, names the issuer.
 
 import { getClient, saveAuthCode, assertKekReady, csrfKey, hmacHex, safeEqual, randomToken } from "./_lib/storage.mjs";
 import { restEndpoint } from "../../src/lib/redis-rest.mjs";
@@ -32,13 +38,14 @@ import { accountFor } from "../../src/http/accounts.mjs";
 import { customerRedis } from "../../src/http/jail.mjs";
 import { serverRedis } from "../../src/http/onboarding.mjs";
 import { checkAgentId } from "../../src/core/keys.mjs";
+import { issuerFor, bindResource, normalizeScope, SCOPE_WRITE } from "../../src/http/issuer.mjs";
 
 const PROBE_TIMEOUT_MS = 5000;
 const CONNECT_FAILED = "Could not connect with those credentials";
 const CSRF_COOKIE = "lm_oauth_csrf";
 const CSRF_TTL_S = 600;
 const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{43,128}$/;
-const BOUND_PARAMS = ["client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "response_type"];
+const BOUND_PARAMS = ["client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "response_type", "resource"];
 
 // vercel.json excludes this path from the site-wide CSP, so this function
 // sends the ONLY Content-Security-Policy header here. BASE_CSP must stay
@@ -158,7 +165,7 @@ button:hover{background:var(--accent)}
   ${errorBlock}
   <div class="client">
     <b>${htmlEscape(params.client_name || params.client_id)}</b> wants access<br>
-    <span class="scope">scope: ${htmlEscape(params.scope || "mcp")}</span>
+    <span class="scope">scope: ${htmlEscape(normalizeScope(params.scope))}</span>
     <span class="scope">redirect: ${htmlEscape(new URL(params.redirect_uri).host)}</span>
   </div>
 
@@ -187,7 +194,7 @@ button:hover{background:var(--accent)}
     <div class="hint">redis:// or rediss:// — include the password in the URI. The server must be reachable from the public internet.</div>
   </div>
 
-  ${["client_id","redirect_uri","code_challenge","code_challenge_method","state","scope","response_type","csrf_token"].map(k=>`<input type="hidden" name="${k}" value="${htmlEscape(params[k]||"")}">`).join("")}
+  ${[...BOUND_PARAMS,"csrf_token"].map(k=>`<input type="hidden" name="${k}" value="${htmlEscape(params[k]||"")}">`).join("")}
 
   <script>
   (function(){
@@ -226,14 +233,19 @@ function sendErrorPage(res, status, title, detail) {
   res.end(renderErrorPage(title, detail));
 }
 
-function redirectError(res, redirect_uri, error, error_description, state) {
+/** 302 to the client's redirect_uri with `params`, state, and the RFC 9207 issuer. */
+function redirectTo(res, req, redirect_uri, params, state) {
   const u = new URL(redirect_uri);
-  u.searchParams.set("error", error);
-  if (error_description) u.searchParams.set("error_description", error_description);
+  for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
   if (state) u.searchParams.set("state", state);
+  u.searchParams.set("iss", issuerFor(req));
   res.statusCode = 302;
   res.setHeader("Location", u.toString());
   res.end();
+}
+
+function redirectError(res, req, redirect_uri, error, error_description, state) {
+  redirectTo(res, req, redirect_uri, { error, error_description }, state);
 }
 
 /**
@@ -241,7 +253,7 @@ function redirectError(res, redirect_uri, error, error_description, state) {
  * the caller must render a 400 page. Only after phase 1 passes is the
  * redirect_uri trusted enough to carry phase-2 errors back via 302.
  */
-export async function validateAuthRequest(query) {
+export async function validateAuthRequest(query, req) {
   const client_id = typeof query.client_id === "string" ? query.client_id : "";
   const redirect_uri = typeof query.redirect_uri === "string" ? query.redirect_uri : "";
   if (!client_id) return { noRedirect: true, error: "invalid_request", description: "missing client_id" };
@@ -262,14 +274,16 @@ export async function validateAuthRequest(query) {
   if (typeof query.code_challenge !== "string" || !CODE_CHALLENGE_RE.test(query.code_challenge)) {
     return { client, error: "invalid_request", description: "code_challenge must be 43-128 base64url characters" };
   }
-  return { client };
+  const bound = bindResource(query.resource, req);
+  if (bound.error) return { client, error: "invalid_target", description: "unknown resource" };
+  return { client, resource: bound.resource, scope: normalizeScope(query.scope || client.scope) };
 }
 
-function rejectRequest(res, v, source) {
+function rejectRequest(res, req, v, source) {
   if (v.noRedirect) {
     return sendErrorPage(res, 400, "This app's sign-in request is invalid", `${v.error}: ${v.description}. Nothing was shared.`);
   }
-  return redirectError(res, source.redirect_uri, v.error, v.description, source.state);
+  return redirectError(res, req, source.redirect_uri, v.error, v.description, source.state);
 }
 
 // ───── Managed mode (spec 2026-10-19 one-click connect, 4.3) ─────
@@ -309,7 +323,8 @@ function infoPage(res, status, title, detail) {
   res.end(renderErrorPage(title, detail));
 }
 
-function renderManagedConsent({ params, appName, agent, email, error }) {
+function renderManagedConsent({ params, appName, agent, email, error, scope }) {
+  const verbs = String(scope || "").split(" ").includes(SCOPE_WRITE) ? "read and write" : "read";
   const hidden = [...BOUND_PARAMS, "csrf_token"].map((k) => `<input type="hidden" name="${k}" value="${htmlEscape(params[k] || "")}">`).join("");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -322,7 +337,7 @@ button{font:inherit;font-size:16px;padding:12px 16px;border-radius:4px;border:1p
 details{font-size:13px;color:#666}input[type=text]{width:100%;padding:8px 10px;margin-top:6px;border:1px solid #d3cfc4;border-radius:4px;font-family:'SF Mono',Menlo,monospace}</style>
 </head><body><form class="card" method="POST" action="/api/oauth/authorize">
 <h1>Connect ${htmlEscape(appName)}</h1>
-<p>Signed in as ${htmlEscape(email)}. ${htmlEscape(appName)} will read and write your LogMem memory as the agent <b>${htmlEscape(agent)}</b>.</p>
+<p>Signed in as ${htmlEscape(email)}. ${htmlEscape(appName)} will ${verbs} your LogMem memory as the agent <b>${htmlEscape(agent)}</b>.</p>
 ${error ? `<p class="err" role="alert">${htmlEscape(error)}</p>` : ""}
 ${hidden}
 <button class="go" type="submit" name="action" value="approve">Allow ${htmlEscape(appName)} to use your LogMem memory</button>
@@ -390,7 +405,7 @@ async function managedGet(req, res, query, v) {
   const nonce = randomToken(16);
   res.setHeader("Set-Cookie", `${CSRF_COOKIE}=${nonce}; Path=/api/oauth/authorize; Max-Age=${CSRF_TTL_S}; HttpOnly; Secure; SameSite=Strict`);
   const appName = v.client.client_name || "This app";
-  return sendManagedConsent(res, 200, params, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email });
+  return sendManagedConsent(res, 200, params, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email, scope: v.scope });
 }
 
 async function managedApprove(req, res, body, v) {
@@ -407,7 +422,7 @@ async function managedApprove(req, res, body, v) {
       agent = checkAgentId(wanted);
     } catch (e) {
       const nonce = readCookie(req, CSRF_COOKIE);
-      return sendManagedConsent(res, 400, { ...body, client_name: v.client.client_name }, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email, error: `Agent name: ${e.message}` });
+      return sendManagedConsent(res, 400, { ...body, client_name: v.client.client_name }, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email, scope: v.scope, error: `Agent name: ${e.message}` });
     }
   }
   const code = await saveAuthCode({
@@ -415,19 +430,15 @@ async function managedApprove(req, res, body, v) {
     redirect_uri: body.redirect_uri,
     code_challenge: body.code_challenge,
     code_challenge_method: body.code_challenge_method,
-    scope: body.scope || "mcp",
+    scope: v.scope,
+    resource: v.resource,
     upstash_url: null,
     upstash_token: null,
     backend: { kind: "managed", tenant: got.acct.tenant, agent },
     sub: `clerk:${got.session.userId}`,
     space: got.acct.space,
   });
-  const u = new URL(body.redirect_uri);
-  u.searchParams.set("code", code);
-  if (body.state) u.searchParams.set("state", body.state);
-  res.statusCode = 302;
-  res.setHeader("Location", u.toString());
-  res.end();
+  redirectTo(res, req, body.redirect_uri, { code }, body.state);
 }
 
 // No CORS headers: /authorize is a top-level browser navigation, never a
@@ -437,8 +448,8 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const url = new URL(req.url, `https://${req.headers.host}`);
       const query = Object.fromEntries(url.searchParams);
-      const v = await validateAuthRequest(query);
-      if (v.error) return rejectRequest(res, v, query);
+      const v = await validateAuthRequest(query, req);
+      if (v.error) return rejectRequest(res, req, v, query);
       if (managedMode()) return await managedGet(req, res, query, v);
       const params = { ...query, client_name: v.client.client_name };
       const nonce = randomToken(16);
@@ -454,8 +465,8 @@ export default async function handler(req, res) {
     }
 
     const body = req.body || {};
-    const v = await validateAuthRequest(body);
-    if (v.error) return rejectRequest(res, v, body);
+    const v = await validateAuthRequest(body, req);
+    if (v.error) return rejectRequest(res, req, v, body);
 
     const nonce = readCookie(req, CSRF_COOKIE);
     if (!verifyCsrf(nonce, body.csrf_token, body)) {
@@ -463,7 +474,7 @@ export default async function handler(req, res) {
     }
 
     if (body.action === "deny") {
-      return redirectError(res, body.redirect_uri, "access_denied", "user denied consent", body.state);
+      return redirectError(res, req, body.redirect_uri, "access_denied", "user denied consent", body.state);
     }
 
     // Production without LOGMEM_OAUTH_KEK: refuse before touching user creds.
@@ -572,7 +583,8 @@ export default async function handler(req, res) {
         redirect_uri: body.redirect_uri,
         code_challenge: body.code_challenge,
         code_challenge_method: body.code_challenge_method,
-        scope: body.scope || "mcp",
+        scope: v.scope,
+        resource: v.resource,
         upstash_url,
         upstash_token,
         backend,
@@ -586,12 +598,7 @@ export default async function handler(req, res) {
       throw e;
     }
 
-    const u = new URL(body.redirect_uri);
-    u.searchParams.set("code", code);
-    if (body.state) u.searchParams.set("state", body.state);
-    res.statusCode = 302;
-    res.setHeader("Location", u.toString());
-    res.end();
+    redirectTo(res, req, body.redirect_uri, { code }, body.state);
   } catch (e) {
     console.error(`[oauth/authorize] ${e?.name || "Error"}`);
     if (!res.headersSent) sendErrorPage(res, e && e.status === 503 ? 503 : 500, "Something went wrong", "Please try connecting again.");

@@ -10,8 +10,12 @@
       "destination": "/api/well-known/oauth-protected-resource"
     },
     {
+      "source": "/.well-known/oauth-protected-resource/:path*",
+      "destination": "/api/well-known/oauth-protected-resource?path=:path*"
+    },
+    {
       "source": "/mcp",
-      "destination": "/api/mcp"
+      "destination": "/api/mcp?_lm_path=mcp"
     },
     {
       "source": "/api/pulse",

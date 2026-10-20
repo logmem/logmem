@@ -501,7 +501,7 @@ const isFid = (f) => typeof f === "string" && /^[0-9a-f]{32}$/.test(f);
  * Mint an access + refresh pair. `fid` is the grant's family id: omit it for
  * a new grant (auth-code exchange), pass the refresh record's fid on rotation.
  */
-export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space, fid }) {
+export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space, fid, resource }) {
   const r = deployRedis();
   const family = isFid(fid) ? fid : randomToken(16);
   const access = randomToken(32);
@@ -514,9 +514,12 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   // sealRecord throws KekMissingError before anything is written.
   const hAt = sha256hex(access);
   const hRt = sha256hex(refresh);
-  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access, fid: family }, "access", hAt);
+  // `resource` is the token's audience (RFC 8707): the MCP route refuses a
+  // token whose resource is not its own. Records from before it carry none.
+  const aud = resource ? { resource } : {};
+  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access, fid: family, ...aud }, "access", hAt);
   // sibling_at lets reuse detection revoke the access token minted alongside.
-  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt, fid: family }, "refresh", hRt);
+  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt, fid: family, ...aud }, "refresh", hRt);
 
   await r("SET", KEY.access(hAt), JSON.stringify(accessRecord), "EX", String(TTL.access));
   await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
@@ -742,4 +745,36 @@ export async function revokeAccessToken(access_token) {
     const lk = KEY.legacyAccess(access_token);
     if (openLegacy(parse(await r("GET", lk)))) await r("DEL", lk);
   }
+}
+
+/**
+ * RFC 7009 revocation for `client_id`. An access token revokes itself. A
+ * refresh token revokes its whole grant: every access and refresh token of
+ * the family, and a managed account's connected-app record. A token that is
+ * unknown, already gone, or another client's changes nothing. The caller
+ * answers 200 either way (RFC 7009 2.2). Returns what was revoked, for logs.
+ */
+export async function revokeToken(token, client_id) {
+  if (!token || typeof token !== "string" || !client_id) return null;
+  const r = deployRedis();
+  const h = sha256hex(token);
+  const at = parse(await r("GET", KEY.access(h)));
+  if (at) {
+    if (at.client_id !== client_id) return null;
+    await r("DEL", KEY.access(h));
+    return "access";
+  }
+  const rt = parse(await r("GET", KEY.refresh(h)));
+  if (!rt || rt.client_id !== client_id) return null;
+  const rec = openSealed(rt, "refresh", h);
+  const fid = rec?.fid ?? rt.fid;
+  if (isFid(fid)) {
+    if (rec?.backend?.kind === "managed" && rec.backend.tenant && (await revokeManagedApp(rec.backend.tenant, fid))) return "grant";
+    await r("SET", KEY.familyRevoked(fid), "1", "EX", String(TTL.refreshGrace));
+    await revokeFamilySet(r, fid);
+    return "grant";
+  }
+  await r("DEL", KEY.refresh(h));
+  if (/^[0-9a-f]{64}$/.test(String(rt.sibling_at))) await r("DEL", KEY.access(rt.sibling_at));
+  return "refresh";
 }

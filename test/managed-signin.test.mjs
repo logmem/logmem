@@ -148,7 +148,7 @@ test("managed: the token resolves to the jailed customer Redis, locked to its ag
       const r = await approve(query);
       const rec = await consumeAuthCode(new URL(String(r.getHeader("location"))).searchParams.get("code"));
       const tok = await mintTokens(rec);
-      const auth = await resolveAuth({ headers: { authorization: `Bearer ${tok.access_token}`, "x-logmem-space": "madez" } }, {}, process.env);
+      const auth = await resolveAuth({ headers: { host: "logmem.test", authorization: `Bearer ${tok.access_token}`, "x-logmem-space": "madez" } }, {}, process.env);
       assert.equal(auth.source, "managed");
       assert.equal(auth.space, rec.space, "the token's space wins over the header");
       assert.equal(auth.pinned, true);
