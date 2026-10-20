@@ -25,6 +25,9 @@ const markUnexpected = (e) => {
 import { fromDescriptor } from "../src/lib/backend.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate, bearerOf } from "../src/http/auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
+import { createJail } from "../src/http/jail.mjs";
+import { createLimits } from "../src/http/limits.mjs";
+import { getTenant } from "../cloud/tenants/index.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
@@ -59,6 +62,34 @@ function send(res, wantsSSE, reply, headers = {}) {
   }
 }
 
+/** Bind session state to the credential: an agent key's sessions never share a record with any other caller. */
+export function scopedSessionId(sessionId, auth) {
+  return (auth?.source === "agent-key" || auth?.source === "managed") && auth.keyId ? `${sessionId}~${auth.keyId}` : sessionId;
+}
+
+const tenantCache = new Map(); // tenant id -> { at, tenant }
+const TENANT_TTL_MS = 60_000;
+
+/** A managed account's LogMem: jailed to its space, locked to its agent, with its plan's limits. */
+export async function buildManaged({ redis, auth, sessionId, now = Date.now }) {
+  const t = await getTenant(redis, auth.tenant);
+  if (!t || t.status !== "active") throw new Error("This LogMem account is paused.");
+  return createLogmem({
+    redis: createJail(redis, auth.tenant),
+    backend: "native",
+    space: auth.space,
+    spaces: [auth.space],
+    compat: false,
+    surface: surfaceFromSession(sessionId) || "http",
+    sessionId,
+    defaultAgent: auth.agent,
+    lockedAgent: auth.agent,
+    mirror: { enabled: false, spaces: [] },
+    limits: createLimits({ redis, tenant: auth.tenant, plan: t.plan, now }),
+  });
+}
+export const __clearTenantCacheForTests = () => tenantCache.clear();
+
 export function buildInstance({ redis, kind, auth, sessionId, env = process.env }) {
   // Token-bound: exactly one space. Server's own Redis (break-glass): only the
   // spaces the deploy allows. Caller-supplied Redis: the caller owns it, so
@@ -75,7 +106,8 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     compat: compatFromEnv(env),
     surface: surfaceFromSession(sessionId) || "http",
     sessionId,
-    defaultAgent: env.LOGMEM_AGENT,
+    defaultAgent: auth.agent || env.LOGMEM_AGENT,
+    lockedAgent: auth.agent || null,
     mirror: mirrorConfigFromEnv(env),
   });
 }
@@ -155,10 +187,11 @@ export default async function handler(req, res) {
       headers["Mcp-Session-Id"] = sessionId;
     }
     if (!sessionId) sessionId = fallbackSession(req, auth);
+    sessionId = scopedSessionId(sessionId, auth);
 
     const reply = await dispatch(msg, {
       toolDefs,
-      lmFactory: async () => buildInstance({ redis: b.redis, kind: b.kind, auth, sessionId }),
+      lmFactory: async () => (auth.source === "managed" ? buildManaged({ redis: b.redis, auth, sessionId }) : buildInstance({ redis: b.redis, kind: b.kind, auth, sessionId })),
     });
     return send(res, wantsSSE, reply, headers);
   } catch (e) {

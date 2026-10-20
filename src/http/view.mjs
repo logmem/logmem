@@ -6,7 +6,10 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk } from "../core/tools.mjs";
+import { listBlockers } from "../core/blockers.mjs";
+import { listPlans, getPlan } from "../core/plans.mjs";
+import { lmDecisionKey } from "../core/keys.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
@@ -69,6 +72,126 @@ export async function allEntries(store, r, space, { limit = 200 } = {}) {
   return merged.slice(0, limit);
 }
 
+/** Run fn over items, n at a time: parallel enough to be fast over a REST bridge, bounded so it never floods it. */
+async function inBatches(items, n, fn) {
+  const out = [];
+  for (let i = 0; i < items.length; i += n) out.push(...(await Promise.all(items.slice(i, i + n).map(fn))));
+  return out;
+}
+
+const jobOf = (where) => {
+  const m = /^job:(.+)$/.exec(String(where || ""));
+  return m ? m[1] : null;
+};
+
+/**
+ * Open decisions from the ask registry (live app spec): every registered ask
+ * with no settling claim, read back through findAsk so only the canonical
+ * ask counts. Deferrals come from the asker's log after the ask.
+ */
+export async function pendingDecisions(store, r, space, { secret } = {}) {
+  const prefix = `lm:${space}:ask:`;
+  const trails = (await scanKeys(r, `${prefix}*`)).map((k) => k.slice(prefix.length));
+  const open = (await inBatches(trails, 25, async (t) => {
+    try {
+      return (await r("GET", lmDecisionKey(space, t))) == null ? t : null;
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
+  const rows = (await inBatches(open, 10, async (t) => {
+    try {
+      const f = await findAsk(store, t, { secret });
+      if (!f) return [];
+      const where = f.ask.where || `agent:${f.asker}`;
+      const later = (await store.readLog("agent", f.asker, { sinceMs: f.ask.ts, limit: 200 })).filter((e) => e.origin === t);
+      return [slim(f.ask, where), ...later.map((e) => slim(e, `agent:${f.asker}`))];
+    } catch {
+      return [];
+    }
+  })).flat();
+  return decisionsFrom(rows, { secret, space, ...(await askState(store, rows)) }).waiting;
+}
+
+/** What one person needs to do: open tasks for them and open decisions, each with its job and plan. */
+export async function needsView(store, r, space, { secret, person = "human:admin" } = {}) {
+  const tasks = (await listBlockers(store)).filter((b) => b.to === person || person === "human:admin");
+  const decisions = await pendingDecisions(store, r, space, { secret });
+  const jobs = new Map();
+  const planOf = async (job) => {
+    if (!job) return null;
+    if (!jobs.has(job)) jobs.set(job, (await store.getWho("job", job))?.plan ?? null);
+    return jobs.get(job);
+  };
+  const items = [];
+  for (const b of tasks) {
+    const job = jobOf(b.where);
+    items.push({ type: "task", trail: b.trail, job, plan: await planOf(job), summary: b.summary, by: b.by, to: b.to, due: b.walkthrough?.due ?? null, created_at: b.created_at ?? null, steps: (b.walkthrough?.steps || []).length, steps_done: (b.steps_done || []).length, task: b });
+  }
+  for (const a of decisions) {
+    const job = jobOf(a.where);
+    items.push({ type: "decision", trail: a.trail, job, plan: await planOf(job), summary: a.summary, by: a.by, due: null, created_at: a.ts, ask: a });
+  }
+  // Soonest due first; no due date sorts after, oldest first.
+  items.sort((x, y) => (x.due && y.due ? String(x.due).localeCompare(String(y.due)) : x.due ? -1 : y.due ? 1 : (x.created_at || 0) - (y.created_at || 0)));
+  return { person, count: items.length, items };
+}
+
+/** Mission control (live app spec, Home): plans, blocked jobs with their reasons, agents' Now. */
+export async function homeView(store, r, space, { secret, person, now = Date.now() } = {}) {
+  const ids = await store.list("job");
+  const jobs = (await inBatches(ids, 25, async (id) => {
+    try {
+      const [who, n] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
+      return who ? { id, who, now: n || {} } : null;
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
+  const registered = await listPlans(store);
+  const names = [...new Set([...registered, ...jobs.map((j) => j.who.plan).filter(Boolean)])];
+  const plans = [];
+  for (const name of names) {
+    const mine = jobs.filter((j) => j.who.plan === name);
+    const work = mine.filter((j) => j.who.milestone !== true);
+    const done = work.filter((j) => j.now.stage === "done").length;
+    const next = mine
+      .filter((j) => j.who.milestone === true && j.now.stage !== "done")
+      .sort((a, b) => String(a.who.date || "").localeCompare(String(b.who.date || "")))[0];
+    const rec = registered.includes(name) ? await getPlan(store, name) : null;
+    plans.push({
+      id: name, title: rec?.title || name, jobs: work.length, done,
+      percent: work.length ? Math.round((done / work.length) * 100) : 0,
+      blocked: work.filter((j) => j.now.stage === "blocked").length,
+      next_milestone: next ? { id: next.id, title: next.who.title || next.id, date: next.who.date || null } : null,
+    });
+  }
+  // "general" goes last: it is the pile to file, not a plan of record.
+  plans.sort((a, b) => (a.id === "general") - (b.id === "general") || b.jobs - a.jobs);
+  const blocked = jobs
+    .filter((j) => j.now.stage === "blocked")
+    .map((j) => ({
+      id: j.id, title: j.who.title || j.id, plan: j.who.plan || null, track: j.who.track || null,
+      owner: j.now.owner || j.who.owner || null, blocked_on: j.now.blocked_on || null, since: j.now.stage_at || null,
+      waits: Array.isArray(j.now.waits) ? j.now.waits : [],
+    }))
+    // No reason first (it needs a person to ask), then the longest blocked.
+    .sort((a, b) => (!!a.blocked_on - !!b.blocked_on) || (a.since || 0) - (b.since || 0));
+  const agentIds = await store.list("agent");
+  const agents = (await inBatches(agentIds, 25, async (id) => {
+    try {
+      const [n, last] = await Promise.all([store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 })]);
+      return { id, doing: n?.doing ?? null, job: n?.job ?? null, blocked: n?.blocked ?? null, next: n?.next ?? null, seen: seen(last[0]?.ts, now) };
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
+  const order = { active: 0, idle: 1, offline: 2, unknown: 3 };
+  agents.sort((a, b) => (order[a.seen.state] ?? 9) - (order[b.seen.state] ?? 9) || a.id.localeCompare(b.id));
+  const needs = await needsView(store, r, space, { secret, person });
+  return { plans, blocked, agents, needs_count: needs.count };
+}
+
 export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   const r = readOnly(redis);
   const verify = { secret, space };
@@ -82,6 +205,9 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   // Decided rows that don't answer their canonical ask are shown marked unverified.
   const annotate = async (rows, asks = rows) => annotateDecisions(rows, { ...verify, canon: (await stateOf(asks)).canon });
 
+  if (what === "home") return homeView(store, r, space, { secret, person: params.person, now });
+  if (what === "needs") return needsView(store, r, space, { secret, person: params.person });
+
   if (what === "log") {
     const entries = await allEntries(store, r, space, { limit: 200 });
     const picked = params.where ? entries.filter((e) => e.where === params.where) : entries;
@@ -92,10 +218,14 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const ids = await store.list("agent");
     const agents = [];
     for (const id of ids) {
-      const [who, nowSlot, last, recap, shifts] = await Promise.all([
-        store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 }), store.getRecap(id), store.recentShifts(id, 1),
-      ]);
-      agents.push({ id, who, now: nowSlot, last: last[0] ? slim(last[0], `agent:${id}`) : null, seen: seen(last[0]?.ts, now), recap: recap ? { summary: recap.summary, mode: recap.mode, reason: recap.reason, ended_at: recap.ended_at } : null, shift: shifts[0] || null });
+      try {
+        const [who, nowSlot, last, recap, shifts] = await Promise.all([
+          store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 }), store.getRecap(id), store.recentShifts(id, 1),
+        ]);
+        agents.push({ id, who, now: nowSlot, last: last[0] ? slim(last[0], `agent:${id}`) : null, seen: seen(last[0]?.ts, now), recap: recap ? { summary: recap.summary, mode: recap.mode, reason: recap.reason, ended_at: recap.ended_at } : null, shift: shifts[0] || null });
+      } catch {
+        continue;
+      }
     }
     agents.sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
     if (what === "agents") return { agents };
@@ -125,6 +255,8 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
 
   if (what === "jobs") return { jobs: await jobsView(store) };
 
+  if (what === "plan") return planView(store, String(params.id || ""));
+
   if (what === "job") {
     const id = String(params.id || "");
     const [who, nowSlot, log, sessions] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 100 }), store.jobSessions(id)]);
@@ -138,8 +270,12 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const ids = await store.list("channel");
     const channels = [];
     for (const id of ids) {
-      const last = await store.readLog("channel", id, { reverse: true, limit: 1 });
-      channels.push({ id, last: last[0] ? slim(last[0], `channel:${id}`) : null });
+      try {
+        const last = await store.readLog("channel", id, { reverse: true, limit: 1 });
+        channels.push({ id, last: last[0] ? slim(last[0], `channel:${id}`) : null });
+      } catch {
+        continue;
+      }
     }
     const pick = params.id || channels[0]?.id;
     const log = pick ? (await store.readLog("channel", pick, { reverse: true, limit: 100 })).map((e) => slim(e, `channel:${pick}`)) : [];
@@ -165,13 +301,64 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   throw new Error(`unknown view: ${what}`);
 }
 
+/**
+ * A plan: jobs whose Who has plan=<name>, grouped by track, with milestones.
+ * Job Who fields (set with logmem_assign details): plan, track, gate, due,
+ * desc, and for a milestone job: milestone=true, date, criteria. Stage comes
+ * from Now. Percent is done over total. Spec: 2026-10-19 blockers and plans.
+ */
+export async function planView(store, name) {
+  const ids = await store.list("job");
+  const names = new Set();
+  const rows = (await inBatches(ids, 25, async (id) => {
+    try {
+      const [who, nowSlot] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
+      if (!who?.plan) return null;
+      return { id, who, stage: nowSlot.stage || "open", owner: nowSlot.owner || who.owner || null, blocked_on: nowSlot.blocked_on || null };
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
+  for (const r of rows) names.add(String(r.who.plan));
+  const plans = [...names].sort();
+  // Open on the named plan, else the first real plan; "general" only when it is all there is.
+  const plan = name && names.has(name) ? name : plans.find((p) => p !== "general") || plans[0] || null;
+  const mine = rows.filter((r) => String(r.who.plan) === plan);
+  const milestones = mine
+    .filter((r) => r.who.milestone === true)
+    .map((r) => ({ id: r.id, title: r.who.title || r.id, date: r.who.date || null, criteria: r.who.criteria || "", stage: r.stage }))
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const tracks = new Map();
+  for (const r of mine.filter((x) => x.who.milestone !== true)) {
+    const t = String(r.who.track || "Other");
+    if (!tracks.has(t)) tracks.set(t, []);
+    // "milestone" (the milestone it counts toward) replaced "gate"; old jobs keep gate.
+    const milestone = typeof r.who.milestone === "string" ? r.who.milestone : r.who.gate || null;
+    tracks.get(t).push({ id: r.id, title: r.who.title || r.id, desc: r.who.desc || "", milestone, gate: milestone, due: r.who.due || null, owner: r.owner, stage: r.stage, blocked_on: r.blocked_on, evidence: r.who.evidence || "" });
+  }
+  const pct = (items) => (items.length ? Math.round((items.filter((i) => i.stage === "done").length / items.length) * 100) : 0);
+  const trackList = [...tracks.entries()].map(([title, items]) => ({ title, percent: pct(items), items }));
+  const all = trackList.flatMap((t) => t.items);
+  const rec = plan ? await getPlan(store, plan) : null;
+  return { plans, plan, title: rec?.title || plan, desc: rec?.desc || null, percent: pct(all), milestones, tracks: trackList };
+}
+
 async function jobsView(store) {
   const ids = await store.list("job");
-  const jobs = [];
-  for (const id of ids) {
-    const [who, nowSlot, last] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 1 })]);
-    jobs.push({ id, title: who?.title || id, owner: nowSlot.owner || who?.owner || null, stage: nowSlot.stage || "open", due: who?.due || null, last: last[0] ? slim(last[0], `job:${id}`) : null });
-  }
+  // Batched, not one at a time: a REST bridge answers ~25 reads at once far faster than in series.
+  const jobs = (await inBatches(ids, 25, async (id) => {
+    try {
+      const [who, nowSlot, last] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 1 })]);
+      return {
+        id, title: who?.title || id, owner: nowSlot.owner || who?.owner || null, stage: nowSlot.stage || "open", due: who?.due || null,
+        plan: who?.plan || null, track: who?.track || null, milestone: who?.milestone === true ? true : typeof who?.milestone === "string" ? who.milestone : who?.gate || null,
+        blocked_on: nowSlot.blocked_on || null, stage_at: nowSlot.stage_at || null,
+        last: last[0] ? slim(last[0], `job:${id}`) : null,
+      };
+    } catch {
+      return null;
+    }
+  })).filter(Boolean);
   jobs.sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
   return jobs;
 }

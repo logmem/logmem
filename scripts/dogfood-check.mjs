@@ -161,7 +161,8 @@ export async function runCheck(redis, {
     for (const e of recent) {
       if (e.origin && handoffSettlement(e.kind, e.payload)) accepts.add(e.origin); // accepted, or declined: both answer it
       if (e.kind === "stuck" && e.payload?.unanswered_handoff) stuckAlready.add(e.payload.unanswered_handoff);
-      if (e.kind === "handoff" && e.trail) {
+      // Handoffs to a person (human:<id>) are blockers: a slow person must not fail the agents' health.
+      if (e.kind === "handoff" && e.trail && !String(e.to || "").startsWith("human:")) {
         const h = handoffs.get(e.trail);
         if (!h) handoffs.set(e.trail, { ts: e.ts, to: e.to, where: e.job, logs: [{ ns, id }] });
         else if (!h.logs.some((l) => l.ns === ns && l.id === id)) h.logs.push({ ns, id });

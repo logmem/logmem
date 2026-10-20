@@ -8,6 +8,7 @@
 // The stdio entry (src/stdio/index.mjs) and the HTTP route (api/mcp.mjs)
 // are thin shells around this.
 
+import { applyLimits } from "./http/limits.mjs";
 import { createStore } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
@@ -44,6 +45,17 @@ export const SERVER_INFO = { name: "logmem", version: versionString() };
 export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
+
+/** A managed account's recall counts against its plan (Free: 1,000 a month). Off when there are no limits. */
+function limitedRecall(run, limits) {
+  if (!limits || typeof limits.beforeRecall !== "function") return run;
+  return async (q, n) => {
+    const commit = await limits.beforeRecall();
+    const out = await run(q, n);
+    await commit();
+    return out;
+  };
+}
 export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());
 
 export function toResult(data, tool) {
@@ -103,12 +115,19 @@ export function createLogmem({
   surface = "unknown",
   sessionId,
   defaultAgent,
+  // An agent key binds the connection to one agent: other agent ids are refused.
+  lockedAgent = null,
+  // A managed account's plan limits (src/http/limits.mjs createLimits). Off for the fleet and self-hosted.
+  limits = null,
   recall,
   idleMs,
   now,
   mirror: mirrorCfg = { enabled: false, spaces: [] },
   // Key that verifies human decisions in the Brief. Default: LOGMEM_DECIDE_SECRET, read at call time.
   decideSecret,
+  // Work rules (taxonomy spec): "strict" refuses tasks and decisions off a job and
+  // blocked with no reason; "warn" allows them with a warning. Default: LOGMEM_WORK_RULES, else strict.
+  workRules = process.env.LOGMEM_WORK_RULES === "warn" ? "warn" : "strict",
 } = {}) {
   if (!redis && !live) throw new Error("createLogmem: redis runner required");
   const scope = live ? new AsyncLocalStorage() : null;
@@ -132,8 +151,8 @@ export function createLogmem({
 
   const mirrorOn = !!mirrorCfg.enabled && (mirrorCfg.spaces || []).includes(space);
   const mirror = mirrorOn ? createMirror(redis, space, { now }) : null;
-  const store = createStore(redis, { space, compat, mirror });
-  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, idleMs, now });
+  const store = applyLimits(createStore(redis, { space, compat, mirror }), limits);
+  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, lockedAgent, idleMs, now });
   const ctx = {
     store,
     shifts,
@@ -142,7 +161,8 @@ export function createLogmem({
     spaces: allowed,
     shift: null,
     now: now || Date.now,
-    recall: recall || ((q, n) => keywordRecall(store, q, n)),
+    recall: limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits),
+    workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];

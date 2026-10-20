@@ -11,15 +11,15 @@
 <meta property="og:url" content="https://logmem.si/">
 <meta property="og:title" content="LogMem: one shared memory for your AI tools">
 <meta property="og:description" content="Each agent picks up where the last one stopped, and asks you before anything it can’t undo. Join the waitlist.">
-<meta property="og:image" content="https://logmem.si/og/logmem-og.png">
+<meta property="og:image" content="https://logmem.si/og/logmem-launch-og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="LogMem: a shared log where Claude, Cursor and Claude Code hand work to each other, and an agent waits for a person before a merge.">
+<meta property="og:image:alt" content="LogMem: Your AI tools don’t talk to each other. LogMem gives them one shared memory. A shared log shows Claude, Cursor and Claude Code handing work on, and an agent waiting for a person before a merge.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="LogMem: one shared memory for your AI tools">
 <meta name="twitter:description" content="Each agent picks up where the last one stopped, and asks you before anything it can’t undo. Join the waitlist.">
-<meta name="twitter:image" content="https://logmem.si/og/logmem-og.png">
-<meta name="twitter:image:alt" content="LogMem: a shared log where Claude, Cursor and Claude Code hand work to each other, and an agent waits for a person before a merge.">
+<meta name="twitter:image" content="https://logmem.si/og/logmem-launch-og.png">
+<meta name="twitter:image:alt" content="LogMem: Your AI tools don’t talk to each other. LogMem gives them one shared memory. A shared log shows Claude, Cursor and Claude Code handing work on, and an agent waiting for a person before a merge.">
 <script defer src="/_vercel/insights/script.js"></script>
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/home.css">
 <script src="/attrib.js" defer></script>
+<script src="/gtm.js" defer></script>
 <script src="/home.js" defer></script>
 <script type="application/ld+json">
 {
@@ -61,6 +62,7 @@
 </script>
 </head>
 <body class="lm home">
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KW8M5T7H" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip" href="#top">Skip to content</a>
 
 <header class="h-header">
@@ -306,7 +308,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="lock" aria-hidden="true"></i>
       <h3 class="lm-title-2">Your Redis</h3>
-      <p>Point LogMem at Upstash or any Redis you run. Entries are stored there, under keys you can inspect yourself. Hosted spaces are planned, not live.</p>
+      <p>Point LogMem at any Redis you run: the official Redis server, self-hosted or on Redis Cloud. Entries are stored there, under keys you can inspect yourself. Hosted spaces are planned, not live.</p>
     </div>
     <div class="h-trust-item">
       <i class="lm-i lg h-brand" data-i="agents" aria-hidden="true"></i>
@@ -327,7 +329,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
   </div>
   <dl class="lm-kv h-specs">
     <dt>Connects over</dt><dd>MCP: stdio for local agents, Streamable HTTP with OAuth for hosted ones</dd>
-    <dt>Storage</dt><dd>Your Redis: Upstash REST, or redis:// over TCP</dd>
+    <dt>Storage</dt><dd>Your Redis: rediss:// over TCP, or an HTTP REST bridge</dd>
     <dt>Isolation</dt><dd>One space per connection; no cross-space reads</dd>
     <dt>Timestamps</dt><dd>Milliseconds everywhere, in order</dd>
     <dt>Status</dt><dd><span class="lm-badge lm-badge--warning">In design</span> v0 running on our own fleet</dd>

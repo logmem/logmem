@@ -1,4 +1,6 @@
 // review-pr10.test.mjs — decision-integrity follow-up (cid logmemPr10Review-20261012d).
+// These suites test decision integrity, not where work lives: they run with
+// workRules "warn" so asks may sit on an agent log (see test/work-model.test.mjs).
 // The signature binds the ask, shadows and conflicting copies are refused,
 // another agent's slots and handoff settlements cannot be forged, the job
 // page uses the server's settled-ask rule, and a failed append or a key
@@ -42,7 +44,7 @@ function clock(start = 1791712800000) {
 
 async function team({ compat = false, now } = {}) {
   const redis = createMemoryRedis();
-  const mk = (sid) => createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: sid, compat, ...(now ? { now } : {}) });
+  const mk = (sid) => createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: sid, compat, ...(now ? { now } : {}) });
   const a = mk("atlas-s");
   const q = mk("quill-s");
   await sc(a, "logmem_start", { agent: "atlas" });

@@ -50,6 +50,7 @@
     "ci": "npm test && npm run spec:check && npm run conformance"
   },
   "dependencies": {
+    "@clerk/backend": "^3.25.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "redis": "^4.7.1",
     "zod": "^3.24.0"
