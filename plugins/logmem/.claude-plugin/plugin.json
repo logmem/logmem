@@ -1,0 +1,25 @@
+{
+  "name": "logmem",
+  "displayName": "LogMem",
+  "version": "0.1.0",
+  "description": "Shared memory for your agents. Read the Brief, log your work, hand off, and ask a person before anything irreversible.",
+  "author": {
+    "name": "Madez Media",
+    "url": "https://logmem.si"
+  },
+  "homepage": "https://logmem.si",
+  "repository": "https://github.com/madezmedia/logmem",
+  "license": "UNLICENSED",
+  "keywords": [
+    "memory",
+    "agents",
+    "handoff",
+    "mcp",
+    "logmem"
+  ],
+  "icon": "./assets/logo.svg",
+  "documentationUrl": "https://logmem.si",
+  "supportUrl": "https://github.com/madezmedia/logmem/issues",
+  "privacyPolicyUrl": "https://logmem.si/privacy",
+  "termsOfServiceUrl": "https://logmem.si/terms"
+}

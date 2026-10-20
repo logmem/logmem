@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 export const RAW_REDIS_ALLOWED = new Set(["logmem-self-host", "logmem-read-path-recovery", "logmem-track-outage"]);
 const RAW_REDIS_RE = /\b(redis-cli|ZADD|HSET|ZRANGEBYSCORE|SCAN 0|UPSTASH_[A-Z_]+)\b|\/bridge\/exec/;
 const ACMI_CALL_RE = /\bacmi_[a-z_]+\b/;
-const SECRET_RES = [
+export const SECRET_RES = [
   [/\blmk_[A-Za-z0-9_-]{20,}/, "LogMem agent key"],
   [/\bsk_(live|test)_[A-Za-z0-9]{10,}/, "Stripe or Clerk secret key"],
   [/\bghp_[A-Za-z0-9]{20,}/, "GitHub token"],
