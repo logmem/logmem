@@ -78,3 +78,42 @@ test("log: a huddle opens its round table", async ({ page }) => {
   await expect(page.locator(".lmx-seat")).toHaveCount(2);
   await expect(page.locator(".lmx-seat").first()).toContainText("No reply yet");
 });
+
+test("walkthrough player: one step at a time, what you should see, no admin rail", async ({ page }) => {
+  await signIn(page, "#/job/i15-subject");
+  await page.locator(".lmx-drawer").getByRole("link", { name: "Open the player" }).click();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 1 of 3");
+  await expect(page.locator(".lmw-card h1")).toHaveText("Open the newsletter tool");
+  await expect(page.locator(".lmw-see")).toContainText("The Issue 15 draft in your list");
+  await expect(page.locator(".lmw-card a[target=_blank]")).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(page.locator(".lmx-rail")).toHaveCount(0);
+  await expect(page.locator(".lmx-tabs")).toHaveCount(0);
+});
+
+test("walkthrough: write one on a job page, preview it, play it, send the reply", async ({ page }, testInfo) => {
+  test.skip(!laptop(testInfo), "writes the shared seed once");
+  await signIn(page, "#/write/i15-lead");
+  await page.getByLabel("Title *").fill("Check the photo credits");
+  await page.getByLabel("What to do *").fill("Open the lead story draft");
+  await page.getByLabel("What you should see").fill("Three photos under the headline");
+  await page.getByRole("button", { name: /Add a step/ }).click();
+  await page.getByLabel("What to do *").nth(1).fill("Check each credit line");
+  await expect(page.getByLabel("Title *")).toHaveValue("Check the photo credits");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.locator(".lmw-preview")).toContainText("Nothing is saved");
+  await page.getByRole("link", { name: "Back to the writer" }).click();
+  await page.getByRole("button", { name: "Save walkthrough" }).click();
+  await expect(page.locator(".lmx-toast").last()).toContainText("Saved");
+  const card = page.locator(".lmx-drawer .lmx-card").filter({ hasText: "Check the photo credits" }).filter({ has: page.getByRole("link", { name: "Open the player" }) });
+  await card.getByRole("link", { name: "Open the player" }).click();
+  await page.getByRole("button", { name: "Done, next step" }).click();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 2 of 2");
+  await expect(page.getByRole("button", { name: "Done, last step" })).toBeEnabled(); // lit reuses the button
+  // Progress comes back to the same step after a reload.
+  await page.reload();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 2 of 2");
+  await page.getByRole("button", { name: "Done, last step" }).click();
+  await page.getByLabel("Your reply to the agent").fill("Credits checked.");
+  await page.getByRole("button", { name: "Send reply" }).click();
+  await expect(page.locator(".lmw-card")).toContainText("Your reply: “Credits checked.”");
+});

@@ -427,7 +427,7 @@ export const TOOLS = [
       trail: { type: "string", desc: "Trail id (auto if omitted). Refused when that trail is already used on the receiver", optional: true },
       origin: { type: "string", desc: "Trail id this handoff follows from", optional: true },
       create_agent: { type: "boolean", desc: "Hand off to an agent that is not in the roster yet (default false: refuse unknown agents)", optional: true },
-      walkthrough: { type: "object", desc: "Person handoffs only: { steps: [{ title, detail?, cmd? }], time?, place?, done_when?, reply?, due? }", optional: true },
+      walkthrough: { type: "object", desc: "Person handoffs only: { steps: [{ title (what to do), go? (where to go), detail?, cmd?, see? (what they should see) }], time?, place?, done_when?, reply?, due? }", optional: true },
     }),
     annotations: WRITE,
     async run({ to, summary, where: whereRef, trail, origin, create_agent, walkthrough }, ctx) {

@@ -5,6 +5,9 @@
 //   POST { space, trail, action: "step", step, checked } -> { ok, blocker }
 //   POST { space, trail, action: "done", note? }          -> { ok, blocker }
 //   POST { space, trail, action: "cant_do", reason }      -> { ok, blocker }
+//   GET  ?space=madez&trail=…                      -> { space, person, blocker }  one task, open or closed (the player)
+//   POST { space, action: "write", job, to?, summary, walkthrough, trail? } -> { ok, blocker }
+//        A person writes a walkthrough on a job page (max 7 steps); with trail, edits it before the first tick.
 //
 // Gates: a signed-in admin (the person is human:<LOGMEM_ADMIN_ID>), the space
 // must be one the web app shows, and writes need "X-LogMem-Intent: blockers"
@@ -13,7 +16,8 @@
 
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { webStore } from "../src/http/web-store.mjs";
-import { listBlockers, setStep, markDone, cantDo, BlockerError } from "../src/core/blockers.mjs";
+import { randomBytes } from "node:crypto";
+import { listBlockers, getBlocker, setStep, markDone, cantDo, writeWalkthrough, BlockerError } from "../src/core/blockers.mjs";
 import { isAdmin, viewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
@@ -56,6 +60,13 @@ export function createHandler({ env = process.env, redis, now } = {}) {
         const space = String(new URL(req.url || "/", "https://x").searchParams.get("space") || viewSpaces(env)[0] || "");
         if (!viewSpaces(env).includes(space)) return res.status(403).json({ error: `space '${space}' is not shown here` });
         const store = webStore(runner, space, env);
+        const trail = new URL(req.url || "/", "https://x").searchParams.get("trail");
+        if (trail) {
+          const rec = await getBlocker(store, trail);
+          const mine = rec && (rec.to === person || rec.by === person || person === "human:admin");
+          if (!mine) return res.status(404).json({ error: "no such walkthrough here" });
+          return res.status(200).json({ space, spaces: viewSpaces(env), person, blocker: rec });
+        }
         // A blocker for this person, or for any person when the deploy has one admin.
         const blockers = (await listBlockers(store)).filter((b) => b.to === person || person === "human:admin");
         return res.status(200).json({ space, spaces: viewSpaces(env), person, blockers });
@@ -81,7 +92,19 @@ export function createHandler({ env = process.env, redis, now } = {}) {
         const blocker = await cantDo(store, String(b.trail || ""), { ...opts, reason: typeof b.reason === "string" ? b.reason : "" });
         return res.status(200).json({ ok: true, blocker });
       }
-      return res.status(400).json({ error: "action must be step, done or cant_do" });
+      if (b.action === "write") {
+        const blocker = await writeWalkthrough(store, {
+          ...opts,
+          job: String(b.job || ""),
+          to: typeof b.to === "string" && b.to ? b.to : person,
+          summary: b.summary,
+          walkthrough: b.walkthrough,
+          trail: typeof b.trail === "string" && b.trail ? b.trail : undefined,
+          mint: (job, t) => `walkthrough-${job}-${t}-${randomBytes(6).toString("hex")}`,
+        });
+        return res.status(200).json({ ok: true, blocker });
+      }
+      return res.status(400).json({ error: "action must be step, done, cant_do or write" });
     } catch (e) {
       if (e instanceof BlockerError) return res.status(400).json({ error: e.message });
       return sendServerError(res, "blockers", e);

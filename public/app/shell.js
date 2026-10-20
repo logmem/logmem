@@ -51,7 +51,8 @@ export function renderView(route, crumbs, body) {
   setTitle(route);
 }
 /** Re-render the frame only (count, live chip, banner) with the current view body. */
-export function refreshFrame() { if (last.route) render(frame(last.route, last.crumbs, last.body), root()); setTitle(last.route || 'home'); }
+// A bare page (sign-in, the walkthrough player) keeps its own title.
+export function refreshFrame() { if (!last.route) return; render(frame(last.route, last.crumbs, last.body), root()); setTitle(last.route); }
 export function setTitle(route) {
   const label = (NAV.concat(ADMIN).concat([['more', 'More']]).find((n) => n[0] === (ROUTE_NAV[route] || route)) || [0, 'App'])[1];
   document.title = (live.needs ? `(${live.needs}) ` : '') + 'LogMem · ' + label;

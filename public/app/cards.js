@@ -1,7 +1,7 @@
 // cards.js — the shared parts (live app spec, section 3): one job card, one plan card, one agent
 // chip, one task card, one decision card, one lane card. Every view is built from these.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { num, ago, agentName, glow, toast } from './core.js';
+import { num, ago, agentName, glow, toast, state } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
 import { openDrawer } from './drawer.js';
@@ -55,6 +55,7 @@ export function taskCard(i) {
       <input type="checkbox" .checked=${done.indexOf(k) >= 0} @change=${(e) => doStep(e, b.trail, k)} aria-label=${`Step ${k + 1} done`}>
       <div style="min-width:0"><b>${st.title}</b>${st.detail ? html`<div class="lmx-why">${st.detail}</div>` : nothing}
       ${st.cmd ? html`<div class="lmx-acts" style="margin-top:4px"><code>${st.cmd}</code>${btn('Copy', 'ghost', () => copy(st.cmd))}</div>` : nothing}</div></li>`)}</ol>` : nothing}
+    ${steps.length ? html`<div class="lmx-acts"><a class="lm-btn lm-btn--secondary" href=${'#/walk/' + encodeURIComponent(state.space || '') + '/' + encodeURIComponent(b.trail)}>Open the walkthrough</a></div>` : nothing}
     ${w.done_when ? html`<div class="lmx-why"><b>Done when:</b> ${w.done_when}</div>` : nothing}
     ${w.reply ? html`<div class="lmx-acts"><span class="lmx-meta">Message for the agent:</span>${btn('Copy message', 'ghost', () => copy(w.reply))}</div>` : nothing}
     <div class="lmx-acts">${noteBox(`task:${b.trail}`, 'Note, or why you can’t do it')}${btn('Done', 'primary', (e) => doTask(e, 'done', b.trail))}${btn('Can’t do', 'danger', (e) => doTask(e, 'cant_do', b.trail))}</div></article>`;
