@@ -12,6 +12,26 @@
     {
       "source": "/mcp",
       "destination": "/api/mcp"
+    },
+    {
+      "source": "/api/pulse",
+      "destination": "/api/work?op=pulse"
+    },
+    {
+      "source": "/api/needs",
+      "destination": "/api/work?op=needs"
+    },
+    {
+      "source": "/api/nudge",
+      "destination": "/api/work?op=nudge"
+    },
+    {
+      "source": "/api/unblock",
+      "destination": "/api/work?op=unblock"
+    },
+    {
+      "source": "/api/tasks",
+      "destination": "/api/blockers"
     }
   ],
   "cleanUrls": true,
