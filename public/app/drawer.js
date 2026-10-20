@@ -1,6 +1,7 @@
 // drawer.js — the side panel over every view: Needs you (with batch answers), one job, or a
 // huddle's round table. Rendered with lit-html into one overlay node.
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
+import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
 import { api, getJSON, state, live, agentName, ago } from './core.js';
 import { emptyState, panel, entries, stage, btn, kv } from './ui.js';
 import { decideBatch } from './actions.js';
@@ -12,6 +13,9 @@ let syncHook = () => {};
 export function setSyncHook(fn) { syncHook = fn; }
 export const drawerOpen = () => !!drawer;
 export const drawerState = () => drawer;
+
+// Typed notes stay with their own record when the list changes (keyed by space, type and trail).
+const needKey = (i) => `${state.space}:${i.type}:${i.trail}`;
 
 function hostEl() {
   if (!host) { host = document.createElement('div'); host.id = 'lmx-overlay'; document.body.appendChild(host); }
@@ -63,7 +67,7 @@ export async function drawRender(first = false) {
       <label class="lmx-meta"><input type="checkbox" .checked=${sel.length === asks.length} @change=${(e) => { asks.forEach((a) => (e.target.checked ? want.selected.add(a.trail) : want.selected.delete(a.trail))); drawRender(); }}> Select all ${asks.length} decisions</label>
       ${btn(`Approve ${sel.length || ''} selected`, 'primary', () => decideBatch(sel, 'approve'), { disabled: !sel.length })}${btn('Reject selected', 'danger', () => decideBatch(sel, 'reject'), { disabled: !sel.length })}</div>` : nothing;
     shell('Needs you', html`<div class="lmx-tabsbar" role="tablist">${tb('all', 'all', 'All')}${tb('decisions', 'decision', 'Decisions')}${tb('tasks', 'task', 'Tasks')}</div>${batch}
-      ${items.length ? items.map((i) => needItem(i, i.type === 'decision' && asks.length > 1 ? { select: { ...select, checked: want.selected.has(i.trail) } } : {})) : emptyState('Nothing needs you.', 'When an agent asks a decision or hands you a task, it shows here.')}`);
+      ${items.length ? repeat(items, needKey, (i) => needItem(i, i.type === 'decision' && asks.length > 1 ? { select: { ...select, checked: want.selected.has(i.trail) } } : {})) : emptyState('Nothing needs you.', 'When an agent asks a decision or hands you a task, it shows here.')}`);
     focusHead(first);
     return;
   }
@@ -77,7 +81,7 @@ export async function drawRender(first = false) {
   const mine = (n.items || []).filter((i) => i.job === id && i.type === 'task').concat((d.open_asks || []).map((a) => ({ type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a })));
   const card = now.stage === 'blocked' ? jobCard({ id, title: who.title || id, plan: who.plan, track: who.track, owner: now.owner || who.owner, blocked_on: now.blocked_on, since: now.stage_at }, { inPanel: true }) : nothing;
   const about = [['Plan', [who.plan, who.track].filter(Boolean).join(' › ')], ['Owner', agentName(now.owner || who.owner || '')], ['Milestone', typeof who.milestone === 'string' ? who.milestone : who.gate], ['Due', who.due], ['What', who.desc], ['Evidence', who.evidence]].filter((x) => x[1]);
-  shell(who.title || id, html`${card}${mine.map((i) => needItem(i))}
+  shell(who.title || id, html`${card}${repeat(mine, needKey, (i) => needItem(i))}
     ${panel('About', html`<dl class="lm-kv"><dt>Stage</dt><dd>${stage(now.stage)}</dd>${about.map((x) => html`<dt>${x[0]}</dt><dd>${x[1]}</dd>`)}</dl>`)}
     ${panel('Walkthroughs', jobWalkthroughs(id, d.tasks))}
     ${panel('Log', entries((d.log || []).slice(0, 30)))}`);

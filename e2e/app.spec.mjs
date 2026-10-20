@@ -117,3 +117,68 @@ test("walkthrough: write one on a job page, preview it, play it, send the reply"
   await page.getByRole("button", { name: "Send reply" }).click();
   await expect(page.locator(".lmw-card")).toContainText("Your reply: “Credits checked.”");
 });
+
+// Codex review of PR 87: notes and buttons on decisions. /api/decide is intercepted, so the seed is not written.
+async function captureDecides(page) {
+  const sent = [];
+  await page.route("**/api/decide", async (route) => { sent.push(JSON.parse(route.request().postData() || "{}")); await route.fulfill({ json: { ok: true } }); });
+  return sent;
+}
+// A fixed Needs list (two reversible asks), so these tests don't depend on the seed or the order.
+const fakeAsk = (id) => ({ type: "decision", trail: id, job: "i15-photos", summary: id, ask: { trail: id, summary: id, by: "agent:quill", ts: Date.now(), where: "job:i15-photos", payload: { action: "Action " + id, reversible: true } } });
+async function fakeNeeds(page, ids) {
+  const list = { ids };
+  await page.route("**/api/needs*", (route) => route.fulfill({ json: { count: list.ids.length, items: list.ids.map(fakeAsk) } }));
+  return list;
+}
+async function openDecisions(page) {
+  await page.getByRole("button", { name: /Needs you/ }).first().click();
+  await page.getByRole("tab", { name: /Decisions/ }).click();
+  await expect(page.locator(".lmx-drawer .lm-approval").nth(1)).toBeVisible();
+}
+
+test("decisions: a batch answer sends each ask's own typed note", async ({ page }) => {
+  await signIn(page);
+  const sent = await captureDecides(page);
+  await fakeNeeds(page, ["ask-one", "ask-two"]);
+  await openDecisions(page);
+  const cards = page.locator(".lmx-drawer .lm-approval");
+  const trails = await cards.evaluateAll((els) => els.map((e) => e.getAttribute("data-key").replace(/^decision:/, "")));
+  await cards.nth(0).locator("input[data-note-for]").fill("note for the first");
+  await cards.nth(1).locator("input[data-note-for]").fill("note for the second");
+  await cards.nth(0).locator("input[type=checkbox]").check();
+  await cards.nth(1).locator("input[type=checkbox]").check();
+  await page.getByRole("button", { name: "Reject selected" }).click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent.find((b) => b.trail === trails[0]).note).toBe("note for the first");
+  expect(sent.find((b) => b.trail === trails[1]).note).toBe("note for the second");
+});
+
+test("decisions: a typed note stays with its ask when the list changes", async ({ page }) => {
+  await signIn(page);
+  const list = await fakeNeeds(page, ["ask-one", "ask-two"]);
+  await openDecisions(page);
+  const cards = page.locator(".lmx-drawer .lm-approval");
+  const [first, second] = ["ask-one", "ask-two"];
+  await cards.nth(0).locator("input[data-note-for]").fill("only for the first ask");
+  // The first ask goes away (answered elsewhere); the list refreshes in place.
+  list.ids = [second];
+  await page.getByRole("tab", { name: /Decisions/ }).click();
+  await expect(page.locator(`.lmx-drawer [data-key="decision:${first}"]`)).toHaveCount(0);
+  await expect(page.locator(`.lmx-drawer [data-key="decision:${second}"] input[data-note-for]`)).toHaveValue("");
+});
+
+test("decisions: after Defer the answer buttons work again", async ({ page }) => {
+  await signIn(page);
+  const sent = await captureDecides(page);
+  // The same asks stay after a Defer, so lit keeps the same buttons.
+  await fakeNeeds(page, ["ask-one", "ask-two"]);
+  await openDecisions(page);
+  const card = page.locator(".lmx-drawer .lm-approval").first();
+  await card.getByRole("button", { name: "Defer" }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  await expect(card.getByRole("button", { name: "Defer" })).toBeEnabled();
+  await expect(card.getByRole("button", { name: "Reject" })).toBeEnabled();
+  await card.getByRole("button", { name: "Reject" }).click();
+  await expect.poll(() => sent.length).toBe(2);
+});
