@@ -182,7 +182,7 @@
     {
       "name": "logmem_handoff",
       "title": "Handoff",
-      "description": "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): needs where, and takes an optional walkthrough (steps, time, place, done_when, reply, due). The person works through it on the web app's Blockers page; their progress shows in your Brief under person_blockers.",
+      "description": "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): a task. It needs where='job:<id>' (the job it belongs to) and takes an optional walkthrough (steps, time, place, done_when, reply, due). The job is blocked until the person marks it done or says they can't. Their progress shows in your Brief under needs_people.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -304,7 +304,7 @@
           },
           "where": {
             "type": "string",
-            "description": "Job or channel this belongs to (default: your agent log)"
+            "description": "The job this decision belongs to, as 'job:<id>' (default: the job in your Now)"
           },
           "origin": {
             "type": "string",
@@ -600,7 +600,7 @@
     {
       "name": "logmem_assign",
       "title": "Assign",
-      "description": "Open a new job: a piece of work with a title, an owner, a stage and its own log.",
+      "description": "Open a new job: a piece of work with a title, an owner, a stage and its own log. Every job is in a plan: pass details.plan (see logmem_plan). With no plan, the job is filed in 'general'. Optional details: track (a lane in the plan), milestone (the milestone job it counts toward), due, desc, evidence. A milestone itself is a job with details { milestone: true, date, criteria }.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -619,7 +619,7 @@
           "details": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Anything else: due date, links, acceptance"
+            "description": "plan (required in spirit; default 'general'), track, milestone, due, desc, evidence, and anything else"
           },
           "reopen": {
             "type": "boolean",
@@ -649,6 +649,53 @@
         "openWorldHint": false
       },
       "acmi_equivalent": "acmi_work_create"
+    },
+    {
+      "name": "logmem_plan",
+      "title": "Plan",
+      "description": "List the plans in this space, or create one. A plan is a named body of work, such as 'launch'. Every job belongs to one plan; 'general' holds work not yet filed. Create: action 'create' with plan (a short id) and title.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "create"
+            ],
+            "description": "list (default) or create"
+          },
+          "plan": {
+            "type": "string",
+            "description": "Plan id for create: lowercase letters, digits and '-', e.g. 'launch'"
+          },
+          "title": {
+            "type": "string",
+            "description": "What the plan is, for create"
+          },
+          "desc": {
+            "type": "string",
+            "description": "One or two lines on the plan's goal (optional)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Plan",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "name": "logmem_update",
@@ -705,7 +752,7 @@
     {
       "name": "logmem_stage",
       "title": "Stage",
-      "description": "Move a job to open, active, blocked or done. Blocked writes a Stuck entry; done writes a Done entry.",
+      "description": "Move a job to open, active, blocked or done. Blocked needs blocked_on: what the job waits on, { type: decision | task | agent | external, ref?, note }. A task or decision you create on a job blocks it for you, and answering it unblocks it. Blocked writes a Stuck entry; done writes a Done entry (put the evidence in note).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -725,7 +772,12 @@
           },
           "note": {
             "type": "string",
-            "description": "Why (required in spirit for blocked: what broke, what it blocks)"
+            "description": "Why, or the evidence for done (a PR link, a test count)"
+          },
+          "blocked_on": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed }"
           }
         },
         "additionalProperties": false,
