@@ -198,6 +198,15 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     mirror,
     /** Bump the space's change counter for a write that does not go through Who, Now or Log (plans, task records). */
     bumpRev,
+    /**
+     * The side effects of a Now write made atomically elsewhere (a Lua EVAL): the index, the
+     * change counter and the ACMI mirror. It never writes the hash itself, so it cannot undo
+     * a newer change that landed after the atomic write.
+     */
+    async touchNow(ns, id, fields) {
+      await index(ns, id);
+      await mirrorWrite({ slot: "now", ns, id, fields });
+    },
     /** "ok" | "failed" per mirrored write since the last reset (server resets per tool call). */
     mirrorEvents: [],
 

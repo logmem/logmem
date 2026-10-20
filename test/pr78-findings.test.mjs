@@ -32,42 +32,61 @@ test("finding 1: Unblock refuses a job with an open decision, even when blocked_
   assert.equal(now.waits[0].ref, q.trail);
 });
 
-test("finding 1: a decision that arrives between Unblock's read and write keeps the job blocked", async () => {
+// Codex re-review of PR 85: Unblock is one conditional transition; nothing is ever restored.
+const unblockEntries = async (store, job) => (await store.readLog("job", job)).filter((e) => e.payload?.unblocked === true);
+
+test("re-review (a): an agent blocker that lands during the write is kept, and Unblock refuses", async () => {
   const { lm, store } = setup();
   await sc(lm, "logmem_assign", { job: "a", title: "A" });
   await external(lm, "a");
-  // Simulate the race: the first write of stage active is followed by a decision landing.
-  const realSetNow = store.setNow.bind(store);
-  let raced = false;
-  store.setNow = async (ns, id, fields) => {
-    const out = await realSetNow(ns, id, fields);
-    if (!raced && fields.stage === "active") {
-      raced = true;
-      await realSetNow(ns, id, { waits: [{ type: "decision", ref: "approvalA-1", note: "Go?" }] });
-      return store.getNow(ns, id);
+  const real = store.redis;
+  store.redis = async (...cmd) => {
+    if (cmd[0] === "EVAL") {
+      store.redis = real;
+      await sc(lm, "logmem_stage", { job: "a", stage: "blocked", blocked_on: { type: "agent", ref: "codex", note: "Review" } });
     }
-    return out;
+    return real(...cmd);
   };
-  await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), (e) => e.status === 409 && /arrived while you unblocked/.test(e.message));
+  await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), (e) => e.status === 409 && /changed while you were unblocking|now waits on/.test(e.message));
   const now = await store.getNow("job", "a");
   assert.equal(now.stage, "blocked");
-  assert.equal(now.blocked_on.ref, "approvalA-1");
+  assert.equal(now.blocked_on.type, "agent", "the newer blocker survives");
+  assert.equal((await unblockEntries(store, "a")).length, 0);
 });
 
-test("finding 2: a failed audit entry rolls the unblock back, and a retry after success replays", async () => {
+test("re-review (b): a failure right after the state write is finished by a retry, with one entry", async () => {
+  const { lm, store } = setup();
+  await sc(lm, "logmem_assign", { job: "a", title: "A" });
+  await external(lm, "a");
+  const realTouch = store.touchNow.bind(store);
+  store.touchNow = async () => { store.touchNow = realTouch; throw new Error("index down"); };
+  await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), /index down/);
+  assert.equal((await store.getNow("job", "a")).stage, "active", "the transition itself landed");
+  const again = await unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" });
+  assert.equal(again.ok, true);
+  assert.equal(again.replayed, true);
+  const third = await unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" });
+  assert.equal(third.replayed, true);
+  assert.equal((await unblockEntries(store, "a")).length, 1, "the entry is written once");
+  await assert.rejects(() => unblock(store, { job: "a", note: "another reason", by: "human:mikey" }), (e) => e.status === 409);
+});
+
+test("re-review (c): a job marked done while the entry write fails stays done; nothing is restored", async () => {
   const { lm, store } = setup();
   await sc(lm, "logmem_assign", { job: "a", title: "A" });
   await external(lm, "a");
   const realAppend = store.append.bind(store);
-  store.append = async () => { throw new Error("bridge down"); };
+  store.append = async () => {
+    store.append = realAppend;
+    await store.setNow("job", "a", { stage: "done", stage_at: Date.now() + 1 });
+    throw new Error("bridge down");
+  };
   await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), /bridge down/);
-  assert.equal((await store.getNow("job", "a")).stage, "blocked", "no unblock without its record");
-  store.append = realAppend;
-  const ok = await unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" });
-  assert.equal(ok.now.stage, "active");
-  const again = await unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" });
-  assert.equal(again.replayed, true, "a lost response can be retried");
-  await assert.rejects(() => unblock(store, { job: "a", note: "something else", by: "human:mikey" }), (e) => e.status === 409);
+  assert.equal((await store.getNow("job", "a")).stage, "done", "the newer done stands");
+  const retry = await unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" });
+  assert.equal(retry.replayed, true);
+  assert.equal(retry.now.stage, "done");
+  assert.equal((await unblockEntries(store, "a")).length, 1);
 });
 
 test("finding 3: a junk or old-key decision claim does not hide a pending ask", async () => {
