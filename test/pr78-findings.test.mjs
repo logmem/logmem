@@ -130,3 +130,39 @@ test("finding 5: plan writes and Who, Now and Log deletions bump the pulse revis
   assert.equal(await store.removeEntry("job", "a", entry), 1);
   assert.ok((await rev()) > r, "Log entry removal");
 });
+
+test("re-review 86 (d): a newer external blocker with the same stage_at is not cleared", async () => {
+  const { lm, store, redis } = setup();
+  await sc(lm, "logmem_assign", { job: "a", title: "A" });
+  await external(lm, "a");
+  const real = store.redis;
+  store.redis = async (...cmd) => {
+    if (cmd[0] === "EVAL") {
+      store.redis = real;
+      // Same millisecond, so stage_at is unchanged, but the blocker is a newer one.
+      await redis("HSET", "lm:madez:job:a:now", "blocked_on", JSON.stringify({ type: "external", note: "Second outage" }));
+    }
+    return real(...cmd);
+  };
+  await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), (e) => e.status === 409);
+  const now = await store.getNow("job", "a");
+  assert.equal(now.stage, "blocked");
+  assert.equal(now.blocked_on.note, "Second outage");
+});
+
+test("re-review 86 (e): an incomplete audit survives an hour, a new block and a second Unblock, and is written once", async () => {
+  const { lm, store, redis } = setup();
+  await sc(lm, "logmem_assign", { job: "a", title: "A" });
+  await external(lm, "a");
+  const realAppend = store.append.bind(store);
+  store.append = async () => { store.append = realAppend; throw new Error("bridge down"); };
+  const t0 = Date.now();
+  await assert.rejects(() => unblock(store, { job: "a", note: "first reason", by: "human:mikey", now: () => t0 }), /bridge down/);
+  assert.equal((await redis("SMEMBERS", "lm:madez:job:a:unblock_pending")).length, 1, "the audit waits in its own record");
+  await sc(lm, "logmem_stage", { job: "a", stage: "blocked", blocked_on: { type: "external", note: "New outage" } });
+  const later = await unblock(store, { job: "a", note: "second reason", by: "human:mikey", now: () => t0 + 3600e3 });
+  assert.equal(later.ok, true);
+  const audits = (await store.readLog("job", "a")).filter((e) => e.payload?.unblocked === true).map((e) => e.payload.note).sort();
+  assert.deepEqual(audits, ["first reason", "second reason"], "both unblocks are on the record, once each");
+  assert.equal((await redis("SMEMBERS", "lm:madez:job:a:unblock_pending")).length, 0);
+});
