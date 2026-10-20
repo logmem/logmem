@@ -40,3 +40,11 @@ test("layout: phone tab bar, tablet icon rail and a wide pinned panel", () => {
   assert.match(css, /@media \(min-width:1440px\)\{[^]*lmx-pinned/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
+
+test("views: Plans, Jobs board, Agents and Log replace the old pages; one place per question", () => {
+  const js = read("app.js");
+  for (const v of ["pages.plan =", "pages.jobs =", "pages.agents =", "pages.log =", "pages.recall =", "pages.job ="]) assert.ok(js.includes(v), v);
+  assert.match(js, /var BOARD = \[\['open', 'Open'\], \['active', 'Active'\], \['blocked', 'Blocked'\], \['done', 'Done, last 7 days'\]\]/);
+  assert.equal((js.match(/^    (log|jobs|plan|channels|recall|overview|decisions|blockers): function/gm) || []).length, 0, "old page functions are gone");
+  assert.match(js, /d\.open_asks/, "the job panel shows decisions the server says are open");
+});

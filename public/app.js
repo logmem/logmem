@@ -76,37 +76,6 @@
 
   // ─── pages ────────────────────────────────────────────────────────
   var pages = {
-    overview: function () {
-      return api('overview').then(function (d) {
-        if (!ok(d)) return;
-        var s = d.stats;
-        var stats = [['Active', s.active, 'of ' + s.agents + ' agents'], ['Open jobs', s.open, ''], ['Stuck', s.stuck, ''], ['Waiting on you', s.waiting, '']].map(function (x, i) {
-          return '<div class="lm-stat"><span class="lm-eyebrow">' + x[0] + '</span><span class="big"' + (i === 2 && x[1] ? ' style="color:var(--warning)"' : i === 3 && x[1] ? ' style="color:var(--decision)"' : '') + '>' + x[1] + '</span><span style="font-size:12px" class="subtle">' + esc(x[2]) + '</span></div>';
-        }).join('');
-        var waiting = d.waiting.length ? d.waiting.map(askCard).join('') : emptyState('Nothing waiting on you.', 'When an agent calls logmem_ask, it stops and waits here.');
-        var stuck = d.jobs.filter(function (j) { return j.stage === 'blocked'; });
-        var ag = d.agents.length ? table(['Agent', 'Now', 'Last entry'], d.agents.map(function (a) { return '<tr><td><a href="#/agent/' + encodeURIComponent(a.id) + '" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:4px">' + agent('agent:' + a.id) + seenTag(a.seen) + '</a></td><td style="font-size:13px">' + esc((a.now && (a.now.doing || (a.now.waiting_on && 'Waiting on you'))) || '—') + '</td><td style="font-size:13px" class="muted">' + esc(a.last ? a.last.summary : '—') + '</td></tr>'; })) : emptyState('No agents yet.', 'Connect one from Settings.');
-        render('overview', ['Overview'], head('Overview', 'Live from space ' + esc(state.space) + ' · ' + new Date(d.generated_at).toUTCString().slice(17, 22) + ' UTC') +
-          '<div class="lm-stats">' + stats + '</div>' +
-          '<div class="grid2">' + panel('Waiting on you', waiting, '<a href="#/decisions" style="font-size:13px">All decisions</a>') + panel('Stuck', stuck.length ? stuck.map(function (j) { return '<div class="lm-blocker">' + icon('pause') + '<div><strong>' + esc(j.title) + '</strong> · ' + esc(j.last ? j.last.summary : '') + '</div></div>'; }).join('') : emptyState('Nothing is stuck.', 'Jobs set to blocked show here with what broke.')) + '</div>' +
-          '<div class="grid2">' + panel('Agents', ag, '<a href="#/agents" style="font-size:13px">All agents</a>') + panel('Recent log', entries(d.recent), '<a href="#/log" style="font-size:13px">Open the Log</a>') + '</div>', s.waiting);
-      });
-    },
-    log: function () {
-      return api('log').then(function (d) {
-        if (!ok(d)) return;
-        render('log', ['Log'], head('Log', 'Every entry in ' + esc(state.space) + ', newest first. LogMem never rewrites what an agent wrote.', fresh('fresh', 'loaded ' + ago(d.generated_at))) + '<section class="lm-panel" style="padding:8px 20px 16px">' + entries(d.entries) + '</section>');
-      });
-    },
-    agents: function () {
-      return api('agents').then(function (d) {
-        if (!ok(d)) return;
-        var rows = d.agents.map(function (a) {
-          return '<tr><td><a href="#/agent/' + encodeURIComponent(a.id) + '" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:6px">' + agent('agent:' + a.id) + seenTag(a.seen) + '</a></td><td style="font-size:13px;max-width:280px">' + esc((a.now && a.now.doing) || '—') + '</td><td class="mono" style="font-size:12px">' + esc(a.shift ? a.shift.shift || '' : '—') + '<br><span class="subtle" style="font-size:11px">' + esc(a.shift ? (a.shift.surface || '') : '') + '</span></td><td>' + (a.recap ? fresh('fresh', a.recap.mode + (a.recap.reason ? ', ' + a.recap.reason : '')) : fresh('unavailable', 'no Recap yet')) + '</td></tr>';
-        });
-        render('agents', ['Agents'], head('Agents', d.agents.length + ' agents in ' + esc(state.space) + '. “Last entry” is how recently an agent wrote; it says nothing about whether the work is going well.', '<a href="/onboarding" class="lm-btn lm-btn--primary" style="text-decoration:none">' + icon('plus') + 'Connect an agent</a>') + (rows.length ? table(['Agent', 'Now', 'Shift', 'Last Recap'], rows) : emptyState('No agents yet.', 'Connect an agent and it appears here after its first call.')));
-      });
-    },
     agent: function (id) {
       return api('agent', { id: id }).then(function (d) {
         if (!ok(d)) return;
@@ -119,52 +88,6 @@
           '<div class="grid2">' + panel('Last Recap', recap) + panel('Now', kv(d.now)) + panel('Handoffs waiting for ' + id, d.handoffs.length ? entries(d.handoffs) : emptyState('Nothing waiting.', 'Handoffs show here until the agent accepts or declines them.')) + panel('Follows', follows.length ? follows.map(function (f) { return '<div class="lm-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span class="mono" style="font-size:13px">' + esc(f) + '</span><span class="lm-badge">' + esc((d.follows[f] || {}).role || '') + '</span></div>'; }).join('') : emptyState('Follows nothing.', 'Handoffs and logmem_follow add channels and jobs here.')) + '</div>' +
           panel('Recent shifts', shifts.length ? table(['Shift', 'Host', 'Started', 'Start'], shifts) : emptyState('No shifts.', '')) + panel('Log', entries(d.log)));
       });
-    },
-    jobs: function () {
-      return api('jobs').then(function (d) {
-        if (!ok(d)) return;
-        var rows = d.jobs.map(function (j) { return '<tr><td><a href="#/job/' + encodeURIComponent(j.id) + '" style="font-weight:600;text-decoration:none;color:var(--text)">' + esc(j.title) + '</a><br><span class="mono subtle" style="font-size:11px">job:' + esc(j.id) + (j.due ? ' · due ' + esc(j.due) : '') + '</span></td><td>' + (j.owner ? agent(j.owner) : '—') + '</td><td>' + stage(j.stage) + '</td><td style="font-size:13px">' + (j.last ? '<span class="lm-kind">' + esc(j.last.kind) + '</span> ' + esc(j.last.summary) + ' <span class="subtle">' + ago(j.last.ts) + '</span>' : '—') + '</td></tr>'; });
-        render('jobs', ['Jobs'], head('Jobs', 'A job has one owner, a stage and its own log. Agents open them with logmem_assign.') + (rows.length ? table(['Job', 'Owner', 'Stage', 'Last entry'], rows) : emptyState('No jobs yet.', 'Jobs appear when an agent calls logmem_assign.')));
-      });
-    },
-    job: function (id) {
-      return api('job', { id: id }).then(function (d) {
-        if (!ok(d)) return;
-        var who = d.who || {};
-        // Open asks are computed on the server (signed approve/reject only; defer stays open).
-        var open = d.open_asks || [];
-        render('jobs', ['<a href="#/jobs">Jobs</a>', esc(id)], '<div style="display:flex;flex-direction:column;gap:10px"><h1 class="lm-title-1" style="margin:0;font-size:22px">' + esc(who.title || id) + '</h1><div class="lm-row" style="gap:14px">' + stage(d.now.stage) + (d.now.owner ? '<span class="muted" style="font-size:13px">Owner</span>' + agent(d.now.owner) : '') + '<span class="mono subtle" style="font-size:12px">job:' + esc(id) + '</span></div></div>' +
-          '<div class="split"><div class="main">' + panel('Job log', entries(d.log), '<span class="subtle" style="font-size:13px">' + d.log.length + ' entries · ' + (d.shifts || []).length + ' shifts</span>') + '</div><div class="side" style="display:flex;flex-direction:column;gap:24px">' + open.map(askCard).join('') + panel('Who', kv(who)) + panel('Now', kv(d.now)) + '</div></div>');
-      });
-    },
-    channels: function (id) {
-      return api('channels', id ? { id: id } : {}).then(function (d) {
-        if (!ok(d)) return;
-        var list = d.channels.map(function (c) { var cur = c.id === d.selected; return '<li><a href="#/channels/' + encodeURIComponent(c.id) + '" style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:var(--radius-md);text-decoration:none;color:var(--text)' + (cur ? ';background:var(--brand-subtle)' : '') + '"' + (cur ? ' aria-current="page"' : '') + '><span class="mono" style="font-size:13px;font-weight:500">' + esc(c.id) + '</span><span class="subtle" style="font-size:12px">' + (c.last ? esc(agentName(c.last.by)) + ' · ' + ago(c.last.ts) : 'empty') + '</span></a></li>'; }).join('');
-        render('channels', ['Channels'].concat(d.selected ? [esc(d.selected)] : []), head('Channels', 'Shared logs several agents write to.') + (d.channels.length ? '<div class="split"><nav class="lm-panel side" style="max-width:320px" aria-label="Channels"><ul style="list-style:none;margin:0;padding:6px">' + list + '</ul></nav><div class="main">' + panel('channel:' + d.selected, entries(d.log)) + '</div></div>' : emptyState('No channels yet.', 'Channels appear when an agent writes a note to one.')));
-      });
-    },
-    decisions: function () {
-      return api('decisions').then(function (d) {
-        if (!ok(d)) return;
-        var hist = d.decided.map(function (x) { var v = (x.answer.payload || {}).verdict; return '<tr><td style="font-size:14px">' + esc(x.ask.summary) + '</td><td style="font-size:13px">' + esc(agentName(x.ask.by)) + ' · ' + ago(x.ask.ts) + '</td><td style="font-size:13px">' + (VERDICT[v] ? decision(VERDICT[v]) + ' ' : '') + esc(x.answer.summary) + '<br><span class="subtle">' + esc(agentName(x.answer.by)) + ' · ' + ago(x.answer.ts) + '</span></td></tr>'; });
-        render('decisions', ['Decisions'], head('Decisions', 'When an agent calls logmem_ask it stops and waits here. Answers are written to the log as decided.') +
-          (d.waiting.length ? d.waiting.map(askCard).join('') : emptyState('Nothing waiting on you.', 'Asks show here with the exact action and whether it can be undone.')) +
-          '<div class="lm-alert" style="background:var(--surface-sunken)">' + icon('info') + '<div style="font-size:13px">Approve, Reject or Defer writes a decided entry signed by you to the ask’s log and the agent’s log, and the agent sees the verdict in its Brief. Agents cannot write decided themselves. An ask that can’t be undone needs you to type approve first.</div></div>' +
-          '<h2 class="lm-title-2" style="margin:0;font-size:17px">Decided</h2>' + (hist.length ? table(['Asked', 'By', 'Answer'], hist) : emptyState('Nothing decided yet.', '')), d.waiting.length);
-      });
-    },
-    recall: function (q) {
-      var query = q ? decodeURIComponent(q) : '';
-      var draw = function (d) {
-        var res = (d && d.results || []).map(function (r) { return '<article class="lm-recall"><div class="lm-row"><span class="lm-kind">' + esc(r.kind) + '</span><span class="mono subtle" style="font-size:12px">' + esc(r.from) + '</span><span style="margin-left:auto;font-size:12px" class="muted">' + new Date(r.ts).toUTCString().slice(5, 22) + ' · ' + ago(r.ts) + '</span></div><blockquote style="margin:0;padding:8px 12px;border-left:3px solid var(--border-strong);background:var(--surface-sunken);font-size:14px">' + esc(r.summary) + '</blockquote><div class="lm-row subtle" style="font-size:12px"><span>trail ' + esc(r.trail || '') + '</span></div></article>'; }).join('');
-        render('recall', ['Recall'], head('Recall', 'Find something nobody remembers writing. Every result quotes the original entry.') +
-          '<form id="rform" role="search" style="display:flex;gap:8px;flex-wrap:wrap"><input class="lm-input" name="q" aria-label="Recall" value="' + esc(query) + '" placeholder="what did we decide about…" style="flex:1 1 420px;height:44px;font-size:15px"><button class="lm-btn lm-btn--primary" style="height:44px">Recall</button></form>' +
-          '<div class="lm-alert lm-alert--info">' + icon('info') + '<div style="font-size:13px"><strong>Matching by words.</strong> No meaning-based index is attached to this space yet, so results contain your words.</div></div>' +
-          (query ? (res ? '<section class="lm-panel">' + res + '</section>' : emptyState('No matches.', 'Try fewer or different words.')) : ''));
-        var f = document.getElementById('rform'); if (f) f.onsubmit = function (e) { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(f.q.value); };
-      };
-      return query ? api('recall', { q: query }).then(function (d) { if (ok(d)) draw(d); }) : Promise.resolve(draw(null));
     },
     settings: function () {
       return api('settings').then(function (d) {
@@ -185,66 +108,6 @@
           (rows.length ? table(['Day', 'Result', 'Agents', 'Entries', 'Handoffs accepted', 'Mirror mismatches', 'Unanswered >24h', 'Degraded'], rows) : emptyState('No checks yet.', 'The first daily check writes its result here.')));
       });
     },
-    // The hosted waitlist. Same deployment, not a space, so it reads /api/waitlist.
-    // Work agents handed to a person, with a step-by-step walkthrough (logmem_handoff to human:<id>).
-    blockers: function () {
-      return fetch('/api/blockers?space=' + encodeURIComponent(state.space || ''), { credentials: 'same-origin' }).then(function (r) { return r.json().then(function (j) { j.__status = r.status; return j; }); }).then(function (d) {
-        if (!ok(d)) return;
-        if (d.__status !== 200) { render('blockers', ['Blockers'], head('Blockers', '') + emptyState('Could not load blockers.', d.error || '')); return; }
-        var cards = (d.blockers || []).map(function (b) {
-          var w = b.walkthrough || {}, steps = w.steps || [], done = b.steps_done || [];
-          var meta = [w.time ? 'Time: ' + esc(w.time) : '', w.place ? 'Where: ' + esc(w.place) : '', w.due ? 'Due: ' + esc(w.due) : '', 'From ' + esc(String(b.by || '').replace(/^agent:/, ''))].filter(Boolean).join(' · ');
-          var list = steps.map(function (st, i) {
-            var on = done.indexOf(i) >= 0;
-            return '<li style="display:flex;gap:10px;align-items:flex-start;padding:6px 0"><input type="checkbox" data-step="' + i + '" data-trail="' + esc(b.trail) + '"' + (on ? ' checked' : '') + ' aria-label="Step ' + (i + 1) + ' done" style="margin-top:4px"><div style="min-width:0"><b>' + esc(st.title) + '</b>' + (st.detail ? '<div class="muted" style="font-size:13px">' + esc(st.detail) + '</div>' : '') + (st.cmd ? '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap"><code class="mono" style="font-size:12px;overflow-wrap:anywhere">' + esc(st.cmd) + '</code><button type="button" class="lm-btn lm-btn--ghost" data-copy="' + esc(st.cmd) + '">Copy</button></div>' : '') + '</div></li>';
-          }).join('');
-          var pct = steps.length ? Math.round(done.length / steps.length * 100) : 0;
-          return panel(b.summary, '<p class="subtle" style="margin:0 0 8px;font-size:13px">' + meta + ' · ' + done.length + ' of ' + steps.length + ' steps (' + pct + '%)</p>' +
-            (steps.length ? '<ol style="list-style:none;margin:0;padding:0">' + list + '</ol>' : '') +
-            (w.done_when ? '<p style="font-size:13px;margin:10px 0 0"><b>Done when:</b> ' + esc(w.done_when) + '</p>' : '') +
-            (w.reply ? '<div style="margin-top:10px"><span class="lm-label">Message to send when done</span><pre class="mono" style="white-space:pre-wrap;font-size:12px;margin:4px 0">' + esc(w.reply) + '</pre><button type="button" class="lm-btn lm-btn--ghost" data-copy="' + esc(w.reply) + '">Copy message</button></div>' : '') +
-            '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><input class="lm-input" data-note="' + esc(b.trail) + '" placeholder="Note for the agent (optional)" maxlength="1000" style="flex:1 1 220px;width:auto"><button type="button" class="lm-btn lm-btn--primary" data-done="' + esc(b.trail) + '">Mark done</button></div>',
-            '<span class="lm-badge ' + (pct === 100 ? 'lm-badge--success' : 'lm-badge--warning') + '">' + (pct === 100 ? 'Ready to close' : 'Waiting on you') + '</span>');
-        });
-        render('blockers', ['Blockers'], head('Blockers', 'Work agents handed to you. Tick each step as you go; agents see your progress in their Brief. Yes/no questions are on Decisions.') +
-          (cards.length ? '<div style="display:flex;flex-direction:column;gap:16px">' + cards.join('') + '</div>' : emptyState('Nothing is waiting on you.', 'When an agent hands you work with logmem_handoff to human:<id>, it shows here.')));
-        var post = function (body) {
-          return fetch('/api/blockers', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': 'blockers' }, body: JSON.stringify(Object.assign({ space: state.space }, body)) });
-        };
-        Array.prototype.forEach.call(document.querySelectorAll('[data-step]'), function (c) {
-          c.onchange = function () { c.disabled = true; post({ action: 'step', trail: c.getAttribute('data-trail'), step: Number(c.getAttribute('data-step')), checked: c.checked }).then(function () { route_(); }); };
-        });
-        Array.prototype.forEach.call(document.querySelectorAll('[data-done]'), function (b) {
-          b.onclick = function () {
-            var t = b.getAttribute('data-done'), n = document.querySelector('[data-note="' + CSS.escape(t) + '"]');
-            b.disabled = true;
-            post({ action: 'done', trail: t, note: n && n.value ? n.value : undefined }).then(function () { route_(); });
-          };
-        });
-        Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (b) {
-          b.onclick = function () { navigator.clipboard.writeText(b.getAttribute('data-copy')).then(function () { b.textContent = 'Copied'; }); };
-        });
-      });
-    },
-
-    // A plan: jobs with plan/track/gate/due in their Who, grouped by track, with milestones.
-    plan: function (name) {
-      return api('plan', name ? { id: name } : {}).then(function (d) {
-        if (!ok(d)) return;
-        if (!d.plan) { render('plan', ['Plan'], head('Plan', 'A plan groups jobs into tracks and milestones.') + emptyState('No plans yet.', 'Open jobs with logmem_assign and details { plan, track, gate, due }. A milestone is a job with { plan, milestone: true, date, criteria }.')); return; }
-        var pick = d.plans.length > 1 ? '<select class="lm-select" id="planpick">' + d.plans.map(function (p) { return '<option' + (p === d.plan ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>' : '';
-        var rail = d.milestones.length ? '<div class="lm-table-wrap"><div style="display:grid;grid-template-columns:repeat(' + d.milestones.length + ',minmax(140px,1fr));gap:12px;min-width:' + (d.milestones.length * 150) + 'px">' + d.milestones.map(function (m) {
-          return '<div class="lm-panel" style="padding:12px;display:flex;flex-direction:column;gap:4px"><span class="mono subtle" style="font-size:12px">' + esc(m.date || '') + '</span><b>' + esc(m.title) + '</b><span style="font-size:12px" class="muted">' + esc(m.criteria) + '</span>' + stage(m.stage) + '</div>';
-        }).join('') + '</div></div>' : '';
-        var tracks = d.tracks.map(function (t) {
-          var rows = t.items.map(function (i) { return '<tr><td><a href="#/job/' + encodeURIComponent(i.id) + '" style="font-weight:600;text-decoration:none;color:var(--text)">' + esc(i.title) + '</a>' + (i.desc ? '<br><span class="muted" style="font-size:12px">' + esc(i.desc) + '</span>' : '') + '</td><td>' + esc(String(i.owner || '—').replace(/^agent:/, '')) + '</td><td class="mono" style="font-size:12px">' + esc(i.gate || i.due || '—') + '</td><td>' + stage(i.stage) + '</td></tr>'; });
-          return panel(t.title + ' · ' + t.percent + '%', table(['Item', 'Owner', 'Gate or due', 'Stage'], rows));
-        }).join('');
-        render('plan', ['Plan', d.plan], head('Plan: ' + d.plan, d.percent + '% done across ' + d.tracks.reduce(function (n, t) { return n + t.items.length; }, 0) + ' items. Agents update items with logmem_update and logmem_stage.', pick + ' <a class="lm-btn lm-btn--secondary" href="#/blockers">Waiting on you</a>') + rail + '<div style="display:flex;flex-direction:column;gap:16px">' + tracks + '</div>');
-        var p = document.getElementById('planpick'); if (p) p.onchange = function () { location.hash = '#/plan/' + encodeURIComponent(p.value); };
-      });
-    },
-
     waitlist: function () {
       var invitesP = fetch('/api/invites', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
       return fetch('/api/waitlist', { credentials: 'same-origin' }).then(function (r) { return r.json().then(function (j) { j.__status = r.status; return j; }); }).then(function (d) {
@@ -411,7 +274,9 @@
       var d = rs[0], n = rs[1];
       if (d.__status !== 200) { drawShell(esc(id), emptyState('Could not load this job.', d.error || '')); return; }
       var who = d.who || {}, now = d.now || {};
-      var mine = (n.items || []).filter(function (i) { return i.job === id; });
+      // Decisions come from the job view's open_asks: the server decides what is still open, never the browser.
+      var mine = (n.items || []).filter(function (i) { return i.job === id && i.type === 'task'; })
+        .concat((d.open_asks || []).map(function (a) { return { type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a }; }));
       var card = now.stage === 'blocked' ? jobCard({ id: id, title: who.title || id, plan: who.plan, track: who.track, owner: now.owner || who.owner, blocked_on: now.blocked_on, since: now.stage_at }, true) : '';
       var about = [['Plan', [who.plan, who.track].filter(Boolean).join(' › ')], ['Stage', null], ['Owner', agentName(now.owner || who.owner || '')], ['Milestone', typeof who.milestone === 'string' ? who.milestone : who.gate], ['Due', who.due], ['What', who.desc], ['Evidence', who.evidence]];
       var dl = '<dl class="lm-kv">' + about.filter(function (x) { return x[0] === 'Stage' || x[1]; }).map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + (x[0] === 'Stage' ? stage(now.stage) : esc(x[1])) + '</dd>'; }).join('') + '</dl>';
@@ -466,6 +331,151 @@
       .then(function () { toast(action === 'done' ? 'Done. The job moves on.' : 'Sent back to the agent with your reason.'); if (card) card.style.display = 'none'; changed(); })
       .catch(function (e) { b.disabled = false; if (card) card.style.opacity = ''; toast('Not saved: ' + e.message, true); });
   }
+
+  // ─── views: Plans, Jobs, Agents, Log (live app spec, section 4) ───
+  var ISO = /^\d{4}-\d{2}-\d{2}$/;
+  function isLate(due, st) { return !!due && ISO.test(due) && st !== 'done' && due < new Date().toISOString().slice(0, 10); }
+  function dueTag(due, st) { return due ? (isLate(due, st) ? '<span class="lmx-flag">late · ' + esc(due) + '</span>' : 'due ' + esc(due)) : ''; }
+  function waitsTag(w) { if (!w) return ''; return '<span class="lmx-wait" data-w="' + esc(w.type) + '">' + esc(w.type === 'agent' ? 'waits on ' + (w.ref || 'an agent') : { task: 'waits on a task', decision: 'waits on a decision', external: 'waits outside' }[w.type] || 'waits') + '</span>'; }
+  // Per-view filters, kept for the session.
+  var FILTERS = {};
+  try { FILTERS = JSON.parse(sessionStorage.getItem('lm-filters') || '{}') || {}; } catch (e) {}
+  function filt(view) { return FILTERS[view] || (FILTERS[view] = {}); }
+  function saveFilt() { try { sessionStorage.setItem('lm-filters', JSON.stringify(FILTERS)); } catch (e) {} }
+  function selectBox(view, key, label, values) {
+    var cur = filt(view)[key] || '';
+    return '<label class="lmx-f"><span>' + label + '</span><select class="lm-select" data-filter="' + view + ':' + key + '"><option value="">All</option>' + values.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></label>';
+  }
+  function searchBox(view, ph) { return '<label class="lmx-f lmx-f-q"><span>Search</span><input class="lm-input" type="search" id="q-' + view + '" data-filter="' + view + ':q" value="' + esc(filt(view).q || '') + '" placeholder="' + ph + '"></label>'; }
+  var uniq = function (xs) { return xs.filter(function (x, i) { return x && xs.indexOf(x) === i; }).sort(); };
+  var redraw = {};
+  function onFilter(ev) {
+    var el = ev.target; if (!el || !el.getAttribute) return;
+    var f = el.getAttribute('data-filter'); if (!f) return;
+    var p = f.split(':'); filt(p[0])[p[1]] = el.value; saveFilt();
+    if (p[1] === 'plan') delete filt(p[0]).track;
+    clearTimeout(redraw.t);
+    redraw.t = setTimeout(function () {
+      var id = el.id, caret = el.selectionStart;
+      if (redraw[p[0]]) redraw[p[0]]();
+      if (id) { var n = document.getElementById(id); if (n) { n.focus(); try { n.setSelectionRange(caret, caret); } catch (e) {} } }
+    }, el.tagName === 'INPUT' ? 180 : 0);
+  }
+
+  // Jobs: "Where is a given piece of work?" A board by stage, filtered.
+  var BOARD = [['open', 'Open'], ['active', 'Active'], ['blocked', 'Blocked'], ['done', 'Done, last 7 days']];
+  function boardCard(j) {
+    return '<article class="lmx-card" tabindex="0" data-key="job:' + esc(j.id) + '"' + (j.stage === 'blocked' ? ' data-w="' + esc(j.blocked_on ? j.blocked_on.type : 'none') + '"' : '') + '><h3><a href="#/job/' + encodeURIComponent(j.id) + '" data-open-job="' + esc(j.id) + '">' + esc(j.title) + '</a></h3>' +
+      '<div class="lmx-meta">' + [[j.plan, j.track].filter(Boolean).map(esc).join(' › '), j.owner ? esc(agentName(j.owner)) : '', dueTag(j.due, j.stage)].filter(Boolean).join(' · ') + '</div>' +
+      (j.stage === 'blocked' ? '<div class="lmx-why">' + (j.blocked_on ? waitsTag(j.blocked_on) + ' ' + esc(j.blocked_on.note) : '<span class="lmx-flag">No reason given</span>') + '</div>' : j.last ? '<div class="lmx-why">' + esc(j.last.summary) + ' <span class="subtle">' + ago(j.last.ts) + '</span></div>' : '') + '</article>';
+  }
+  function drawJobs() {
+    var all = (live.jobs || []).filter(function (j) { return j.milestone !== true; });
+    var f = filt('jobs'), q = (f.q || '').toLowerCase(), week = Date.now() - 7 * 86400e3;
+    var list = all.filter(function (j) {
+      if (f.plan && j.plan !== f.plan) return false;
+      if (f.track && j.track !== f.track) return false;
+      if (f.owner && agentName(j.owner) !== f.owner) return false;
+      if (q && (j.title + ' ' + j.id + ' ' + (j.last ? j.last.summary : '')).toLowerCase().indexOf(q) < 0) return false;
+      if (j.stage === 'done' && j.stage_at && j.stage_at < week) return false;
+      return true;
+    });
+    var tracks = uniq(all.filter(function (j) { return !f.plan || j.plan === f.plan; }).map(function (j) { return j.track; }));
+    var bar = '<div class="lmx-filters">' + selectBox('jobs', 'plan', 'Plan', uniq(all.map(function (j) { return j.plan; }))) + selectBox('jobs', 'track', 'Track', tracks) + selectBox('jobs', 'owner', 'Owner', uniq(all.map(function (j) { return agentName(j.owner); }))) + searchBox('jobs', 'Title or last entry') + '</div>';
+    var pick = f.stage || (list.some(function (j) { return j.stage === 'blocked'; }) ? 'blocked' : 'active');
+    var chips = '<div class="lmx-stagechips" role="tablist">' + BOARD.map(function (b) { var n = list.filter(function (j) { return j.stage === b[0]; }).length; return '<button type="button" role="tab" data-stagepick="' + b[0] + '" aria-selected="' + (pick === b[0]) + '">' + b[1].split(',')[0] + ' ' + n + '</button>'; }).join('') + '</div>';
+    var cols = BOARD.map(function (b) {
+      var mine = list.filter(function (j) { return j.stage === b[0]; });
+      return '<section class="lmx-boardcol" data-stage="' + b[0] + '"' + (pick === b[0] ? ' data-pick' : '') + '><h2 class="lmx-colhead">' + b[1] + ' <b>' + mine.length + '</b></h2><div class="lmx-stack">' + (mine.length ? mine.map(boardCard).join('') : '<p class="lmx-meta">None.</p>') + '</div></section>';
+    }).join('');
+    render('jobs', ['Jobs'], bar + chips + '<div class="lmx-board">' + cols + '</div>');
+  }
+  redraw.jobs = drawJobs;
+  pages.jobs = function () { return api('jobs').then(function (d) { if (!ok(d)) return; live.jobs = d.jobs; drawJobs(); }); };
+  pages.job = function (id) { return pages.jobs().then(function () { if (!drawer || drawer.id !== id) openDrawer('job', id); }); };
+
+  // Plans: "Where are we against the plan?"
+  function planRow(i) {
+    return '<div class="lmx-prow" data-key="job:' + esc(i.id) + '"><a href="#/job/' + encodeURIComponent(i.id) + '" data-open-job="' + esc(i.id) + '">' + esc(i.title) + '</a>' +
+      '<span>' + stage(i.stage) + '</span><span class="lmx-meta">' + [i.owner ? esc(agentName(i.owner)) : '', dueTag(i.due, i.stage)].filter(Boolean).join(' · ') + '</span><span>' + (i.stage === 'blocked' ? (i.blocked_on ? waitsTag(i.blocked_on) : '<span class="lmx-flag">No reason</span>') : '') + '</span></div>';
+  }
+  pages.plan = function (name) {
+    return api('plan', name ? { id: name } : {}).then(function (d) {
+      if (!ok(d)) return;
+      if (!d.plan) { render('plan', ['Plans'], emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')); return; }
+      var items = d.tracks.reduce(function (a, t) { return a.concat(t.items); }, []);
+      var done = items.filter(function (i) { return i.stage === 'done'; }).length;
+      var late = items.filter(function (i) { return isLate(i.due, i.stage); });
+      var blocked = items.filter(function (i) { return i.stage === 'blocked'; }).length;
+      var chips = '<div class="lmx-stagechips">' + d.plans.map(function (p) { return '<a href="#/plan/' + encodeURIComponent(p) + '" role="tab" aria-selected="' + (p === d.plan) + '">' + esc(p) + '</a>'; }).join('') + '</div>';
+      var top = '<section class="lmx-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><h3 style="font-size:18px">' + esc(d.title || d.plan) + '</h3><span class="lmx-pct">' + num(d.percent) + '%</span></div><div class="lmx-bar"><i style="width:' + num(d.percent) + '%"></i></div>' +
+        '<div class="lmx-meta">' + done + ' of ' + items.length + ' done' + (blocked ? ' · <b style="color:var(--warning)">' + blocked + ' blocked</b>' : '') + (late.length ? ' · <b style="color:var(--danger)">' + late.length + ' late</b>' : '') + '</div></section>';
+      var toward = function (m) { return items.filter(function (i) { return i.milestone && (i.milestone === m.id || String(m.title).indexOf(i.milestone + ':') === 0); }); };
+      var rail = d.milestones.length ? '<div class="lmx-rail-ms">' + d.milestones.map(function (m) {
+        var mine = toward(m), mdone = mine.filter(function (i) { return i.stage === 'done'; }).length;
+        return '<div class="lmx-card lmx-ms" data-key="ms:' + esc(m.id) + '"' + (m.stage === 'done' ? ' data-done' : '') + '><span class="lmx-meta mono">' + esc(m.date || 'no date') + '</span><h3>' + esc(m.title) + '</h3><div class="lmx-why">' + esc(m.criteria) + '</div><div class="lmx-meta">' + stage(m.stage) + (mine.length ? ' · ' + mdone + '/' + mine.length + ' jobs' : '') + '</div></div>';
+      }).join('') + '</div>' : '';
+      var tracks = d.tracks.map(function (t) {
+        var groups = {}; t.items.forEach(function (i) { var k = i.milestone || 'No milestone'; (groups[k] = groups[k] || []).push(i); });
+        var keys = Object.keys(groups).sort(function (a, b) { return (a === 'No milestone') - (b === 'No milestone') || a.localeCompare(b); });
+        var tdone = t.items.filter(function (i) { return i.stage === 'done'; }).length;
+        var msName = function (k) { var m = d.milestones.filter(function (x) { return x.id === k; })[0]; return m ? m.title + (m.date ? ' · ' + m.date : '') : k; };
+        return '<section class="lmx-card lmx-track" data-key="track:' + esc(t.title) + '"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline"><h3>' + esc(t.title) + '</h3><span class="lmx-meta">' + tdone + '/' + t.items.length + ' · ' + num(t.percent) + '%</span></div><div class="lmx-bar"><i style="width:' + num(t.percent) + '%"></i></div>' +
+          keys.map(function (k) { return '<div class="lmx-pgroup"><div class="lmx-colhead" style="margin:10px 0 4px">' + esc(msName(k)) + '</div>' + groups[k].map(planRow).join('') + '</div>'; }).join('') + '</section>';
+      }).join('');
+      render('plan', ['Plans', esc(d.title || d.plan)], chips + top + rail + (late.length ? '<section class="lmx-card"><h3>Late</h3>' + late.map(planRow).join('') + '</section>' : '') + '<div class="lmx-stack">' + tracks + '</div>');
+    });
+  };
+
+  // Agents: "Who is doing what, and are they healthy?"
+  function agentCard(a) {
+    var now = a.now || {}, r = a.recap;
+    var check = function (okv, text) { return '<li data-ok="' + (okv ? '1' : '0') + '">' + (okv ? '✓ ' : '✗ ') + text + '</li>'; };
+    return '<article class="lmx-card" tabindex="0" data-key="agent:' + esc(a.id) + '"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><a href="#/agent/' + encodeURIComponent(a.id) + '" style="text-decoration:none;color:inherit">' + agent('agent:' + a.id) + '</a>' + seenTag(a.seen) + '</div>' +
+      '<div class="lmx-why"><b>Now:</b> ' + (now.doing ? esc(now.doing) : '<span class="lmx-flag">No Now set</span>') + '</div>' +
+      (now.job || now.next ? '<div class="lmx-meta">' + [now.job ? 'job ' + esc(typeof now.job === 'string' ? now.job : JSON.stringify(now.job)) : '', now.next ? 'next: ' + esc(now.next) : ''].filter(Boolean).join(' · ') + '</div>' : '') +
+      (r ? '<div class="lmx-why"><b>Last recap:</b> ' + esc(r.summary) + ' <span class="subtle">' + ago(r.ended_at) + '</span></div>' : '') +
+      '<ul class="lmx-checks">' + check(a.seen && a.seen.state === 'active', 'wrote in the last 15 min') + check(!!now.doing, 'keeps Now set') + check(!!r, 'leaves recaps') + '</ul></article>';
+  }
+  pages.agents = function () {
+    return api('agents').then(function (d) {
+      if (!ok(d)) return;
+      var live_ = d.agents.filter(function (a) { return a.seen.state === 'active'; }).length;
+      render('agents', ['Agents'], '<div class="lmx-filters"><span class="lmx-meta">' + live_ + ' of ' + d.agents.length + ' wrote in the last 15 minutes.</span><span class="lm-spacer"></span><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div><div class="lmx-grid">' + d.agents.map(agentCard).join('') + '</div>');
+    });
+  };
+
+  // Log: "What exactly happened?" The full record, filtered, with Recall on top.
+  function drawLog(recall) {
+    var all = live.log || [], f = filt('log'), q = (f.q || '').toLowerCase();
+    var list = all.filter(function (e) {
+      if (f.where && String(e.where || '').indexOf(f.where + ':') !== 0 && e.where !== f.where) return false;
+      if (f.agent && agentName(e.by) !== f.agent) return false;
+      if (f.kind && e.group !== f.kind) return false;
+      if (q && String(e.summary || '').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    var places = ['job', 'channel', 'agent'].concat(uniq(all.map(function (e) { return /^channel:/.test(e.where || '') ? e.where : null; })));
+    var bar = '<form class="lmx-filters" id="rform2" role="search"><label class="lmx-f lmx-f-q"><span>Recall</span><input class="lm-input" name="q" value="' + esc(recall ? recall.q : '') + '" placeholder="what did we decide about…"></label><button class="lm-btn lm-btn--primary" style="align-self:flex-end">Recall</button></form>' +
+      '<div class="lmx-filters">' + selectBox('log', 'where', 'Where', places) + selectBox('log', 'agent', 'Who', uniq(all.map(function (e) { return agentName(e.by); }))) + selectBox('log', 'kind', 'Kind', uniq(all.map(function (e) { return e.group; }))) + searchBox('log', 'Words in the entry') + '</div>';
+    var rec = recall ? '<section class="lmx-card"><h3>Recall: “' + esc(recall.q) + '”</h3>' + (recall.results.length ? recall.results.map(function (r) { return '<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto"><div><span class="lm-kind">' + esc(r.kind) + '</span> ' + esc(r.summary) + '<div class="lmx-meta mono">' + esc(r.from) + ' · trail ' + esc(r.trail || '') + '</div></div><span class="lmx-meta">' + ago(r.ts) + '</span></div>'; }).join('') : '<p class="lmx-meta">No matches. Try fewer or different words.</p>') + '</section>' : '';
+    render('log', ['Log'], bar + rec + '<section class="lm-panel" style="padding:8px 16px 16px">' + (list.length ? entries(list) : emptyState('Nothing matches.', 'Clear a filter to see more.')) + '<p class="lmx-meta">' + list.length + ' of ' + all.length + ' recent entries.</p></section>');
+    var rf = document.getElementById('rform2'); if (rf) rf.onsubmit = function (e) { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(rf.q.value); };
+  }
+  redraw.log = function () { drawLog(live.recall); };
+  pages.log = function () { live.recall = null; return api('log').then(function (d) { if (!ok(d)) return; live.log = d.entries; drawLog(null); }); };
+  pages.recall = function (q) {
+    var query = q || '';
+    return Promise.all([api('log'), query ? api('recall', { q: query }) : Promise.resolve({ results: [] })]).then(function (rs) {
+      if (!ok(rs[0])) return;
+      live.log = rs[0].entries; live.recall = query ? { q: query, results: rs[1].results || [] } : null; drawLog(live.recall);
+    });
+  };
+  pages.channels = function (id) { filt('log').where = id ? 'channel:' + id : 'channel'; saveFilt(); return pages.log(); };
+
+  document.addEventListener('change', onFilter);
+  document.addEventListener('input', function (e) { if (e.target && e.target.type === 'search') onFilter(e); });
+  document.addEventListener('click', function (e) { var b = e.target && e.target.closest ? e.target.closest('[data-stagepick]') : null; if (b) { filt('jobs').stage = b.getAttribute('data-stagepick'); saveFilt(); drawJobs(); } });
 
   // ─── live: the pulse ──────────────────────────────────────────────
   var LIVE_LABEL = { live: 'Live', reconnecting: 'Reconnecting…', paused: 'Paused' };
@@ -657,5 +667,7 @@
   root.addEventListener('change', onAction);
   window.addEventListener('hashchange', function () { live.soft = false; route_(); });
   route_();
+  // The Needs you count belongs to every view, not just Home.
+  if (location.hash && !/^#\/?(home|overview)?$/.test(location.hash)) refreshNeeds();
   schedule(4000);
 })();
