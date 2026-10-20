@@ -14,7 +14,7 @@
 // is shown to other agents and must stay data, not a prompt channel.
 
 import { PERSON_RE, normalizeWalkthrough, createBlocker, getBlocker, blockersFrom } from "./blockers.mjs";
-import { planForJob, createPlan, listPlans, getPlan, PlanError } from "./plans.mjs";
+import { planForJob, createPlan, listPlans, getPlan, setLane, laneText, LANE_STATUS, PlanError } from "./plans.mjs";
 import { checkBlockedOn, linkOpen, linkClose, jobOf, BlockedError } from "./links.mjs";
 import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypto";
 import { params } from "./params.mjs";
@@ -736,15 +736,29 @@ export const TOOLS = [
     name: "logmem_plan",
     title: "Plan",
     description:
-      "List the plans in this space, or create one. A plan is a named body of work, such as 'launch'. Every job belongs to one plan; 'general' holds work not yet filed. Create: action 'create' with plan (a short id) and title.",
+      "List the plans in this space, create one, or set its lane. A plan is a named body of work, such as 'launch'; every job belongs to one plan, and 'general' holds work not yet filed. A plan is also a lane: exactly one is P0 (first call on shared agents), others are active or parked. Create: action 'create' with plan and title. Lane: action 'lane' with plan and status (p0, active or parked; parked needs why, until is optional). Record a person's lane ruling here; setting P0 moves the old P0 lane to active.",
     params: params({
-      action: { enum: ["list", "create"], desc: "list (default) or create", optional: true },
-      plan: { type: "string", desc: "Plan id for create: lowercase letters, digits and '-', e.g. 'launch'", optional: true },
+      action: { enum: ["list", "create", "lane"], desc: "list (default), create, or lane", optional: true },
+      plan: { type: "string", desc: "Plan id: lowercase letters, digits and '-', e.g. 'launch'", optional: true },
       title: { type: "string", desc: "What the plan is, for create", optional: true },
       desc: { type: "string", desc: "One or two lines on the plan's goal (optional)", optional: true },
+      status: { enum: LANE_STATUS, desc: "For lane: p0, active or parked", optional: true },
+      why: { type: "string", desc: "For lane: why (required to park)", optional: true },
+      until: { type: "string", desc: "For lane: when it can unpark, e.g. 'after Show HN' or 'G-12'", optional: true },
+      owner: { type: "string", desc: "For lane: the agent who drives it", optional: true },
     }),
     annotations: WRITE,
-    async run({ action, plan, title, desc }, ctx) {
+    async run({ action, plan, title, desc, status, why, until, owner }, ctx) {
+      if (action === "lane") {
+        try {
+          const out = await setLane(ctx.store, String(plan || ""), { status, why, until, owner, by: agentRef(me(ctx)), now: () => clock(ctx) });
+          const entry = await write(ctx, "channel", "lanes", { kind: "memo", summary: laneText(out.plan, out.was, out.demoted), payload: { lane: out.plan.lane, plan: out.plan.id, was: out.was, demoted: out.demoted } });
+          return { ok: true, plan: out.plan, was: out.was, demoted: out.demoted, entry };
+        } catch (e) {
+          if (e instanceof PlanError) return { ok: false, error: e.message };
+          throw e;
+        }
+      }
       if (action !== "create") {
         const ids = await listPlans(ctx.store);
         const plans = [];
@@ -790,7 +804,7 @@ export const TOOLS = [
       job: { type: "string", desc: "Job id" },
       stage: { enum: STAGES, desc: "New stage" },
       note: { type: "string", desc: "Why, or the evidence for done (a PR link, a test count)", optional: true },
-      blocked_on: { type: "object", desc: "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed }", optional: true },
+      blocked_on: { type: "object", desc: "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed, parked?: true when it waits on purpose, until?: when it can move }", optional: true },
     }),
     annotations: SET,
     async run({ job, stage, note, blocked_on }, ctx) {
@@ -811,7 +825,7 @@ export const TOOLS = [
       const fields = { stage, stage_at: clock(ctx), blocked_on: stage === "blocked" ? reason : null };
       const now = await ctx.store.setNow("job", id, fields);
       const kind = { blocked: "stuck", done: "done" }[stage] || "progress";
-      const text = stage === "blocked" ? `blocked on ${reason.type}${reason.ref ? ` ${reason.ref}` : ""}: ${note || reason.note}` : note ? `${stage}: ${note}` : `Stage -> ${stage}`;
+      const text = stage === "blocked" ? (reason.parked ? `parked${reason.until ? ` until ${reason.until}` : ""}: ${note || reason.note}` : `blocked on ${reason.type}${reason.ref ? ` ${reason.ref}` : ""}: ${note || reason.note}`) : note ? `${stage}: ${note}` : `Stage -> ${stage}`;
       const entry = await write(ctx, "job", id, { kind, summary: text.slice(0, LIMITS.summary), ...(reason ? { payload: { blocked_on: reason } } : {}) });
       return { ok: true, job: id, now, entry, ...(warning ? { warning } : {}) };
     },

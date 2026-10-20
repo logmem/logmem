@@ -45,9 +45,9 @@
 
   // ─── shell ────────────────────────────────────────────────────────
   // Live app spec: Home, Plans, Jobs, Agents, Log, then Admin. Needs you is a panel over every view.
-  var NAV = [['home', 'Home', 'overview'], ['plan', 'Plans', 'work'], ['jobs', 'Jobs', 'work'], ['agents', 'Agents', 'agents'], ['log', 'Log', 'timeline']];
+  var NAV = [['home', 'Home', 'overview'], ['lanes', 'Lanes', 'work'], ['jobs', 'Jobs', 'work'], ['agents', 'Agents', 'agents'], ['log', 'Log', 'timeline']];
   var ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
-  var ROUTE_NAV = { overview: 'home', agent: 'agents', job: 'jobs', channels: 'log', recall: 'log', decisions: 'home', blockers: 'home', more: 'more' };
+  var ROUTE_NAV = { plan: 'lanes', overview: 'home', agent: 'agents', job: 'jobs', channels: 'log', recall: 'log', decisions: 'home', blockers: 'home', more: 'more' };
   function navItem(n, route) { var cur = n[0] === (ROUTE_NAV[route] || route); return '<a href="' + (n[3] || '#/' + n[0]) + '" class="lm-nav-item"' + (cur ? ' aria-current="page" style="background:var(--brand-subtle);color:var(--brand)"' : '') + ' title="' + n[1] + '">' + icon(n[2]) + '<span>' + n[1] + '</span></a>'; }
   function shell(route, crumbs, body) {
     var demo = state.space === 'fieldnotes';
@@ -64,7 +64,7 @@
       '<form class="lm-search" id="jump" role="search"><i class="lm-i" data-i="search" aria-hidden="true"></i><input class="lm-input" name="q" placeholder="Recall: search the log" aria-label="Search the log" style="padding-left:32px"></form>' +
       '<button type="button" class="lmx-needs" data-open-needs data-n="' + num(n) + '" aria-label="Needs you: ' + num(n) + ' items">Needs you <b>' + num(n) + '</b></button></header>' +
       '<main class="lmx-main" id="main">' + body + '</main></div>' +
-      '<nav class="lmx-tabs" aria-label="LogMem">' + tab('home', 'Home', 'overview') + '<button type="button" data-open-needs>' + icon('decisions') + 'Needs you' + (n ? '<b>' + num(n) + '</b>' : '') + '</button>' + tab('plan', 'Plans', 'work') + tab('jobs', 'Jobs', 'work') + tab('more', 'More', 'settings') + '</nav></div>';
+      '<nav class="lmx-tabs" aria-label="LogMem">' + tab('home', 'Home', 'overview') + '<button type="button" data-open-needs>' + icon('decisions') + 'Needs you' + (n ? '<b>' + num(n) + '</b>' : '') + '</button>' + tab('lanes', 'Lanes', 'work') + tab('jobs', 'Jobs', 'work') + tab('more', 'More', 'settings') + '</nav></div>';
   }
   function head(title, sub, right) { return '<div class="lm-row" style="justify-content:space-between"><div style="display:flex;flex-direction:column;gap:4px"><h1 class="lm-title-1" style="margin:0;font-size:22px">' + esc(title) + '</h1>' + (sub ? '<span style="font-size:13px" class="muted">' + sub + '</span>' : '') + '</div>' + (right || '') + '</div>'; }
 
@@ -180,9 +180,9 @@
   function planCard(p) {
     var general = p.id === 'general';
     return '<a class="lmx-card lmx-plan" tabindex="0" data-key="plan:' + esc(p.id) + '" href="#/plan/' + encodeURIComponent(p.id) + '" style="text-decoration:none;color:inherit">' +
-      '<div class="lmx-row" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>' + esc(general ? 'general' : p.title) + '</h3>' + (general ? '' : '<span class="lmx-pct">' + num(p.percent) + '%</span>') + '</div>' +
+      '<div class="lmx-row" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>' + laneBadge(p.lane) + esc(general ? 'general' : p.title) + '</h3>' + (general ? '' : '<span class="lmx-pct">' + num(p.percent) + '%</span>') + '</div>' +
       (general ? '<div class="lmx-why">' + num(p.jobs) + (p.jobs === 1 ? ' job' : ' jobs') + ' to file in a plan</div>' : '<div class="lmx-bar"><i style="width:' + num(p.percent) + '%"></i></div>' +
-      '<div class="lmx-meta">' + num(p.done) + ' of ' + num(p.jobs) + ' done' + (p.blocked ? ' · <b style="color:var(--warning)">' + num(p.blocked) + ' blocked</b>' : '') + '</div>' +
+      '<div class="lmx-meta">' + num(p.done) + ' of ' + num(p.jobs) + ' done' + (p.blocked ? ' · <b style="color:var(--warning)">' + num(p.blocked) + ' blocked</b>' : '') + (p.parked ? ' · ' + num(p.parked) + ' parked' : '') + '</div>' +
       '<div class="lmx-why">' + (p.next_milestone ? 'Next: ' + esc(p.next_milestone.title) + (p.next_milestone.date ? ' · ' + esc(p.next_milestone.date) : '') : 'No milestone set') + '</div>') + '</a>';
   }
   // Agent chip: live dot, Now, current job.
@@ -408,7 +408,7 @@
       var late = items.filter(function (i) { return isLate(i.due, i.stage); });
       var blocked = items.filter(function (i) { return i.stage === 'blocked'; }).length;
       var chips = '<div class="lmx-stagechips">' + d.plans.map(function (p) { return '<a href="#/plan/' + encodeURIComponent(p) + '" role="tab" aria-selected="' + (p === d.plan) + '">' + esc(p) + '</a>'; }).join('') + '</div>';
-      var top = '<section class="lmx-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><h3 style="font-size:18px">' + esc(d.title || d.plan) + '</h3><span class="lmx-pct">' + num(d.percent) + '%</span></div><div class="lmx-bar"><i style="width:' + num(d.percent) + '%"></i></div>' +
+      var top = '<section class="lmx-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><h3 style="font-size:18px">' + laneBadge(d.lane) + esc(d.title || d.plan) + '</h3><span class="lmx-pct">' + num(d.percent) + '%</span></div><div class="lmx-bar"><i style="width:' + num(d.percent) + '%"></i></div>' +
         '<div class="lmx-meta">' + done + ' of ' + items.length + ' done' + (blocked ? ' · <b style="color:var(--warning)">' + blocked + ' blocked</b>' : '') + (late.length ? ' · <b style="color:var(--danger)">' + late.length + ' late</b>' : '') + '</div></section>';
       var toward = function (m) { return items.filter(function (i) { return i.milestone && (i.milestone === m.id || String(m.title).indexOf(i.milestone + ':') === 0); }); };
       var rail = d.milestones.length ? '<div class="lmx-rail-ms">' + d.milestones.map(function (m) {
@@ -477,6 +477,53 @@
   document.addEventListener('input', function (e) { if (e.target && e.target.type === 'search') onFilter(e); });
   document.addEventListener('click', function (e) { var b = e.target && e.target.closest ? e.target.closest('[data-stagepick]') : null; if (b) { filt('jobs').stage = b.getAttribute('data-stagepick'); saveFilt(); drawJobs(); } });
 
+  // ─── Lanes board (lanes spec): every plan as a lane, P0 first ─────
+  var LANE_LABEL = { p0: 'P0', active: 'Active', parked: 'Parked' };
+  function laneBadge(l) { return l && l.status ? '<span class="lmx-lane" data-l="' + esc(l.status) + '">' + LANE_LABEL[l.status] + '</span> ' : ''; }
+  function laneActs(l) {
+    var st = l.lane ? l.lane.status : null, id = esc(l.id), acts = [];
+    if (st !== 'p0') acts.push(btn('Make P0', 'secondary', 'data-lane-act="p0" data-plan="' + id + '"'));
+    if (st === 'parked') acts.push(btn('Unpark', 'primary', 'data-lane-act="active" data-plan="' + id + '"'));
+    if (st !== 'parked' && l.id !== 'general') acts.push('<input class="lm-input" data-note-for="lane:' + id + '" maxlength="300" placeholder="Why park it" aria-label="Why park this lane">' + btn('Park', 'secondary', 'data-lane-act="parked" data-plan="' + id + '"'));
+    if (!st && l.id !== 'general') acts.unshift(btn('Make active', 'secondary', 'data-lane-act="active" data-plan="' + id + '"'));
+    return '<div class="lmx-acts">' + acts.join('') + '</div>';
+  }
+  function laneJobRow(j) { return '<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key="job:' + esc(j.id) + '"><a href="#/job/' + encodeURIComponent(j.id) + '" data-open-job="' + esc(j.id) + '">' + esc(j.title) + '</a><span class="lmx-meta">' + esc(agentName(j.owner || '')) + (j.since ? ' · ' + ago(j.since) : '') + '</span></div>'; }
+  function parkedRow(j) { var b = j.blocked_on || {}; return '<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key="job:' + esc(j.id) + '"><div><a href="#/job/' + encodeURIComponent(j.id) + '" data-open-job="' + esc(j.id) + '">' + esc(j.title) + '</a><div class="lmx-meta">' + esc(b.note || '') + '</div></div><span class="lmx-meta">' + (b.until ? 'until ' + esc(b.until) : '') + (j.owner ? ' · ' + esc(agentName(j.owner)) : '') + '</span></div>'; }
+  function laneCard(l, big) {
+    var ln = l.lane || {};
+    var head = '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><h3' + (big ? ' style="font-size:20px"' : '') + '>' + laneBadge(ln) + '<a href="#/plan/' + encodeURIComponent(l.id) + '" style="color:inherit;text-decoration:none">' + esc(l.title) + '</a></h3><span class="lmx-pct">' + num(l.percent) + '%</span></div>';
+    var meta = '<div class="lmx-meta">' + [ln.owner ? 'driven by ' + esc(ln.owner) : '', num(l.done) + ' of ' + num(l.jobs) + ' done', l.active_count ? num(l.active_count) + ' active' : '', l.blocked_count ? '<b style="color:var(--warning)">' + num(l.blocked_count) + ' blocked</b>' : '', l.parked_jobs.length ? num(l.parked_jobs.length) + ' parked' : ''].filter(Boolean).join(' · ') + '</div>';
+    var why = ln.status === 'parked' ? '<div class="lmx-why"><b>Parked:</b> ' + esc(ln.why || '') + (ln.until ? ' <b>Until:</b> ' + esc(ln.until) : '') + '</div>' : ln.why ? '<div class="lmx-why">' + esc(ln.why) + '</div>' : '';
+    var next = l.next_milestone ? '<div class="lmx-why">Next: ' + esc(l.next_milestone.title) + (l.next_milestone.date ? ' · ' + esc(l.next_milestone.date) : '') + '</div>' : '';
+    var moving = big && l.active.length ? '<div class="lmx-colhead" style="margin:8px 0 2px">Moving now</div>' + l.active.map(laneJobRow).join('') : '';
+    var parked = l.parked_jobs.length && ln.status !== 'parked' ? '<details' + (big ? ' open' : '') + '><summary class="lmx-meta" style="cursor:pointer;margin-top:6px">Parked inside this lane (' + l.parked_jobs.length + ')</summary>' + l.parked_jobs.map(parkedRow).join('') + '</details>' : '';
+    return '<section class="lmx-card lmx-lanecard" data-key="lane:' + esc(l.id) + '" data-l="' + esc(ln.status || 'none') + '">' + head + '<div class="lmx-bar"><i style="width:' + num(l.percent) + '%"></i></div>' + meta + why + next + moving + parked + laneActs(l) + '</section>';
+  }
+  pages.lanes = function () {
+    return api('lanes').then(function (d) {
+      if (!ok(d)) return;
+      var by = function (st) { return d.lanes.filter(function (l) { return (l.lane ? l.lane.status : null) === st && l.id !== 'general'; }); };
+      var p0 = by('p0'), act = by('active'), park = by('parked'), none = d.lanes.filter(function (l) { return !l.lane || !l.lane.status || l.id === 'general'; });
+      var sec = function (title, n, body) { return '<section><h2 class="lmx-colhead">' + title + ' <b>' + n + '</b></h2>' + body + '</section>'; };
+      render('lanes', ['Lanes'],
+        (p0.length ? laneCard(p0[0], true) : '<div class="lm-alert lm-alert--warning">' + icon('alert') + '<div>No P0 lane is set. Pick one below with <b>Make P0</b>.</div></div>') +
+        sec('Active', act.length, act.length ? '<div class="lmx-grid">' + act.map(function (l) { return laneCard(l); }).join('') + '</div>' : '<p class="lmx-meta">No other active lanes.</p>') +
+        sec('Parked', park.length, park.length ? '<div class="lmx-grid">' + park.map(function (l) { return laneCard(l); }).join('') + '</div>' : '<p class="lmx-meta">Nothing parked.</p>') +
+        (none.length ? sec('No lane set', none.length, '<div class="lmx-grid">' + none.map(function (l) { return laneCard(l); }).join('') + '</div>') : ''));
+    });
+  };
+  function doLane(b) {
+    var st = b.getAttribute('data-lane-act'), plan = b.getAttribute('data-plan'), why = noteFor('lane:' + plan);
+    if (st === 'parked' && !why) { toast('Say in one line why the lane parks.', true); var el = document.querySelector('[data-note-for="' + CSS.escape('lane:' + plan) + '"]'); if (el) el.focus(); return; }
+    if (st === 'p0' && !window.confirm('Make ' + plan + ' the P0 lane? The current P0 lane moves to active.')) return;
+    b.disabled = true;
+    postJSON('/api/lane', 'work', { plan: plan, status: st, why: why || undefined })
+      .then(function (j) { var nb = document.querySelector('[data-note-for="' + CSS.escape('lane:' + plan) + '"]'); if (nb) { nb.value = ''; nb.blur(); } toast('Lane ' + plan + ': ' + LANE_LABEL[st] + (j.demoted && j.demoted.length ? '. ' + j.demoted.join(', ') + ' moved to active.' : '.')); changed(); })
+      .catch(function (e) { b.disabled = false; toast('Not saved: ' + e.message, true); });
+  }
+  document.addEventListener('click', function (e) { var b = e.target && e.target.closest ? e.target.closest('[data-lane-act]') : null; if (b) doLane(b); });
+
   // ─── live: the pulse ──────────────────────────────────────────────
   var LIVE_LABEL = { live: 'Live', reconnecting: 'Reconnecting…', paused: 'Paused' };
   function setLive(s) { live.status = s; var el = document.getElementById('live'); if (el) { el.setAttribute('data-s', s); el.textContent = LIVE_LABEL[s]; } }
@@ -489,7 +536,8 @@
       if (j.__status === 401) { live.signedOut = true; return; }
       if (j.__status !== 200) throw new Error('pulse ' + j.__status);
       live.fails = 0; if (live.status !== 'live') setLive('live');
-      if (live.rev == null) live.rev = j.rev;
+      // First pulse: take the rev and load the Needs you count (it may have failed before sign-in).
+      if (live.rev == null) { live.rev = j.rev; if (lastRoute !== 'home') refreshNeeds(); }
       else if (j.rev !== live.rev) { live.rev = j.rev; changed(); }
       schedule();
     }).catch(function () { live.fails++; setLive('reconnecting'); schedule(); });
@@ -654,7 +702,7 @@
     document.getElementById('lf').onsubmit = function (e) {
       e.preventDefault();
       fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: document.getElementById('pw').value }), credentials: 'same-origin' })
-        .then(function (r) { return r.json().then(function (j) { if (r.ok) { live.signedOut = false; route_(); schedule(0); } else document.getElementById('lerr').textContent = j.error || 'Sign-in failed.'; }); });
+        .then(function (r) { return r.json().then(function (j) { if (r.ok) { live.signedOut = false; route_(); refreshNeeds(); schedule(0); } else document.getElementById('lerr').textContent = j.error || 'Sign-in failed.'; }); });
     };
   }
   function route_() {

@@ -653,7 +653,7 @@
     {
       "name": "logmem_plan",
       "title": "Plan",
-      "description": "List the plans in this space, or create one. A plan is a named body of work, such as 'launch'. Every job belongs to one plan; 'general' holds work not yet filed. Create: action 'create' with plan (a short id) and title.",
+      "description": "List the plans in this space, create one, or set its lane. A plan is a named body of work, such as 'launch'; every job belongs to one plan, and 'general' holds work not yet filed. A plan is also a lane: exactly one is P0 (first call on shared agents), others are active or parked. Create: action 'create' with plan and title. Lane: action 'lane' with plan and status (p0, active or parked; parked needs why, until is optional). Record a person's lane ruling here; setting P0 moves the old P0 lane to active.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -661,13 +661,14 @@
             "type": "string",
             "enum": [
               "list",
-              "create"
+              "create",
+              "lane"
             ],
-            "description": "list (default) or create"
+            "description": "list (default), create, or lane"
           },
           "plan": {
             "type": "string",
-            "description": "Plan id for create: lowercase letters, digits and '-', e.g. 'launch'"
+            "description": "Plan id: lowercase letters, digits and '-', e.g. 'launch'"
           },
           "title": {
             "type": "string",
@@ -676,6 +677,27 @@
           "desc": {
             "type": "string",
             "description": "One or two lines on the plan's goal (optional)"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "p0",
+              "active",
+              "parked"
+            ],
+            "description": "For lane: p0, active or parked"
+          },
+          "why": {
+            "type": "string",
+            "description": "For lane: why (required to park)"
+          },
+          "until": {
+            "type": "string",
+            "description": "For lane: when it can unpark, e.g. 'after Show HN' or 'G-12'"
+          },
+          "owner": {
+            "type": "string",
+            "description": "For lane: the agent who drives it"
           }
         },
         "additionalProperties": false
@@ -777,7 +799,7 @@
           "blocked_on": {
             "type": "object",
             "additionalProperties": true,
-            "description": "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed }"
+            "description": "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed, parked?: true when it waits on purpose, until?: when it can move }"
           }
         },
         "additionalProperties": false,

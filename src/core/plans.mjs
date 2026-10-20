@@ -86,3 +86,58 @@ export async function planForJob(store, plan, { now } = {}) {
   }
   return { plan: id, filed: false };
 }
+
+// ─── Lanes (lanes spec, 2026-10-20) ─────────────────────────────────────
+// A lane is a plan with a status. Exactly one plan is the P0 lane: it gets
+// first call on shared agents. Others are active at lower priority, or
+// parked with a reason and an unpark condition.
+export const LANE_STATUS = ["p0", "active", "parked"];
+
+/** Every plan record, sorted by id. */
+export async function getPlans(store) {
+  const out = [];
+  for (const id of await listPlans(store)) {
+    const rec = await getPlan(store, id);
+    if (rec) out.push(rec);
+  }
+  return out;
+}
+
+/**
+ * Set a plan's lane. P0 demotes the current P0 lane to active (returned in
+ * demoted). Parked needs a reason. Returns { plan, was, demoted }.
+ */
+export async function setLane(store, id, { status, why, until, owner, by, now = Date.now }) {
+  checkPlanId(id);
+  if (!LANE_STATUS.includes(status)) throw new PlanError(`lane status must be one of ${LANE_STATUS.join(", ")}`);
+  const clean = (v, max, name) => {
+    if (v == null || v === "") return undefined;
+    if (typeof v !== "string") throw new PlanError(`${name} must be text`);
+    return v.trim().slice(0, max) || undefined;
+  };
+  const reason = clean(why, 300, "why");
+  if (status === "parked" && !reason) throw new PlanError("a parked lane needs why: one line on why it waits");
+  const rec = id === GENERAL ? await ensureGeneral(store, { now }) : await getPlan(store, id);
+  if (!rec) throw new PlanError(`no plan '${id}' in this space`);
+  const demoted = [];
+  if (status === "p0") {
+    for (const other of await getPlans(store)) {
+      if (other.id !== id && other.lane?.status === "p0") {
+        await store.redis("SET", K.rec(store.space, other.id), JSON.stringify({ ...other, lane: { ...other.lane, status: "active", set_by: by || null, set_at: now(), why: `${rec.title || id} became the P0 lane` } }));
+        demoted.push(other.id);
+      }
+    }
+  }
+  const was = rec.lane?.status || null;
+  const lane = { status, ...(reason ? { why: reason } : {}), ...(clean(until, 200, "until") ? { until: clean(until, 200, "until") } : {}), ...(clean(owner, 64, "owner") ? { owner: clean(owner, 64, "owner") } : rec.lane?.owner ? { owner: rec.lane.owner } : {}), set_by: by || null, set_at: now() };
+  const next = { ...rec, lane };
+  await store.redis("SET", K.rec(store.space, id), JSON.stringify(next));
+  return { plan: next, was, demoted };
+}
+
+/** The one-line log text for a lane change. */
+export function laneText(plan, was, demoted) {
+  const label = { p0: "P0", active: "active", parked: "parked" };
+  const l = plan.lane;
+  return `Lane ${plan.id}: ${label[l.status]}${was && was !== l.status ? ` (was ${label[was]})` : ""}${l.why ? `. Why: ${l.why}` : ""}${l.until ? `. Until: ${l.until}` : ""}${demoted.length ? `. ${demoted.join(", ")} moved to active` : ""}.`;
+}
