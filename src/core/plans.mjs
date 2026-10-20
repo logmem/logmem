@@ -53,6 +53,7 @@ export async function createPlan(store, { id, title, owner, desc, now = Date.now
   const ok = await store.redis("SET", K.rec(store.space, id), JSON.stringify(rec), "NX");
   if (ok !== "OK") throw new PlanError(`plan '${id}' already exists`);
   await store.redis("SADD", K.list(store.space), id);
+  await store.bumpRev?.();
   return rec;
 }
 
@@ -63,6 +64,7 @@ export async function ensureGeneral(store, { now = Date.now } = {}) {
   const rec = { id: GENERAL, title: "General: work not yet filed in a plan", owner: null, created_at: now() };
   await store.redis("SET", K.rec(store.space, GENERAL), JSON.stringify(rec), "NX");
   await store.redis("SADD", K.list(store.space), GENERAL);
+  await store.bumpRev?.();
   return (await getPlan(store, GENERAL)) || rec;
 }
 
@@ -132,6 +134,7 @@ export async function setLane(store, id, { status, why, until, owner, by, now = 
   const lane = { status, ...(reason ? { why: reason } : {}), ...(clean(until, 200, "until") ? { until: clean(until, 200, "until") } : {}), ...(clean(owner, 64, "owner") ? { owner: clean(owner, 64, "owner") } : rec.lane?.owner ? { owner: rec.lane.owner } : {}), set_by: by || null, set_at: now() };
   const next = { ...rec, lane };
   await store.redis("SET", K.rec(store.space, id), JSON.stringify(next));
+  await store.bumpRev?.();
   return { plan: next, was, demoted };
 }
 

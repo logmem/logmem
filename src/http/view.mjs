@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk, verifyDecision } from "../core/tools.mjs";
 import { listBlockers } from "../core/blockers.mjs";
 import { listPlans, getPlan, getPlans } from "../core/plans.mjs";
 import { lmDecisionKey } from "../core/keys.mjs";
@@ -92,9 +92,29 @@ const jobOf = (where) => {
 export async function pendingDecisions(store, r, space, { secret } = {}) {
   const prefix = `lm:${space}:ask:`;
   const trails = (await scanKeys(r, `${prefix}*`)).map((k) => k.slice(prefix.length));
+  // A decision key hides an ask only when it really settles it: a signed claim that verifies with
+  // today's key and binds this ask's hash. Junk, old-key and altered claims leave the ask open, as in the Brief.
+  const settledBy = (raw, askHash) => {
+    let rec;
+    try {
+      rec = JSON.parse(raw);
+    } catch {
+      return false;
+    }
+    const claim = rec && typeof rec === "object" ? (rec.entry && typeof rec.entry === "object" ? rec.entry : rec.kind === "decided" ? rec : null) : null;
+    if (!claim || claim.kind !== "decided" || claim.payload?.ask_hash !== askHash) return false;
+    try {
+      return verifyDecision(claim, { secret, space }) === true;
+    } catch {
+      return false;
+    }
+  };
   const open = (await inBatches(trails, 25, async (t) => {
     try {
-      return (await r("GET", lmDecisionKey(space, t))) == null ? t : null;
+      const raw = await r("GET", lmDecisionKey(space, t));
+      if (raw == null) return t;
+      const reg = JSON.parse((await r("GET", `${prefix}${t}`)) || "null");
+      return settledBy(raw, reg?.hash) ? null : t;
     } catch {
       return null;
     }
@@ -116,7 +136,8 @@ export async function pendingDecisions(store, r, space, { secret } = {}) {
 /** What one person needs to do: open tasks for them and open decisions, each with its job and plan. */
 export async function needsView(store, r, space, { secret, person = "human:admin" } = {}) {
   const tasks = (await listBlockers(store)).filter((b) => b.to === person || person === "human:admin");
-  const decisions = await pendingDecisions(store, r, space, { secret });
+  // An ask addressed to a named person belongs in that person's inbox only (only they can answer it).
+  const decisions = (await pendingDecisions(store, r, space, { secret })).filter((a) => !a.to || a.to === person);
   const jobs = new Map();
   const planOf = async (job) => {
     if (!job) return null;
