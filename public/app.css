@@ -1,0 +1,143 @@
+/* app.css — the live web app: mission control on every screen size.
+   Spec: docs/superpowers/specs/2026-10-19-logmem-live-app-design.md.
+   Tokens come from ds/tokens/logmem.css. Breakpoints: phone < 640,
+   tablet 640-1023, laptop 1024-1439, wide >= 1440. */
+
+/* ── shell ─────────────────────────────────────────────────────── */
+.lmx{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh;min-height:100dvh;background:var(--bg)}
+.lmx-rail{position:sticky;top:0;height:100vh;height:100dvh;overflow:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;padding:16px 10px;border-right:1px solid var(--border);background:var(--surface)}
+.lmx-rail .lm-nav-item{min-height:36px}
+.lmx-rail .lmx-sep{margin:10px 8px 4px;font:600 11px/16px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--text-subtle)}
+.lmx-col{min-width:0;display:flex;flex-direction:column}
+.lmx-head{position:sticky;top:0;z-index:var(--z-sticky,20);display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 24px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.lmx-head .lm-crumbs{margin:0;flex:1 1 auto;min-width:0}
+.lmx-head .lm-search{flex:0 1 280px}
+.lmx-main{box-sizing:border-box;width:100%;max-width:1600px;margin:0 auto;padding:20px 24px 48px;display:flex;flex-direction:column;gap:20px}
+
+/* live status chip */
+.lmx-live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-subtle);white-space:nowrap}
+.lmx-live::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--success)}
+.lmx-live[data-s="reconnecting"]::before{background:var(--warning)}
+.lmx-live[data-s="paused"]::before{background:var(--text-subtle)}
+
+/* Needs you button */
+.lmx-needs{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border-radius:var(--radius-pill,999px);border:1.5px solid var(--decision);background:var(--decision-subtle);color:var(--decision);font:600 13px/1 var(--font-sans);cursor:pointer}
+.lmx-needs b{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--decision);color:#fff;font-size:12px}
+.lmx-needs[data-n="0"]{border-color:var(--border);background:var(--surface);color:var(--text-muted)}
+.lmx-needs[data-n="0"] b{background:var(--surface-sunken);color:var(--text-subtle)}
+
+/* new-updates pill */
+.lmx-pill{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:var(--z-toast,60);border:0;border-radius:999px;padding:8px 16px;background:var(--info);color:#fff;font:600 13px/1 var(--font-sans);box-shadow:var(--shadow-2);cursor:pointer}
+
+/* ── Home: three columns ───────────────────────────────────────── */
+.lmx-home{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}
+.lmx-colhead{display:flex;align-items:baseline;gap:8px;margin:0 0 8px;font:600 12px/16px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.lmx-colhead b{font-variant-numeric:tabular-nums;color:var(--text)}
+.lmx-stack{display:flex;flex-direction:column;gap:10px}
+
+/* ── cards (shared parts) ──────────────────────────────────────── */
+.lmx-card{position:relative;display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);min-width:0;outline-offset:2px}
+.lmx-card:focus-visible{outline:2px solid var(--focus)}
+.lmx-card h3{margin:0;font:600 14px/20px var(--font-sans);overflow-wrap:anywhere}
+.lmx-card h3 a{color:inherit;text-decoration:none}
+.lmx-card h3 a:hover{text-decoration:underline}
+.lmx-meta{font-size:12px;line-height:17px;color:var(--text-subtle);overflow-wrap:anywhere}
+.lmx-why{font-size:13px;line-height:19px;color:var(--text-muted);overflow-wrap:anywhere}
+.lmx-acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lmx-acts .lm-btn{min-height:32px}
+.lmx-acts .lm-input{flex:1 1 180px;width:auto;min-height:32px}
+.lmx-job[data-w="none"]{border-left:3px solid var(--danger)}
+.lmx-job[data-w="task"],.lmx-job[data-w="decision"]{border-left:3px solid var(--decision)}
+.lmx-job[data-w="agent"]{border-left:3px solid var(--info)}
+.lmx-job[data-w="external"]{border-left:3px solid var(--warning)}
+.lmx-bar{height:6px;border-radius:3px;background:var(--surface-sunken);overflow:hidden}
+.lmx-bar i{display:block;height:100%;background:var(--brand);transition:width var(--duration-base,.2s) var(--ease-standard,ease)}
+.lmx-plan .lmx-pct{font:600 22px/1 var(--font-display,var(--font-sans));font-variant-numeric:tabular-nums}
+.lmx-agent{flex-direction:row;align-items:flex-start;gap:10px}
+.lmx-agent .lmx-dot{flex:none;width:9px;height:9px;margin-top:6px;border-radius:50%;background:var(--text-subtle)}
+.lmx-agent[data-p="active"] .lmx-dot{background:var(--success)}
+.lmx-agent[data-p="idle"] .lmx-dot{background:var(--warning)}
+.lmx-flag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;background:var(--danger-subtle);color:var(--danger)}
+
+/* new rows glow, then fade */
+@keyframes lmx-glow{from{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 45%,transparent)}to{box-shadow:0 0 0 0 transparent}}
+.lmx-new{animation:lmx-glow 2s var(--ease-standard,ease) 1}
+
+/* ── tasks and decisions (Needs you) ───────────────────────────── */
+.lmx-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.lmx-steps li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border)}
+.lmx-steps li:first-child{border-top:0}
+.lmx-steps input[type=checkbox]{flex:none;width:20px;height:20px;margin:1px 0 0;accent-color:var(--brand)}
+.lmx-steps code{font-family:var(--font-mono);font-size:12px;overflow-wrap:anywhere}
+.lmx-tabsbar{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:0 0 12px}
+.lmx-tabsbar button{border:0;background:none;padding:8px 12px;font:600 13px/1 var(--font-sans);color:var(--text-muted);border-bottom:2px solid transparent;cursor:pointer;min-height:40px}
+.lmx-tabsbar button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--brand)}
+
+/* ── side panel ────────────────────────────────────────────────── */
+.lmx-scrim{position:fixed;inset:0;z-index:var(--z-overlay,40);background:rgba(10,16,15,.28)}
+.lmx-drawer{position:fixed;top:0;right:0;bottom:0;z-index:calc(var(--z-overlay,40) + 1);width:480px;max-width:100vw;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--shadow-3);animation:lmx-in var(--duration-base,.2s) var(--ease-standard,ease)}
+@keyframes lmx-in{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+.lmx-drawer-head{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.lmx-drawer-head h2{margin:0;flex:1 1 auto;min-width:0;font:600 16px/22px var(--font-sans);overflow-wrap:anywhere}
+.lmx-drawer-body{flex:1 1 auto;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.lmx-x{border:0;background:none;width:40px;height:40px;border-radius:8px;font-size:20px;color:var(--text-muted);cursor:pointer}
+.lmx-x:hover{background:var(--surface-sunken)}
+.lmx-drawer[data-pinned]{box-shadow:none}
+.lmx-back{display:none}
+
+/* toast */
+.lmx-toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:var(--z-toast,60);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.lmx-toast{pointer-events:auto;max-width:min(560px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;background:var(--text);color:var(--bg);font-size:13px;box-shadow:var(--shadow-2)}
+.lmx-toast[data-s="err"]{background:var(--danger);color:#fff}
+
+/* phone tab bar (hidden above phone width) */
+.lmx-tabs{display:none}
+
+/* ── tablet: icon rail, two columns ────────────────────────────── */
+@media (max-width:1023px){
+  .lmx{grid-template-columns:64px minmax(0,1fr)}
+  .lmx-rail{padding:12px 6px;align-items:center}
+  .lmx-rail .lm-nav-item{justify-content:center;width:48px;padding:0}
+  .lmx-rail .lm-nav-item span,.lmx-rail .lmx-sep,.lmx-rail .lm-field,.lmx-rail .lmx-railtext,.lmx-rail .lm-rail-brand{display:none}
+  .lmx-home{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .lmx-home>.lmx-c-agents{grid-column:1 / -1}
+  .lmx-c-agents .lmx-stack{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+  .lmx-drawer{width:60vw;min-width:420px}
+  .lmx-head .lm-search{display:none}
+}
+
+/* ── phone: bottom tabs, one column, full-screen panels ───────── */
+@media (max-width:639px){
+  .lmx{grid-template-columns:minmax(0,1fr)}
+  .lmx-rail{display:none}
+  .lmx-head{padding:8px 16px}
+  .lmx-head .lm-crumbs{font-size:13px}
+  .lmx-main{padding:14px 16px calc(84px + env(safe-area-inset-bottom,0px));gap:16px}
+  .lmx-home{grid-template-columns:minmax(0,1fr)}
+  .lmx-c-blocked{order:1}.lmx-c-plans{order:2}.lmx-c-agents{order:3}
+  .lmx-c-plans .lmx-stack{flex-direction:row;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px}
+  .lmx-c-plans .lmx-card{flex:0 0 78%;scroll-snap-align:start}
+  .lmx-c-agents .lmx-stack{display:flex}
+  .lmx-acts .lm-btn,.lmx-needs{min-height:44px}
+  .lmx-drawer{width:100vw;min-width:0;border-left:0}
+  .lmx-back{display:inline-block}
+  .lmx-drawer-head .lmx-x:last-child{display:none}
+  .lmx-drawer .lm-approval-foot{position:sticky;bottom:0}
+  .lmx-tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:var(--z-sticky,20);padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--border)}
+  .lmx-tabs a,.lmx-tabs button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:52px;justify-content:center;border:0;background:none;color:var(--text-muted);font:500 11px/1 var(--font-sans);text-decoration:none;position:relative;cursor:pointer}
+  .lmx-tabs [aria-current="page"]{color:var(--brand)}
+  .lmx-tabs b{position:absolute;top:4px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--decision);color:#fff;font-size:10px;line-height:16px}
+  .lmx-toasts{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  .lmx-head .lmx-needs{display:none}
+}
+
+/* ── wide: room for a pinned panel ─────────────────────────────── */
+@media (min-width:1440px){
+  body.lmx-pinned .lmx-col{margin-right:480px}
+  body.lmx-pinned .lmx-scrim{display:none}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .lmx-new,.lmx-drawer{animation:none}
+  .lmx-bar i{transition:none}
+}
