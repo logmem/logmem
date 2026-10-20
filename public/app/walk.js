@@ -132,14 +132,16 @@ async function save() {
 }
 
 // ─── player ──────────────────────────────────────────────────────────
-let play = null; // { key, i, finish, reply, cant, busy }
+// Player state belongs to one space and trail; its writes go to that space (codex review of PR 88).
+let play = null; // { key, space, i, reply, cant, localDone }
+const playKey = (space, trail) => `${space || ''}/${trail}`;
 
 export async function playerPage(arg) {
   if (drawerOpen()) closeDrawer();
   const raw = String(arg || '');
   if (raw === 'preview') {
     if (!draft) { renderBare(bare(emptyState('Nothing to preview.', 'Open the writer on a job page, then press Preview.'))); return; }
-    if (!play || play.key !== 'preview') play = { key: 'preview', i: 0, localDone: [] };
+    if (!play || play.key !== 'preview') play = { key: 'preview', space: state.space, i: 0, localDone: [] };
     const rec = { trail: 'preview', summary: draft.summary, to: draft.to, by: '', walkthrough: toWalkthrough(draft), steps_done: play.localDone, done: false };
     return drawPlayer(rec, true);
   }
@@ -151,7 +153,8 @@ export async function playerPage(arg) {
   if (t.__status === 404) { renderBare(bare(emptyState('This walkthrough isn’t here.', 'It may be in another space, or it was written for someone else. Ask whoever sent you the link.'))); return; }
   if (!okHook(t)) return;
   const rec = t.blocker;
-  if (!play || play.key !== rec.trail) play = { key: rec.trail, i: firstOpen(rec) };
+  const key = playKey(state.space, rec.trail);
+  if (!play || play.key !== key) play = { key, space: state.space, i: firstOpen(rec) };
   drawPlayer(rec, false);
 }
 
@@ -198,17 +201,17 @@ function stepCard(rec, s, i, n, ticked, isPreview) {
       else {
         // lit reuses this button for the next step, so it is always re-enabled (finally).
         const b = ev.currentTarget; b.disabled = true;
-        try { await postJSON('/api/tasks', 'blockers', { action: 'step', trail: rec.trail, step: i, checked: true }); }
+        try { await postJSON('/api/tasks', 'blockers', { space: play.space, action: 'step', trail: rec.trail, step: i, checked: true, rev: rec.rev || 0 }); }
         catch (e) { toast('Not saved: ' + e.message, true); return; }
         finally { b.disabled = false; }
       }
     }
     play.i = i + 1;
-    return isPreview ? playerPage('preview').then(focusCard) : playerPage(state.space + '/' + rec.trail).then(focusCard);
+    return isPreview ? playerPage('preview').then(focusCard) : playerPage(play.space + '/' + rec.trail).then(focusCard);
   };
   const untick = async () => {
     if (isPreview) { play.localDone = play.localDone.filter((x) => x !== i); return playerPage('preview'); }
-    try { await postJSON('/api/tasks', 'blockers', { action: 'step', trail: rec.trail, step: i, checked: false }); playerPage(state.space + '/' + rec.trail); }
+    try { await postJSON('/api/tasks', 'blockers', { space: play.space, action: 'step', trail: rec.trail, step: i, checked: false, rev: rec.rev || 0 }); playerPage(play.space + '/' + rec.trail); }
     catch (e) { toast('Not saved: ' + e.message, true); }
   };
   return html`<section class="lm-panel ob-card lmw-card" data-key=${'wstep:' + i}>
@@ -231,10 +234,10 @@ function finishCard(rec, isPreview, n) {
     if (isPreview) { toast('Preview: nothing was sent.'); return; }
     const b = ev.currentTarget; b.disabled = true;
     try {
-      await postJSON('/api/tasks', 'blockers', play.cant ? { action: 'cant_do', trail: rec.trail, reason: play.reply.trim() } : { action: 'done', trail: rec.trail, note: play.reply.trim() || undefined });
+      await postJSON('/api/tasks', 'blockers', play.cant ? { space: play.space, action: 'cant_do', trail: rec.trail, reason: play.reply.trim() } : { space: play.space, action: 'done', trail: rec.trail, note: play.reply.trim() || undefined });
       toast(play.cant ? 'Sent back with your reason.' : 'Reply sent. The job moves on.');
       play.reply = null;
-      playerPage(state.space + '/' + rec.trail);
+      playerPage(play.space + '/' + rec.trail);
     } catch (e) { toast('Not sent: ' + e.message, true); } finally { b.disabled = false; }
   };
   const cantMode = () => { play.cant = !play.cant; play.reply = play.cant ? '' : w.reply || ''; drawPlayerAgain(rec, isPreview); };

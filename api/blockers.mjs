@@ -2,7 +2,7 @@
 //
 // Spec: docs/superpowers/specs/2026-10-19-logmem-blockers-plans-design.md.
 //   GET  ?space=madez                              -> { space, person, blockers: [...] }  open, oldest first
-//   POST { space, trail, action: "step", step, checked } -> { ok, blocker }
+//   POST { space, trail, action: "step", step, checked, rev? } -> { ok, blocker }  rev: the walkthrough revision shown
 //   POST { space, trail, action: "done", note? }          -> { ok, blocker }
 //   POST { space, trail, action: "cant_do", reason }      -> { ok, blocker }
 //   GET  ?space=madez&trail=…                      -> { space, person, blocker }  one task, open or closed (the player)
@@ -81,7 +81,7 @@ export function createHandler({ env = process.env, redis, now } = {}) {
       const store = webStore(runner, b.space, env);
       const opts = { by: person, ...(now ? { now } : {}) };
       if (b.action === "step") {
-        const blocker = await setStep(store, String(b.trail || ""), { ...opts, step: Number(b.step), checked: b.checked === true });
+        const blocker = await setStep(store, String(b.trail || ""), { ...opts, step: Number(b.step), checked: b.checked === true, ...(Number.isInteger(b.rev) ? { rev: b.rev } : {}) });
         return res.status(200).json({ ok: true, blocker });
       }
       if (b.action === "done") {

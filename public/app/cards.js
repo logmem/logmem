@@ -52,7 +52,7 @@ export function taskCard(i) {
     <div class="lmx-meta">Task · ${[i.plan, i.job].filter(Boolean).join(' › ')}</div><h3>${b.summary}</h3>
     <div class="lmx-meta">${joinDot([w.time, w.place, w.due ? 'due ' + w.due : '', 'from ' + agentName(b.by), `${done.length} of ${steps.length} steps`])}</div>
     ${steps.length ? html`<ol class="lmx-steps">${steps.map((st, k) => html`<li>
-      <input type="checkbox" .checked=${done.indexOf(k) >= 0} @change=${(e) => doStep(e, b.trail, k)} aria-label=${`Step ${k + 1} done`}>
+      <input type="checkbox" .checked=${done.indexOf(k) >= 0} @change=${(e) => doStep(e, b.trail, k, b.rev || 0)} aria-label=${`Step ${k + 1} done`}>
       <div style="min-width:0"><b>${st.title}</b>${st.detail ? html`<div class="lmx-why">${st.detail}</div>` : nothing}
       ${st.cmd ? html`<div class="lmx-acts" style="margin-top:4px"><code>${st.cmd}</code>${btn('Copy', 'ghost', () => copy(st.cmd))}</div>` : nothing}</div></li>`)}</ol>` : nothing}
     ${steps.length ? html`<div class="lmx-acts"><a class="lm-btn lm-btn--secondary" href=${'#/walk/' + encodeURIComponent(state.space || '') + '/' + encodeURIComponent(b.trail)}>Open the walkthrough</a></div>` : nothing}

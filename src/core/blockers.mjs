@@ -155,11 +155,19 @@ function whereOf(rec) {
 }
 
 /** A person ticks (or unticks) one step. Writes one entry by that person on the work's log. */
-export async function setStep(store, trail, { step, checked, by, now = Date.now }) {
+/** The walkthrough revision: 1 when written, plus one per edit. Agent handoffs have none (0). */
+export const revOf = (rec) => (Number.isInteger(rec?.rev) ? rec.rev : 0);
+
+export async function setStep(store, trail, { step, checked, by, rev, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can tick a step");
   let steps = [];
+  // A tick is bound to the instructions the person saw: the revision the player sent, or the
+  // one this call first read. A retry after an edit never ticks the replacement instructions.
+  let seen = Number.isInteger(rev) ? rev : null;
   const { rec: next } = await updateRecord(store, trail, (rec) => {
     if (rec.done) throw new BlockerError("this blocker is already done");
+    if (seen == null) seen = revOf(rec);
+    if (revOf(rec) !== seen) throw new BlockerError("the walkthrough changed since you opened it. Reload to see the new steps");
     steps = rec.walkthrough?.steps || [];
     if (!Number.isInteger(step) || step < 0 || step >= steps.length) throw new BlockerError("no such step");
     const set = new Set(rec.steps_done || []);
@@ -261,7 +269,7 @@ export async function writeWalkthrough(store, { job, to, summary, walkthrough, t
       if (rec.done) throw new BlockerError("this walkthrough is already closed");
       if (rec.started_at || (rec.steps_done || []).length) throw new BlockerError("someone has started this walkthrough, so it can't change now. Write a new one");
       if (rec.by !== by) throw new BlockerError("only the person who wrote this walkthrough can edit it");
-      return { ...rec, to, summary: title, walkthrough: w, updated_at: now() };
+      return { ...rec, to, summary: title, walkthrough: w, updated_at: now(), rev: revOf(rec) + 1 };
     }, { tries: 1, changedMessage: "this walkthrough changed while you were editing (someone may have started it). Reload and check it" });
     const rec = next;
     const { ns, id } = whereOf(rec);
@@ -279,7 +287,7 @@ export async function writeWalkthrough(store, { job, to, summary, walkthrough, t
     ts: t, kind: "handoff", by, via: "web", byline: `${who} (via web)`, trail: tr, summary: title,
     to, job: `job:${job}`, payload: { walkthrough: w, written_in: "web" },
   });
-  await createBlocker(store, { trail: tr, to, by, where: `job:${job}`, summary: title, walkthrough: w, created_at: t });
+  await createBlocker(store, { trail: tr, to, by, where: `job:${job}`, summary: title, walkthrough: w, created_at: t, rev: 1 });
   await linkOpen(store, job, { type: "task", ref: tr, note: title, now: () => t });
   return getBlocker(store, tr);
 }

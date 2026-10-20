@@ -201,3 +201,49 @@ test("PR 88 finding 3: writer drafts are keyed by space and save to their own sp
   assert.match(src, /if \(d\.space !== state\.space\)/);
   assert.match(src, /postJSON\('\/api\/tasks', 'blockers', \{ space: d\.space, action: 'write'/);
 });
+
+// ─── codex review of PR 88 at 5bcd83c ───────────────────────────────
+test("PR 88 re-review 1: a tick that loses to an edit never ticks the new instructions", async () => {
+  const { store, other, before } = await raceSetup();
+  const b = await writeWalkthrough(other, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-rev" });
+  assert.equal(b.rev, 1);
+  // The edit lands between the tick's read and its write.
+  before(() => writeWalkthrough(other, { trail: "wt-rev", to: "human:mikey", summary: "v2", walkthrough: { steps: [{ title: "New step one" }, { title: "New step two" }] }, by: "human:mikey" }));
+  await assert.rejects(() => setStep(store, "wt-rev", { step: 0, checked: true, by: "human:mikey" }), /walkthrough changed/);
+  const rec = await getBlocker(other, "wt-rev");
+  assert.equal(rec.rev, 2);
+  assert.deepEqual(rec.steps_done, []);
+  assert.equal(rec.started_at, undefined);
+});
+
+test("PR 88 re-review 1: a tick for the revision the player showed is refused after an edit", async () => {
+  const { store } = await setup();
+  await writeWalkthrough(store, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-rev2" });
+  await writeWalkthrough(store, { trail: "wt-rev2", to: "human:mikey", summary: "v2", walkthrough: W, by: "human:mikey" });
+  await assert.rejects(() => setStep(store, "wt-rev2", { step: 0, checked: true, rev: 1, by: "human:mikey" }), /walkthrough changed/);
+  const ok = await setStep(store, "wt-rev2", { step: 0, checked: true, rev: 2, by: "human:mikey" });
+  assert.deepEqual(ok.steps_done, [0]);
+});
+
+test("PR 88 re-review 1: the tasks API passes the revision through", async () => {
+  const { redis, store } = await setup();
+  await writeWalkthrough(store, { job: "npm-publish", to: "human:mikey", summary: "v1", walkthrough: W, by: "human:mikey", mint: () => "wt-api" });
+  await writeWalkthrough(store, { trail: "wt-api", to: "human:mikey", summary: "v2", walkthrough: W, by: "human:mikey" });
+  const h = createHandler({ env: ENV, redis });
+  const w = { cookie, "x-logmem-intent": "blockers", origin: "https://logmem.si" };
+  const stale = await call(h, { method: "POST", body: { space: "madez", action: "step", trail: "wt-api", step: 0, checked: true, rev: 1 }, headers: w });
+  assert.equal(stale.status, 400);
+  assert.match(stale.body.error, /walkthrough changed/);
+  assert.equal((await call(h, { method: "POST", body: { space: "madez", action: "step", trail: "wt-api", step: 0, checked: true, rev: 2 }, headers: w })).status, 200);
+});
+
+test("PR 88 re-review 2: player state is keyed by space and trail, and its writes go to that space", () => {
+  const src = readFileSync(new URL("../public/app/walk.js", import.meta.url), "utf8");
+  assert.match(src, /const playKey = \(space, trail\) =>/);
+  assert.doesNotMatch(src, /play\.key !== rec\.trail/);
+  // Every player write object (step, done, can't do) names the player's own space first.
+  const writes = src.match(/\{ [^{}]*action: '(step|done|cant_do)'/g) || [];
+  assert.equal(writes.length, 4, writes.join("\n"));
+  for (const w of writes) assert.match(w, /^\{ space: play\.space, action:/, w);
+  assert.match(src, /rev: rec\.rev \|\| 0/);
+});
