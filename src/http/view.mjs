@@ -309,18 +309,17 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
  */
 export async function planView(store, name) {
   const ids = await store.list("job");
-  const rows = [];
   const names = new Set();
-  for (const id of ids) {
+  const rows = (await inBatches(ids, 25, async (id) => {
     try {
       const [who, nowSlot] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
-      if (!who?.plan) continue;
-      names.add(String(who.plan));
-      rows.push({ id, who, stage: nowSlot.stage || "open", owner: nowSlot.owner || who.owner || null, blocked_on: nowSlot.blocked_on || null });
+      if (!who?.plan) return null;
+      return { id, who, stage: nowSlot.stage || "open", owner: nowSlot.owner || who.owner || null, blocked_on: nowSlot.blocked_on || null };
     } catch {
-      continue;
+      return null;
     }
-  }
+  })).filter(Boolean);
+  for (const r of rows) names.add(String(r.who.plan));
   const plans = [...names].sort();
   // Open on the named plan, else the first real plan; "general" only when it is all there is.
   const plan = name && names.has(name) ? name : plans.find((p) => p !== "general") || plans[0] || null;
@@ -340,20 +339,26 @@ export async function planView(store, name) {
   const pct = (items) => (items.length ? Math.round((items.filter((i) => i.stage === "done").length / items.length) * 100) : 0);
   const trackList = [...tracks.entries()].map(([title, items]) => ({ title, percent: pct(items), items }));
   const all = trackList.flatMap((t) => t.items);
-  return { plans, plan, percent: pct(all), milestones, tracks: trackList };
+  const rec = plan ? await getPlan(store, plan) : null;
+  return { plans, plan, title: rec?.title || plan, desc: rec?.desc || null, percent: pct(all), milestones, tracks: trackList };
 }
 
 async function jobsView(store) {
   const ids = await store.list("job");
-  const jobs = [];
-  for (const id of ids) {
+  // Batched, not one at a time: a REST bridge answers ~25 reads at once far faster than in series.
+  const jobs = (await inBatches(ids, 25, async (id) => {
     try {
       const [who, nowSlot, last] = await Promise.all([store.getWho("job", id), store.getNow("job", id), store.readLog("job", id, { reverse: true, limit: 1 })]);
-      jobs.push({ id, title: who?.title || id, owner: nowSlot.owner || who?.owner || null, stage: nowSlot.stage || "open", due: who?.due || null, last: last[0] ? slim(last[0], `job:${id}`) : null });
+      return {
+        id, title: who?.title || id, owner: nowSlot.owner || who?.owner || null, stage: nowSlot.stage || "open", due: who?.due || null,
+        plan: who?.plan || null, track: who?.track || null, milestone: who?.milestone === true ? true : typeof who?.milestone === "string" ? who.milestone : who?.gate || null,
+        blocked_on: nowSlot.blocked_on || null, stage_at: nowSlot.stage_at || null,
+        last: last[0] ? slim(last[0], `job:${id}`) : null,
+      };
     } catch {
-      continue;
+      return null;
     }
-  }
+  })).filter(Boolean);
   jobs.sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
   return jobs;
 }
