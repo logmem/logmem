@@ -1,4 +1,6 @@
 // review-pr8.test.mjs — fixes for the PR #8 security review (decision
+// These suites test decision integrity, not where work lives: they run with
+// workRules "warn" so asks may sit on an agent log (see test/work-model.test.mjs).
 // integrity follow-up). One section per review item. No network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -30,7 +32,7 @@ function clock(start = 1791712800000) {
 
 /** Two agents in one space: atlas (a) and quill (q), both started. */
 async function team({ compat = false, now, redis = createMemoryRedis() } = {}) {
-  const mk = (sid) => createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: sid, compat, ...(now ? { now } : {}) });
+  const mk = (sid) => createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: sid, compat, ...(now ? { now } : {}) });
   const a = mk("atlas-s");
   const q = mk("quill-s");
   await sc(a, "logmem_start", { agent: "atlas" });
@@ -94,7 +96,7 @@ test("item 6: native and compat tools refuse bad agent ids at every entry point 
 
 test("item 6: a default agent with a bad id cannot auto-start a shift", async () => {
   const redis = createMemoryRedis();
-  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s", defaultAgent: "bad id" });
+  const lm = createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: "s", defaultAgent: "bad id" });
   const r = await lm.callTool("logmem_brief", {});
   assert.equal(r.isError, true);
   assert.match(r.structuredContent.error, /agent must be 1-64 characters/);
@@ -654,7 +656,7 @@ test("H1: a second ask on an existing trail is refused (the registry is SET NX) 
   let taken = false; // simulate: the trail logmem_ask picks is already registered
   const redis = async (cmd, ...args) => (taken && cmd === "SET" && String(args[0]).includes(":ask:") && args.includes("NX") ? null : base(cmd, ...args));
   redis._data = base._data;
-  const q = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  const q = createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
   await sc(q, "logmem_start", { agent: "quill" });
   const first = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
   const key = `lm:fieldnotes:ask:${first.trail}`;
@@ -834,17 +836,17 @@ test("L2: agent ids equal to LOGMEM_ADMIN_ID (default admin) or 'human' are refu
   assert.equal(checkAgentId("administrator"), "administrator");
 
   const redis = createMemoryRedis();
-  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  const lm = createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
   const r = await lm.callTool("logmem_start", { agent: "admin" });
   assert.equal(r.isError, true);
   assert.match(r.structuredContent.error, /reserved for the person who answers asks/);
   const { a } = await team();
   assert.equal((await a.callTool("logmem_handoff", { to: "admin", summary: "s", create_agent: true })).isError, true);
-  const bad = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "d", defaultAgent: "admin" });
+  const bad = createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: "d", defaultAgent: "admin" });
   assert.equal((await bad.callTool("logmem_brief", {})).isError, true, "not even as the default agent");
 
   // And whatever an agent is called, a person can still answer its ask.
-  const ok = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "o" });
+  const ok = createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: "o" });
   await sc(ok, "logmem_start", { agent: "admin-bot" });
   const ask = await sc(ok, "logmem_ask", { question: "q", action: "a", reversible: true });
   assert.equal((await writeDecision(createStore(redis, { space: "fieldnotes" }), ask.trail, { verdict: "approve", by: "human:admin" })).ok, true);
@@ -858,7 +860,7 @@ test("nit: a backend failure inside a tool returns 'internal error' + ref; the d
     if (broken && cmd !== "GET" && cmd !== "SET" && cmd !== "EXPIRE") throw new Error(LEAK);
     return base(cmd, ...args);
   };
-  const lm = createLogmem({ redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
+  const lm = createLogmem({ workRules: "warn", redis, space: "fieldnotes", surface: "codex", sessionId: "s" });
   await sc(lm, "logmem_start", { agent: "quill" });
   broken = true;
   let r;
@@ -877,7 +879,7 @@ test("nit: a backend failure inside a tool returns 'internal error' + ref; the d
   // Expected refusals keep their specific text.
   const v = await lm.callTool("logmem_note", { where: "channel:ops", summary: "x".repeat(1001) });
   assert.match(v.structuredContent.error, /summary is 1001 characters/);
-  const ping = createLogmem({ redis: async (c) => { if (c === "PING") throw new Error(LEAK); return base(c); }, space: "fieldnotes", sessionId: "p" });
+  const ping = createLogmem({ workRules: "warn", redis: async (c) => { if (c === "PING") throw new Error(LEAK); return base(c); }, space: "fieldnotes", sessionId: "p" });
   const pc = await ping.callTool("logmem_connection", {});
   assert.equal(pc.structuredContent.ping, "error: backend unreachable");
 });

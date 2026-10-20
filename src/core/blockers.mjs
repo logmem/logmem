@@ -11,6 +11,7 @@
 // agents see progress in their Brief and in the log.
 
 import { tryParse } from "./store.mjs";
+import { linkClose, jobOf } from "./links.mjs";
 
 export const PERSON_RE = /^human:[a-z0-9][a-z0-9_.-]{0,63}$/;
 export const WALKTHROUGH_LIMITS = { steps: 20, title: 120, detail: 1000, cmd: 500, field: 300 };
@@ -135,5 +136,23 @@ export async function markDone(store, trail, { by, note, now = Date.now }) {
   await store.redis("SREM", K.open(store.space), trail);
   const { ns, id } = whereOf(rec);
   await store.append(ns, id, personEntry(by, "done", `Done: ${rec.summary}`.slice(0, 1000), trail, { blocker: trail, ...(note ? { note: next.note } : {}) }, now));
+  await linkClose(store, jobOf(rec.where), { ref: trail, outcome: "done", now });
+  return next;
+}
+
+/** A person says they can't do the task, with a reason. Closes it and tells the agent on the job's log. */
+export async function cantDo(store, trail, { by, reason, now = Date.now }) {
+  if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can say a task can't be done");
+  if (typeof reason !== "string" || !reason.trim()) throw new BlockerError("say why it can't be done, in one line");
+  const rec = await getBlocker(store, trail);
+  if (!rec) throw new BlockerError("no such blocker");
+  if (rec.done) throw new BlockerError("this task is already closed");
+  const why = reason.trim().slice(0, 1000);
+  const next = { ...rec, done: true, done_at: now(), done_by: by, outcome: "cant_do", reason: why };
+  await store.redis("SET", K.rec(store.space, trail), JSON.stringify(next));
+  await store.redis("SREM", K.open(store.space), trail);
+  const { ns, id } = whereOf(rec);
+  await store.append(ns, id, personEntry(by, "feedback", `Can't do: ${why}`.slice(0, 1000), trail, { task: trail, cant_do: true, reason: why }, now));
+  await linkClose(store, jobOf(rec.where), { ref: trail, outcome: "cant_do", now });
   return next;
 }

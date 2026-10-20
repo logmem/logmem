@@ -14,6 +14,8 @@
 // is shown to other agents and must stay data, not a prompt channel.
 
 import { PERSON_RE, normalizeWalkthrough, createBlocker, getBlocker, blockersFrom } from "./blockers.mjs";
+import { planForJob, createPlan, listPlans, getPlan, PlanError } from "./plans.mjs";
+import { checkBlockedOn, linkOpen, linkClose, jobOf, BlockedError } from "./links.mjs";
 import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypto";
 import { params } from "./params.mjs";
 import { parseRef, lmDecisionKey, lmAskKey } from "./keys.mjs";
@@ -206,11 +208,38 @@ async function write(ctx, ns, id, { kind, summary, trail, origin, payload, ts, e
   return ctx.store.append(ns, id, entry);
 }
 
+/**
+ * The work rules (taxonomy spec): every task and decision is on a job, and a
+ * blocked job says why. "strict" (default) refuses a call that breaks them.
+ * "warn" lets it through with a warning, for teams still moving over.
+ */
+const workRules = (ctx) => (ctx.workRules === "warn" ? "warn" : "strict");
+
+/**
+ * The job a task or decision belongs to. Returns { job } (a job id that
+ * exists), { warning } (warn mode, the call goes on), or { error }.
+ */
+async function workJob(ctx, whereRef, what) {
+  const hint = `Open a job first with logmem_assign (it goes in a plan), then pass where: "job:<id>"`;
+  const id = jobOf(whereRef);
+  if (!id) {
+    const msg = `${what} must be on a job: where is '${whereRef || "(none)"}'. ${hint}`;
+    return workRules(ctx) === "warn" ? { warning: msg } : { error: msg };
+  }
+  if (!(await ctx.store.getWho("job", id))) {
+    const msg = `${what} is on job '${id}', which does not exist. ${hint}`;
+    return workRules(ctx) === "warn" ? { warning: msg, job: null } : { error: msg };
+  }
+  return { job: id };
+}
+
 /** A handoff to a person: the entry on the work's log, plus the blocker record with its walkthrough. */
 async function personHandoff({ to, summary, whereRef, trail, origin, walkthrough }, ctx) {
   if (!PERSON_RE.test(to)) return { ok: false, error: "a person is 'human:<id>': lowercase letters, digits, '.', '_' or '-'" };
-  if (!whereRef) return { ok: false, error: "a handoff to a person needs where (the job or channel the work lives in)" };
+  if (!whereRef) return { ok: false, error: `a task for a person needs where: "job:<id>", the job it belongs to` };
   capEntry({ summary, trail, origin });
+  const onJob = await workJob(ctx, whereRef, "A task for a person");
+  if (onJob.error) return { ok: false, error: onJob.error };
   let w;
   try {
     w = normalizeWalkthrough(walkthrough);
@@ -224,7 +253,8 @@ async function personHandoff({ to, summary, whereRef, trail, origin, walkthrough
   const extra = { to, job: `${where.ns}:${where.id}` };
   const entry = await write(ctx, where.ns, where.id, { kind: "handoff", summary, trail: tr, origin, ts: t, extra, handoff: true, ...(w ? { payload: { walkthrough: w } } : {}) });
   await createBlocker(ctx.store, { trail: tr, to, by: agentRef(me(ctx)), where: `${where.ns}:${where.id}`, summary, walkthrough: w || { steps: [] }, created_at: t });
-  return { ok: true, trail: tr, to, person: true, entries: [entry] };
+  const job = onJob.job ? await linkOpen(ctx.store, onJob.job, { type: "task", ref: tr, note: summary, now: () => t }) : null;
+  return { ok: true, trail: tr, to, person: true, entries: [entry], ...(job ? { job: { id: onJob.job, stage: job.stage, blocked_on: job.blocked_on } } : {}), ...(onJob.warning ? { warning: onJob.warning } : {}) };
 }
 
 /** Entry text in a Brief comes from other agents and people: data, not instructions. */
@@ -248,6 +278,8 @@ async function brief(ctx, agent) {
   const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
+  const tasks = await blockersFrom(s, agentRef(a));
+  const asks = asksOf(a, week, { ...verify, ...state });
   return {
     agent: a,
     space: s.space,
@@ -259,10 +291,26 @@ async function brief(ctx, agent) {
     // A decided row that does not verify against its canonical ask is still shown, marked unverified: it is not an answer.
     log: annotateDecisions(log.slice(0, 20), { ...verify, canon: canonicalAsks(week, state.registry) }),
     handoffs_to_me: waiting,
-    person_blockers: await blockersFrom(s, agentRef(a)),
-    ...asksOf(a, week, { ...verify, ...state }),
+    needs_people: await needsPeople(s, tasks, asks.pending_asks),
+    // Kept one release for older clients; needs_people replaces it.
+    person_blockers: tasks,
+    ...asks,
     recent_shifts: shifts,
   };
+}
+
+/** Every open task and decision this agent is waiting on, each with its job and plan. */
+async function needsPeople(store, tasks, pending) {
+  const rows = [
+    ...tasks.map((b) => ({ type: "task", trail: b.trail, to: b.to, job: jobOf(b.where), summary: b.summary, progress: b.progress })),
+    ...pending.map((q) => ({ type: "decision", trail: q.trail, to: q.to, job: jobOf(q.where), summary: q.question, ...(q.deferred ? { deferred: q.deferred } : {}) })),
+  ];
+  const plans = new Map();
+  for (const r of rows) {
+    if (r.job && !plans.has(r.job)) plans.set(r.job, (await store.getWho("job", r.job))?.plan ?? null);
+    r.plan = r.job ? plans.get(r.job) : null;
+  }
+  return rows;
 }
 
 /**
@@ -371,7 +419,7 @@ export const TOOLS = [
     name: "logmem_handoff",
     title: "Handoff",
     description:
-      "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): needs where, and takes an optional walkthrough (steps, time, place, done_when, reply, due). The person works through it on the web app's Blockers page; their progress shows in your Brief under person_blockers.",
+      "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): a task. It needs where='job:<id>' (the job it belongs to) and takes an optional walkthrough (steps, time, place, done_when, reply, due). The job is blocked until the person marks it done or says they can't. Their progress shows in your Brief under needs_people.",
     params: params({
       to: { type: "string", desc: "Agent receiving the work, e.g. 'atlas', or a person as 'human:<id>'" },
       summary: { type: "string", desc: "What is being handed over and what 'done' looks like" },
@@ -469,7 +517,7 @@ export const TOOLS = [
       question: { type: "string", desc: "Plain question, e.g. 'Send issue 14 to 2,184 subscribers Tue 9am?'" },
       action: { type: "string", desc: "The exact action you will take if approved (command, request, recipients)" },
       reversible: { type: "boolean", desc: "true only if this can be fully undone afterwards. Default false: treated as irreversible, so the person must confirm the exact action before approving", optional: true },
-      where: { type: "string", desc: "Job or channel this belongs to (default: your agent log)", optional: true },
+      where: { type: "string", desc: "The job this decision belongs to, as 'job:<id>' (default: the job in your Now)", optional: true },
       origin: { type: "string", desc: "Trail id this request follows from", optional: true },
       to: { type: "string", desc: "The person who must answer, as 'human:<id>' (default: any signed-in person). Only they can settle it; never an agent, never you", optional: true },
     }),
@@ -481,7 +529,15 @@ export const TOOLS = [
       if (to != null && !HUMAN_RE.test(String(to))) {
         return { ok: false, error: "to must be a person, 'human:<id>' (1-64 of letters, digits, '.', '_', '-'): an ask is answered by a person, never by an agent or by the asker" };
       }
-      const loc = where ? parseRef(where, "job") : { ns: "agent", id: agent };
+      // A decision lives on a job. No where: the single job named in the agent's Now.
+      let whereRef = where;
+      if (!whereRef) {
+        const nowJob = (await ctx.store.getNow("agent", agentId(agent)))?.job;
+        if (typeof nowJob === "string" && /^(job:)?[A-Za-z0-9_.:-]+$/.test(nowJob.trim())) whereRef = nowJob.trim().startsWith("job:") ? nowJob.trim() : `job:${nowJob.trim()}`;
+      }
+      const onJob = await workJob(ctx, whereRef, "A decision");
+      if (onJob.error) return { ok: false, error: onJob.error };
+      const loc = whereRef ? parseRef(whereRef, "job") : { ns: "agent", id: agent };
       const t = clock(ctx);
       const trail = makeTrail("approval", loc.id, t);
       // Default not reversible: only an explicit boolean true counts as reversible.
@@ -495,10 +551,13 @@ export const TOOLS = [
       const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
       await ctx.store.setNow("agent", agent, { waiting_on: { trail, question, since: t } });
+      const job = onJob.job ? await linkOpen(ctx.store, onJob.job, { type: "decision", ref: trail, note: question, now: () => t }) : null;
       return {
         ok: true,
         trail,
         entry,
+        ...(job ? { job: { id: onJob.job, stage: job.stage, blocked_on: job.blocked_on } } : {}),
+        ...(onJob.warning ? { warning: onJob.warning } : {}),
         instruction: "Waiting on a human. Do not perform the action. Check logmem_brief: act only when answered_asks shows this trail with verdict 'approve'.",
       };
     },
@@ -639,12 +698,13 @@ export const TOOLS = [
   {
     name: "logmem_assign",
     title: "Assign",
-    description: "Open a new job: a piece of work with a title, an owner, a stage and its own log.",
+    description:
+      "Open a new job: a piece of work with a title, an owner, a stage and its own log. Every job is in a plan: pass details.plan (see logmem_plan). With no plan, the job is filed in 'general'. Optional details: track (a lane in the plan), milestone (the milestone job it counts toward), due, desc, evidence. A milestone itself is a job with details { milestone: true, date, criteria }.",
     params: params({
       job: { type: "string", desc: "Job id, short and stable, e.g. 'issue-14'" },
       title: { type: "string", desc: "What the job is, in plain words" },
       owner: { type: "string", desc: "Agent who owns it (default: you)", optional: true },
-      details: { type: "object", desc: "Anything else: due date, links, acceptance", optional: true },
+      details: { type: "object", desc: "plan (required in spirit; default 'general'), track, milestone, due, desc, evidence, and anything else", optional: true },
       reopen: { type: "boolean", desc: "Reset a job that already exists (default false: refuse)", optional: true },
     }),
     annotations: WRITE,
@@ -655,13 +715,51 @@ export const TOOLS = [
       if (!reopen && (await ctx.store.getWho("job", id))) {
         throw new Error(`job '${id}' already exists; use logmem_update / logmem_stage, or pass reopen=true`);
       }
+      // Check the owner before the plan, so a refused call writes nothing (not even "general").
       const own = agentRef(owner == null ? me(ctx) : checkAgentId(owner, "owner"));
-      const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details };
+      let filed;
+      try {
+        filed = await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
+      } catch (e) {
+        if (e instanceof PlanError) return { ok: false, error: e.message };
+        throw e;
+      }
+      const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details, plan: filed.plan };
       await ctx.store.setWho("job", id, who);
       await ctx.store.setNow("job", id, { stage: "open", owner: own });
       await ctx.store.addJobSession(id, ctx.shift.shift);
       const entry = await write(ctx, "job", id, { kind: "assigned", summary: `New job: ${title}` });
-      return { ok: true, job: id, who, entry };
+      return { ok: true, job: id, who, entry, ...(filed.filed ? { note: "No plan given: filed in 'general'. Move it with a plan when you know where it belongs." } : {}) };
+    },
+  },
+  {
+    name: "logmem_plan",
+    title: "Plan",
+    description:
+      "List the plans in this space, or create one. A plan is a named body of work, such as 'launch'. Every job belongs to one plan; 'general' holds work not yet filed. Create: action 'create' with plan (a short id) and title.",
+    params: params({
+      action: { enum: ["list", "create"], desc: "list (default) or create", optional: true },
+      plan: { type: "string", desc: "Plan id for create: lowercase letters, digits and '-', e.g. 'launch'", optional: true },
+      title: { type: "string", desc: "What the plan is, for create", optional: true },
+      desc: { type: "string", desc: "One or two lines on the plan's goal (optional)", optional: true },
+    }),
+    annotations: WRITE,
+    async run({ action, plan, title, desc }, ctx) {
+      if (action !== "create") {
+        const ids = await listPlans(ctx.store);
+        const plans = [];
+        for (const p of ids) plans.push(await getPlan(ctx.store, p));
+        return { ok: true, plans: plans.filter(Boolean) };
+      }
+      capText("title", title);
+      capText("desc", desc);
+      try {
+        const rec = await createPlan(ctx.store, { id: plan, title, desc, owner: agentRef(me(ctx)), now: () => clock(ctx) });
+        return { ok: true, plan: rec };
+      } catch (e) {
+        if (e instanceof PlanError) return { ok: false, error: e.message };
+        throw e;
+      }
     },
   },
   {
@@ -686,20 +784,36 @@ export const TOOLS = [
   {
     name: "logmem_stage",
     title: "Stage",
-    description: "Move a job to open, active, blocked or done. Blocked writes a Stuck entry; done writes a Done entry.",
+    description:
+      "Move a job to open, active, blocked or done. Blocked needs blocked_on: what the job waits on, { type: decision | task | agent | external, ref?, note }. A task or decision you create on a job blocks it for you, and answering it unblocks it. Blocked writes a Stuck entry; done writes a Done entry (put the evidence in note).",
     params: params({
       job: { type: "string", desc: "Job id" },
       stage: { enum: STAGES, desc: "New stage" },
-      note: { type: "string", desc: "Why (required in spirit for blocked: what broke, what it blocks)", optional: true },
+      note: { type: "string", desc: "Why, or the evidence for done (a PR link, a test count)", optional: true },
+      blocked_on: { type: "object", desc: "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed }", optional: true },
     }),
     annotations: SET,
-    async run({ job, stage, note }, ctx) {
+    async run({ job, stage, note, blocked_on }, ctx) {
       capText("note", note);
       const { id } = parseRef(job, "job");
-      const now = await ctx.store.setNow("job", id, { stage, stage_at: clock(ctx) });
+      let reason = null;
+      let warning;
+      if (stage === "blocked") {
+        try {
+          reason = checkBlockedOn(blocked_on);
+        } catch (e) {
+          if (!(e instanceof BlockedError)) throw e;
+          if (workRules(ctx) === "strict") return { ok: false, error: e.message };
+          warning = e.message;
+          reason = { type: "external", note: note ? String(note).slice(0, 300) : "No reason given" };
+        }
+      }
+      const fields = { stage, stage_at: clock(ctx), blocked_on: stage === "blocked" ? reason : null };
+      const now = await ctx.store.setNow("job", id, fields);
       const kind = { blocked: "stuck", done: "done" }[stage] || "progress";
-      const entry = await write(ctx, "job", id, { kind, summary: note ? `${stage}: ${note}` : `Stage -> ${stage}` });
-      return { ok: true, job: id, now, entry };
+      const text = stage === "blocked" ? `blocked on ${reason.type}${reason.ref ? ` ${reason.ref}` : ""}: ${note || reason.note}` : note ? `${stage}: ${note}` : `Stage -> ${stage}`;
+      const entry = await write(ctx, "job", id, { kind, summary: text.slice(0, LIMITS.summary), ...(reason ? { payload: { blocked_on: reason } } : {}) });
+      return { ok: true, job: id, now, entry, ...(warning ? { warning } : {}) };
     },
   },
   {
@@ -1302,7 +1416,9 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   const cur = await store.getNow("agent", asker);
   const cleared = settles && cur?.waiting_on?.trail === askTrail;
   if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: final.ts } });
-  return { ok: true, entry: final, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, reclaimed: priorRaw != null, ...(reconciled ? { reconciled: true } : {}) };
+  // Auto-link: a settled decision unblocks its job (defer keeps it blocked).
+  const job = settles && w.ns === "job" ? await linkClose(store, w.id, { ref: askTrail, outcome: verdict, now: () => final.ts }) : null;
+  return { ok: true, entry: final, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, reclaimed: priorRaw != null, ...(job ? { job: { id: w.id, stage: job.stage } } : {}), ...(reconciled ? { reconciled: true } : {}) };
 }
 
 /** Keyword recall over this space's logs. Bounded; used when no index is attached. */

@@ -14,6 +14,8 @@ import { createHandler } from "../api/blockers.mjs";
 const WT = { steps: [{ title: "Open Vercel", detail: "Project logmem, Settings, Environment Variables." }, { title: "Tick Preview on CLERK_PUBLISHABLE_KEY", cmd: "open https://vercel.com" }], time: "2 min", place: "Vercel", done_when: "The key shows Preview.", reply: "[logmem @claude-code] Clerk key is in Preview." };
 const sc = async (lm, n, a) => (await lm.callTool(n, a)).structuredContent;
 const lmFor = (redis, space = "madez") => createLogmem({ redis, space, sessionId: "s", surface: "claude-code", defaultAgent: "claude-code" });
+// Every task is on a job (taxonomy spec), so tests open the job first.
+const openJob = (lm, id) => sc(lm, "logmem_assign", { job: id, title: id });
 
 test("blockers: a handoff to a person writes the entry and a blocker with its walkthrough", async () => {
   const redis = createMemoryRedis();
@@ -36,6 +38,7 @@ test("blockers: a handoff to a person writes the entry and a blocker with its wa
 
 test("blockers: bad person ids, a missing where and oversized walkthroughs are refused", async () => {
   const lm = lmFor(createMemoryRedis());
+  await openJob(lm, "x");
   assert.match((await sc(lm, "logmem_handoff", { to: "human:Bad Id", where: "job:x", summary: "s" })).error, /human:<id>/);
   assert.match((await sc(lm, "logmem_handoff", { to: "human:mikey", summary: "s" })).error, /needs where/);
   assert.match((await sc(lm, "logmem_handoff", { to: "human:mikey", where: "job:x", summary: "s", walkthrough: { steps: Array(21).fill({ title: "t" }) } })).error, /at most 20 steps/);
@@ -46,6 +49,7 @@ test("blockers: bad person ids, a missing where and oversized walkthroughs are r
 test("blockers: only a person ticks steps or marks done; agents see progress in the Brief", async () => {
   const redis = createMemoryRedis();
   const lm = lmFor(redis);
+  await openJob(lm, "clerk-preview");
   const r = await sc(lm, "logmem_handoff", { to: "human:mikey", where: "job:clerk-preview", summary: "Tick Preview", walkthrough: WT });
   const store = createStore(redis, { space: "madez" });
   await assert.rejects(() => setStep(store, r.trail, { step: 0, checked: true, by: "agent:claude-code" }), /only a person/);
@@ -63,6 +67,7 @@ test("blockers: only a person ticks steps or marks done; agents see progress in 
 test("blockers: the dogfood check does not count handoffs to people", async () => {
   const redis = createMemoryRedis();
   const lm = lmFor(redis);
+  await openJob(lm, "clerk-preview");
   await sc(lm, "logmem_handoff", { to: "human:mikey", where: "job:clerk-preview", summary: "Tick Preview", walkthrough: WT });
   const { day } = await runCheck(redis, { space: "madez", mirrorSpaces: [], now: Date.now() + DAY_MS + 60_000 });
   assert.equal(day.handoffs, 0);
@@ -81,6 +86,7 @@ const call = async (h, { method = "GET", url = "/api/blockers?space=madez", body
 test("blockers API: admin only, intent header on writes, mirrored person entries", async () => {
   const redis = createMemoryRedis();
   const lm = lmFor(redis);
+  await openJob(lm, "clerk-preview");
   const r = await sc(lm, "logmem_handoff", { to: "human:mikey", where: "job:clerk-preview", summary: "Tick Preview", walkthrough: WT });
   const h = createHandler({ env: ENV, redis });
   assert.equal((await call(h)).status, 401);
@@ -100,6 +106,7 @@ test("blockers API: admin only, intent header on writes, mirrored person entries
 test("plans: jobs group by track with milestones and percentages", async () => {
   const redis = createMemoryRedis();
   const lm = lmFor(redis);
+  assert.equal((await sc(lm, "logmem_plan", { action: "create", plan: "launch", title: "Launch" })).ok, true);
   await sc(lm, "logmem_assign", { job: "g2", title: "G2: copies match", details: { plan: "launch", milestone: true, date: "2026-10-23", criteria: "Copies match, no secrets" } });
   await sc(lm, "logmem_assign", { job: "g1", title: "G1: name cleared", details: { plan: "launch", milestone: true, date: "2026-10-16", criteria: "Name and handles" } });
   await sc(lm, "logmem_assign", { job: "jail", title: "Customer Redis jail", details: { plan: "launch", track: "Build", gate: "G2" } });
@@ -108,7 +115,8 @@ test("plans: jobs group by track with milestones and percentages", async () => {
   await sc(lm, "logmem_assign", { job: "other", title: "Not in a plan" });
   await sc(lm, "logmem_stage", { job: "jail", stage: "done" });
   const v = await planView(createStore(redis, { space: "madez" }), "launch");
-  assert.deepEqual(v.plans, ["launch"]);
+  assert.deepEqual(v.plans, ["general", "launch"], "a job with no plan is filed in general");
+  assert.equal((await planView(createStore(redis, { space: "madez" }), "")).plan, "launch", "the Plan page opens on a real plan, not general");
   assert.deepEqual(v.milestones.map((m) => m.id), ["g1", "g2"], "milestones sorted by date");
   const build = v.tracks.find((t) => t.title === "Build");
   assert.equal(build.items.length, 2);

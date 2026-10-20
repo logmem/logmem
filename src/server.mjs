@@ -114,6 +114,9 @@ export function createLogmem({
   mirror: mirrorCfg = { enabled: false, spaces: [] },
   // Key that verifies human decisions in the Brief. Default: LOGMEM_DECIDE_SECRET, read at call time.
   decideSecret,
+  // Work rules (taxonomy spec): "strict" refuses tasks and decisions off a job and
+  // blocked with no reason; "warn" allows them with a warning. Default: LOGMEM_WORK_RULES, else strict.
+  workRules = process.env.LOGMEM_WORK_RULES === "warn" ? "warn" : "strict",
 } = {}) {
   if (!redis && !live) throw new Error("createLogmem: redis runner required");
   const scope = live ? new AsyncLocalStorage() : null;
@@ -148,6 +151,7 @@ export function createLogmem({
     shift: null,
     now: now || Date.now,
     recall: recall || ((q, n) => keywordRecall(store, q, n)),
+    workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];

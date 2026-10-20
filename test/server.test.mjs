@@ -143,7 +143,7 @@ test("compat mode: acmi_* tools write LogMem shape and read back ACMI shape", as
   const redis = createMemoryRedis();
   // The writer is this session's agent (codex), never the caller's `source`.
   const lm = createLogmem({ redis, space: "madez", compat: true, sessionId: "c", defaultAgent: "codex" });
-  assert.equal(lm.tools.length, 41);
+  assert.equal(lm.tools.length, 42);
   await call(lm, "acmi_event", { namespace: "thread", id: "agent-coordination", source: "agent:codex", kind: "coord-note", summary: "ack", correlationId: "x-1", parentCorrelationId: "p-1" });
   const raw = await redis("ZRANGE", "lm:madez:channel:agent-coordination:log", 0, -1);
   const stored = JSON.parse(raw[0]);
@@ -165,7 +165,7 @@ test("compat mode: acmi_* tools write LogMem shape and read back ACMI shape", as
   assert.equal(del.key, "lm:madez:channel:agent-coordination:log");
   assert.equal(del.dry_run, true);
   const plain = createLogmem({ redis, space: "madez", sessionId: "d" });
-  assert.equal(plain.tools.length, 22, "compat off: logmem_* only");
+  assert.equal(plain.tools.length, 23, "compat off: logmem_* only");
 });
 
 test("auto Recap counts the shift's own entries", async () => {

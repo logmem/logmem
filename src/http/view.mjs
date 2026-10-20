@@ -190,13 +190,14 @@ export async function planView(store, name) {
       const [who, nowSlot] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
       if (!who?.plan) continue;
       names.add(String(who.plan));
-      rows.push({ id, who, stage: nowSlot.stage || "open", owner: nowSlot.owner || who.owner || null });
+      rows.push({ id, who, stage: nowSlot.stage || "open", owner: nowSlot.owner || who.owner || null, blocked_on: nowSlot.blocked_on || null });
     } catch {
       continue;
     }
   }
   const plans = [...names].sort();
-  const plan = name && names.has(name) ? name : plans[0] || null;
+  // Open on the named plan, else the first real plan; "general" only when it is all there is.
+  const plan = name && names.has(name) ? name : plans.find((p) => p !== "general") || plans[0] || null;
   const mine = rows.filter((r) => String(r.who.plan) === plan);
   const milestones = mine
     .filter((r) => r.who.milestone === true)
@@ -206,7 +207,9 @@ export async function planView(store, name) {
   for (const r of mine.filter((x) => x.who.milestone !== true)) {
     const t = String(r.who.track || "Other");
     if (!tracks.has(t)) tracks.set(t, []);
-    tracks.get(t).push({ id: r.id, title: r.who.title || r.id, desc: r.who.desc || "", gate: r.who.gate || null, due: r.who.due || null, owner: r.owner, stage: r.stage, evidence: r.who.evidence || "" });
+    // "milestone" (the milestone it counts toward) replaced "gate"; old jobs keep gate.
+    const milestone = typeof r.who.milestone === "string" ? r.who.milestone : r.who.gate || null;
+    tracks.get(t).push({ id: r.id, title: r.who.title || r.id, desc: r.who.desc || "", milestone, gate: milestone, due: r.who.due || null, owner: r.owner, stage: r.stage, blocked_on: r.blocked_on, evidence: r.who.evidence || "" });
   }
   const pct = (items) => (items.length ? Math.round((items.filter((i) => i.stage === "done").length / items.length) * 100) : 0);
   const trackList = [...tracks.entries()].map(([title, items]) => ({ title, percent: pct(items), items }));
