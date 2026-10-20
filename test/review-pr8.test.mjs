@@ -431,10 +431,11 @@ test("item 7: /api/decide needs confirm:'approve' to approve an irreversible ask
 
 test("item 7: the web app treats anything not reversible:true as irreversible and sends confirm", async () => {
   const { readFile } = await import("node:fs/promises");
-  const js = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
-  assert.match(js, /p\.reversible !== true \? ' data-irreversible="1"'/);
+  // The web app is ES modules under public/app (hardening, Oct 20); the rule is unchanged.
+  const js = await readFile(new URL("../public/app/actions.js", import.meta.url), "utf8");
+  assert.match(js, /const irreversible = \(a\) => \(a\.payload \|\| \{\}\)\.reversible !== true;/);
   assert.match(js, /body\.confirm = 'approve'/);
-  assert.doesNotMatch(js, /p\.reversible === false \? ' data-irreversible/);
+  assert.doesNotMatch(js, /reversible === false/);
 });
 
 // ─── Item 8: a deferred ask stays open and visible ──────────────────────
