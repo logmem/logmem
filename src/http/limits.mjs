@@ -11,6 +11,9 @@
 //           the plan's count, that agent's writes are refused.
 //   history reads see entries from the last history_days only. Nothing is
 //           deleted, so an upgrade shows older entries again.
+//   recall  every logmem_recall is one recall, reserved on the same meter with
+//           the same grace (Free: 1,000 a month plus 10%). Past it, recall is
+//           refused with quota_exceeded; notes, views and the Brief still work.
 //
 // limits use the customer Redis directly (server code), never a jailed runner:
 // the meter lives under acmi:cloud:meter:*.
@@ -53,6 +56,17 @@ export function createLimits({ redis, tenant, plan, now = Date.now } = {}) {
         await redis("SREM", agentsKey, agent);
         throw new LimitError("agent_limit", `${p.name} allows ${p.agents} agents. Disconnect one at logmem.si/app, or upgrade.`);
       }
+    },
+
+    /** Check before one recall. Returns a commit() to call after the recall returns. */
+    async beforeRecall() {
+      const q = await checkQuota(redis, tenant, "recall", p, { now: now() });
+      if (!q.ok) {
+        throw new LimitError("quota_exceeded", `This space used its ${q.limit} ${p.name} recalls this month. Notes, views and the Brief still work. Upgrade at logmem.si.`);
+      }
+      return async () => {
+        if (!q.reserved) await meter(redis, tenant, "recall", 1, { now: now(), plan: p });
+      };
     },
 
     /** Check before one entry is written. Returns a commit() to call after the write succeeds. */

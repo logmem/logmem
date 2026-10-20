@@ -45,6 +45,17 @@ export const SERVER_INFO = { name: "logmem", version: versionString() };
 export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
+
+/** A managed account's recall counts against its plan (Free: 1,000 a month). Off when there are no limits. */
+function limitedRecall(run, limits) {
+  if (!limits || typeof limits.beforeRecall !== "function") return run;
+  return async (q, n) => {
+    const commit = await limits.beforeRecall();
+    const out = await run(q, n);
+    await commit();
+    return out;
+  };
+}
 export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());
 
 export function toResult(data, tool) {
@@ -150,7 +161,7 @@ export function createLogmem({
     spaces: allowed,
     shift: null,
     now: now || Date.now,
-    recall: recall || ((q, n) => keywordRecall(store, q, n)),
+    recall: limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
   };
