@@ -1,4 +1,4 @@
-// GET /api/view?space=fieldnotes&what=overview|log|agents|agent|jobs|job|channels|decisions|recall|audit|settings[&id=…][&q=…][&where=…]
+// GET /api/view?space=fieldnotes&what=home|needs|overview|log|agents|agent|jobs|job|channels|decisions|recall|audit|settings[&id=…][&q=…][&where=…]
 // Read-only data for the web app. Production requires the admin cookie.
 
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
@@ -17,7 +17,8 @@ export default async function handler(req, res) {
   const d = descriptorFromEnv();
   if (!d) return res.status(503).json({ error: "storage not configured on this deployment" });
   try {
-    const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), { id: q.id, q: q.q, where: q.where });
+    const person = `human:${String(process.env.LOGMEM_ADMIN_ID || "admin")}`;
+    const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), { id: q.id, q: q.q, where: q.where, person });
     res.status(200).json({ ok: true, space, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
     if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });

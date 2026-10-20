@@ -158,6 +158,9 @@ async function readIds(redis, key) {
   return [];
 }
 
+/** The key the web app's pulse reads: bumped on every write in the space. */
+export const revKey = (space) => `lm:${space}:rev`;
+
 export function createStore(redis, { space, compat = false, mirror = null } = {}) {
   if (!space) throw new Error("createStore: space required");
   const k = (ns, id, slot) => lmKey(space, ns, id, slot);
@@ -165,6 +168,20 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
 
   async function index(ns, id) {
     await redis("SADD", lmIndexKey(space, ns), id);
+    await bumpRev();
+  }
+
+  /**
+   * The space's change counter (live app spec): every Who, Now and Log write
+   * bumps lm:{space}:rev, and the web app's pulse reads it. Best effort: a
+   * backend that refuses INCR never fails the write itself.
+   */
+  async function bumpRev() {
+    try {
+      await redis("INCR", revKey(space));
+    } catch {
+      /* the write already landed; the app falls back to its slow refresh */
+    }
   }
 
   /** Dogfood mirror: write the ACMI twin; record ok/failed for the caller. */
