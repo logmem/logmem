@@ -16,7 +16,7 @@ MIT under its own names.
 | `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
 | `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
 | `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
-| `src/core/tools.mjs` | The 21 `logmem_*` tools |
+| `src/core/tools.mjs` | The 23 `logmem_*` tools |
 | `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
 | `src/stdio/index.mjs` | stdio entry (`logmem-mcp`) |
 | `api/mcp.mjs` | Streamable HTTP route (Vercel) |
