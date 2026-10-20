@@ -6,6 +6,7 @@
 // on the agent's log), through the mirrored web store.
 
 import { makeTrail } from "../core/tools.mjs";
+import { setLane, laneText, PlanError } from "../core/plans.mjs";
 import { checkAgentId } from "../core/keys.mjs";
 
 export class WorkError extends Error {
@@ -78,4 +79,19 @@ export async function unblock(store, { job, note, by, now = Date.now }) {
   const entry = personEntry(by, "progress", `Unblocked by ${by.replace(/^human:/, "")}: ${text}`, { job: `job:${job}` }, { unblocked: true, was: j.now.blocked_on || null, note: text }, () => t);
   await store.append("job", job, entry);
   return { ok: true, job, now: fresh, entry };
+}
+
+/** A person sets a lane: make it P0, keep it active, or park it with a reason. Logged on channel:lanes. */
+export async function lane(store, { plan, status, why, until, by, now = Date.now }) {
+  if (!PERSON_RE.test(String(by))) throw new WorkError(403, "only a person can set a lane here");
+  let out;
+  try {
+    out = await setLane(store, String(plan || ""), { status, why, until, by, now });
+  } catch (e) {
+    if (e instanceof PlanError) throw new WorkError(400, e.message);
+    throw e;
+  }
+  const entry = personEntry(by, "memo", laneText(out.plan, out.was, out.demoted), {}, { lane: out.plan.lane, plan: out.plan.id, was: out.was, demoted: out.demoted }, now);
+  await store.append("channel", "lanes", entry);
+  return { ok: true, plan: out.plan, was: out.was, demoted: out.demoted, entry };
 }

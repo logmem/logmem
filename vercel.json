@@ -32,6 +32,10 @@
     {
       "source": "/api/tasks",
       "destination": "/api/blockers"
+    },
+    {
+      "source": "/api/lane",
+      "destination": "/api/work?op=lane"
     }
   ],
   "cleanUrls": true,

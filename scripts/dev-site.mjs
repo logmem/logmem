@@ -34,6 +34,16 @@ if (argv.includes("--seed")) {
   await call("logmem_handoff", { to: "human:admin", where: "job:i15-sponsor", summary: "Approve the sponsor's logo and link in the newsletter tool", walkthrough: { time: "3 min", place: "Newsletter tool", done_when: "The sponsor block shows the new logo.", reply: "[handoff @quill] Sponsor block is approved.", steps: [{ title: "Open the issue 15 draft", detail: "Drafts, then Issue 15." }, { title: "Check the sponsor logo", detail: "It should be the green version." }, { title: "Check the link", cmd: "https://example.com/sponsor" }] } });
   await call("logmem_ask", { question: "Send issue 15 to 2,184 subscribers on Tue at 9 am?", action: "Schedule the issue-15 campaign to list 'main' for Tue Oct 27, 09:00 ET.", where: "job:i15-subject" });
   await redis("HSET", "lm:fieldnotes:job:i15-draft-done:now", "stage", JSON.stringify("active"));
+  // Lanes demo: issue 15 is the P0 lane, a podcast plan is active, the shop is parked, and one job parks inside the P0 lane.
+  await call("logmem_plan", { action: "lane", plan: "issue-15", status: "p0", why: "Ships Tue Oct 27", owner: "quill" });
+  await call("logmem_plan", { action: "create", plan: "podcast", title: "Field Notes podcast pilot" });
+  await call("logmem_plan", { action: "lane", plan: "podcast", status: "active", owner: "relay" });
+  await call("logmem_assign", { job: "pod-script", title: "Pilot episode script", details: { plan: "podcast", track: "Writing" } });
+  await call("logmem_stage", { job: "pod-script", stage: "active" });
+  await call("logmem_plan", { action: "create", plan: "shop", title: "Field Notes print shop" });
+  await call("logmem_plan", { action: "lane", plan: "shop", status: "parked", why: "Waits for 1,000 subscribers", until: "after issue 20" });
+  await call("logmem_assign", { job: "i15-ads", title: "Paid ad test", details: { plan: "issue-15", track: "Revenue" } });
+  await call("logmem_stage", { job: "i15-ads", stage: "blocked", blocked_on: { type: "external", note: "Parked until the sponsor renews", parked: true, until: "Nov 1" } });
   const backend = await import("../src/lib/backend.mjs");
   const orig = backend.fromDescriptor;
   // dev only: route every descriptor to the seeded memory Redis

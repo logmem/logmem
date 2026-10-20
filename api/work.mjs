@@ -3,6 +3,7 @@
 //   GET  /api/needs?space=            -> { person, count, items } open tasks and decisions
 //   POST /api/nudge   { space, job, agent?, note? }
 //   POST /api/unblock { space, job, note }
+//   POST /api/lane    { space, plan, status: p0|active|parked, why?, until? }
 //
 // Spec: docs/superpowers/specs/2026-10-19-logmem-live-app-design.md.
 // Gates: a signed-in admin, a space the app shows, and on writes
@@ -11,7 +12,7 @@
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { webStore } from "../src/http/web-store.mjs";
 import { needsView } from "../src/http/view.mjs";
-import { nudge, unblock, WorkError } from "../src/http/work.mjs";
+import { nudge, unblock, lane, WorkError } from "../src/http/work.mjs";
 import { createStore, revKey } from "../src/core/store.mjs";
 import { readOnly } from "../src/lib/read-only.mjs";
 import { isAdmin, viewSpaces } from "../src/http/admin-auth.mjs";
@@ -73,6 +74,7 @@ export function createHandler({ env = process.env, redis, now } = {}) {
       const opts = { by: person, ...(now ? { now } : {}) };
       if (op === "nudge") return res.status(200).json(await nudge(store, { ...opts, job: b.job, agent: b.agent, note: b.note }));
       if (op === "unblock") return res.status(200).json(await unblock(store, { ...opts, job: b.job, note: b.note }));
+      if (op === "lane") return res.status(200).json(await lane(store, { ...opts, plan: b.plan, status: b.status, why: b.why, until: b.until }));
       return res.status(404).json({ error: "unknown op" });
     } catch (e) {
       if (e instanceof WorkError) return res.status(e.status).json({ error: e.message });
