@@ -26,9 +26,9 @@ MIT under its own names.
 
 ## Tools
 
-Start, Brief, Recap, Note, Handoff (new), Ask (new), Status, Bio, View,
-Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Recall, Remove,
-Spaces, Connection, all as `logmem_<word>`. Names follow the Action Map.
+Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
+Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
+Remove, Spaces, Connection, all as `logmem_<word>`. Names follow the Action Map.
 Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
 
 ## Shifts
