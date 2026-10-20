@@ -8,7 +8,7 @@
 // The stdio entry (src/stdio/index.mjs) and the HTTP route (api/mcp.mjs)
 // are thin shells around this.
 
-import { applyLimits } from "./http/limits.mjs";
+import { applyLimits } from "./core/apply-limits.mjs";
 import { createStore } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";

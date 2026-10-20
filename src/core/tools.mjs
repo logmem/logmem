@@ -1,4 +1,4 @@
-// tools.mjs — the 21 logmem_* tools.
+// tools.mjs — the 23 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
