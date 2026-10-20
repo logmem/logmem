@@ -92,3 +92,25 @@ test("limits: off for the fleet and self-hosted (no limits passed)", async () =>
   await sc(lm, "logmem_note", { where: "channel:ops", summary: "fleet note" });
   assert.equal((await redis("SCAN", "0", "MATCH", "acmi:cloud:meter:*"))[1].length, 0, "no meter keys");
 });
+
+test("limits: each recall counts; Free recall stops after 1,000 plus the 10% grace, other tools keep working", async () => {
+  const redis = createMemoryRedis();
+  const lm = lmFor(redis);
+  await sc(lm, "logmem_note", { where: "channel:ideas", summary: "river cleanup notes" });
+  assert.equal((await sc(lm, "logmem_recall", { query: "river cleanup" })).ok, true);
+  assert.equal(Number(await redis("GET", counter("recall"))), 1, "one recall, one count");
+  await redis("SET", counter("recall"), "1099"); // 1,000 plus 10% grace = 1,100
+  assert.equal((await sc(lm, "logmem_recall", { query: "river" })).ok, true, "the last one in grace");
+  const refused = await lm.callTool("logmem_recall", { query: "river" });
+  assert.equal(refused.isError, true);
+  assert.match(refused.structuredContent.error, /used its 1000 Free recalls this month\. Notes, views and the Brief still work/);
+  assert.equal((await sc(lm, "logmem_note", { where: "channel:ideas", summary: "still writing" })).ok, true, "notes still work");
+  assert.equal((await sc(lm, "logmem_brief", {})).ok, true, "the Brief still works");
+});
+
+test("limits: recall is not counted without limits (the fleet and self-hosters)", async () => {
+  const redis = createMemoryRedis();
+  const lm = createLogmem({ redis, space: "madez", sessionId: "s", surface: "x", defaultAgent: "codex" });
+  for (let i = 0; i < 3; i++) assert.equal((await sc(lm, "logmem_recall", { query: "anything" })).ok, true);
+  assert.equal(await redis("GET", counter("recall")), null);
+});
