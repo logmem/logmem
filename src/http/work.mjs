@@ -70,14 +70,34 @@ export async function unblock(store, { job, note, by, now = Date.now }) {
   const text = cleanNote(note);
   if (!text) throw new WorkError(400, "say in one line why the job can move again");
   const j = await jobOrThrow(store, job);
-  if (j.now.stage !== "blocked") throw new WorkError(409, "this job is not blocked");
+  if (j.now.stage !== "blocked") {
+    // A retry after a success (the response was lost) gets the same answer, not a 409.
+    const last = (await store.readLog("job", job, { reverse: true, limit: 1 }))[0];
+    if (last && last.by === by && last.payload?.unblocked === true && last.payload?.note === text && now() - Number(last.ts) < 10 * 60e3) return { ok: true, job, now: j.now, entry: last, replayed: true };
+    throw new WorkError(409, "this job is not blocked");
+  }
+  const waiting = (Array.isArray(j.now.waits) ? j.now.waits : []).filter((w) => w.type === "decision" || w.type === "task");
+  if (waiting.length) throw new WorkError(409, `this job waits on ${waiting.length === 1 ? `a ${waiting[0].type}` : `${waiting.length} open tasks or decisions`}: answer ${waiting.length === 1 ? "it" : "them"}, and the job unblocks`);
   const type = j.now.blocked_on?.type || null;
   if (type === "decision" || type === "task") throw new WorkError(409, `this job waits on a ${type}: answer it, and the job unblocks`);
   if (type === "agent") throw new WorkError(409, "this job waits on an agent: nudge it instead");
   const t = now();
+  const before = { stage: j.now.stage, stage_at: j.now.stage_at ?? null, blocked_on: j.now.blocked_on ?? null };
   const fresh = await store.setNow("job", job, { stage: "active", stage_at: t, blocked_on: null });
+  // A task or decision may have landed between our read and our write: keep the job blocked on it.
+  const arrived = (Array.isArray(fresh.waits) ? fresh.waits : []).filter((w) => w.type === "decision" || w.type === "task");
+  if (arrived.length) {
+    await store.setNow("job", job, { stage: "blocked", stage_at: t, blocked_on: arrived[0] });
+    throw new WorkError(409, `a ${arrived[0].type} arrived while you unblocked: the job stays blocked on it`);
+  }
   const entry = personEntry(by, "progress", `Unblocked by ${by.replace(/^human:/, "")}: ${text}`, { job: `job:${job}` }, { unblocked: true, was: j.now.blocked_on || null, note: text }, () => t);
-  await store.append("job", job, entry);
+  try {
+    await store.append("job", job, entry);
+  } catch (e) {
+    // No unblock without its record: put the state back, so a retry starts clean.
+    await store.setNow("job", job, before).catch(() => {});
+    throw e;
+  }
   return { ok: true, job, now: fresh, entry };
 }
 

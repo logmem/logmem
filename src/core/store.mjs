@@ -196,6 +196,8 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     redis,
     key: k,
     mirror,
+    /** Bump the space's change counter for a write that does not go through Who, Now or Log (plans, task records). */
+    bumpRev,
     /** "ok" | "failed" per mirrored write since the last reset (server resets per tool call). */
     mirrorEvents: [],
 
@@ -217,6 +219,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     },
     async deleteWho(ns, id) {
       await redis("DEL", k(ns, id, "who"));
+      await bumpRev();
     },
 
     // ─── Now ────────────────────────────────────────────────────────────
@@ -241,6 +244,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     },
     async deleteNow(ns, id, field) {
       await redis("HDEL", k(ns, id, "now"), field);
+      await bumpRev();
     },
 
     // ─── Log ────────────────────────────────────────────────────────────
@@ -288,6 +292,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
         if (stableJson(rest) !== body) continue;
         n += Number(await redis("ZREM", key, m)) || 0;
       }
+      if (n) await bumpRev();
       return n;
     },
     async readLog(ns, id, { limit, reverse = false, sinceMs, untilMs } = {}) {
@@ -368,6 +373,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     },
     async unfollow(agent, ref) {
       await redis("HDEL", k("agent", agent, "follows"), ref);
+      await bumpRev();
     },
     async addShift(agent, shift) {
       await redis("ZADD", k("agent", agent, "shifts"), shift.ts, stableJson(shift));
@@ -421,6 +427,7 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       if (!confirm) return { dry_run: true, key, exists, type, hint: "pass confirm=true to remove" };
       if (!exists) return { dry_run: false, key, removed: false, reason: "key did not exist" };
       const n = Number(await redis("DEL", key));
+      if (n === 1) await bumpRev();
       return { dry_run: false, key, removed: n === 1, type };
     },
   };
