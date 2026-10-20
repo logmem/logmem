@@ -4,6 +4,7 @@
 //   GET  ?space=madez                              -> { space, person, blockers: [...] }  open, oldest first
 //   POST { space, trail, action: "step", step, checked } -> { ok, blocker }
 //   POST { space, trail, action: "done", note? }          -> { ok, blocker }
+//   POST { space, trail, action: "cant_do", reason }      -> { ok, blocker }
 //
 // Gates: a signed-in admin (the person is human:<LOGMEM_ADMIN_ID>), the space
 // must be one the web app shows, and writes need "X-LogMem-Intent: blockers"
@@ -12,7 +13,7 @@
 
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { webStore } from "../src/http/web-store.mjs";
-import { listBlockers, setStep, markDone, BlockerError } from "../src/core/blockers.mjs";
+import { listBlockers, setStep, markDone, cantDo, BlockerError } from "../src/core/blockers.mjs";
 import { isAdmin, viewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
@@ -76,7 +77,11 @@ export function createHandler({ env = process.env, redis, now } = {}) {
         const blocker = await markDone(store, String(b.trail || ""), { ...opts, note: typeof b.note === "string" ? b.note : undefined });
         return res.status(200).json({ ok: true, blocker });
       }
-      return res.status(400).json({ error: "action must be step or done" });
+      if (b.action === "cant_do") {
+        const blocker = await cantDo(store, String(b.trail || ""), { ...opts, reason: typeof b.reason === "string" ? b.reason : "" });
+        return res.status(200).json({ ok: true, blocker });
+      }
+      return res.status(400).json({ error: "action must be step, done or cant_do" });
     } catch (e) {
       if (e instanceof BlockerError) return res.status(400).json({ error: e.message });
       return sendServerError(res, "blockers", e);
