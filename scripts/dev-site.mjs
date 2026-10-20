@@ -44,6 +44,11 @@ if (argv.includes("--seed")) {
   await call("logmem_plan", { action: "lane", plan: "shop", status: "parked", why: "Waits for 1,000 subscribers", until: "after issue 20" });
   await call("logmem_assign", { job: "i15-ads", title: "Paid ad test", details: { plan: "issue-15", track: "Revenue" } });
   await call("logmem_stage", { job: "i15-ads", stage: "blocked", blocked_on: { type: "external", note: "Parked until the sponsor renews", parked: true, until: "Nov 1" } });
+  // Hardening demo: a second, reversible decision (for batch answers) and a huddle with one reply (for the round table).
+  await call("logmem_ask", { question: "Use the green logo variant for issue 15?", action: "Set the issue-15 header logo to logo-green.svg.", where: "job:i15-photos", reversible: true });
+  await call("logmem_note", { where: "channel:field-notes", kind: "huddle", trail: "huddleIssue15Plan-1", summary: "[huddle @atlas @relay] quill: issue 15 ships Tue. Can we lock the draft by Fri? Reply with yes or the risk." });
+  const atlas = createLogmem({ redis, space: "fieldnotes", sessionId: "dev-seed-atlas", surface: "dev", defaultAgent: "atlas" });
+  await atlas.callTool("logmem_note", { where: "channel:field-notes", kind: "memo", origin: "huddleIssue15Plan-1", summary: "atlas: yes, photos land Thu." });
   const backend = await import("../src/lib/backend.mjs");
   const orig = backend.fromDescriptor;
   // dev only: route every descriptor to the seeded memory Redis

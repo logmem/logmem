@@ -255,6 +255,33 @@ export async function lanesView(store) {
   return { lanes, p0: lanes.find((l) => l.lane?.status === "p0")?.id || null };
 }
 
+/**
+ * A huddle's round table (crossover from acmi-console's RoundTable): every agent the huddle
+ * @-mentions, plus anyone who replied, with their status. Replies are entries on the same log
+ * whose origin is the huddle's trail. accepted = acked, a declined feedback = declined.
+ */
+export async function huddleView(store, trail, where) {
+  if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(trail)) throw Object.assign(new Error("trail is not valid"), { code: "bad_agent_id" });
+  const m = /^(channel|job):(.+)$/.exec(where || "channel:agent-coordination");
+  if (!m) throw Object.assign(new Error("where must be channel:<id> or job:<id>"), { code: "bad_agent_id" });
+  const log = await store.readLog(m[1], m[2], { reverse: true, limit: 2000 });
+  const h = log.find((e) => e.trail === trail);
+  if (!h) return { huddle: null, participants: [], replies: [] };
+  const replies = log.filter((e) => e.origin === trail && e.ts >= h.ts).sort((a, b) => a.ts - b.ts);
+  const mentioned = [...new Set([...String(h.summary || "").matchAll(/@([a-z0-9][a-z0-9_.-]{0,63})/gi)].map((x) => x[1].toLowerCase()))].filter((x) => !["fleet", "all", "grok-bot"].includes(x));
+  const author = String(h.by || "").replace(/^agent:/, "");
+  const names = [...new Set([...mentioned, ...replies.map((e) => String(e.by || "").replace(/^(agent|human):/, ""))])].filter((x) => x && x !== author);
+  const participants = names.map((name) => {
+    const mine = replies.filter((e) => String(e.by || "").replace(/^(agent|human):/, "") === name);
+    const last = mine.at(-1);
+    const status = !last ? "pending" : mine.some((e) => e.kind === "accepted") ? "acked" : mine.some((e) => e.kind === "feedback" && isDeclined(e.payload)) ? "declined" : "replied";
+    return { agent: name, status, reply: last ? slim(last, where) : null };
+  });
+  const rank = { pending: 0, declined: 1, replied: 2, acked: 3 };
+  participants.sort((a, b) => rank[a.status] - rank[b.status] || a.agent.localeCompare(b.agent));
+  return { huddle: slim(h, `${m[1]}:${m[2]}`), participants, replies: replies.map((e) => slim(e, `${m[1]}:${m[2]}`)) };
+}
+
 export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   const r = readOnly(redis);
   const verify = { secret, space };
@@ -270,6 +297,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
 
   if (what === "home") return homeView(store, r, space, { secret, person: params.person, now });
   if (what === "lanes") return lanesView(store);
+  if (what === "huddle") return huddleView(store, String(params.trail || ""), String(params.where || ""));
   if (what === "needs") return needsView(store, r, space, { secret, person: params.person });
 
   if (what === "log") {

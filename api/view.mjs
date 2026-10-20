@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   if (!d) return res.status(503).json({ error: "storage not configured on this deployment" });
   try {
     const person = `human:${String(process.env.LOGMEM_ADMIN_ID || "admin")}`;
-    const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), { id: q.id, q: q.q, where: q.where, person });
+    const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), { id: q.id, q: q.q, where: q.where, trail: q.trail, person });
     res.status(200).json({ ok: true, space, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
     if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });

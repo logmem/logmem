@@ -20,7 +20,9 @@
     "spec:check": "node scripts/gen-spec.mjs --check",
     "migrate:dry-run": "node scripts/migrate-dry-run.mjs",
     "test:ops": "node --test test/ops*.test.mjs",
-    "ci": "npm test && npm run spec:check && npm run conformance"
+    "ci": "npm test && npm run spec:check && npm run conformance",
+    "test:e2e": "playwright test",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@clerk/backend": "^3.25.0",
@@ -30,6 +32,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@madezmedia/acmi": "1.2.0"
+    "@madezmedia/acmi": "1.2.0",
+    "@playwright/test": "1.63.0"
   }
 }
