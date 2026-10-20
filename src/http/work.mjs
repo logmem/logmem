@@ -112,7 +112,14 @@ export async function unblock(store, { job, note, by, now = Date.now }) {
   await jobOrThrow(store, job);
   // Finish any audit an earlier Unblock left incomplete, whatever its age or the job's state now.
   const finished = await flushPending(store, job);
-  const j = await jobOrThrow(store, job);
+  // One snapshot: the raw stored fields are read once, and both the checks below and the atomic
+  // comparison use these same values, so a newer blocker can never become the comparison target.
+  const key = lmKey(store.space, "job", job, "now");
+  const rawHash = (await store.redis("HGETALL", key)) || [];
+  const raw = {};
+  for (let i = 0; i < rawHash.length; i += 2) raw[rawHash[i]] = rawHash[i + 1];
+  const parse = (v) => { try { return v == null ? undefined : JSON.parse(v); } catch { return undefined; } };
+  const j = { who: (await jobOrThrow(store, job)).who, now: Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, parse(v)])) };
   if (j.now.stage !== "blocked") {
     // A retry after a success (lost response or a failed side effect) gets the same answer, not a 409.
     const op = j.now.unblock_op;
@@ -125,10 +132,8 @@ export async function unblock(store, { job, note, by, now = Date.now }) {
   const type = j.now.blocked_on?.type || null;
   if (type === "decision" || type === "task") throw new WorkError(409, `this job waits on a ${type}: answer it, and the job unblocks`);
   if (type === "agent") throw new WorkError(409, "this job waits on an agent: nudge it instead");
-  // Compare against the raw stored fields: exactly what was read, not just a timestamp.
-  const key = lmKey(store.space, "job", job, "now");
-  const raw = async (f) => { const v = await store.redis("HGET", key, f); return v == null || v === "null" ? "" : String(v); };
-  const [rawAt, rawOn, rawWaits] = [await raw("stage_at"), await raw("blocked_on"), await raw("waits")];
+  const norm = (v) => (v == null || v === "null" ? "" : String(v));
+  const [rawAt, rawOn, rawWaits] = [norm(raw.stage_at), norm(raw.blocked_on), norm(raw.waits)];
   const t = now();
   const op = { id: `unblock-${job}-${t}-${Math.random().toString(36).slice(2, 10)}`, job, by, note: text, at: t, was: j.now.blocked_on || null };
   const res = await store.redis("EVAL", UNBLOCK_LUA, 2, key, pendingKey(store.space, job), rawAt, rawOn, rawWaits, JSON.stringify(t), JSON.stringify(op));
@@ -157,6 +162,8 @@ async function flushPending(store, job) {
     const have = (await store.readLog("job", job, { sinceMs: op.at, untilMs: op.at, limit: 50 })).find((e) => e.trail === trail);
     const entry = have || { ts: op.at, kind: "progress", by: op.by, via: "web", byline: `${String(op.by).replace(/^human:/, "")} (via web)`, trail, summary: `Unblocked by ${String(op.by).replace(/^human:/, "")}: ${op.note}`.slice(0, 1000), job: `job:${job}`, payload: { unblocked: true, was: op.was, note: op.note, op: op.id } };
     if (!have) await store.append("job", job, entry);
+    // The entry may be in the log while its index or ACMI twin failed: redo those (safe to repeat).
+    await store.repairEntry("job", job, entry);
     const cur = await store.getNow("job", job);
     // Mirror what the job holds now; it may be newer than this unblock (done, or blocked again).
     await store.touchNow("job", job, { stage: cur.stage ?? null, stage_at: cur.stage_at ?? null, blocked_on: cur.blocked_on ?? null });

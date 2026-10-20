@@ -166,3 +166,44 @@ test("re-review 86 (e): an incomplete audit survives an hour, a new block and a 
   assert.deepEqual(audits, ["first reason", "second reason"], "both unblocks are on the record, once each");
   assert.equal((await redis("SMEMBERS", "lm:madez:job:a:unblock_pending")).length, 0);
 });
+
+test("re-review 86b (f): one snapshot; a newer blocker that lands after it is read is kept", async () => {
+  const { lm, store, redis } = setup();
+  await sc(lm, "logmem_assign", { job: "a", title: "A" });
+  await external(lm, "a");
+  const real = store.redis;
+  let armed = true;
+  store.redis = async (...cmd) => {
+    const out = await real(...cmd);
+    if (armed && cmd[0] === "HGETALL" && cmd[1] === "lm:madez:job:a:now") {
+      armed = false;
+      await redis("HSET", "lm:madez:job:a:now", "blocked_on", JSON.stringify({ type: "external", note: "Newer outage" }));
+    }
+    return out;
+  };
+  await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), (e) => e.status === 409);
+  store.redis = real;
+  assert.equal((await store.getNow("job", "a")).blocked_on.note, "Newer outage");
+});
+
+test("re-review 86b (g): entry saved but its index failed; a retry still writes the ACMI twin, once", async () => {
+  const { createMirror } = await import("../src/core/mirror.mjs");
+  const { lm, redis } = setup();
+  await sc(lm, "logmem_assign", { job: "a", title: "A" });
+  await external(lm, "a");
+  // The store keeps its own runner, so the failure goes into the runner it is built with.
+  let armed = false, zadded = false, failed = false;
+  const runner = async (...cmd) => {
+    if (armed && cmd[0] === "ZADD" && cmd[1] === "lm:madez:job:a:log") zadded = true;
+    if (zadded && !failed && cmd[0] === "SADD" && cmd[1] === "lm:madez:job:list") { failed = true; throw new Error("index down"); }
+    return redis(...cmd);
+  };
+  const store = createStore(runner, { space: "madez", mirror: createMirror(runner, "madez") });
+  armed = true;
+  await assert.rejects(() => unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" }), /index down/);
+  const again = await unblock(store, { job: "a", note: "vendor is back", by: "human:mikey" });
+  assert.equal(again.replayed, true);
+  const twins = (await redis("ZRANGE", "acmi:madez:work:a:timeline", "0", "-1")).map((x) => JSON.parse(x)).filter((t) => /Unblocked by mikey/.test(t.summary || ""));
+  assert.equal(twins.length, 1, "the ACMI twin is written, and only once");
+  assert.equal((await redis("SMEMBERS", "lm:madez:job:a:unblock_pending")).length, 0);
+});

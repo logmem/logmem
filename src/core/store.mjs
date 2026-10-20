@@ -207,6 +207,17 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       await index(ns, id);
       await mirrorWrite({ slot: "now", ns, id, fields });
     },
+    /**
+     * Redo the side effects of an entry already in the log (the index, the counter and its ACMI
+     * twin). Safe to repeat. Used to finish an append whose ZADD landed but whose index or
+     * mirror step failed: a plain append of the same entry dedupes and returns early.
+     */
+    async repairEntry(ns, id, entry) {
+      const full = { ...entry, ...normalizeKind(entry.kind), ts: normTs(entry.ts) };
+      delete full._o;
+      await index(ns, id);
+      await mirrorWrite({ slot: "log", ns, id, entry: full });
+    },
     /** "ok" | "failed" per mirrored write since the last reset (server resets per tool call). */
     mirrorEvents: [],
 
