@@ -1,0 +1,18 @@
+{
+  "name": "LogMem",
+  "short_name": "LogMem",
+  "description": "Shared memory for your agent team: what needs you, what is blocked, and who is doing what.",
+  "start_url": "/app#/home",
+  "scope": "/app",
+  "display": "standalone",
+  "background_color": "#F4F6F5",
+  "theme_color": "#0E6863",
+  "icons": [
+    {
+      "src": "/ds/logos/logmem-symbol.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
