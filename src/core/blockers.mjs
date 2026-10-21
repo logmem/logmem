@@ -64,6 +64,8 @@ export async function createBlocker(store, rec) {
   const ok = await store.redis("SET", K.rec(store.space, rec.trail), JSON.stringify({ ...rec, steps_done: [], done: false }), "NX");
   if (ok !== "OK") throw new BlockerError(`a blocker with trail '${rec.trail}' already exists`);
   await store.redis("SADD", K.open(store.space), rec.trail);
+  // The handoff entry is written first; bump again so a pulse between the two still shows the task.
+  await store.bumpRev?.();
 }
 
 export async function getBlocker(store, trail) {

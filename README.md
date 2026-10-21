@@ -79,15 +79,11 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 
 ## Tools
 
-23 tools, all as `logmem_<word>`: Start, Brief, Recap, Note, Handoff, Accept,
-Ask, Status, Bio, View, Roster, Feed, Follow, Assign, Plan, Update, Stage, Open,
-Jobs, Recall, Remove, Spaces, and Connection (`logmem_connection`). Names
-follow the Action Map. Schemas are a **draft** until the tool-contract spec
-(claude-engineer, Oct 14). Recall matches keywords in summaries and payloads.
-
-| Tool | What it does |
-|---|---|
-| `logmem_plan` | List the plans in this space, or create one. A plan is a named body of work, such as 'launch'. Every job belongs to one plan; 'general' holds work not yet filed. |
+Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
+Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
+Remove, Spaces, Connection: 23 tools, all as `logmem_<word>`. Names follow the Action Map.
+Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
+Recall matches keywords in summaries and payloads.
 
 ## Shifts
 

@@ -372,7 +372,7 @@ test("medium 1: the job page stays open for unsigned decided rows and for defer;
   job = await buildView(redis, "fieldnotes", "job", { id: "issue-14" });
   assert.equal(job.open_asks.filter((x) => x.trail === ask.trail).length, 0);
 
-  const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../public/app/drawer.js", import.meta.url), "utf8");
   assert.equal(app.includes("decidedOrigins"), false);
   assert.match(app, /d\.open_asks/);
 });

@@ -6,3 +6,7 @@ node_modules/
 coverage/
 .claude/
 .admin-password
+
+# Playwright output
+test-results/
+playwright-report/

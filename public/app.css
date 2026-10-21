@@ -127,6 +127,22 @@
 .lmx-lanecard[data-l="parked"]{opacity:.85}
 .lmx-lanecard details summary::-webkit-details-marker{color:var(--text-subtle)}
 
+
+/* ── hardening: search, batch answers, storage banner, round table ─ */
+.lmx-searchbtn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text-muted);font:500 13px/1 var(--font-sans);cursor:pointer;flex:0 1 220px}
+.lmx-searchbtn span{flex:1 1 auto;text-align:left}
+.lmx-cmdk-scrim{position:fixed;inset:0;z-index:var(--z-dialog,70);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;background:rgba(10,16,15,.32)}
+.lmx-cmdk{width:min(640px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-3);overflow:hidden}
+.lmx-cmdk .lm-cmdk-input{width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--border);border-radius:0;min-height:48px;font-size:15px;padding:0 16px}
+.lmx-cmdk-list{list-style:none;margin:0;padding:6px;max-height:52vh;overflow:auto}
+.lmx-cmdk-list li{padding:9px 10px;border-radius:var(--radius-md);cursor:pointer;display:flex;gap:8px;align-items:baseline;overflow:hidden}
+.lmx-cmdk-list li[aria-selected="true"]{background:var(--brand-subtle)}
+.lmx-cmdk .lm-cmdk-foot{padding:8px 12px;border-top:1px solid var(--border)}
+.lmx-batch{padding:8px 10px;border:1px dashed var(--border);border-radius:var(--radius-md);margin-bottom:8px}
+.lmx-banner{margin:0}
+.lmx-seat .lm-badge{white-space:nowrap}
+.lm-approval-head input[type=checkbox]{width:18px;height:18px;accent-color:var(--brand)}
+
 /* phone tab bar (hidden above phone width) */
 .lmx-tabs{display:none}
 
@@ -143,6 +159,8 @@
   .lmx-board{grid-template-columns:repeat(2,minmax(0,1fr))}
   .lmx-prow{grid-template-columns:minmax(0,1fr) auto;row-gap:2px}
   .lmx-head .lm-search{display:none}
+  .lmx-searchbtn span,.lmx-searchbtn kbd{display:none}
+  .lmx-searchbtn{flex:0 0 auto}
 }
 
 /* ── phone: bottom tabs, one column, full-screen panels ───────── */

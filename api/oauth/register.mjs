@@ -3,24 +3,28 @@
 // Each client must register before /authorize. PKCE is REQUIRED at /authorize
 // regardless of token_endpoint_auth_method.
 //
-// Registration is unauthenticated, so the body is bounded: at most 5
+// Registration is unauthenticated, so the body is bounded: at most 10
 // redirect_uris (each <= 2048 chars, https only except http://localhost and
-// http://127.0.0.1, no fragment), client_name <= 100 chars, scope <= 64 chars,
-// token_endpoint_auth_method in {none, client_secret_post}. Client records
+// http://127.0.0.1, no fragment), client_name <= 100 chars, scope <= 256 chars,
+// token_endpoint_auth_method in {none, client_secret_post, client_secret_basic}.
+// Both secret methods get a secret, checked at /token on top of PKCE. Gemini's
+// custom apps ask for client_secret_basic and give up on a 400.
+// Every refusal is logged (error and field, never the body). Client records
 // expire after 30 days without a successful token issuance (see storage.mjs). Rate limiting is a
 // platform concern (Vercel Firewall), not handled here.
 
 import { registerClient } from "./_lib/storage.mjs";
+import { logRequest } from "../../src/http/log.mjs";
 
 export const config = { runtime: "nodejs" };
 
 const ALLOWED_GRANTS = new Set(["authorization_code", "refresh_token"]);
 const ALLOWED_RESPONSE = new Set(["code"]);
-const ALLOWED_AUTH = new Set(["none", "client_secret_post"]);
-const MAX_REDIRECTS = 5;
+const ALLOWED_AUTH = new Set(["none", "client_secret_post", "client_secret_basic"]);
+const MAX_REDIRECTS = 10;
 const MAX_REDIRECT_LEN = 2048;
 const MAX_NAME = 100;
-const MAX_SCOPE = 64;
+const MAX_SCOPE = 256;
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
@@ -74,7 +78,7 @@ export function validateRegistration(body) {
 
   const auth_method = body.token_endpoint_auth_method === undefined ? "none" : body.token_endpoint_auth_method;
   if (!ALLOWED_AUTH.has(auth_method)) {
-    return invalid("invalid_client_metadata", "token_endpoint_auth_method must be none or client_secret_post");
+    return invalid("invalid_client_metadata", "token_endpoint_auth_method must be none, client_secret_post or client_secret_basic");
   }
 
   let client_name = null;
@@ -114,7 +118,10 @@ export default async function handler(req, res) {
 
   try {
     const v = validateRegistration(req.body || {});
-    if (v.error) return res.status(400).json({ error: v.error, error_description: v.error_description });
+    if (v.error) {
+      logRequest({ route: "/api/oauth/register", method: "POST", ok: false, status: 400, err: `${v.error}: ${v.error_description}` });
+      return res.status(400).json({ error: v.error, error_description: v.error_description });
+    }
 
     const client = await registerClient(v.meta);
     res.status(201).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store").json(client);

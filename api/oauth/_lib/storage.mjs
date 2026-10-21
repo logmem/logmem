@@ -436,10 +436,13 @@ async function consumeOnce(r, key, fallbackTtl) {
 
 // ───── Clients ─────
 
+/** Auth methods that get a client secret at registration. */
+export const SECRET_METHODS = new Set(["client_secret_post", "client_secret_basic"]);
+
 export async function registerClient(meta) {
   const r = deployRedis();
   const client_id = `cli_${randomToken(8)}`;
-  const client_secret = meta.token_endpoint_auth_method === "client_secret_post" ? randomToken(24) : null;
+  const client_secret = SECRET_METHODS.has(meta.token_endpoint_auth_method) ? randomToken(24) : null;
   const record = {
     client_id,
     client_secret,
