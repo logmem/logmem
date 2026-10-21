@@ -3,13 +3,15 @@
 //   - refresh_token
 //
 // Per MCP spec: PKCE verification is mandatory; client_secret check only when
-// the registered client used token_endpoint_auth_method=client_secret_post.
+// the registered client used client_secret_post or client_secret_basic.
 
-import { consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
+import { SECRET_METHODS, consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
 
 export const config = { runtime: "nodejs" };
 
-function bad(res, status, error, description) {
+function bad(res, status, error, description, { basic = false } = {}) {
+  // RFC 6749 5.2: a 401 to a client that sent an Authorization header names the scheme.
+  if (status === 401 && basic) res.setHeader("WWW-Authenticate", 'Basic realm="logmem"');
   res.status(status).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify({ error, error_description: description }));
 }
@@ -31,8 +33,7 @@ function readBody(req) {
 
 /**
  * Client credentials from an HTTP Basic header (RFC 6749 2.3.1), or null.
- * Both parts are form-urlencoded. A Basic client is registered public, so its
- * secret is ignored; the client_id is what matters.
+ * Both parts are form-urlencoded.
  */
 export function basicClient(header) {
   const m = /^Basic\s+([A-Za-z0-9+/=]+)\s*$/i.exec(String(header || ""));
@@ -51,7 +52,7 @@ function withBasic(body, header) {
   const b = basicClient(header);
   if (!b) return { body };
   if (body.client_id && body.client_id !== b.client_id) return { error: "client_id in the body and the Authorization header differ" };
-  return { body: { ...body, client_id: b.client_id, client_secret: body.client_secret ?? b.client_secret } };
+  return { basic: true, body: { ...body, client_id: b.client_id, client_secret: body.client_secret ?? b.client_secret } };
 }
 
 // client_secret_post: constant-time compare; a record without a stored
@@ -70,7 +71,7 @@ export default async function handler(req, res) {
 
   try {
     const merged = withBasic(readBody(req), req.headers?.authorization);
-    if (merged.error) return bad(res, 401, "invalid_client", merged.error);
+    if (merged.error) return bad(res, 401, "invalid_client", merged.error, { basic: true });
     const body = merged.body;
     const grant_type = body.grant_type;
     // Refuse before consuming a code/refresh token we could not re-seal.
@@ -84,8 +85,8 @@ export default async function handler(req, res) {
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
-      if (client.token_endpoint_auth_method === "client_secret_post" && !secretMatches(client, client_secret)) {
-        return bad(res, 401, "invalid_client", "client_secret mismatch");
+      if (SECRET_METHODS.has(client.token_endpoint_auth_method) && !secretMatches(client, client_secret)) {
+        return bad(res, 401, "invalid_client", "client_secret mismatch", { basic: !!merged.basic });
       }
 
       const codeRecord = await consumeAuthCode(code);
@@ -120,8 +121,8 @@ export default async function handler(req, res) {
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
-      if (client.token_endpoint_auth_method === "client_secret_post" && !secretMatches(client, client_secret)) {
-        return bad(res, 401, "invalid_client", "client_secret mismatch");
+      if (SECRET_METHODS.has(client.token_endpoint_auth_method) && !secretMatches(client, client_secret)) {
+        return bad(res, 401, "invalid_client", "client_secret mismatch", { basic: !!merged.basic });
       }
 
       // client_id is checked inside consumeRefresh BEFORE the token is

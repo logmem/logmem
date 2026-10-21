@@ -5,10 +5,9 @@
 //
 // Registration is unauthenticated, so the body is bounded: at most 10
 // redirect_uris (each <= 2048 chars, https only except http://localhost and
-// http://127.0.0.1, no fragment), client_name <= 100 chars, scope <= 64 chars,
+// http://127.0.0.1, no fragment), client_name <= 100 chars, scope <= 256 chars,
 // token_endpoint_auth_method in {none, client_secret_post, client_secret_basic}.
-// client_secret_basic registers a public client (none): PKCE protects the code,
-// and the token endpoint takes the client_id from a Basic header. Gemini's
+// Both secret methods get a secret, checked at /token on top of PKCE. Gemini's
 // custom apps ask for client_secret_basic and give up on a 400.
 // Every refusal is logged (error and field, never the body). Client records
 // expire after 30 days without a successful token issuance (see storage.mjs). Rate limiting is a
@@ -81,8 +80,6 @@ export function validateRegistration(body) {
   if (!ALLOWED_AUTH.has(auth_method)) {
     return invalid("invalid_client_metadata", "token_endpoint_auth_method must be none, client_secret_post or client_secret_basic");
   }
-  // A Basic client gets no secret: it is registered public and proves itself with PKCE.
-  const registered_auth = auth_method === "client_secret_basic" ? "none" : auth_method;
 
   let client_name = null;
   if (body.client_name !== undefined && body.client_name !== null) {
@@ -105,7 +102,7 @@ export function validateRegistration(body) {
       redirect_uris: [...new Set(redirect_uris)],
       grant_types: [...new Set(grants)],
       response_types: ["code"],
-      token_endpoint_auth_method: registered_auth,
+      token_endpoint_auth_method: auth_method,
       client_name,
       scope,
     },
