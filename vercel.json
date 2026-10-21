@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/dogfood-check",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "30 13 * * *"
     }
   ],
   "headers": [
