@@ -13,7 +13,8 @@
 // are reached by server code through customerRedis() directly, never through a
 // user's jailed runner.
 
-import { checkCommand } from "../../cloud/bridge/bridge.mjs";
+import { checkCommand, inJail, DEFAULT_LIMITS } from "../../cloud/bridge/bridge.mjs";
+import { jailSafeScript } from "../lib/lua-scripts.mjs";
 import { namespaceFor } from "../../cloud/tenants/index.mjs";
 import { insecureAllowed } from "../../api/oauth/_lib/storage.mjs";
 
@@ -47,12 +48,36 @@ export function createJail(redis, tenantId, limits = {}) {
   const prefixes = [`lm:${space}:`];
   const run = async (...cmd) => {
     const args = cmd.map((a) => (typeof a === "number" ? String(a) : a));
+    if (String(args[0] || "").toUpperCase() === "EVAL") return redis(...checkEval(args, { ...limits, prefixes }));
     const c = checkCommand(args, { ...limits, prefixes });
     if (!c.ok) throw new JailError(c.status);
     return redis(...c.cmd);
   };
   run.space = space;
   return run;
+}
+
+/**
+ * EVAL inside the jail: only a LogMem script marked jail-safe (exact text), and only
+ * with every key inside the user's space. The scripts touch nothing but their KEYS
+ * (pinned by test/jail-scripts.test.mjs). Scripting stays refused for everything else.
+ */
+function checkEval(args, opts) {
+  const L = { ...DEFAULT_LIMITS, ...opts };
+  const [, source, numkeys, ...rest] = args;
+  if (typeof source !== "string" || !jailSafeScript(source)) throw new JailError(403);
+  const n = Number(numkeys);
+  if (!Number.isInteger(n) || n < 1 || n > rest.length || n > L.maxKeys) throw new JailError(403);
+  let total = 0;
+  for (const a of rest) {
+    if (typeof a !== "string") throw new JailError(400);
+    const b = Buffer.byteLength(a);
+    if (b > L.maxValueBytes) throw new JailError(413);
+    total += b;
+  }
+  if (total > L.maxCommandBytes) throw new JailError(413);
+  if (!rest.slice(0, n).every((k) => inJail(k, L.prefixes))) throw new JailError(403);
+  return ["EVAL", source, String(n), ...rest];
 }
 
 /** The customer Redis URI. rediss:// is required outside local dev. */
