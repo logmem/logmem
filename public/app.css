@@ -147,6 +147,9 @@
 /* phone tab bar (hidden above phone width) */
 .lmx-tabs{display:none}
 
+/* header space picker (the rail shows its own above tablet width) */
+.lmx-headspace{display:none;width:auto;max-width:9.5rem;min-height:36px;flex:0 1 auto}
+
 /* ── tablet: icon rail, two columns ────────────────────────────── */
 @media (max-width:1023px){
   .lmx{grid-template-columns:64px minmax(0,1fr)}
@@ -162,6 +165,7 @@
   .lmx-head .lm-search{display:none}
   .lmx-searchbtn span,.lmx-searchbtn kbd{display:none}
   .lmx-searchbtn{flex:0 0 auto}
+  .lmx-headspace{display:block}
 }
 
 /* ── phone: bottom tabs, one column, full-screen panels ───────── */

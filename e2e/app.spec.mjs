@@ -224,3 +224,41 @@ test("homepage v3: short tagline, one handoff in the hero, connect below it, raw
   await expect(page.locator("#demo-log")).toBeVisible();
   await expect(page.locator("#demo-raw")).toBeHidden();
 });
+
+// Two spaces in every response, so the picker has a choice. Requests made after a switch are recorded.
+async function twoSpaces(page) {
+  const asked = [];
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("space")) asked.push(url.searchParams.get("space"));
+    const res = await route.fetch();
+    let body = await res.text();
+    try {
+      const j = JSON.parse(body);
+      if (j && Array.isArray(j.spaces)) { j.spaces = ["fieldnotes", "madez"]; body = JSON.stringify(j); }
+    } catch { /* not JSON: pass through */ }
+    await route.fulfill({ response: res, body });
+  });
+  return asked;
+}
+
+test("spaces: the picker is reachable at every width, and More signs out on a phone", async ({ page }, testInfo) => {
+  const asked = await twoSpaces(page);
+  await signIn(page);
+  const rail = page.locator(".lmx-rail select");
+  const head = page.getByRole("combobox", { name: "Space" }).and(page.locator(".lmx-head select"));
+  if (laptop(testInfo)) {
+    await expect(rail).toBeVisible();
+    await expect(head).toBeHidden();
+    return;
+  }
+  await expect(rail).toBeHidden();
+  await expect(head).toBeVisible();
+  await expect(head.locator("option")).toHaveText(["fieldnotes", "madez"]);
+  const box = await head.boundingBox();
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
+  await head.selectOption("madez");
+  await expect.poll(() => asked.includes("madez")).toBe(true);
+  await page.goto("/app#/more");
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
