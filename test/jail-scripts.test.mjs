@@ -5,6 +5,7 @@ import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createJail, JailError } from "../src/http/jail.mjs";
 import { registerEvalScript, jailSafeScripts } from "../src/lib/lua-scripts.mjs";
 import { UNBLOCK_LUA } from "../src/http/work.mjs";
+import { CAS_LUA } from "../src/core/blockers.mjs";
 
 const T = "uabcdefghij";
 const P = `lm:t-${T}:`;
@@ -56,6 +57,7 @@ test("jail scripts: every key must be inside the space; numkeys is checked", asy
 test("jail scripts: each jail-safe script touches only its KEYS (pins the safety rule)", () => {
   const scripts = jailSafeScripts();
   assert.ok(scripts.includes(UNBLOCK_LUA));
+  assert.ok(scripts.includes(CAS_LUA));
   for (const src of scripts) {
     const calls = [...src.matchAll(/redis\.call\(\s*'([A-Za-z]+)'\s*,\s*([^,)]+)/g)];
     assert.ok(calls.length > 0, "script has redis.call");
@@ -77,4 +79,21 @@ test("jail scripts: a managed user's Unblock works end to end through the jail",
   const out = await unblock(store, { job: "j1", note: "vendor is back", by: "human:test-user" });
   assert.equal(out.job?.stage ?? out.now?.stage ?? (await store.getNow("job", "j1")).stage, "active");
   assert.equal((await store.getNow("job", "j1")).stage, "active");
+});
+
+test("jail scripts: a managed user writes and follows a walkthrough through the jail", async () => {
+  const { createLogmem } = await import("../src/server.mjs");
+  const { createStore } = await import("../src/core/store.mjs");
+  const { writeWalkthrough, setStep, markDone, getBlocker } = await import("../src/core/blockers.mjs");
+  const jail = createJail(createMemoryRedis(), T);
+  const lm = createLogmem({ redis: jail, space: jail.space, sessionId: "s", surface: "web", defaultAgent: "quill" });
+  await lm.callTool("logmem_assign", { job: "j1", title: "Job one" });
+  const store = createStore(jail, { space: jail.space });
+  await writeWalkthrough(store, { job: "j1", to: "human:owner", summary: "Try it", walkthrough: { steps: [{ title: "One" }, { title: "Two" }] }, by: "human:owner", mint: () => "wt-jail" });
+  await setStep(store, "wt-jail", { step: 0, checked: true, rev: 1, by: "human:owner" });
+  await setStep(store, "wt-jail", { step: 1, checked: true, rev: 1, by: "human:owner" });
+  await markDone(store, "wt-jail", { by: "human:owner", note: "done" });
+  const rec = await getBlocker(store, "wt-jail");
+  assert.deepEqual(rec.steps_done, [0, 1]);
+  assert.equal(rec.done, true);
 });

@@ -21,11 +21,12 @@ export const CAS_LUA = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2]) return 'ok' end
 return 'changed'
 `;
+// Jail-safe: it touches only KEYS[1], so managed users' walkthrough ticks run through the jail.
 registerEvalScript(CAS_LUA, (call, keys, argv) => {
   if (call("GET", keys[0]) !== argv[0]) return "changed";
   call("SET", keys[0], argv[1]);
   return "ok";
-});
+}, { jail: true });
 
 export const PERSON_RE = /^human:[a-z0-9][a-z0-9_.-]{0,63}$/;
 export const WALKTHROUGH_LIMITS = { steps: 20, title: 120, detail: 1000, cmd: 500, field: 300 };
