@@ -10,6 +10,7 @@ import { invite } from './actions.js';
 import { renderView } from './shell.js';
 import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN } from './shell.js';
+import { writerPage, playerPage } from './walk.js';
 
 export const pages = {};
 let okHook = () => true;
@@ -105,10 +106,15 @@ function drawJobs() {
     <div class="lmx-stagechips lmx-phone-only" role="tablist">${BOARD.map((b) => html`<button type="button" role="tab" aria-selected=${pick === b[0]} @click=${setPick(b[0])}>${b[1].split(',')[0]} ${list.filter((j) => j.stage === b[0]).length}</button>`)}</div>
     <div class="lmx-board">${BOARD.map((b) => { const mine = list.filter((j) => j.stage === b[0]); return html`<section class="lmx-boardcol" data-stage=${b[0]} ?data-pick=${pick === b[0]}><h2 class="lmx-colhead">${b[1]} <b>${mine.length}</b></h2><div class="lmx-stack">${mine.length ? keyed(mine, (j) => j.id, (j) => boardCard(j, R)) : html`<p class="lmx-meta">None.</p>`}</div></section>`; })}</div>`);
 }
-pages.jobs = async () => { const d = await api('jobs'); if (!ok(d)) return; live.jobs = d.jobs; drawJobs(); };
-pages.job = async (id) => { await pages.jobs(); const ds = drawerState(); if (!ds || ds.id !== id) openDrawer('job', id); };
+pages.jobs = async () => { const d = await api('jobs'); if (!ok(d)) return false; live.jobs = d.jobs; drawJobs(); return true; };
+// Signed out, the sign-in form shows and no panel opens over it.
+pages.job = async (id) => { if (!(await pages.jobs())) return; const ds = drawerState(); if (!ds || ds.id !== id) openDrawer('job', id); };
 
 // ─── Agents: "Who is doing what, and are they healthy?" ─────────────
+// Walkthroughs: the writer (in the frame) and the player (no admin rail).
+pages.write = writerPage;
+pages.walk = playerPage;
+
 pages.agents = async () => {
   const d = await api('agents');
   if (!ok(d)) return;

@@ -213,7 +213,7 @@
           "walkthrough": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Person handoffs only: { steps: [{ title, detail?, cmd? }], time?, place?, done_when?, reply?, due? }"
+            "description": "Person handoffs only: { steps: [{ title (what to do), go? (where to go), detail?, cmd?, see? (what they should see) }], time?, place?, done_when?, reply?, due? }"
           }
         },
         "additionalProperties": false,
