@@ -247,3 +247,48 @@ test("PR 88 re-review 2: player state is keyed by space and trail, and its write
   for (const w of writes) assert.match(w, /^\{ space: play\.space, action:/, w);
   assert.match(src, /rev: rec\.rev \|\| 0/);
 });
+
+// ─── codex review of PR 88 at baf4c71: a slow reply for an older page is dropped ───
+import vm from "node:vm";
+function loadWalk(getJSON) {
+  let src = readFileSync(new URL("../public/app/walk.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace(/export /g, "");
+  src += "\ndrawPlayer = (rec) => { this.shown = rec.summary }; drawWriter = () => { this.drafted = draft && draft.key }; this.api = { playerPage, writerPage, getPlay: () => play, getDraft: () => draft };";
+  const state = { space: "space-a" };
+  const ctx = { URL, URLSearchParams, state, drawerOpen: () => false, closeDrawer: () => {}, okHook: () => true, getJSON, location: { replace() {} }, blankStep: undefined };
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx);
+  return ctx;
+}
+const held = () => {
+  const waiting = {};
+  const getJSON = (url) => {
+    const sp = new URL("https://x.test" + url).searchParams.get("space");
+    return new Promise((resolve) => { (waiting[sp] = waiting[sp] || []).push(() => resolve({ __status: 200, who: { title: "Job in " + sp }, person: "human:admin", blocker: { trail: "same-task", rev: 1, summary: "Instructions from " + sp, to: "human:admin", by: "human:admin", walkthrough: { steps: [{ title: "One" }] }, steps_done: [] } })); });
+  };
+  const release = async (sp) => { for (const f of waiting[sp] || []) f(); waiting[sp] = []; await new Promise((r) => setTimeout(r, 0)); };
+  return { getJSON, release };
+};
+
+test("PR 88 re-review 3: a slow player reply for space A never shows over space B", { timeout: 3000 }, async () => {
+  const h = held();
+  const ctx = loadWalk(h.getJSON);
+  const a = ctx.api.playerPage("space-a/same-task");
+  const b = ctx.api.playerPage("space-b/same-task");
+  await h.release("space-b"); await b;
+  await h.release("space-a"); await a;
+  assert.equal(ctx.shown, "Instructions from space-b");
+  assert.equal(ctx.api.getPlay().space, "space-b");
+  assert.equal(ctx.api.getPlay().key, "space-b/same-task");
+});
+
+test("PR 88 re-review 3: a slow writer reply for an older job is dropped", { timeout: 3000 }, async () => {
+  const h = held();
+  const ctx = loadWalk(h.getJSON);
+  const a = ctx.api.writerPage("job-a/same-task");
+  ctx.state.space = "space-b";
+  const b = ctx.api.writerPage("job-b/same-task");
+  await h.release("space-b"); await h.release("space-b"); await b;
+  await h.release("space-a"); await h.release("space-a"); await a;
+  assert.equal(ctx.api.getDraft().key, "space-b/job-b/same-task");
+  assert.equal(ctx.api.getDraft().space, "space-b");
+});

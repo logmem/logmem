@@ -45,22 +45,30 @@ export function toWalkthrough(d) {
   return { steps: d.steps.map((s) => keep({ title: s.title, go: s.go, detail: s.detail, cmd: s.cmd, see: s.see })), ...keep({ done_when: d.done_when, reply: d.reply }) };
 }
 
+// Each load gets a number. A reply that arrives after a newer load started is dropped, so a slow
+// answer for space A can never render (or write) over a page the person opened later (codex, PR 88).
+let writerSeq = 0, playerSeq = 0;
+
 export async function writerPage(arg) {
   if (drawerOpen()) closeDrawer();
   const [job, trail] = String(arg || '').split('/');
   if (!job) { location.replace('#/jobs'); return; }
+  const seq = ++writerSeq;
   const jobD = await getJSON('/api/view?' + new URLSearchParams({ what: 'job', id: job, space: state.space || '' }));
+  if (seq !== writerSeq) return;
   if (!okHook(jobD)) return;
   // On a fresh deep link the space is only known after the first reply, so bind the draft here.
   const space = state.space;
   const key = draftKey(space, job, trail);
   if (!draft || draft.key !== key) {
     if (trail) {
-      const t = await getJSON('/api/tasks?' + new URLSearchParams({ space: state.space || '', trail }));
+      const t = await getJSON('/api/tasks?' + new URLSearchParams({ space: space || '', trail }));
+      if (seq !== writerSeq) return;
       if (!okHook(t)) return;
       draft = fromRecord(space, job, t.blocker);
     } else {
-      const me = await getJSON('/api/tasks?' + new URLSearchParams({ space: state.space || '' }));
+      const me = await getJSON('/api/tasks?' + new URLSearchParams({ space: space || '' }));
+      if (seq !== writerSeq) return;
       draft = { key, space, job, trail: null, to: (me && me.person) || '', summary: '', done_when: '', reply: '', steps: [blankStep()] };
     }
   }
@@ -149,12 +157,16 @@ export async function playerPage(arg) {
   const space = cut > 0 ? raw.slice(0, cut) : state.space;
   const trail = cut > 0 ? raw.slice(cut + 1) : raw;
   if (space && space !== state.space) state.space = space;
-  const t = await getJSON('/api/tasks?' + new URLSearchParams({ space: state.space || '', trail }));
+  // The request's own space, captured before the await: the record shown and every write use it.
+  const reqSpace = state.space;
+  const seq = ++playerSeq;
+  const t = await getJSON('/api/tasks?' + new URLSearchParams({ space: reqSpace || '', trail }));
+  if (seq !== playerSeq) return;
   if (t.__status === 404) { renderBare(bare(emptyState('This walkthrough isn’t here.', 'It may be in another space, or it was written for someone else. Ask whoever sent you the link.'))); return; }
   if (!okHook(t)) return;
   const rec = t.blocker;
-  const key = playKey(state.space, rec.trail);
-  if (!play || play.key !== key) play = { key, space: state.space, i: firstOpen(rec) };
+  const key = playKey(reqSpace, rec.trail);
+  if (!play || play.key !== key) play = { key, space: reqSpace, i: firstOpen(rec) };
   drawPlayer(rec, false);
 }
 
