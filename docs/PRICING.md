@@ -28,7 +28,8 @@ Three rules:
 | Hosting | your Redis | hosted | hosted | hosted | hosted | hosted | hosted, BYOC or on-prem |
 | Spaces | unlimited | 1 | 1 | 3 | 10 | 30 client spaces | custom |
 | Agents | unlimited | 2 | 5 | 25 | unlimited | unlimited | unlimited |
-| Entries / month | unlimited | 1k | 50k | 150k | 500k | 1.5M | custom |
+| Entries / month | unlimited | 1k | 10k | 50k | 150k | 500k | custom |
+| Recalls / month | unlimited | 100 | 1k | 5k | 15k | 50k | custom |
 | History | yours | 7 days | 30 days | 90 days | 1 year | 1 year | custom |
 | Human approvers | yes | owner only | owner only | 3 seats | 10 seats | 25 seats | unlimited |
 | Webhooks, Slack / Mattermost approvals | yes | no | no | yes | yes | yes | yes |
