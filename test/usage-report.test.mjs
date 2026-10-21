@@ -47,3 +47,21 @@ test("usage report: ISO timestamps and bad rows never abort it (codex review of 
   assert.equal(r.agents, 2);
   assert.equal(r.people, 1);
 });
+
+test("usage report: JSON null, non-objects and out-of-range timestamps are unreadable (codex re-review of PR 93)", async () => {
+  const redis = createMemoryRedis();
+  const now = Date.parse("2026-10-21T12:00:00Z");
+  await redis("SADD", "lm:s:job:list", "j");
+  const key = "lm:s:job:j:log";
+  await redis("ZADD", key, String(now - 1000), "null");
+  await redis("ZADD", key, String(now - 2000), JSON.stringify({ ts: 1e30, by: "agent:a", kind: "memo" }));
+  await redis("ZADD", key, String(now - 3000), "[1,2]");
+  await redis("ZADD", key, String(now - 4000), "42");
+  await redis("ZADD", key, String(now - 5000), JSON.stringify({ ts: -5, by: "agent:b", kind: "memo" }));
+  await redis("ZADD", key, String(now - 6000), JSON.stringify({ ts: now - 6000, by: "agent:c", kind: "memo" }));
+  const r = await usageReport(redis, { space: "s", days: 7, now });
+  assert.equal(r.entries, 6);
+  assert.equal(r.unreadable, 5);
+  assert.equal(r.by_day["2026-10-21"], 1);
+  assert.equal(r.agents, 3, "a row with a bad ts still names its writer");
+});

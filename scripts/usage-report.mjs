@@ -8,6 +8,7 @@ import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { normTs } from "../src/core/store.mjs";
 
 const NAMESPACES = ["agent", "channel", "job"];
+const MAX_DATE_MS = 8.64e15;
 
 /** Usage for `space` from `now - days` to `now`. `redis` is a runner: (cmd, ...args) => result. */
 export async function usageReport(redis, { space, days = 7, now = Date.now() }) {
@@ -23,10 +24,13 @@ export async function usageReport(redis, { space, days = 7, now = Date.now() }) 
       for (const raw of rows) {
         // One bad row never aborts the report: it is counted as an entry (the score was in the
         // window) and as unreadable. Timestamps go through the store's own normalizer (ISO or ms).
+        // A row must be a JSON object; null, arrays and bare values are unreadable.
+        // A timestamp must be a real date (Date's range is +-8.64e15 ms).
         let e;
         try { e = JSON.parse(raw); } catch { out.unreadable++; continue; }
-        const ts = normTs(e?.ts);
-        if (ts > 0) {
+        if (e === null || typeof e !== "object" || Array.isArray(e)) { out.unreadable++; continue; }
+        const ts = normTs(e.ts);
+        if (Number.isFinite(ts) && ts > 0 && ts <= MAX_DATE_MS) {
           const day = new Date(ts).toISOString().slice(0, 10);
           out.by_day[day] = (out.by_day[day] || 0) + 1;
         } else out.unreadable++;
