@@ -29,6 +29,31 @@ function readBody(req) {
   return {};
 }
 
+/**
+ * Client credentials from an HTTP Basic header (RFC 6749 2.3.1), or null.
+ * Both parts are form-urlencoded. A Basic client is registered public, so its
+ * secret is ignored; the client_id is what matters.
+ */
+export function basicClient(header) {
+  const m = /^Basic\s+([A-Za-z0-9+/=]+)\s*$/i.exec(String(header || ""));
+  if (!m) return null;
+  const raw = Buffer.from(m[1], "base64").toString("utf8");
+  const i = raw.indexOf(":");
+  if (i < 0) return null;
+  const dec = (v) => { try { return decodeURIComponent(v.replace(/\+/g, " ")); } catch { return null; } };
+  const client_id = dec(raw.slice(0, i));
+  const client_secret = dec(raw.slice(i + 1));
+  return client_id ? { client_id, client_secret } : null;
+}
+
+/** Merge Basic credentials into the body. A client_id in both places must match. */
+function withBasic(body, header) {
+  const b = basicClient(header);
+  if (!b) return { body };
+  if (body.client_id && body.client_id !== b.client_id) return { error: "client_id in the body and the Authorization header differ" };
+  return { body: { ...body, client_id: b.client_id, client_secret: body.client_secret ?? b.client_secret } };
+}
+
 // client_secret_post: constant-time compare; a record without a stored
 // secret never matches (no "" == "" bypass).
 function secretMatches(client, presented) {
@@ -44,7 +69,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "method_not_allowed");
 
   try {
-    const body = readBody(req);
+    const merged = withBasic(readBody(req), req.headers?.authorization);
+    if (merged.error) return bad(res, 401, "invalid_client", merged.error);
+    const body = merged.body;
     const grant_type = body.grant_type;
     // Refuse before consuming a code/refresh token we could not re-seal.
     assertKekReady();
