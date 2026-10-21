@@ -26,7 +26,7 @@ test("register: validation bounds", () => {
   ok({ redirect_uris: ["http://localhost:3000/cb", "http://127.0.0.1/cb"], client_name: "x".repeat(100), scope: "s".repeat(64), token_endpoint_auth_method: "client_secret_post" });
   no({});
   no({ redirect_uris: [] });
-  no({ redirect_uris: Array.from({ length: 6 }, (_, i) => `https://a.example/${i}`) });
+  no({ redirect_uris: Array.from({ length: 11 }, (_, i) => `https://a.example/${i}`) });
   no({ redirect_uris: [`https://a.example/${"p".repeat(2048)}`] });
   no({ redirect_uris: ["http://evil.example/cb"] });
   no({ redirect_uris: ["http://localhost.evil.example/cb"] });
@@ -35,8 +35,8 @@ test("register: validation bounds", () => {
   no({ redirect_uris: [42] });
   no({ redirect_uris: ["https://a.example/cb"], client_name: "x".repeat(101) });
   no({ redirect_uris: ["https://a.example/cb"], client_name: { a: 1 } });
-  no({ redirect_uris: ["https://a.example/cb"], scope: "s".repeat(65) });
-  no({ redirect_uris: ["https://a.example/cb"], token_endpoint_auth_method: "client_secret_basic" });
+  no({ redirect_uris: ["https://a.example/cb"], scope: "s".repeat(257) });
+  no({ redirect_uris: ["https://a.example/cb"], token_endpoint_auth_method: "private_key_jwt" });
   no({ redirect_uris: ["https://a.example/cb"], grant_types: ["implicit"] });
   no({ redirect_uris: ["https://a.example/cb"], response_types: ["token"] });
 });
