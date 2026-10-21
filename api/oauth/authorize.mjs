@@ -39,6 +39,8 @@ import { customerRedis } from "../../src/http/jail.mjs";
 import { serverRedis } from "../../src/http/onboarding.mjs";
 import { checkAgentId } from "../../src/core/keys.mjs";
 import { issuerFor, bindResource, normalizeScope, SCOPE_WRITE } from "../../src/http/issuer.mjs";
+import { isAdmin } from "../../src/http/admin-auth.mjs";
+import { keySpaces } from "../../src/http/agent-keys.mjs";
 
 const PROBE_TIMEOUT_MS = 5000;
 const CONNECT_FAILED = "Could not connect with those credentials";
@@ -353,6 +355,84 @@ function sendManagedConsent(res, status, params, nonce, extra) {
 }
 
 /** Who is signed in, and their account. Writes the reply itself and returns null when the flow stops here. */
+// ─── fleet sign-in (distribution M1) ───────────────────────────────────
+// When the browser holds a valid admin session (signed in at logmem.si/app),
+// the consent page offers the deploy's own spaces (madez) as well as the
+// person's account. The token stores { kind: "fleet", agent } and the space;
+// the server's own backend is used at request time, as for an agent key.
+// "?account=1" skips this page and connects the person's own account.
+export const fleetMode = (req, params) => isAdmin(req) && String(params.account || "") !== "1";
+
+function renderFleetConsent({ params, appName, agent, spaces, error, accountUrl }) {
+  const hidden = [...BOUND_PARAMS, "csrf_token"].map((k) => `<input type="hidden" name="${k}" value="${htmlEscape(params[k] || "")}">`).join("");
+  const opts = spaces.map((sp) => `<option value="${htmlEscape(sp)}"${sp === params.space ? " selected" : ""}>${htmlEscape(sp)}</option>`).join("");
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect LogMem</title>
+<style>body{margin:0;font-family:Georgia,serif;background:#faf8f3;color:#1a1a1a;min-height:100vh;display:grid;place-items:center;padding:24px}
+.card{max-width:480px;width:100%;background:#fff;border:1px solid #e5e1d6;border-radius:6px;padding:32px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:22px;font-weight:400}p{margin:0;color:#666;font-size:14px}.err{color:#a3261a}
+label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#666}
+select,input[type=text]{width:100%;box-sizing:border-box;padding:8px 10px;margin-top:6px;border:1px solid #d3cfc4;border-radius:4px;font-family:'SF Mono',Menlo,monospace;font-size:14px}
+button{font:inherit;font-size:16px;padding:12px 16px;border-radius:4px;border:1px solid #1a1a1a;cursor:pointer}
+.go{background:#0e6863;border-color:#0e6863;color:#fff}.no{background:#fff}a{color:#0e6863;font-size:13px}</style>
+</head><body><form class="card" method="POST" action="/api/oauth/authorize">
+<h1>Connect ${htmlEscape(appName)} to the fleet</h1>
+<p>You are signed in as the LogMem admin. ${htmlEscape(appName)} will read and write one fleet space as one agent.</p>
+${error ? `<p class="err" role="alert">${htmlEscape(error)}</p>` : ""}
+${hidden}<input type="hidden" name="fleet" value="1">
+<div><label for="space">Space</label><select id="space" name="space">${opts}</select></div>
+<div><label for="agent">Agent name</label><input type="text" id="agent" name="agent" value="${htmlEscape(agent)}" maxlength="64" autocomplete="off" spellcheck="false"></div>
+<button class="go" type="submit" name="action" value="approve">Allow ${htmlEscape(appName)}</button>
+<button class="no" type="submit" name="action" value="deny">Cancel</button>
+${accountUrl ? `<a href="${htmlEscape(accountUrl)}">Connect my own LogMem account instead</a>` : ""}
+<p>Disconnect it any time from logmem.si/app.</p>
+</form></body></html>`;
+}
+
+function sendFleetConsent(res, status, params, nonce, extra) {
+  htmlHeaders(res, status, consentCsp(params.redirect_uri));
+  res.end(renderFleetConsent({ params: { ...params, csrf_token: issueCsrf(nonce, params) }, ...extra }));
+}
+
+function accountUrlFor(query) {
+  const q = new URLSearchParams();
+  for (const k of BOUND_PARAMS) if (query[k] != null && query[k] !== "") q.set(k, String(query[k]));
+  q.set("account", "1");
+  return `/api/oauth/authorize?${q}`;
+}
+
+async function fleetApprove(req, res, body, v, nonce) {
+  if (!isAdmin(req)) {
+    return sendErrorPage(res, 401, "Your admin sign-in expired", "Sign in again at logmem.si/app, then connect again from the app. Nothing was shared.");
+  }
+  const appName = v.client.client_name || "This app";
+  const spaces = keySpaces();
+  const again = (error) => sendFleetConsent(res, 400, { ...body, client_name: v.client.client_name }, nonce, { appName, agent: String(body.agent || ""), spaces, error, accountUrl: accountUrlFor(body) });
+  const space = String(body.space || "").trim();
+  if (!spaces.includes(space)) return again("Pick one of the listed spaces.");
+  let agent;
+  try {
+    agent = checkAgentId(String(body.agent || "").trim().toLowerCase(), "Agent name");
+  } catch (e) {
+    return again(e.message);
+  }
+  const code = await saveAuthCode({
+    client_id: body.client_id,
+    redirect_uri: body.redirect_uri,
+    code_challenge: body.code_challenge,
+    code_challenge_method: body.code_challenge_method,
+    scope: v.scope,
+    resource: v.resource,
+    upstash_url: null,
+    upstash_token: null,
+    backend: { kind: "fleet", agent },
+    sub: "admin:fleet",
+    space,
+  });
+  redirectTo(res, req, body.redirect_uri, { code }, body.state);
+}
+
 async function managedAccount(req, res, url, { onSignedOut }) {
   const d = deps();
   let redis;
@@ -450,6 +530,12 @@ export default async function handler(req, res) {
       const query = Object.fromEntries(url.searchParams);
       const v = await validateAuthRequest(query, req);
       if (v.error) return rejectRequest(res, req, v, query);
+      if (fleetMode(req, query)) {
+        const nonce = randomToken(16);
+        res.setHeader("Set-Cookie", `${CSRF_COOKIE}=${nonce}; Path=/api/oauth/authorize; Max-Age=${CSRF_TTL_S}; HttpOnly; Secure; SameSite=Strict`);
+        const spaces = keySpaces();
+        return sendFleetConsent(res, 200, { ...query, client_name: v.client.client_name, space: spaces[0] }, nonce, { appName: v.client.client_name || "This app", agent: defaultAgentFor(v.client.client_name), spaces, accountUrl: accountUrlFor(query) });
+      }
       if (managedMode()) return await managedGet(req, res, query, v);
       const params = { ...query, client_name: v.client.client_name };
       const nonce = randomToken(16);
@@ -484,6 +570,7 @@ export default async function handler(req, res) {
       return sendErrorPage(res, 503, "Connections are temporarily unavailable", "This server is not configured to store credentials securely yet. Nothing was saved.");
     }
 
+    if (String(body.fleet || "") === "1") return await fleetApprove(req, res, body, v, nonce);
     if (managedMode()) return await managedApprove(req, res, body, v);
 
     const space = String(body.space || "").trim().toLowerCase();

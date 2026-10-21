@@ -130,6 +130,14 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
           if (!uri || !tok.backend.tenant || !tok.backend.agent || !tok.space) return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
           return out({ kind: "redis", uri }, "managed", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, tenant: tok.backend.tenant, keyId: `mf_${tok.fid || "x"}`, scopes });
         }
+        // Fleet sign-in (an admin picked a deploy space on the consent page): the
+        // deploy's own backend, pinned to the token's space and locked to its
+        // agent, exactly like an agent key. The token holds no backend creds.
+        if (tok.backend?.kind === "fleet") {
+          const d = tok.backend.agent && tok.space && keySpaces(env).includes(tok.space) ? descriptorFromEnv(env) : null;
+          if (!d) return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
+          return out(d, "fleet-oauth", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, keyId: `ff_${tok.fid || "x"}` });
+        }
         const b = tok.backend?.kind === "redis" ? { kind: "redis", uri: tok.backend.uri } : { url: tok.backend?.url || tok.upstash_url, token: tok.backend?.token || tok.upstash_token };
         if (await backendTargetAllowed(b, env, opts)) return out(b, "oauth", { sub: tok.sub, space: tok.space, scopes });
       }
