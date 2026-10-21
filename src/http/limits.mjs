@@ -12,7 +12,7 @@
 //   history reads see entries from the last history_days only. Nothing is
 //           deleted, so an upgrade shows older entries again.
 //   recall  every logmem_recall is one recall, reserved on the same meter with
-//           the same grace (Free: 1,000 a month plus 10%). Past it, recall is
+//           the same grace (Free: 100 a month plus 10%). Past it, recall is
 //           refused with quota_exceeded; notes, views and the Brief still work.
 //
 // limits use the customer Redis directly (server code), never a jailed runner:

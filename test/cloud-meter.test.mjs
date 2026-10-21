@@ -85,29 +85,29 @@ test("usage: default month is current; bad month refused; tenants isolated", asy
   await assert.rejects(usage(redis, "probe"), { code: "invalid_tenant" });
 });
 
-test("checkQuota: free plan grace boundary (10k adds, 11k with grace, then refuse)", async () => {
+test("checkQuota: free plan grace boundary (1k adds, 1.1k with grace, then refuse)", async () => {
   const redis = createMemoryRedis();
   const plan = planFor("free");
-  assert.equal(plan.limits.add, 10000);
+  assert.equal(plan.limits.add, 1000);
   const at = async (n) => {
     await redis("SET", "acmi:cloud:meter:acme:202610:add", String(n));
     return checkQuota(redis, "acme", "add", plan, { now: OCT });
   };
-  assert.deepEqual(await at(0), { ok: true, used: 0, limit: 10000, grace: false, reserved: true });
-  assert.deepEqual(await at(9999), { ok: true, used: 9999, limit: 10000, grace: false, reserved: true }, "the 10000th add is within limit");
-  assert.deepEqual(await at(10000), { ok: true, used: 10000, limit: 10000, grace: true, reserved: true }, "10001st add is grace");
-  assert.deepEqual(await at(10999), { ok: true, used: 10999, limit: 10000, grace: true, reserved: true }, "11000th add is the last grace add");
-  assert.deepEqual(await at(11000), { ok: false, code: "quota_exceeded", used: 11000, limit: 10000, reserved: false });
-  assert.deepEqual(await at(50000), { ok: false, code: "quota_exceeded", used: 50000, limit: 10000, reserved: false });
+  assert.deepEqual(await at(0), { ok: true, used: 0, limit: 1000, grace: false, reserved: true });
+  assert.deepEqual(await at(999), { ok: true, used: 999, limit: 1000, grace: false, reserved: true }, "the 1000th add is within limit");
+  assert.deepEqual(await at(1000), { ok: true, used: 1000, limit: 1000, grace: true, reserved: true }, "1001st add is grace");
+  assert.deepEqual(await at(1099), { ok: true, used: 1099, limit: 1000, grace: true, reserved: true }, "1100th add is the last grace add");
+  assert.deepEqual(await at(1100), { ok: false, code: "quota_exceeded", used: 1100, limit: 1000, reserved: false });
+  assert.deepEqual(await at(5000), { ok: false, code: "quota_exceeded", used: 5000, limit: 1000, reserved: false });
 
   // n > 1: a batch that would cross the grace edge is refused whole, and not reserved.
   const addKey = "acmi:cloud:meter:acme:202610:add";
-  await redis("SET", addKey, "10990");
+  await redis("SET", addKey, "1090");
   assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT, n: 10 })).ok, true);
-  assert.equal(await redis("GET", addKey), "11000", "a batch that fits is reserved");
-  await redis("SET", addKey, "10990");
+  assert.equal(await redis("GET", addKey), "1100", "a batch that fits is reserved");
+  await redis("SET", addKey, "1090");
   assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT, n: 11 })).ok, false);
-  assert.equal(await redis("GET", addKey), "10990", "a refused batch does not increment");
+  assert.equal(await redis("GET", addKey), "1090", "a refused batch does not increment");
 });
 
 test("checkQuota: grace margin is exact integer math for awkward limits", async () => {
