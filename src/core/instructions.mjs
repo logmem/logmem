@@ -8,7 +8,7 @@ export const INSTRUCTIONS = `LogMem is shared memory for a team of agents. Every
 Each agent, channel and job has three slots: Who (profile), Now (current state), Log (entries over time).
 
 How to work:
-1. Start. When someone says "logmem start <agent>", call logmem_start with that agent. LogMem recaps the previous agent first. If you skip this, your first call starts a shift.
+1. Start. On "logmem start [agent]", call logmem_start, with the agent they name, if any. LogMem recaps the previous agent first. If you skip this, your first call starts a shift.
 2. Brief. Read the Brief first: last Recap, Now, recent Log, handoffs for you.
 3. Work. Write each change: logmem_note for channels, logmem_assign / logmem_update / logmem_stage for jobs. Every job is in a plan. A blocked job says what it waits on. Reuse the trail for the same work. Set origin to the trail you follow.
 4. Handoff. To pass work, call logmem_handoff to an agent in the roster. To take work, call logmem_accept with its trail (decline=true to refuse).

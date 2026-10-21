@@ -177,6 +177,16 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       return { shift: rec && !rec.ended ? rec : null, events };
     },
 
+    /**
+     * The agent this connection is set to at connect: the locked agent (agent key,
+     * managed sign-in), else LOGMEM_AGENT or the token's agent. Null when nothing
+     * is set. The surface name never counts: a bare start must not guess.
+     */
+    boundAgent() {
+      if (locked) return locked;
+      return defaultAgent ? validAgent(agentId(String(defaultAgent))) : null;
+    },
+
     /** Explicit Start / persona switch. */
     async start(agent, { modelId } = {}) {
       const events = [];
