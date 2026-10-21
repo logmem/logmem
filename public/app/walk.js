@@ -48,6 +48,8 @@ export function toWalkthrough(d) {
 // Each load gets a number. A reply that arrives after a newer load started is dropped, so a slow
 // answer for space A can never render (or write) over a page the person opened later (codex, PR 88).
 let writerSeq = 0, playerSeq = 0;
+/** Leaving a page drops its pending loads: the router calls this on every route change (codex, PR 88). */
+export function cancelWalkLoads() { writerSeq++; playerSeq++; }
 
 export async function writerPage(arg) {
   if (drawerOpen()) closeDrawer();
@@ -147,6 +149,8 @@ const playKey = (space, trail) => `${space || ''}/${trail}`;
 export async function playerPage(arg) {
   if (drawerOpen()) closeDrawer();
   const raw = String(arg || '');
+  // Every player load takes a number first, preview included, so a held reply can't replace it.
+  const seq = ++playerSeq;
   if (raw === 'preview') {
     if (!draft) { renderBare(bare(emptyState('Nothing to preview.', 'Open the writer on a job page, then press Preview.'))); return; }
     if (!play || play.key !== 'preview') play = { key: 'preview', space: state.space, i: 0, localDone: [] };
@@ -159,7 +163,6 @@ export async function playerPage(arg) {
   if (space && space !== state.space) state.space = space;
   // The request's own space, captured before the await: the record shown and every write use it.
   const reqSpace = state.space;
-  const seq = ++playerSeq;
   const t = await getJSON('/api/tasks?' + new URLSearchParams({ space: reqSpace || '', trail }));
   if (seq !== playerSeq) return;
   if (t.__status === 404) { renderBare(bare(emptyState('This walkthrough isn’t here.', 'It may be in another space, or it was written for someone else. Ask whoever sent you the link.'))); return; }

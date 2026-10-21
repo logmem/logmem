@@ -252,7 +252,7 @@ test("PR 88 re-review 2: player state is keyed by space and trail, and its write
 import vm from "node:vm";
 function loadWalk(getJSON) {
   let src = readFileSync(new URL("../public/app/walk.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace(/export /g, "");
-  src += "\ndrawPlayer = (rec) => { this.shown = rec.summary }; drawWriter = () => { this.drafted = draft && draft.key }; this.api = { playerPage, writerPage, getPlay: () => play, getDraft: () => draft };";
+  src += "\ndrawPlayer = (rec) => { this.shown = rec.summary }; drawWriter = () => { this.drafted = draft && draft.key }; this.api = { playerPage, writerPage, cancelWalkLoads, getPlay: () => play, getDraft: () => draft, setDraft: (d) => { draft = d } };";
   const state = { space: "space-a" };
   const ctx = { URL, URLSearchParams, state, drawerOpen: () => false, closeDrawer: () => {}, okHook: () => true, getJSON, location: { replace() {} }, blankStep: undefined };
   vm.createContext(ctx);
@@ -291,4 +291,34 @@ test("PR 88 re-review 3: a slow writer reply for an older job is dropped", { tim
   await h.release("space-a"); await h.release("space-a"); await a;
   assert.equal(ctx.api.getDraft().key, "space-b/job-b/same-task");
   assert.equal(ctx.api.getDraft().space, "space-b");
+});
+
+// ─── codex re-review of PR 88 at 6317350: preview and route changes also drop held replies ───
+test("PR 88 re-review 4: a held player reply never replaces a newer preview", { timeout: 3000 }, async () => {
+  const h = held();
+  const ctx = loadWalk(h.getJSON);
+  const a = ctx.api.playerPage("space-a/same-task");
+  ctx.api.setDraft({ summary: "Preview draft", to: "human:admin", steps: [{ title: "One" }], space: "space-a" });
+  await ctx.api.playerPage("preview");
+  assert.equal(ctx.shown, "Preview draft");
+  await h.release("space-a"); await a;
+  assert.equal(ctx.shown, "Preview draft", "the held reply was dropped");
+  assert.equal(ctx.api.getPlay().key, "preview");
+});
+
+test("PR 88 re-review 4: a route change drops pending player and writer loads", { timeout: 3000 }, async () => {
+  const h = held();
+  const ctx = loadWalk(h.getJSON);
+  const p = ctx.api.playerPage("space-a/same-task");
+  const w = ctx.api.writerPage("job-a/same-task");
+  ctx.api.cancelWalkLoads();
+  await h.release("space-a"); await h.release("space-a"); await h.release("space-a"); await p; await w;
+  assert.equal(ctx.shown, undefined);
+  assert.equal(ctx.api.getPlay(), null);
+  assert.equal(ctx.api.getDraft(), null);
+});
+
+test("PR 88 re-review 4: the router cancels walkthrough loads on every route", () => {
+  const main = readFileSync(new URL("../public/app/main.js", import.meta.url), "utf8");
+  assert.match(main, /function route\(\) \{\n  cancelWalkLoads\(\);/);
 });

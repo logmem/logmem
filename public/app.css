@@ -87,7 +87,8 @@
 
 /* toast */
 .lmx-toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:var(--z-toast,60);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
-.lmx-toast{pointer-events:auto;max-width:min(560px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;background:var(--text);color:var(--bg);font-size:13px;box-shadow:var(--shadow-2)}
+/* Toasts are text only, so taps pass through: they never block the button under them. */
+.lmx-toast{pointer-events:none;max-width:min(560px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;background:var(--text);color:var(--bg);font-size:13px;box-shadow:var(--shadow-2)}
 .lmx-toast[data-s="err"]{background:var(--danger);color:#fff}
 
 
@@ -184,7 +185,7 @@
   .lmx-tabs a,.lmx-tabs button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:52px;justify-content:center;border:0;background:none;color:var(--text-muted);font:500 11px/1 var(--font-sans);text-decoration:none;position:relative;cursor:pointer}
   .lmx-tabs [aria-current="page"]{color:var(--brand)}
   .lmx-tabs b{position:absolute;top:4px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--decision);color:#fff;font-size:10px;line-height:16px}
-  .lmx-toasts{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  .lmx-toasts{top:calc(56px + env(safe-area-inset-top,0px));bottom:auto}
   .lmx-head .lmx-needs{display:none}
   .lmx-stagechips{display:flex}
   .lmx-board{grid-template-columns:minmax(0,1fr)}
