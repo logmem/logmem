@@ -17,7 +17,7 @@ test("stdio clean room: a fresh MCP client runs logmem start quill, notes, hands
   const client = new Client({ name: "cleanroom-agent", version: "0.0.1" });
   await client.connect(transport);
   try {
-    assert.match(client.getInstructions() || "", /logmem start <agent>/);
+    assert.match(client.getInstructions() || "", /logmem start \[agent\]/);
     const names = (await client.listTools()).tools.map((t) => t.name);
     assert.equal(names.length, 23);
     assert.ok(names.every((n) => n.startsWith("logmem_")));
