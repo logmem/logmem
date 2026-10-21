@@ -81,7 +81,7 @@ export function suggestionCard(i) {
   return html`<article class="lmx-card" data-key=${'suggestion:' + i.job}>
     <div class="lmx-meta">Looks done? · ${[i.plan, i.job].filter(Boolean).join(' › ')}</div><h3>${jobLink(i.job, i.summary)}</h3>
     <div class="lmx-why">${i.evidence}</div>
-    <div class="lmx-meta">${joinDot([i.owner ? 'owner ' + agentName(i.owner) : '', i.created_at ? 'checked ' + ago(i.created_at) + ' ago' : ''])}</div>
+    <div class="lmx-meta">${joinDot([i.owner ? 'owner ' + agentName(i.owner) : '', i.created_at ? 'checked ' + ago(i.created_at) : ''])}</div>
     <div class="lmx-acts">${noteBox(`confirm-done:${i.job}`, 'Note (optional)')}${btn('Close it', 'primary', (e) => doWork(e, 'confirm-done', i.job))}${btn('Still open', 'secondary', (e) => doWork(e, 'keep-open', i.job))}</div></article>`;
 }
 export function needItem(i, opts) {
