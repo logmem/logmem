@@ -17,11 +17,16 @@ owner to acknowledge, and only a person can reopen it.
 
 ## Evidence (the only things that close a job)
 
-| Signal | What counts | Not enough |
+| Signal | Closes | Only suggests ("looks done?") |
 |---|---|---|
-| `pr` | A merged PR whose body says `Closes job: <id>`, or a PR in the job's `evidence` field | A plain `Job: <id>` mention: one PR often fixes part of a job. It becomes a "looks done?" suggestion |
-| `parts` | A milestone whose child jobs are all done (at least one), or a job blocked only on a person's task that is now done | A person's task Done when the job has other work |
-| `owner` | The job's newest entry is a Done by its owner, or an accepted entry from the owner that starts "Done:" | Text that sounds done |
+| `pr` | A merged PR whose body says `Closes job: <id>`, with no entry on the job more than an hour after the merge | A PR in the job's `evidence` field; a closing PR with work after the merge; a plain `Job: <id>` mention |
+| `parts` | A milestone whose child jobs are all done (at least one), or a job blocked only on a person's task that is now done | |
+| `owner` | | The job's newest entry is a Done by its owner |
+
+The first dry run on madez (Oct 21) set these rules. Owner Done entries are
+often one finished step, not the job (4 of 5 hits). One evidence PR was the
+PR a job builds on (launch-privacy-terms-cookie-banner, PR #53). Every
+merged PR from now on that finishes a job says `Closes job: <id>`.
 
 Skipped: parked jobs, jobs a person reopened (Now `auto_close: "off"`), and
 jobs with a reopen ask waiting. If GitHub can't be read, the PR signal is off

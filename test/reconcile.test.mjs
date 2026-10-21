@@ -20,7 +20,7 @@ const owner = (redis, agent = "claude-code") => createLogmem({ workRules: "warn"
 const gh = (prs, { down = false } = {}) => async (url) => {
   if (down) throw new Error("network down");
   assert.match(url, /api\.github\.com\/repos\/madezmedia\/logmem\/pulls\?state=closed/);
-  return { ok: true, json: async () => prs.map((p) => ({ merged_at: "2026-10-21T15:00:00Z", merge_commit_sha: "124842a4fdc1449d9b2d3c142b66985f64706324", html_url: `https://github.com/${REPO}/pull/${p.number}`, ...p })) };
+  return { ok: true, json: async () => prs.map((p) => ({ merged_at: new Date(Date.now() + 60000).toISOString(), merge_commit_sha: "124842a4fdc1449d9b2d3c142b66985f64706324", html_url: `https://github.com/${REPO}/pull/${p.number}`, ...p })) };
 };
 const ENV = { LOGMEM_DECIDE_SECRET: SECRET, LOGMEM_GITHUB_REPO: REPO };
 const run = (redis, opts = {}) => runReconcile(redis, { space: SPACE, env: ENV, ...opts });
@@ -30,7 +30,7 @@ test("body parsing: only 'Closes job' closes; 'Job:' is a mention; evidence link
   assert.deepEqual(evidencePRs("https://github.com/madezmedia/logmem/pull/93 and https://github.com/other/repo/pull/5", REPO), [93]);
 });
 
-test("signals: a closing PR, an evidence PR and an owner Done close; a mention only suggests", async () => {
+test("signals: only a closing PR closes; evidence PRs, owner Done, mentions and work after the merge only suggest", async () => {
   const redis = createMemoryRedis();
   const cc = owner(redis);
   await sc(cc, "logmem_assign", { job: "by-pr", title: "Closed by a PR" });
@@ -39,11 +39,13 @@ test("signals: a closing PR, an evidence PR and an owner Done close; a mention o
   await sc(cc, "logmem_assign", { job: "by-owner", title: "Owner said done" });
   await sc(cc, "logmem_update", { job: "by-owner", kind: "done", summary: "Done: shipped in #86" });
   await sc(cc, "logmem_assign", { job: "untouched", title: "Nothing happened" });
-  const r = await run(redis, { fetchImpl: gh([{ number: 96, body: "Closes job: by-pr" }, { number: 93, body: "x" }, { number: 102, body: "Job: `mentioned`" }]) });
+  await sc(cc, "logmem_assign", { job: "went-on", title: "Work after the merge" });
+  const merged = new Date(Date.now() - 3 * 3600000).toISOString();
+  const r = await run(redis, { fetchImpl: gh([{ number: 96, body: "Closes job: by-pr" }, { number: 93, body: "x" }, { number: 102, body: "Job: `mentioned`" }, { number: 110, body: "Closes job: went-on", merged_at: merged }]) });
   const by = Object.fromEntries(r.closes.map((c) => [c.job, c.signal]));
-  assert.deepEqual(by, { "by-pr": "pr", "by-evidence": "pr", "by-owner": "owner" });
+  assert.deepEqual(by, { "by-pr": "pr" });
   assert.match(r.closes.find((c) => c.job === "by-pr").evidence, /PR #96 merged as 124842a/);
-  assert.deepEqual(r.suggestions.map((s) => s.job), ["mentioned"]);
+  assert.deepEqual(r.suggestions.map((s) => [s.job, s.signal]).sort(), [["by-evidence", "pr-evidence"], ["by-owner", "owner"], ["mentioned", "pr-mention"], ["went-on", "pr-later"]]);
   assert.equal(r.github, "ok");
   assert.equal(r.applied, undefined, "a dry run applies nothing");
 });
@@ -87,12 +89,13 @@ test("skips: parked jobs, a person's task Done, and GitHub down closes nothing o
   assert.ok(r.skipped.some((s) => s.job === "parked" && s.why === "parked"));
 });
 
-test("stale: overdue with no entry for 48 hours is reported", async () => {
+test("stale: overdue with no entry for 48 hours is reported (ISO and 'Oct 16' dates)", async () => {
   const redis = createMemoryRedis();
   const cc = owner(redis);
   await sc(cc, "logmem_assign", { job: "late", title: "Late", details: { due: "2026-10-16" } });
-  const r = await run(redis, { fetchImpl: gh([]), now: Date.now() + 3 * 86400000 + Date.UTC(2030, 0, 1) - Date.now() });
-  assert.deepEqual(r.stale.map((s) => s.job), ["late"]);
+  await sc(cc, "logmem_assign", { job: "late2", title: "Late too", details: { due: "Oct 16" } });
+  const r = await run(redis, { fetchImpl: gh([]), now: Date.now() + 3 * 86400000 });
+  assert.deepEqual(r.stale.map((s) => s.job).sort(), ["late", "late2"]);
 });
 
 test("apply: Done by the reconciler with evidence, the owner gets an ack handoff, and a second run changes nothing", async () => {
@@ -191,4 +194,18 @@ test("cron endpoint: cron secret or admin; admin always gets the dry report; mod
   const live = await call({ authorization: `Bearer ${env.CRON_SECRET}` });
   assert.equal(live.body.mode, "on");
   assert.deepEqual(live.body.spaces[0].applied.closed, ["by-pr"]);
+});
+
+test("a job the backend can't read is skipped and the run goes on", async () => {
+  const inner = createMemoryRedis();
+  const cc = owner(inner);
+  await sc(cc, "logmem_assign", { job: "bad", title: "Bad" });
+  await sc(cc, "logmem_assign", { job: "by-pr", title: "Closed by a PR" });
+  const redis = (cmd, ...args) => {
+    if (String(args[0] || "").includes(":job:bad:")) throw new Error("bad response body");
+    return inner(cmd, ...args);
+  };
+  const r = await run(redis, { fetchImpl: gh([{ number: 96, body: "Closes job: by-pr" }]) });
+  assert.deepEqual(r.closes.map((c) => c.job), ["by-pr"]);
+  assert.ok(r.skipped.some((x) => x.job === "bad" && x.why === "unreadable"));
 });

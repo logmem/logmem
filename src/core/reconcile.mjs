@@ -6,12 +6,17 @@
 // often leaves its job "active" and the board stops being a source of truth.
 // planCloses() looks at every open, active or blocked job for hard evidence:
 //
-//   pr         a merged PR that names the job: "Closes job: <id>" in its body,
-//              or a PR link in the job's own `evidence` field.
+//   pr         a merged PR whose body says "Closes job: <id>", with no entry on
+//              the job more than an hour after the merge.
 //   parts      a milestone whose child jobs are all done (at least one), or a
 //              job blocked only on a person's task that is now done.
-//   owner      the job's newest entry is a Done by its owner (not a person's
-//              task Done, and not the reconciler's own).
+//
+// An owner's Done entry is only a suggestion: the first dry run on madez showed
+// agents write "done" for one finished step, not the whole job.
+//
+// Suggestions only (never a close): a PR in the job's evidence field (the first
+// dry run found one that was where the job started), a closing PR with work
+// after the merge, an owner's Done entry, and a plain "Job: <id>" mention.
 //
 // It skips jobs that are parked, that a person reopened (Now auto_close: "off"),
 // or that have a reopen ask waiting. A plain "Job: <id>" mention in a merged PR
@@ -27,6 +32,8 @@
 
 export const RECONCILER = "logmem-reconciler";
 export const STALE_MS = 48 * 3600 * 1000;
+/** Entries more than an hour after a merge mean the work went on: the PR only suggests. */
+export const LATER_MS = 3600 * 1000;
 const OPEN_STAGES = new Set(["open", "active", "blocked"]);
 const JOB_ID = "[A-Za-z0-9][A-Za-z0-9_.-]*";
 const CLOSES_RE = new RegExp(String.raw`\bCloses job:\s*\x60?(${JOB_ID})\x60?`, "gi");
@@ -52,11 +59,16 @@ export function evidencePRs(evidence, repo) {
   return out;
 }
 
-/** "2026-10-24" (or a date-time) to ms; anything else is null. */
-export function dueMs(due) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(due || ""));
-  if (!m) return null;
-  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59);
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/** "2026-10-24", or "Oct 16" (this year), to the end of that UTC day in ms; anything else is null. */
+export function dueMs(due, now = Date.now()) {
+  const s = String(due || "");
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 23, 59, 59);
+  const md = /^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})\b/.exec(s.trim());
+  const mi = md ? MONTHS.indexOf(md[1].toLowerCase()) : -1;
+  if (mi < 0) return null;
+  return Date.UTC(new Date(now).getUTCFullYear(), mi, Number(md[2]), 23, 59, 59);
 }
 
 /**
@@ -73,7 +85,15 @@ export async function planCloses(store, { now = Date.now(), github = null, block
   };
   const ids = await store.list("job");
   const jobs = new Map();
-  for (const id of ids) jobs.set(id, { id, who: (await store.getWho("job", id)) || {}, now: (await store.getNow("job", id)) || {} });
+  const unreadable = [];
+  // One job the backend can't read is skipped; the run goes on.
+  for (const id of ids) {
+    try {
+      jobs.set(id, { id, who: (await store.getWho("job", id)) || {}, now: (await store.getNow("job", id)) || {} });
+    } catch {
+      unreadable.push(id);
+    }
+  }
 
   // GitHub: merged PRs by the jobs they close or mention. Unreachable = no PR signal at all.
   let ghState = "off";
@@ -99,10 +119,16 @@ export async function planCloses(store, { now = Date.now(), github = null, block
     if (parent) (children.get(parent) || children.set(parent, []).get(parent)).push(j);
   }
 
-  const plan = { closes: [], reopens: [], suggestions: [], stale: [], skipped: [], github: ghState };
+  const plan = { closes: [], reopens: [], suggestions: [], stale: [], skipped: unreadable.map((job) => ({ job, why: "unreadable" })), github: ghState };
   for (const j of jobs.values()) {
     const stage = j.now.stage || "open";
-    const log = await store.readLog("job", j.id, { reverse: true, limit: 50 });
+    let log;
+    try {
+      log = await store.readLog("job", j.id, { reverse: true, limit: 50 });
+    } catch {
+      plan.skipped.push({ job: j.id, why: "unreadable" });
+      continue;
+    }
     const owner = j.now.owner || j.who.owner || null;
 
     // A reopen of an auto-closed job that a person approved: restore the old stage (applied in applyPlan).
@@ -114,7 +140,7 @@ export async function planCloses(store, { now = Date.now(), github = null, block
     if (!OPEN_STAGES.has(stage)) continue;
 
     // Stale: overdue, and nothing written for 48 hours.
-    const due = dueMs(j.who.due);
+    const due = dueMs(j.who.due, now);
     const last = log[0]?.ts ?? 0;
     if (due && due < now && now - last > STALE_MS) plan.stale.push({ job: j.id, title: j.who.title || null, due: j.who.due, last_entry_at: last || null, owner });
 
@@ -124,7 +150,16 @@ export async function planCloses(store, { now = Date.now(), github = null, block
 
     const hit = await evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf });
     if (hit) plan.closes.push({ job: j.id, title: j.who.title || null, owner, prev_stage: stage, ...hit });
-    else if (mentionedBy.has(j.id)) {
+    else if (ownerSaysDone(log, owner)) {
+      // Agents also write "done" for one finished step, so an owner's Done only suggests.
+      plan.suggestions.push({ job: j.id, title: j.who.title || null, owner, signal: "owner", evidence: `Owner ${agentOf(owner)} wrote: ${String(log[0].summary).slice(0, 160)}` });
+    } else if (closedBy.has(j.id)) {
+      const pr = closedBy.get(j.id);
+      plan.suggestions.push({ job: j.id, title: j.who.title || null, owner, signal: "pr-later", evidence: `PR #${pr.number} closes this job, but the job has entries after the merge` });
+    } else if (evidenceMerged(j, github, byNumber)) {
+      const n = evidenceMerged(j, github, byNumber);
+      plan.suggestions.push({ job: j.id, title: j.who.title || null, owner, signal: "pr-evidence", evidence: `PR #${n} in this job's evidence merged. Evidence can be where the job started, so this only suggests` });
+    } else if (mentionedBy.has(j.id)) {
       const pr = mentionedBy.get(j.id);
       plan.suggestions.push({ job: j.id, title: j.who.title || null, owner, signal: "pr-mention", evidence: `PR #${pr.number} merged and names this job, but does not say "Closes job"` });
     }
@@ -133,14 +168,12 @@ export async function planCloses(store, { now = Date.now(), github = null, block
 }
 
 async function evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf }) {
-  // 1. A merged PR closes it.
+  // 1. A merged PR says it closes the job, and nobody worked on the job after the merge.
   const pr = closedBy.get(j.id);
-  if (pr) return { signal: "pr", evidence: `PR #${pr.number} merged as ${String(pr.merge_commit_sha || "").slice(0, 7)} and closes this job`, link: pr.html_url || null };
-  if (github?.repo) {
-    for (const n of evidencePRs(j.who.evidence, github.repo)) {
-      const hit = byNumber.get(n);
-      if (hit) return { signal: "pr", evidence: `PR #${n} (this job's evidence) merged as ${String(hit.merge_commit_sha || "").slice(0, 7)}`, link: hit.html_url || null };
-    }
+  if (pr) {
+    const merged = Date.parse(pr.merged_at) || 0;
+    const later = (log[0]?.ts ?? 0) > merged + LATER_MS;
+    if (!later) return { signal: "pr", evidence: `PR #${pr.number} merged as ${String(pr.merge_commit_sha || "").slice(0, 7)} and closes this job`, link: pr.html_url || null };
   }
   // 2. Its parts are done.
   if (j.who.milestone === true) {
@@ -152,18 +185,25 @@ async function evidenceFor(j, { log, owner, children, closedBy, byNumber, github
     const t = await blockerOf(b.ref);
     if (t?.done && t.outcome !== "cant_do") return { signal: "parts", evidence: `The task it waited on is done (${b.ref}, by ${t.done_by || "a person"})` };
   }
-  // 3. Its owner said Done.
-  const top = log[0];
-  if (top && owner && top.by === owner && !top.payload?.blocker && (top.kind === "done" || (top.kind === "accepted" && /^(Accepted: )?Done:/.test(String(top.summary || ""))))) {
-    return { signal: "owner", evidence: `Owner ${agentOf(owner)} wrote: ${String(top.summary).slice(0, 160)}` };
-  }
   return null;
+}
+
+/** The job's newest entry is a Done by its owner (not a person's task Done). A suggestion, never a close. */
+function ownerSaysDone(log, owner) {
+  const top = log[0];
+  return !!(top && owner && top.by === owner && !top.payload?.blocker && (top.kind === "done" || (top.kind === "accepted" && /^(Accepted: )?Done:/.test(String(top.summary || "")))));
 }
 
 /**
  * A reopen ask by the owner on this job, since the auto-close: pending, or
  * approved. Read from the owner's Brief, so only verified decisions count.
  */
+/** The first merged PR in the job's evidence field, or 0. */
+function evidenceMerged(j, github, byNumber) {
+  if (!github?.repo) return 0;
+  return evidencePRs(j.who.evidence, github.repo).find((n) => byNumber.has(n)) || 0;
+}
+
 export function reopenState(b, j) {
   if (!b) return {};
   const since = j.now.auto_closed?.at ?? 0;
