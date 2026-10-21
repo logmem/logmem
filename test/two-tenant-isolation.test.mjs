@@ -454,13 +454,10 @@ describe("two managed tenants cannot see or change each other's data", { concurr
     });
   });
 
-  // Known fail-open, not fixed here. buildManaged caches the tenant row for 60s
-  // (TENANT_TTL_MS in api/mcp.mjs). After one successful lookup, setStatus(suspended)
-  // does not stop the next tools/call until that entry expires, so a paused
-  // account can still append. This is not a cross-tenant read: the jail still
-  // allows only lm:t-{id}:. A cold lookup and an expired cache entry do fail closed
-  // (covered above).
-  test("isolation: a suspension fails closed inside the 60s tenant cache window", { todo: true }, async () => {
+  // The 60s tenant cache used to let a paused account keep writing until the
+  // entry expired. #79 (tenantCache suspension fails closed) fixed it; this test
+  // fails on the code before #79 and guards against a regression.
+  test("isolation: a suspension fails closed inside the 60s tenant cache window (fixed by #79)", async () => {
     await fixture(async (customer) => {
       const id = "ucacheleak01";
       await createTenant(customer, { id, name: "Leak", plan: "free" });
