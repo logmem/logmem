@@ -160,16 +160,65 @@ test("reopen: an agent's own approval never counts (only a person's verified dec
   assert.deepEqual(r.reopens, []);
 });
 
-test("dry run writes nothing at all", async () => {
+test("dry run changes no job: only the report the app reads is saved", async () => {
   const redis = createMemoryRedis();
   const cc = owner(redis);
   await sc(cc, "logmem_assign", { job: "by-pr", title: "Closed by a PR" });
-  const snapshot = async () => JSON.stringify((await redis("SCAN", "0", "MATCH", "*", "COUNT", "100000"))[1].sort());
-  const before = await snapshot();
+  const keys = async () => (await redis("SCAN", "0", "MATCH", "*", "COUNT", "100000"))[1].sort();
+  const before = await keys();
+  const values = async (ks) => Promise.all(ks.map(async (k) => JSON.stringify(await redis("TYPE", k) === "string" ? await redis("GET", k) : await redis("ZRANGE", k, 0, -1).catch(() => null))));
+  const vBefore = await values(before);
   const rev = await redis("GET", `lm:${SPACE}:rev`);
   await run(redis, { fetchImpl: gh([{ number: 96, body: "Closes job: by-pr" }]) });
-  assert.equal(await snapshot(), before);
+  const after = await keys();
+  assert.deepEqual(after.filter((k) => !before.includes(k)), [`lm:${SPACE}:reconcile:report`]);
+  assert.deepEqual(await values(before), vBefore);
   assert.equal(await redis("GET", `lm:${SPACE}:rev`), rev);
+  const rep = JSON.parse(await redis("GET", `lm:${SPACE}:reconcile:report`));
+  assert.equal(rep.mode, "dry");
+});
+
+test("Looks done? in the app: Needs you lists suggestions and stale jobs; Close it and Still open answer them", async () => {
+  const { needsView } = await import("../src/http/view.mjs");
+  const { confirmDone, keepOpen } = await import("../src/http/work.mjs");
+  const redis = createMemoryRedis();
+  const cc = owner(redis);
+  await sc(cc, "logmem_assign", { job: "said-done", title: "Owner said done" });
+  await sc(cc, "logmem_update", { job: "said-done", kind: "done", summary: "Done: shipped" });
+  await sc(cc, "logmem_assign", { job: "maybe", title: "Maybe done" });
+  await sc(cc, "logmem_update", { job: "maybe", kind: "done", summary: "Done: one step" });
+  await sc(cc, "logmem_assign", { job: "late", title: "Late", details: { due: "2026-10-01" } });
+  const at = Date.now() + 3 * 86400000;
+  await run(redis, { fetchImpl: gh([]), now: at });
+  const needs = async () => needsView(cc.store, redis, SPACE, { secret: SECRET });
+  let n = await needs();
+  assert.deepEqual(n.items.filter((i) => i.type === "suggestion").map((i) => i.job).sort(), ["maybe", "said-done"]);
+  assert.deepEqual(n.stale, ["late"]);
+
+  // Only a person can answer, and Close it moves the job to done with their entry.
+  await assert.rejects(confirmDone(cc.store, { job: "said-done", by: "agent:claude-code" }), /only a person/);
+  const c = await confirmDone(cc.store, { job: "said-done", by: "human:mikey", note: "checked" });
+  assert.equal(c.entry.by, "human:mikey");
+  assert.equal((await cc.store.getNow("job", "said-done")).stage, "done");
+  // Still open hides it now, and the reconciler stops suggesting it until the job changes.
+  await keepOpen(cc.store, { job: "maybe", by: "human:mikey", note: "two steps left" });
+  n = await needs();
+  assert.deepEqual(n.items.filter((i) => i.type === "suggestion").map((i) => i.job), []);
+  const again = await run(redis, { fetchImpl: gh([]), now: at + 1000 });
+  assert.equal(again.suggestions.find((x) => x.job === "maybe"), undefined);
+  assert.ok(again.skipped.some((x) => x.job === "maybe" && /still open/.test(x.why)));
+  // A new Done from the owner brings the suggestion back.
+  await sc(cc, "logmem_update", { job: "maybe", kind: "done", summary: "Done: all steps" });
+  assert.ok((await run(redis, { fetchImpl: gh([]) })).suggestions.some((x) => x.job === "maybe"));
+});
+
+test("Close it refuses a job that still waits on a task or a decision", async () => {
+  const { confirmDone } = await import("../src/http/work.mjs");
+  const redis = createMemoryRedis();
+  const cc = owner(redis);
+  await sc(cc, "logmem_assign", { job: "waits", title: "Waits" });
+  await sc(cc, "logmem_stage", { job: "waits", stage: "blocked", blocked_on: { type: "decision", ref: "askX", note: "Mikey" } });
+  await assert.rejects(confirmDone(cc.store, { job: "waits", by: "human:mikey" }), /waits on a task or a decision/);
 });
 
 test("cron endpoint: cron secret or admin; admin always gets the dry report; mode on applies", async () => {

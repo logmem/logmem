@@ -153,9 +153,31 @@ export async function needsView(store, r, space, { secret, person = "human:admin
     const job = jobOf(a.where);
     items.push({ type: "decision", trail: a.trail, job, plan: await planOf(job), summary: a.summary, by: a.by, due: null, created_at: a.ts, ask: a });
   }
+  // The reconciler's "looks done?" suggestions, rechecked against the job now.
+  const rep = await readReport(r, space);
+  for (const sgg of rep.suggestions) {
+    const n = (await store.getNow("job", sgg.job).catch(() => null)) || {};
+    if (!["open", "active", "blocked"].includes(n.stage || "open")) continue;
+    // Same rule as the reconciler: "still open" hides it until the job gets a newer entry.
+    if (n.reconcile_dismissed) {
+      const top = (await store.readLog("job", sgg.job, { reverse: true, limit: 1 }).catch(() => []))[0];
+      if (top && top.trail === n.reconcile_dismissed.trail) continue;
+    }
+    items.push({ type: "suggestion", trail: `suggest:${sgg.job}`, job: sgg.job, plan: await planOf(sgg.job), summary: sgg.title || sgg.job, evidence: sgg.evidence, signal: sgg.signal, owner: sgg.owner || null, due: null, created_at: rep.at ?? 0 });
+  }
   // Soonest due first; no due date sorts after, oldest first.
   items.sort((x, y) => (x.due && y.due ? String(x.due).localeCompare(String(y.due)) : x.due ? -1 : y.due ? 1 : (x.created_at || 0) - (y.created_at || 0)));
-  return { person, count: items.length, items };
+  return { person, count: items.length, items, stale: rep.stale.map((x) => x.job), reconciled_at: rep.at ?? null };
+}
+
+/** The reconciler's last report (src/core/reconcile.mjs reportKey). Missing or broken: empty. */
+async function readReport(r, space) {
+  try {
+    const j = JSON.parse((await r("GET", `lm:${space}:reconcile:report`)) || "null");
+    return { at: j?.at ?? null, suggestions: Array.isArray(j?.suggestions) ? j.suggestions : [], stale: Array.isArray(j?.stale) ? j.stale : [] };
+  } catch {
+    return { at: null, suggestions: [], stale: [] };
+  }
 }
 
 /** Mission control (live app spec, Home): plans, blocked jobs with their reasons, agents' Now. */

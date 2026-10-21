@@ -10,7 +10,7 @@
 import { pathToFileURL } from "node:url";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { createLogmem, compatFromEnv, mirrorConfigFromEnv } from "../src/server.mjs";
-import { planCloses, applyPlan, githubSource, RECONCILER } from "../src/core/reconcile.mjs";
+import { planCloses, applyPlan, githubSource, reportKey, RECONCILER } from "../src/core/reconcile.mjs";
 import { getBlocker } from "../src/core/blockers.mjs";
 
 /** One space: plan, and apply when asked. Returns the report. */
@@ -32,6 +32,8 @@ export async function runReconcile(redis, { space, apply = false, env = process.
   });
   const report = { github: plan.github, closes: plan.closes, reopens: plan.reopens, suggestions: plan.suggestions, stale: plan.stale, skipped: plan.skipped };
   if (apply && (plan.closes.length || plan.reopens.length)) report.applied = await applyPlan(lm, store, plan, { now });
+  // The app reads the last report (Needs you, the stale badge). It is not a job write.
+  await redis("SET", reportKey(space), JSON.stringify({ at: now, mode: apply ? "on" : "dry", github: report.github, suggestions: report.suggestions, stale: report.stale }));
   return report;
 }
 

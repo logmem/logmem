@@ -40,6 +40,8 @@ const CLOSES_RE = new RegExp(String.raw`\bCloses job:\s*\x60?(${JOB_ID})\x60?`, 
 const MENTION_RE = new RegExp(String.raw`\bJob:\s*\x60?(${JOB_ID})\x60?`, "g");
 const PR_URL_RE = /github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 export const REOPEN_RE = /^\s*Reopen\b/i;
+/** The last report, for the app's Needs you and the board's stale badge. */
+export const reportKey = (space) => `lm:${space}:reconcile:report`;
 
 const agentOf = (ref) => String(ref || "").replace(/^agent:/, "");
 const isAgentRef = (ref) => /^agent:/.test(String(ref || ""));
@@ -149,7 +151,10 @@ export async function planCloses(store, { now = Date.now(), github = null, block
     if (reopen.pending) { plan.skipped.push({ job: j.id, why: "reopen ask waiting" }); continue; }
 
     const hit = await evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf });
+    // A person said "still open": no suggestion until the job gets a newer entry.
+    const dismissed = !!j.now.reconcile_dismissed && log[0]?.trail === j.now.reconcile_dismissed.trail;
     if (hit) plan.closes.push({ job: j.id, title: j.who.title || null, owner, prev_stage: stage, ...hit });
+    else if (dismissed) plan.skipped.push({ job: j.id, why: "a person said it is still open" });
     else if (ownerSaysDone(log, owner)) {
       // Agents also write "done" for one finished step, so an owner's Done only suggests.
       plan.suggestions.push({ job: j.id, title: j.who.title || null, owner, signal: "owner", evidence: `Owner ${agentOf(owner)} wrote: ${String(log[0].summary).slice(0, 160)}` });
