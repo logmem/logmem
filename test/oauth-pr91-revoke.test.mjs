@@ -99,3 +99,22 @@ test("P2: a sealed record planted under a legacy key is not touched by legacy re
     assert.ok(r.data.has(KEY.legacyAccess(raw)));
   });
 });
+
+test("revoke: a client_secret_basic client proves its secret, in the body or a Basic header", async () => {
+  await withEnv(ENV, async () => {
+    const r = oauthRedis();
+    __setRedisForTests(r);
+    const c = await registerClient({ redirect_uris: ["https://app.example/cb"], token_endpoint_auth_method: "client_secret_basic" });
+    assert.ok(c.client_secret);
+    const t = await mintTokens({ client_id: c.client_id, scope: "mcp", backend: { kind: "redis", uri: "rediss://default:pw@redis.example:6380/0" }, sub: "x", space: "acme", resource: "https://logmem.si/mcp" });
+    const basic = (id, sec) => "Basic " + Buffer.from(`${id}:${sec}`).toString("base64");
+    const call = async (body, headers = {}) => { const res = mockRes(); await revokeHandler(mockReq({ method: "POST", url: "/api/oauth/revoke", body, headers }), res); return res; };
+    assert.equal((await call({ token: t.access_token, client_id: c.client_id })).statusCode, 401, "no secret");
+    const wrong = await call({ token: t.access_token }, { authorization: basic(c.client_id, "nope") });
+    assert.equal(wrong.statusCode, 401);
+    assert.equal(wrong.getHeader("www-authenticate"), 'Basic realm="logmem"');
+    assert.ok(await lookupAccessToken(t.access_token));
+    assert.equal((await call({ token: t.access_token }, { authorization: basic(c.client_id, c.client_secret) })).statusCode, 200);
+    assert.equal(await lookupAccessToken(t.access_token), null);
+  });
+});
