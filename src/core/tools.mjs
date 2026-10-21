@@ -278,6 +278,10 @@ async function brief(ctx, agent) {
   const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
+  // No signing key here (a local agent): ask the trusted server which decisions verify.
+  if (!usableSecret(verify.secret) && ctx.verifyUrl) {
+    verify.remote = await remoteVerified([...week, ...log.slice(0, 20), ...state.claims.values()], { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
+  }
   const tasks = await blockersFrom(s, agentRef(a));
   const asks = asksOf(a, week, { ...verify, ...state });
   return {
@@ -325,9 +329,9 @@ async function needsPeople(store, tasks, pending) {
  * nothing counts as answered (fail closed). See settledFor for which answer
  * wins.
  */
-export function asksOf(a, entries, { secret, space, registry, claims } = {}) {
+export function asksOf(a, entries, { secret, space, registry, claims, remote } = {}) {
   const canon = canonicalAsks(entries.filter((e) => e.by === agentRef(a)), registry);
-  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims });
+  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims, remote });
   const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible === true, where: x.where, to: x.to ?? null, asked_at: x.ts });
   const deferred = (t) => {
     const d = deferrals.get(t);
@@ -1087,8 +1091,8 @@ export async function askState(store, entries) {
 }
 
 /** True when decided entry `d` answers canonical ask `c`: signature verifies and it signed c's hash. */
-function answersAsk(d, c, { secret, space }) {
-  return !!c && c.answerable && !!d && d.kind === "decided" && d.legacy !== true && d.origin === c.ask.trail && d.payload?.ask_hash === c.hash && verifyDecision(d, { secret, space });
+function answersAsk(d, c, { secret, space, remote }) {
+  return !!c && c.answerable && !!d && d.kind === "decided" && d.legacy !== true && d.origin === c.ask.trail && d.payload?.ask_hash === c.hash && verifyDecision(d, { secret, space, remote });
 }
 
 /**
@@ -1102,18 +1106,18 @@ function answersAsk(d, c, { secret, space }) {
  *   - a defer never settles; the latest valid defer is reported.
  * Returns { answers: Map trail -> entry, deferrals: Map trail -> entry }.
  */
-export function decisionsFor(canon, entries, { secret, space, claims = new Map() } = {}) {
+export function decisionsFor(canon, entries, { secret, space, claims = new Map(), remote } = {}) {
   const answers = new Map();
   const deferrals = new Map();
   for (const [t, c] of canon) {
     const d = claims.get(t);
-    if (d && SETTLES.includes(d.payload?.verdict) && answersAsk(d, c, { secret, space })) answers.set(t, d);
+    if (d && SETTLES.includes(d.payload?.verdict) && answersAsk(d, c, { secret, space, remote })) answers.set(t, d);
   }
   // `entries` are newest first. Walk them oldest first (by ts, ties keep that
   // order reversed) so the earliest settling answer and the latest defer win.
   const decided = (entries || [])
     .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e && e.kind === "decided" && answersAsk(e, canon.get(e.origin), { secret, space }))
+    .filter(({ e }) => e && e.kind === "decided" && answersAsk(e, canon.get(e.origin), { secret, space, remote }))
     .sort((x, y) => x.e.ts - y.e.ts || y.i - x.i)
     .map(({ e }) => e);
   for (const e of decided) {
@@ -1125,12 +1129,73 @@ export function decisionsFor(canon, entries, { secret, space, claims = new Map()
 }
 
 /** Mark decided rows that don't answer their canonical ask (unsigned, forged, altered ask) as unverified. */
-export function annotateDecisions(entries, { secret, space, canon = new Map() } = {}) {
+export function annotateDecisions(entries, { secret, space, canon = new Map(), remote } = {}) {
   return (entries || []).map((e) => {
     if (!e || e.kind !== "decided") return e;
-    if (answersAsk(e, canon.get(e.origin), { secret, space })) return e;
+    if (answersAsk(e, canon.get(e.origin), { secret, space, remote })) return e;
     return { ...e, unverified: true, payload: { ...(e.payload || {}), unverified: true } };
   });
+}
+
+// ─── Remote verification (local agents hold no signing key) ─────────────
+// The server that signs decisions answers which ones verify; it never shares
+// the key. A verified answer is bound to every signed field plus the sig, so
+// a valid sig moved onto an altered decision never matches.
+/** The key a remote verification is bound to: the signed message and the sig. */
+export const remoteKey = (e, space) =>
+  `${decisionMessage({ space, origin: e.origin, ask_hash: e.payload?.ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts })}|${e.payload?.sig}`;
+
+/** The wire form of a decided entry for /api/verify-decisions. */
+const wireDecision = (e) => ({ origin: e.origin, ask_hash: e.payload?.ask_hash ?? null, verdict: e.payload?.verdict, note: e.payload?.note ?? null, by: e.by, ts: e.ts, sig: e.payload?.sig });
+
+export const REMOTE_VERIFY_MAX = 200;
+export const REMOTE_VERIFY_TIMEOUT_MS = 4000;
+
+/**
+ * Ask the trusted server which decided entries verify. Returns a Set of
+ * remoteKey()s. Any failure (network, status, shape) returns an empty Set:
+ * nothing is verified, so nothing counts as answered (fail closed).
+ */
+export async function remoteVerified(entries, { space, url, fetchImpl = globalThis.fetch, timeoutMs = REMOTE_VERIFY_TIMEOUT_MS } = {}) {
+  const seen = new Set();
+  const list = [];
+  for (const e of entries || []) {
+    if (!e || e.kind !== "decided" || typeof e.payload?.sig !== "string" || e.payload?.ask_hash == null) continue;
+    const k = remoteKey(e, space);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    list.push({ e, k });
+    if (list.length >= REMOTE_VERIFY_MAX) break;
+  }
+  const out = new Set();
+  if (!list.length || !url || typeof fetchImpl !== "function") return out;
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ space, decisions: list.map((x) => wireDecision(x.e)) }),
+      redirect: "error",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return out;
+    const j = await res.json();
+    if (!Array.isArray(j?.valid)) return out;
+    for (const i of j.valid) if (Number.isInteger(i) && i >= 0 && i < list.length) out.add(list[i].k);
+  } catch {
+    return new Set();
+  }
+  return out;
+}
+
+/** Which of `decisions` (wire form) verify for `space` under `secret`. Returns their indexes. */
+export function verifyWireDecisions(space, decisions, secret) {
+  const valid = [];
+  (decisions || []).slice(0, REMOTE_VERIFY_MAX).forEach((d, i) => {
+    if (!d || typeof d !== "object") return;
+    const e = { kind: "decided", origin: d.origin, by: d.by, ts: d.ts, payload: { ask_hash: d.ask_hash, verdict: d.verdict, note: d.note, sig: d.sig } };
+    if (verifyDecision(e, { secret, space })) valid.push(i);
+  });
+  return valid;
 }
 
 /** HMAC-SHA256 (hex) over a decision. `ask_hash`, or `ask` (hashed here). Throws if the secret is unusable. */
@@ -1147,8 +1212,8 @@ export function signDecision(fields, secret) {
  * signed ask_hash): changing any field a person saw fails. False for anything
  * unsigned, tampered, from another space, or when the secret is missing.
  */
-export function verifyDecision(e, { secret, space, ask } = {}) {
-  if (!e || e.kind !== "decided" || !e.origin || !isHuman(e.by) || !usableSecret(secret)) return false;
+export function verifyDecision(e, { secret, space, ask, remote } = {}) {
+  if (!e || e.kind !== "decided" || !e.origin || !isHuman(e.by)) return false;
   const sig = e.payload?.sig;
   if (typeof sig !== "string" || !/^[0-9a-f]{64}$/.test(sig)) return false;
   let ask_hash = e.payload?.ask_hash;
@@ -1157,6 +1222,10 @@ export function verifyDecision(e, { secret, space, ask } = {}) {
     const want = askDigest(ask);
     if (ask_hash != null && ask_hash !== want) return false;
     ask_hash = want;
+  }
+  if (!usableSecret(secret)) {
+    // No key here: only a decision the trusted server verified, field for field, counts.
+    return remote instanceof Set && e.payload?.ask_hash != null && e.payload.ask_hash === ask_hash && remote.has(remoteKey(e, space));
   }
   const want = createHmac("sha256", secret)
     .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
