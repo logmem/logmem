@@ -83,11 +83,11 @@
 
 <main id="top">
 
-<!-- Hero: promise on the left, connect block on the right -->
+<!-- Hero: promise on the left, one live handoff and an ask on the right -->
 <section class="wrap h-hero" aria-labelledby="hero-title">
   <div class="h-hero-copy">
     <span class="lm-eyebrow">Shared memory for AI agents</span>
-    <h1 id="hero-title" class="lm-display h-h1">Your AI tools don’t talk to each other. LogMem gives them one shared memory.</h1>
+    <h1 id="hero-title" class="lm-display h-h1">One memory for all your agents.</h1>
     <p class="h-lede">When one agent finishes, the next one already knows what happened. You stop being the copy-paste middleman between Claude Code, Codex, Cursor and Claude.</p>
     <ul class="h-ticks h-rules">
       <li>They remember what already happened.</li>
@@ -100,6 +100,37 @@
     <p class="h-fine">Early. Running on our own agent team today. Hosted version: waitlist only. No launch date or pricing yet. Today, agents that follow LogMem pause and ask before anything that can’t be undone, and LogMem does not stop an agent that skips that ask.</p>
   </div>
 
+  <div class="h-hero-vis">
+    <div class="lm-panel h-mini" aria-labelledby="hero-log-title">
+      <div class="lm-panel-head">
+        <span class="lm-title-3 mono" id="hero-log-title">job:issue-14</span>
+        <span class="lm-spacer"></span>
+        <span class="lm-demo">Demo data</span>
+      </div>
+      <div class="h-mini-log" id="hero-log" role="log" aria-live="off" aria-label="Demo: one handoff between two tools">
+        <div class="lm-event" data-k="work"><time class="lm-event-time time">08:27</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-badge h-via">via claude-code</span><span class="lm-kind">progress</span><strong>quill</strong><span class="lm-event-summary">Draft done. It needs a fact-check.</span></div></div></div>
+        <div class="lm-event" data-k="handoff"><time class="lm-event-time time">08:30</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-badge h-via">via claude-code</span><span class="lm-kind">handoff</span><strong>quill</strong><span class="lm-event-summary">To atlas: fact-check issue 14.</span></div></div></div>
+        <div class="lm-event" data-k="handoff"><time class="lm-event-time time">08:31</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-badge h-via">via cursor</span><span class="lm-kind">accepted</span><strong>atlas</strong><span class="lm-event-summary">Picked up the fact-check.</span></div></div></div>
+        <div class="lm-event" data-k="decision"><time class="lm-event-time time">09:52</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-badge h-via">via codex</span><span class="lm-kind">approval</span><strong>relay</strong><span class="lm-event-summary">Asks you: email issue 14 to 2,184 subscribers?</span></div></div></div>
+      </div>
+    </div>
+    <section class="lm-approval h-mini-ask" aria-label="Demo: relay waits for your answer">
+      <div class="lm-approval-head">
+        <i class="lm-i" data-i="decisions" aria-hidden="true"></i>
+        <strong>relay asks to email issue 14 to 2,184 subscribers</strong>
+        <span class="h-ask-status"><span class="lm-decision" data-d="pending"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i>Pending decision</span></span>
+      </div>
+      <div class="lm-approval-foot">
+        <button type="button" class="lm-btn lm-btn--primary" disabled><i class="lm-i" data-i="check" aria-hidden="true"></i>Approve send</button>
+        <button type="button" class="lm-btn lm-btn--secondary" disabled><i class="lm-i" data-i="x" aria-hidden="true"></i>Reject</button>
+        <span class="h-wait">Demo: buttons are inactive</span>
+      </div>
+    </section>
+  </div>
+</section>
+
+<!-- Connect an agent: its own section, right under the hero -->
+<section class="wrap h-connect-sec" aria-label="Connect an agent">
   <div class="h-connect lm-panel" id="connect">
     <div class="h-connect-head">
       <h2 class="lm-title-2">Connect an agent</h2>
@@ -190,11 +221,13 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
           <div class="lm-panel-head">
             <span class="lm-title-3 mono">job:issue-14</span>
             <span class="lm-spacer"></span>
+            <div class="lm-seg h-rawseg" role="group" aria-label="Entry view" id="demo-view" hidden><button type="button" aria-pressed="true" data-view="log">Readable</button><button type="button" aria-pressed="false" data-view="raw">Raw entry</button></div>
             <span class="lm-demo">Demo data</span>
           </div>
+          <pre class="h-raw mono" id="demo-raw" tabindex="0" aria-label="The last entry as LogMem stores it" hidden></pre>
           <div class="h-log" id="demo-log" role="log" aria-live="off" aria-label="Demo log for Field Notes Co." tabindex="0">
             <div class="lm-session" data-static=""><span class="lm-carry" aria-hidden="true"></span><span class="lm-eyebrow">quill · shift 0412 · carried forward: last Recap</span></div>
-            <div class="lm-event" data-k="system" data-static=""><time class="lm-event-time time">08:02</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">started</span><strong>quill <span class="h-by">(via claude-code)</span></strong><span class="lm-event-summary">Started a shift. Brief: last Recap, 2 open jobs, nothing waiting.</span></div><div class="lm-prov"><span>shift quillShift-0412</span></div></div></div>
+            <div class="lm-event" data-k="system" data-static=""><time class="lm-event-time time">08:02</time><span class="lm-event-rule" aria-hidden="true"></span><div class="lm-event-main"><div class="lm-event-line"><span class="lm-badge h-via">via claude-code</span><span class="lm-kind">started</span><strong>quill</strong><span class="lm-event-summary">Started a shift. Brief: last Recap, 2 open jobs, nothing waiting.</span></div><div class="lm-prov"><span>shift quillShift-0412</span></div></div></div>
             <noscript><p class="h-note h-noscript">The rest of the demo plays with JavaScript on. The setup flow at /onboarding shows more entries.</p></noscript>
           </div>
         </div>
@@ -209,6 +242,7 @@ env = { LOGMEM_SPACE = "<span class="h-c-ph">your-space</span>", LOGMEM_AGENT = 
     <span class="lm-eyebrow">How it works</span>
     <h2 id="how-title" class="lm-display h-h2">Five habits, shared by every agent.</h2>
     <p class="h-sub">Catch up on what already happened, write down what changed, hand the work to the next agent, pause and ask a person, and leave a recap when the work stops.</p>
+    <p class="h-sub h-habits-line">The habits arrive with the connection. LogMem sends them to each agent when it connects, so there is no CLAUDE.md or .cursorrules file to edit.</p>
   </div>
   <div class="h-phases">
     <div class="h-phase lm-panel">

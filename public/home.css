@@ -35,6 +35,21 @@
 .h-cta-row{display:flex;flex-wrap:wrap;gap:10px}
 
 /* connect block */
+/* Hero right: one live handoff, then the ask it leads to (homepage v3, P1) */
+.h-hero-vis{display:flex;flex-direction:column;gap:16px;min-width:0}
+.h-mini{box-shadow:var(--shadow-2);min-width:0}
+.h-mini-log{padding:6px 20px 14px}
+.h-mini-ask{box-shadow:var(--shadow-1)}
+.h-mini-ask .lm-approval-foot{flex-wrap:wrap}
+.h-via{flex:0 0 auto}
+.h-wait-in{opacity:0}
+/* Connect an agent: its own section under the hero */
+.h-connect-sec{padding-bottom:56px}
+.h-connect-sec .h-connect{max-width:760px;margin:0 auto}
+.h-habits-line{color:var(--text)}
+/* Demo: the raw entry, as stored */
+.h-log[hidden],.h-raw[hidden]{display:none}
+.h-raw{margin:0;padding:16px 20px;min-height:200px;max-height:420px;overflow:auto;background:var(--surface-sunken);color:var(--text);font-size:13px;line-height:20px;white-space:pre}
 .h-connect{min-width:0;box-shadow:var(--shadow-2);display:flex;flex-direction:column}
 .h-connect-head{padding:18px 20px 4px;display:flex;flex-direction:column;gap:4px}
 .h-connect-sub{margin:0;font-size:13px;color:var(--text-muted)}
