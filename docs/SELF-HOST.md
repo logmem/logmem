@@ -163,6 +163,7 @@ Common causes:
 | `LOGMEM_REDIS_TIMEOUT_MS` | Per command timeout. Default 5000 |
 | `LOGMEM_ACMI_COMPAT` | Set to `1` to add the `acmi_*` tools and read legacy `acmi:*` history |
 | `LOGMEM_MIRROR_ACMI` | Set to `1` to copy every write back to `acmi:*` for a gradual move |
+| `LOGMEM_METER` | Set to `off` to stop counting use. By default LogMem counts adds, reads, recalls and active agents a month under `lm:{space}:usage:*`. It never limits anything |
 | `LOGMEM_OAUTH_ALLOW_INSECURE` | Set to `1` to allow a plain `redis://` customer URI outside production |
 
 `.env.example` in the repo lists every variable.

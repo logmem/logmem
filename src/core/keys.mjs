@@ -120,5 +120,5 @@ export function lmAskKey(space, trail) {
   return `${PREFIX}:${space}:ask:${trail}`;
 }
 
-/** Protected prefixes never removed by logmem_remove, even with confirm. Ask and decision keys stay: removing one would allow a second answer or a swapped ask. */
-export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/, /^lm:[^:]+:ask:/];
+/** Protected prefixes never removed by logmem_remove, even with confirm. Ask and decision keys stay: removing one would allow a second answer or a swapped ask. Usage counters stay so use cannot be erased. */
+export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/, /^lm:[^:]+:ask:/, /^lm:[^:]+:usage:/];
