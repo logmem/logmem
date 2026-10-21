@@ -183,6 +183,24 @@ test("decisions: after Defer the answer buttons work again", async ({ page }) =>
   await expect.poll(() => sent.length).toBe(2);
 });
 
+test("walkthrough writer: a draft saves only to the space it was written in", async ({ page }) => {
+  await signIn(page, "#/write/i15-lead");
+  const posts = [];
+  await page.route("**/api/tasks", async (route) => { if (route.request().method() === "POST") posts.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, blocker: { trail: "x", to: "human:admin" } } }); });
+  await page.getByLabel("Title *").fill("Draft from fieldnotes");
+  await page.getByLabel("What to do *").fill("Step one");
+  // The space changes under the open writer (another tab or the space picker).
+  await page.evaluate(async () => { (await import("/app/core.js")).state.space = "another-space"; });
+  await page.getByRole("button", { name: "Save walkthrough" }).click();
+  await expect(page.locator(".lmx-toast").last()).toContainText("This draft is for space fieldnotes");
+  expect(posts).toHaveLength(0);
+  await page.evaluate(async () => { (await import("/app/core.js")).state.space = "fieldnotes"; });
+  await page.getByRole("button", { name: "Save walkthrough" }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].space).toBe("fieldnotes");
+});
+
+
 test("homepage v3: short tagline, one handoff in the hero, connect below it, raw entry view", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("One memory for all your agents.");
@@ -205,19 +223,4 @@ test("homepage v3: short tagline, one handoff in the hero, connect below it, raw
   await page.getByRole("button", { name: "Readable" }).click();
   await expect(page.locator("#demo-log")).toBeVisible();
   await expect(page.locator("#demo-raw")).toBeHidden();
-test("walkthrough writer: a draft saves only to the space it was written in", async ({ page }) => {
-  await signIn(page, "#/write/i15-lead");
-  const posts = [];
-  await page.route("**/api/tasks", async (route) => { if (route.request().method() === "POST") posts.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, blocker: { trail: "x", to: "human:admin" } } }); });
-  await page.getByLabel("Title *").fill("Draft from fieldnotes");
-  await page.getByLabel("What to do *").fill("Step one");
-  // The space changes under the open writer (another tab or the space picker).
-  await page.evaluate(async () => { (await import("/app/core.js")).state.space = "another-space"; });
-  await page.getByRole("button", { name: "Save walkthrough" }).click();
-  await expect(page.locator(".lmx-toast").last()).toContainText("This draft is for space fieldnotes");
-  expect(posts).toHaveLength(0);
-  await page.evaluate(async () => { (await import("/app/core.js")).state.space = "fieldnotes"; });
-  await page.getByRole("button", { name: "Save walkthrough" }).click();
-  await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0].space).toBe("fieldnotes");
 });
