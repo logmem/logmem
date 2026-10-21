@@ -46,7 +46,7 @@ export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
 
-/** A managed account's recall counts against its plan (Free: 1,000 a month). Off when there are no limits. */
+/** A managed account's recall counts against its plan (Free: 100 a month). Off when there are no limits. */
 function limitedRecall(run, limits) {
   if (!limits || typeof limits.beforeRecall !== "function") return run;
   return async (q, n) => {
