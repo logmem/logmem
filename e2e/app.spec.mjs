@@ -143,3 +143,27 @@ test("decisions: after Defer the answer buttons work again", async ({ page }) =>
   await card.getByRole("button", { name: "Reject" }).click();
   await expect.poll(() => sent.length).toBe(2);
 });
+
+test("homepage v3: short tagline, one handoff in the hero, connect below it, raw entry view", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("One memory for all your agents.");
+  const hero = page.locator("#hero-log");
+  await expect(hero.locator(".lm-event")).toHaveCount(4);
+  await expect(hero.locator(".h-via").first()).toHaveText("via claude-code");
+  await expect(page.locator(".h-mini-ask")).toContainText("Demo: buttons are inactive");
+  // Connect is its own section, after the hero.
+  const order = await page.evaluate(() => ({
+    after: !!(document.querySelector(".h-hero").compareDocumentPosition(document.querySelector("#connect")) & Node.DOCUMENT_POSITION_FOLLOWING),
+    outside: !document.querySelector(".h-hero #connect"),
+  }));
+  expect(order).toEqual({ after: true, outside: true });
+  // Raw entry shows the stored shape and hides the readable log.
+  await page.locator("#demo").scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: "Raw entry" }).click();
+  await expect(page.locator("#demo-raw")).toBeVisible();
+  await expect(page.locator("#demo-log")).toBeHidden();
+  await expect(page.locator("#demo-raw")).toContainText('"byline"');
+  await page.getByRole("button", { name: "Readable" }).click();
+  await expect(page.locator("#demo-log")).toBeVisible();
+  await expect(page.locator("#demo-raw")).toBeHidden();
+});
