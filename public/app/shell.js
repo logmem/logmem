@@ -17,6 +17,11 @@ let lastRoute = null;
 export const currentRoute = () => lastRoute;
 let onSpace = () => {}, onSignOut = () => {};
 export function setShellHooks({ space, signOut }) { onSpace = space; onSignOut = signOut; }
+/** Sign out from anywhere (the phone has no rail, so More offers it too). */
+export function signOut() { onSignOut(); }
+const spaceOptions = () => state.spaces.map((s) => html`<option ?selected=${s === state.space}>${s}</option>`);
+/** The header space picker: shown only below 1024px, where the rail hides its own. */
+const headSpace = () => state.spaces.length > 1 ? html`<select class="lm-select lmx-headspace" aria-label="Space" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select>` : nothing;
 
 function navItem(n, route) {
   const cur = n[0] === (ROUTE_NAV[route] || route);
@@ -30,11 +35,11 @@ function frame(route, crumbs, body) {
   const tab = (id, label, ic) => { const cur = id === (ROUTE_NAV[route] || route); return html`<a href=${'#/' + id} aria-current=${cur ? 'page' : nothing}>${icon(ic)}${label}</a>`; };
   return html`<div class="lmx"><nav class="lmx-rail" aria-label="LogMem">
       <div class="lm-rail-brand"><a href="/" style="display:flex"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height:26px;width:auto"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height:26px;width:auto"></a></div>
-      <label class="lm-field" style="margin:4px 4px 12px"><span class="lm-label">Space</span><select class="lm-select" @change=${(e) => onSpace(e.target.value)}>${state.spaces.map((s) => html`<option ?selected=${s === state.space}>${s}</option>`)}</select></label>
+      <label class="lm-field" style="margin:4px 4px 12px"><span class="lm-label">Space</span><select class="lm-select" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select></label>
       ${NAV.map((n) => navItem(n, route))}<div class="lmx-sep">Admin</div>${ADMIN.map((n) => navItem(n, route))}
       <div class="lm-rail-foot" style="margin-top:auto">${demo ? html`<span class="lm-badge lm-badge--warning lmx-railtext">Sandbox space</span>` : html`<span style="font-size:12px" class="subtle lmx-railtext">Live space</span>`}<button type="button" class="lm-btn lm-btn--ghost lmx-railtext" @click=${onSignOut} style="justify-content:flex-start">Sign out</button></div></nav>
     <div class="lmx-col"><header class="lmx-head"><ol class="lm-crumbs">${crumbs.map((c, i) => html`${i ? html`<li aria-hidden="true">/</li>` : nothing}<li aria-current=${i === crumbs.length - 1 ? 'page' : nothing} style=${i === crumbs.length - 1 ? 'color:var(--text)' : ''}>${c}</li>`)}</ol>
-      <span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
+      ${headSpace()}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${needsBtn()}</header>
       <main class="lmx-main" id="main">${banner()}${body}</main></div>
