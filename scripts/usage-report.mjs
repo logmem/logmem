@@ -5,13 +5,14 @@
 //   node scripts/usage-report.mjs --space=madez --days=7
 import { pathToFileURL } from "node:url";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
+import { normTs } from "../src/core/store.mjs";
 
 const NAMESPACES = ["agent", "channel", "job"];
 
 /** Usage for `space` from `now - days` to `now`. `redis` is a runner: (cmd, ...args) => result. */
 export async function usageReport(redis, { space, days = 7, now = Date.now() }) {
   const since = now - days * 86400000;
-  const out = { space, days, since, until: now, entries: 0, logs: {}, by_day: {}, writers: {} };
+  const out = { space, days, since, until: now, entries: 0, logs: {}, by_day: {}, writers: {}, unreadable: 0 };
   for (const ns of NAMESPACES) {
     const ids = (await redis("SMEMBERS", `lm:${space}:${ns}:list`)) || [];
     let entries = 0, active = 0;
@@ -20,10 +21,15 @@ export async function usageReport(redis, { space, days = 7, now = Date.now() }) 
       if (rows.length) active++;
       entries += rows.length;
       for (const raw of rows) {
+        // One bad row never aborts the report: it is counted as an entry (the score was in the
+        // window) and as unreadable. Timestamps go through the store's own normalizer (ISO or ms).
         let e;
-        try { e = JSON.parse(raw); } catch { continue; }
-        const day = new Date(Number(e.ts)).toISOString().slice(0, 10);
-        out.by_day[day] = (out.by_day[day] || 0) + 1;
+        try { e = JSON.parse(raw); } catch { out.unreadable++; continue; }
+        const ts = normTs(e?.ts);
+        if (ts > 0) {
+          const day = new Date(ts).toISOString().slice(0, 10);
+          out.by_day[day] = (out.by_day[day] || 0) + 1;
+        } else out.unreadable++;
         const w = String(e.by || "unknown");
         out.writers[w] = (out.writers[w] || 0) + 1;
       }

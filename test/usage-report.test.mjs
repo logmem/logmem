@@ -30,3 +30,20 @@ test("usage report: entries outside the window are not counted", async () => {
   const r = await usageReport(redis, { space: "s", days: 7, now });
   assert.equal(r.entries, 1);
 });
+
+test("usage report: ISO timestamps and bad rows never abort it (codex review of PR 93)", async () => {
+  const redis = createMemoryRedis();
+  const now = Date.parse("2026-10-21T12:00:00Z");
+  await redis("SADD", "lm:s:job:list", "j");
+  const key = "lm:s:job:j:log";
+  await redis("ZADD", key, String(now - 1000), JSON.stringify({ ts: new Date(now - 1000).toISOString(), by: "agent:a", kind: "memo" }));
+  await redis("ZADD", key, String(now - 2000), "not json");
+  await redis("ZADD", key, String(now - 3000), JSON.stringify({ ts: "garbage", by: "agent:b", kind: "memo" }));
+  await redis("ZADD", key, String(now - 4000), JSON.stringify({ ts: now - 4000, by: "human:mikey", kind: "memo" }));
+  const r = await usageReport(redis, { space: "s", days: 7, now });
+  assert.equal(r.entries, 4);
+  assert.equal(r.unreadable, 2);
+  assert.equal(r.by_day["2026-10-21"], 2);
+  assert.equal(r.agents, 2);
+  assert.equal(r.people, 1);
+});
