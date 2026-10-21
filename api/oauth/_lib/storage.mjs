@@ -748,6 +748,34 @@ export async function revokeAccessToken(access_token) {
 }
 
 /**
+ * Legacy raw-keyed tokens (pre-hash), revoked under the same rules that let
+ * them work: only before LEGACY_CUTOFF_MS, only unsealed records, and only
+ * the client's own (codex review of PR 91, P2).
+ * TODO(remove after LEGACY_CUTOFF_MS)
+ */
+async function revokeLegacy(r, token, client_id) {
+  if (!legacyOpen() || !isRawToken(token)) return null;
+  const ak = KEY.legacyAccess(token);
+  const a = openLegacy(parse(await r("GET", ak)));
+  if (a && a.client_id === client_id) {
+    await r("DEL", ak);
+    return "access";
+  }
+  const rk = KEY.legacyRefresh(token);
+  const rf = openLegacy(parse(await r("GET", rk)));
+  if (rf && rf.client_id === client_id) {
+    await r("DEL", rk);
+    if (isRawToken(String(rf.sibling_at || ""))) {
+      const sk = KEY.legacyAccess(rf.sibling_at);
+      const sib = openLegacy(parse(await r("GET", sk)));
+      if (sib && sib.client_id === client_id) await r("DEL", sk);
+    }
+    return "refresh";
+  }
+  return null;
+}
+
+/**
  * RFC 7009 revocation for `client_id`. An access token revokes itself. A
  * refresh token revokes its whole grant: every access and refresh token of
  * the family, and a managed account's connected-app record. A token that is
@@ -765,7 +793,24 @@ export async function revokeToken(token, client_id) {
     return "access";
   }
   const rt = parse(await r("GET", KEY.refresh(h)));
-  if (!rt || rt.client_id !== client_id) return null;
+  if (!rt) {
+    // A refresh in flight already consumed the live record and left its grace
+    // record. Revoke through that: the family and revoked markers go up first,
+    // so linkRefreshChildren discards whatever the racing refresh mints, and a
+    // managed app's connected-app record goes too (codex review of PR 91, P1).
+    const g = parse(await r("GET", KEY.refreshGrace(h)));
+    const grec = g && parse(g.rec);
+    if (grec && grec.client_id === client_id) {
+      const gfid = grec.fid;
+      const gopen = openSealed(grec, "refresh", h);
+      if (isFid(gfid)) await r("SET", KEY.familyRevoked(gfid), "1", "EX", String(TTL.refreshGrace));
+      if (isFid(gfid) && gopen?.backend?.kind === "managed" && gopen.backend.tenant) await revokeManagedApp(gopen.backend.tenant, gfid);
+      await revokeFamily(r, h);
+      return "grant";
+    }
+    return revokeLegacy(r, token, client_id);
+  }
+  if (rt.client_id !== client_id) return null;
   const rec = openSealed(rt, "refresh", h);
   const fid = rec?.fid ?? rt.fid;
   if (isFid(fid)) {
