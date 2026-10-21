@@ -111,3 +111,36 @@ test("fleet: a space outside the deploy's list or a bad agent name is refused on
     assert.match(String(badAgent.body), /Agent name/);
   });
 });
+
+test("fleet: the admin sees each web connection and disconnect ends its tokens (codex review of PR 100)", async () => {
+  const { createHandler } = await import("../api/agent-keys.mjs");
+  const { lookupAccessToken } = await import("../api/oauth/_lib/storage.mjs");
+  await withEnv(ENV, async () => {
+    const r = oauthRedis();
+    __setRedisForTests(r);
+    const c = await registerClient({ redirect_uris: [CB], client_name: "Gemini" });
+    const query = { response_type: "code", client_id: c.client_id, redirect_uri: CB, code_challenge: CHALLENGE, code_challenge_method: "S256", state: "st", scope: "mcp" };
+    const ok = await post(query, { fleet: "1", space: "madez", agent: "gemini-app" }, admin());
+    const tok = await mintTokens(await consumeAuthCode(new URL(String(ok.getHeader("location"))).searchParams.get("code")));
+    assert.ok(await lookupAccessToken(tok.access_token));
+
+    const keys = createHandler({ env: process.env, redis: () => r });
+    const call = async (req) => { const res = mockRes(); await keys(req, res); return { status: res.statusCode, body: JSON.parse(res.body || "{}") }; };
+    const listed = await call(mockReq({ method: "GET", url: "/api/agent-keys", headers: { cookie: admin() } }));
+    assert.equal(listed.status, 200);
+    assert.equal(listed.body.web.length, 1);
+    assert.deepEqual({ app: listed.body.web[0].app, agent: listed.body.web[0].agent, space: listed.body.web[0].space }, { app: "Gemini", agent: "gemini-app", space: "madez" });
+
+    // Not an admin: nothing listed, nothing disconnected.
+    assert.equal((await call(mockReq({ method: "GET", url: "/api/agent-keys" }))).status, 401);
+
+    const fid = listed.body.web[0].fid;
+    const off = await call(mockReq({ method: "POST", url: "/api/agent-keys", body: { action: "disconnect", fid }, headers: { cookie: admin(), "x-logmem-intent": "agent-keys", host: "logmem.si" } }));
+    assert.deepEqual(off.body, { disconnected: true });
+    assert.equal(await lookupAccessToken(tok.access_token), null, "the access token stops working");
+    assert.equal((await call(mockReq({ method: "GET", url: "/api/agent-keys", headers: { cookie: admin() } }))).body.web.length, 0);
+    // The refresh token is gone too: refreshing cannot bring the connection back.
+    const { consumeRefresh } = await import("../api/oauth/_lib/storage.mjs");
+    assert.equal(await consumeRefresh(tok.refresh_token, c.client_id), null);
+  });
+});
