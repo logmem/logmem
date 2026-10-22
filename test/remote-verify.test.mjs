@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createLogmem } from "../src/server.mjs";
 import { createStore } from "../src/core/store.mjs";
-import { writeDecision, remoteVerified } from "../src/core/tools.mjs";
+import { writeDecision, remoteVerified, signDecision, REMOTE_VERIFY_MAX } from "../src/core/tools.mjs";
 import verifyHandler from "../api/verify-decisions.mjs";
 
 const SECRET = "test-only-decide-key-0123456789abcdef";
@@ -92,4 +92,24 @@ test("verify endpoint: POST only, 503 without a key, bounded input", async () =>
   assert.equal((await call({ method: "POST", body: { space: "fleet", decisions: Array(201).fill({}) } })).status, 400);
   const ok = await call({ method: "POST", body: { space: "fleet", decisions: [{ origin: "x", by: "human:a", ts: 1, verdict: "approve", ask_hash: "0".repeat(64), sig: "f".repeat(64) }, null, 5] } });
   assert.deepEqual(ok, { status: 200, body: { valid: [] } });
+});
+
+// Codex on PR 102: decisions past the first 200 were never verified.
+test("remote verify: 450 decisions go in batches of 200 and all verify; a failed batch fails closed alone", async () => {
+  const signed = (i) => {
+    const f = { space: "fleet", origin: `ask-${i}`, ask_hash: `h${i}`, verdict: "approve", note: null, by: "human:mikey", ts: 1792600000000 + i };
+    return { kind: "decided", origin: f.origin, by: f.by, ts: f.ts, payload: { ask_hash: f.ask_hash, verdict: f.verdict, note: f.note, sig: signDecision(f, SECRET) } };
+  };
+  const entries = Array.from({ length: 450 }, (_, i) => signed(i));
+  const { fetchImpl, calls } = serverFetch();
+  const ok = await remoteVerified(entries, { space: "fleet", url: "https://logmem.test/api/verify-decisions", fetchImpl });
+  assert.equal(ok.size, 450, "every decision verifies, not only the first 200");
+  assert.deepEqual(calls.map((c) => c.decisions.length), [200, 200, 50]);
+  assert.ok(calls.every((c) => c.decisions.length <= REMOTE_VERIFY_MAX));
+
+  // The second batch fails: only its 200 stay unverified.
+  let n = 0;
+  const flaky = async (url, init) => (++n === 2 ? Promise.reject(new Error("network down")) : fetchImpl(url, init));
+  const part = await remoteVerified(entries, { space: "fleet", url: "https://logmem.test/api/verify-decisions", fetchImpl: flaky });
+  assert.equal(part.size, 250);
 });

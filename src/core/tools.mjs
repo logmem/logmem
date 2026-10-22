@@ -1148,13 +1148,20 @@ export const remoteKey = (e, space) =>
 /** The wire form of a decided entry for /api/verify-decisions. */
 const wireDecision = (e) => ({ origin: e.origin, ask_hash: e.payload?.ask_hash ?? null, verdict: e.payload?.verdict, note: e.payload?.note ?? null, by: e.by, ts: e.ts, sig: e.payload?.sig });
 
+/** Decisions per request: the endpoint refuses more. */
 export const REMOTE_VERIFY_MAX = 200;
+/**
+ * Decisions per Brief: the Brief reads at most 2,000 entries for the week, so
+ * this covers every one in at most 10 requests, sent at the same time.
+ */
+export const REMOTE_VERIFY_TOTAL = 2000;
 export const REMOTE_VERIFY_TIMEOUT_MS = 4000;
 
 /**
  * Ask the trusted server which decided entries verify. Returns a Set of
- * remoteKey()s. Any failure (network, status, shape) returns an empty Set:
- * nothing is verified, so nothing counts as answered (fail closed).
+ * remoteKey()s. Sends them in batches of REMOTE_VERIFY_MAX, so decisions past
+ * the first 200 are verified too (codex on PR 102). Each batch fails closed on
+ * its own: a network, status or shape failure verifies nothing in that batch.
  */
 export async function remoteVerified(entries, { space, url, fetchImpl = globalThis.fetch, timeoutMs = REMOTE_VERIFY_TIMEOUT_MS } = {}) {
   const seen = new Set();
@@ -1165,26 +1172,34 @@ export async function remoteVerified(entries, { space, url, fetchImpl = globalTh
     if (seen.has(k)) continue;
     seen.add(k);
     list.push({ e, k });
-    if (list.length >= REMOTE_VERIFY_MAX) break;
+    if (list.length >= REMOTE_VERIFY_TOTAL) break;
   }
   const out = new Set();
   if (!list.length || !url || typeof fetchImpl !== "function") return out;
+  const batches = [];
+  for (let i = 0; i < list.length; i += REMOTE_VERIFY_MAX) batches.push(list.slice(i, i + REMOTE_VERIFY_MAX));
+  const results = await Promise.all(batches.map((b) => verifyBatch(b, { space, url, fetchImpl, timeoutMs })));
+  for (const keys of results) for (const k of keys) out.add(k);
+  return out;
+}
+
+/** One request for up to REMOTE_VERIFY_MAX decisions. Returns the keys that verify, or none on any failure. */
+async function verifyBatch(batch, { space, url, fetchImpl, timeoutMs }) {
   try {
     const res = await fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ space, decisions: list.map((x) => wireDecision(x.e)) }),
+      body: JSON.stringify({ space, decisions: batch.map((x) => wireDecision(x.e)) }),
       redirect: "error",
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return out;
+    if (!res.ok) return [];
     const j = await res.json();
-    if (!Array.isArray(j?.valid)) return out;
-    for (const i of j.valid) if (Number.isInteger(i) && i >= 0 && i < list.length) out.add(list[i].k);
+    if (!Array.isArray(j?.valid)) return [];
+    return j.valid.filter((i) => Number.isInteger(i) && i >= 0 && i < batch.length).map((i) => batch[i].k);
   } catch {
-    return new Set();
+    return [];
   }
-  return out;
 }
 
 /** Which of `decisions` (wire form) verify for `space` under `secret`. Returns their indexes. */
