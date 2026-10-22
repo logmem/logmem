@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { logRequest, GENERIC_ERROR } from "./http/log.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { z } from "zod";
 
 /** package.json version, read at load time. readFileSync(new URL(...)) is traced by Vercel's bundler. */
 function readPkgVersion() {
@@ -123,6 +124,10 @@ export function createLogmem({
   idleMs,
   now,
   mirror: mirrorCfg = { enabled: false, spaces: [] },
+  // Pure reads (HTTP): a read-only tool writes nothing. No shift start or
+  // last_seen bump (shifts.peek instead of touch) and no mirror drain. The
+  // first write starts the shift. Off for stdio, which keeps auto-start.
+  pureReads = false,
   // Key that verifies human decisions in the Brief. Default: LOGMEM_DECIDE_SECRET, read at call time.
   decideSecret,
   // Work rules (taxonomy spec): "strict" refuses tasks and decisions off a job and
@@ -173,22 +178,46 @@ export function createLogmem({
     return toResult({ ...result.structuredContent, degraded: true }, tool);
   }
 
-  function callTool(name, args = {}) {
-    return inScope(() => runTool(name, args));
+  /**
+   * `validate`: check args against the tool's zod schema first, as the MCP SDK
+   * does on stdio (HTTP tools/call has no SDK in front of it). Unknown keys
+   * are stripped, like the SDK.
+   */
+  function callTool(name, args = {}, { validate = false } = {}) {
+    return inScope(() => runTool(name, args, validate));
   }
 
-  async function runTool(name, args = {}) {
+  const schemas = new Map();
+  function checkArgs(tool, args) {
+    if (args === undefined || args === null) args = {};
+    if (typeof args !== "object" || Array.isArray(args)) return { error: `Invalid arguments for ${tool.name}: expected an object` };
+    if (!schemas.has(tool.name)) schemas.set(tool.name, z.object(tool.params.shape));
+    const p = schemas.get(tool.name).safeParse(args);
+    if (p.success) return { args: p.data };
+    const why = p.error.issues.map((i) => `${i.path.join(".") || "arguments"}: ${i.message}`).join("; ");
+    return { error: `Invalid arguments for ${tool.name}: ${why}` };
+  }
+
+  async function runTool(name, args = {}, validate = false) {
     const tool = byName.get(name);
     if (!tool) return degradedMark(toResult({ ok: false, error: `unknown tool: ${name}` }));
+    if (validate) {
+      const c = checkArgs(tool, args);
+      if (c.error) return degradedMark(toResult({ ok: false, error: c.error, tool: name }));
+      args = c.args;
+    }
+    const pure = pureReads && tool.annotations?.readOnlyHint === true;
     try {
       let events = [];
-      if (!tool.skipTouch) {
+      if (pure) {
+        ctx.shift = await shifts.peek();
+      } else if (!tool.skipTouch) {
         const touched = await shifts.touch(name);
         ctx.shift = touched.shift;
         events = touched.events;
       }
       store.mirrorEvents = [];
-      if (mirror) await mirror.drain().catch(() => {});
+      if (mirror && !pure) await mirror.drain().catch(() => {});
       const out = await tool.run(args || {}, ctx);
       if (events.length) out.shift_events = events;
       if (mirror && store.mirrorEvents.length) {

@@ -4,8 +4,14 @@
 //
 // Per MCP spec: PKCE verification is mandatory; client_secret check only when
 // the registered client used client_secret_post or client_secret_basic.
+//
+// Resource (RFC 8707): the grant's resource comes from the auth code (or the
+// refresh record). A `resource` the client sends here must name the same one,
+// or the answer is invalid_target. Codes and grants from before resource
+// binding take the canonical resource.
 
 import { SECRET_METHODS, consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
+import { bindResource, normalizeScope } from "../../src/http/issuer.mjs";
 
 export const config = { runtime: "nodejs" };
 
@@ -79,6 +85,8 @@ export default async function handler(req, res) {
 
     if (grant_type === "authorization_code") {
       const { code, redirect_uri, client_id, client_secret, code_verifier } = body;
+      const asked = bindResource(body.resource, req);
+      if (asked.error) return bad(res, 400, "invalid_target", "unknown resource");
       if (!code || !redirect_uri || !client_id || !code_verifier) {
         return bad(res, 400, "invalid_request", "code, redirect_uri, client_id, code_verifier required");
       }
@@ -99,10 +107,13 @@ export default async function handler(req, res) {
       if (!safeEqual(computed, String(codeRecord.code_challenge ?? ""))) {
         return bad(res, 400, "invalid_grant", "code_verifier failed PKCE check");
       }
+      const resource = codeRecord.resource || bindResource(undefined, req).resource;
+      if (body.resource && asked.resource !== resource) return bad(res, 400, "invalid_target", "resource does not match the authorization");
 
       const tokens = await mintTokens({
         client_id,
-        scope: codeRecord.scope,
+        scope: normalizeScope(codeRecord.scope),
+        resource,
         sub: codeRecord.sub,
         upstash_url: codeRecord.upstash_url,
         upstash_token: codeRecord.upstash_token,
@@ -118,6 +129,8 @@ export default async function handler(req, res) {
     if (grant_type === "refresh_token") {
       const { refresh_token, client_id, client_secret } = body;
       if (!refresh_token || !client_id) return bad(res, 400, "invalid_request", "refresh_token + client_id required");
+      const asked = bindResource(body.resource, req);
+      if (asked.error) return bad(res, 400, "invalid_target", "unknown resource");
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
@@ -134,10 +147,13 @@ export default async function handler(req, res) {
       // already revoked; the presenter (legitimate or not) gets nothing.
       if (got.reuse) return bad(res, 400, "invalid_grant", "refresh token reuse detected; all tokens for this grant were revoked");
       const rec = got.rec;
+      const resource = rec.resource || bindResource(undefined, req).resource;
+      if (body.resource && asked.resource !== resource) return bad(res, 400, "invalid_target", "resource does not match the grant");
 
       const tokens = await mintTokens({
         client_id,
-        scope: rec.scope,
+        scope: normalizeScope(rec.scope),
+        resource,
         sub: rec.sub,
         upstash_url: rec.upstash_url,
         upstash_token: rec.upstash_token,
