@@ -27,7 +27,8 @@ test("first call of a session auto-Starts a shift", async () => {
   assert.equal(r.entry.by, "agent:relay");
   assert.equal(r.entry.byline, "relay (via codex)");
   const log = (await call(lm, "logmem_view", { ref: "agent:relay" })).log;
-  assert.equal(log.at(-1).kind, "started");
+  assert.equal(log.some((e) => e.kind === "started"), false, "an auto Start is metadata, not an entry");
+  assert.equal((await lm.store.recentShifts("relay", 1))[0].auto, true, "the shift record holds it");
 });
 
 test("30 min idle -> auto Recap of the old shift, then a fresh auto Start", async () => {
@@ -49,6 +50,7 @@ test("stdio sweep writes the idle Recap without another call", async () => {
   const now = clock();
   const lm = createLogmem({ redis: createMemoryRedis(), space: "acme", sessionId: "s3", now });
   await call(lm, "logmem_start", { agent: "tally" });
+  await call(lm, "logmem_note", { where: "channel:ops", summary: "real work" });
   now.advance(29 * 60 * 1000);
   assert.equal(await lm.shifts.sweep(), false);
   now.advance(2 * 60 * 1000);

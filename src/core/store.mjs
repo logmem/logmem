@@ -397,6 +397,8 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     },
     async addShift(agent, shift) {
       await redis("ZADD", k("agent", agent, "shifts"), shift.ts, stableJson(shift));
+      // An auto Start writes no entry, so the shift itself puts the agent on the roster.
+      await index("agent", agent);
     },
     async recentShifts(agent, n = 5) {
       const rows = parseZ(await redis("ZREVRANGE", k("agent", agent, "shifts"), 0, n - 1, "WITHSCORES"));
