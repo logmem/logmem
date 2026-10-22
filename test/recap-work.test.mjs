@@ -95,3 +95,19 @@ test("recap finds a written log even when its roster index update was lost", asy
   assert.equal(recap.entry_count, 2);
   assert.equal(recap.coverage, "complete");
 });
+
+
+test("recap marks history-limited shift reads as partial", async () => {
+  const { createStore } = await import("../src/core/store.mjs");
+  const { applyLimits } = await import("../src/core/apply-limits.mjs");
+  const { readShiftEntries } = await import("../src/core/shift-entries.mjs");
+  const redis = createMemoryRedis();
+  const store = createStore(redis, { space: "acme" });
+  const ts = 1792695000000;
+  await store.append("job", "old", { ts, by: "agent:atlas", shift: "long-shift", kind: "progress", summary: "Old work" });
+  applyLimits(store, { historyFloorMs: () => ts + 864e5 });
+  const recap = await readShiftEntries(store, { agent: "atlas", shift: "long-shift", sinceMs: ts, untilMs: ts + 8 * 864e5 });
+  assert.equal(recap.entry_count ?? recap.entries.length, 0);
+  assert.equal(recap.coverage, "partial");
+  assert.ok(recap.read_errors.some(e => e.reason === "history_limited"));
+});
