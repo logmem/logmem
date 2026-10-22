@@ -120,7 +120,15 @@ export function lintSkills(dir) {
   return { skills: names, errors, warnings };
 }
 
-if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
+function isMain() {
+  try {
+    return !!process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]));
+  } catch {
+    return false; // Stdin and other non-file entry points can import this module.
+  }
+}
+
+if (isMain()) {
   const dir = process.argv[2] || fileURLToPath(new URL("../skills", import.meta.url));
   const r = lintSkills(dir);
   for (const w of r.warnings) console.warn(`warn  ${w}`);

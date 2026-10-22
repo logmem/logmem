@@ -128,3 +128,15 @@ test("skills link: links new skills, keeps its own links, never overwrites anoth
   const dry = linkSkills({ source: SKILLS, target: mkdtempSync(join(tmpdir(), "dry-")), dry: true });
   assert.ok(dry.linked.length >= 3);
 });
+
+
+test("skills scripts can be imported from stdin", () => {
+  for (const script of ["skills-lint.mjs", "skills-link.mjs"]) {
+    const url = new URL(`../scripts/${script}`, import.meta.url).href;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-"], {
+      input: `await import(${JSON.stringify(url)}); console.log("imported");`, encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "imported");
+  }
+});
