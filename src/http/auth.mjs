@@ -136,7 +136,7 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
         if (tok.backend?.kind === "fleet") {
           const d = tok.backend.agent && tok.space && keySpaces(env).includes(tok.space) ? descriptorFromEnv(env) : null;
           if (!d) return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
-          return out(d, "fleet-oauth", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, keyId: `ff_${tok.fid || "x"}` });
+          return out(d, "fleet-oauth", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, keyId: `ff_${tok.fid || "x"}`, scopes });
         }
         const b = tok.backend?.kind === "redis" ? { kind: "redis", uri: tok.backend.uri } : { url: tok.backend?.url || tok.upstash_url, token: tok.backend?.token || tok.upstash_token };
         if (await backendTargetAllowed(b, env, opts)) return out(b, "oauth", { sub: tok.sub, space: tok.space, scopes });

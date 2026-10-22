@@ -11,7 +11,7 @@ import { resolveAuth } from "../src/http/auth.mjs";
 afterEach(() => __setRedisForTests(null));
 
 const ENV = {
-  LOGMEM_OAUTH_KEK: TEST_KEK_HEX, VERCEL_ENV: undefined, LOGMEM_MANAGED: undefined,
+  LOGMEM_OAUTH_KEK: TEST_KEK_HEX, VERCEL_ENV: undefined, LOGMEM_MANAGED: undefined, LOGMEM_ISSUER: "https://logmem.si",
   LOGMEM_ADMIN_PASSWORD: "test-only-admin-password", LOGMEM_ADMIN_SECRET: undefined,
   LOGMEM_SPACES: "madez,fieldnotes", LOGMEM_REST_URL: "https://bridge.example.com/exec", LOGMEM_REST_TOKEN: "env-token",
   LOGMEM_REDIS_URI: undefined, ACMI_REDIS_URI: undefined,
@@ -73,7 +73,9 @@ test("fleet: approve mints a token pinned to the space and locked to the agent, 
     assert.equal(r.statusCode, 302, String(r.body).slice(0, 300));
     const loc = new URL(String(r.getHeader("location")));
     assert.equal(loc.origin + loc.pathname, CB);
+    assert.equal(loc.searchParams.get("iss"), "https://logmem.si", "RFC 9207 iss on the fleet redirect too (#91)");
     const rec = await consumeAuthCode(loc.searchParams.get("code"));
+    assert.ok(rec.resource, "the code is bound to the resource (#91)");
     assert.deepEqual(rec.backend, { kind: "fleet", agent: "gemini-app" });
     assert.equal(rec.space, "madez");
     assert.ok(!JSON.stringify(rec).includes("env-token"), "the code holds no backend secret");
