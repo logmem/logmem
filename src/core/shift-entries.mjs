@@ -6,6 +6,10 @@ export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }
   const actor = `agent:${checkAgentId(agent)}`;
   const sources = new Map([[actor, ["agent", agent]]]);
   const read_errors = [];
+  const floor = store.historyFloorMs?.();
+  if (floor != null && sinceMs < floor) {
+    read_errors.push({ ref: "logs:*", reason: "history_limited" });
+  }
   for (const ns of ["agent", "job", "channel"]) {
     try {
       for (const id of await store.list(ns)) sources.set(`${ns}:${id}`, [ns, id]);
