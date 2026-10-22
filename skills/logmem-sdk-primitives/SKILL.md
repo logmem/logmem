@@ -43,7 +43,7 @@ async function call(name, args, sessionId) {
 
 ```js
 import { createStore } from "./src/core/store.mjs";
-const store = createStore(redis, { space: "madez" });
+const store = createStore(redis, { space: "acme" });
 const entries = await store.readLog("channel", "agent-coordination", { sinceMs: Date.now() - 864e5, reverse: true, limit: 50 });
 const now = await store.getNow("job", "issue-14");
 ```
