@@ -250,13 +250,18 @@
 .lmw-wstep-head{display:flex;align-items:center;gap:10px;padding:0;font-size:14px}
 .lmw-wstep-acts{position:absolute;top:10px;right:12px;display:flex;gap:4px}
 .lmw-savebar{position:sticky;bottom:0;padding:12px 0;background:var(--bg);border-top:1px solid var(--border)}
+/* Tablet and phone: the rail is a row of numbered dots above the card. The card
+   already says "Step 2 of 7" and the title, so titles stay for screen readers only. */
+@media (max-width:1023px){
+  .lmw-layout{gap:16px}
+  .lmw-rail{max-width:none;flex-basis:100%}
+  .lmw-rail .ob-steps{flex-direction:row;flex-wrap:nowrap;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding:2px;margin:-2px}
+  .lmw-rail .ob-steps>li{flex:none}
+  .lmw-rail .ob-step{position:relative;width:auto;min-width:44px;min-height:44px;justify-content:center;padding:4px;border-radius:50%}
+  .lmw-rail .ob-step-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+}
 @media (max-width:760px){
   .lmw-main{padding-top:16px}
-  .lmw-rail{max-width:none;flex-basis:100%}
-  .lmw-rail .ob-steps{flex-direction:row;overflow-x:auto;gap:2px}
-  .lmw-rail .ob-step{padding:6px}
-  .lmw-rail .ob-step-text{display:none}
-  .lmw-rail .ob-step[aria-current] .ob-step-text{display:flex}
   .ob-card{padding:20px}
   .lmw-wstep-acts{position:static}
   .lmw-savebar{bottom:56px}
