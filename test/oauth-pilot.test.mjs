@@ -13,7 +13,7 @@ import prMetadata from "../api/well-known/oauth-protected-resource.mjs";
 import { resolveAuth, wwwAuthenticate } from "../src/http/auth.mjs";
 import { issuerFor, canonicalResource, normalizeScope } from "../src/http/issuer.mjs";
 import { insufficientScope } from "../api/mcp.mjs";
-import { oauthRedis, withEnv, mockReq, mockRes, consentSession, TEST_KEK_HEX } from "./oauth-helpers.mjs";
+import { oauthRedis, withEnv, mockReq, mockRes, consentSession, callbackOf, TEST_KEK_HEX } from "./oauth-helpers.mjs";
 
 afterEach(() => __setRedisForTests(null));
 
@@ -105,8 +105,7 @@ async function managedApprove(r, q, extra = {}) {
   const { cookie, csrf_token } = await consentSession(authorizeHandler, q);
   const res = mockRes();
   await authorizeHandler(mockReq({ method: "POST", url: "/api/oauth/authorize", body: { ...q, csrf_token, action: "approve", ...extra }, headers: { cookie } }), res);
-  assert.equal(res.statusCode, 302, String(res.body).slice(0, 200));
-  return new URL(res.getHeader("location"));
+  return callbackOf(res);
 }
 
 test("authorize: the code stores the canonical resource and the normalised scope; the redirect carries iss", async () => {
@@ -146,7 +145,7 @@ test("authorize: an unknown resource is refused with invalid_target, and every r
     const { cookie, csrf_token } = await consentSession(authorizeHandler, { ...q, resource: "https://logmem.si/mcp" });
     const deny = mockRes();
     await authorizeHandler(mockReq({ method: "POST", url: "/api/oauth/authorize", body: { ...q, resource: "https://logmem.si/mcp", csrf_token, action: "deny" }, headers: { cookie } }), deny);
-    const d = new URL(deny.getHeader("location"));
+    const d = callbackOf(deny);
     assert.equal(d.searchParams.get("error"), "access_denied");
     assert.equal(d.searchParams.get("iss"), "https://logmem.si");
   });

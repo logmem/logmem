@@ -235,15 +235,45 @@ function sendErrorPage(res, status, title, detail) {
   res.end(renderErrorPage(title, detail));
 }
 
-/** 302 to the client's redirect_uri with `params`, state, and the RFC 9207 issuer. */
+// CSP for the callback hop page: no scripts, no forms, no subresources.
+export const HOP_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+
+/**
+ * Send the browser to the client's redirect_uri with `params`, state, and the
+ * RFC 9207 issuer.
+ *
+ * A GET gets a plain 302. A POST (the consent form) gets a 200 page that moves
+ * on with a meta refresh. Chromium checks the consent page's form-action on
+ * every redirect of a form navigation, including the client's own redirects
+ * after our hop. Gemini's callback (oauth-redirect.googleusercontent.com)
+ * redirects again to another Google origin, so a 302 here was blocked and
+ * "Allow" did nothing. A meta refresh is a new navigation that form-action
+ * does not govern.
+ */
 function redirectTo(res, req, redirect_uri, params, state) {
   const u = new URL(redirect_uri);
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
   if (state) u.searchParams.set("state", state);
   u.searchParams.set("iss", issuerFor(req));
-  res.statusCode = 302;
-  res.setHeader("Location", u.toString());
-  res.end();
+  const target = u.toString();
+  if (String(req?.method || "GET").toUpperCase() !== "POST") {
+    res.statusCode = 302;
+    res.setHeader("Location", target);
+    return res.end();
+  }
+  const t = htmlEscape(target);
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Content-Security-Policy", HOP_CSP);
+  res.end(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0;url=${t}">
+<title>Returning to the app</title>
+<style>body{margin:0;font-family:Georgia,serif;background:#faf8f3;color:#1a1a1a;min-height:100vh;display:grid;place-items:center;padding:24px}a{color:#0e6863}</style>
+</head><body><p data-callback="${t}">Returning to the app. <a href="${t}">Continue</a> if nothing happens.</p></body></html>`);
 }
 
 function redirectError(res, req, redirect_uri, error, error_description, state) {

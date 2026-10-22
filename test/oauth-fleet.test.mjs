@@ -2,9 +2,9 @@
 // (Gemini, Claude web) to a fleet space as a named agent, like an agent key.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { oauthRedis, withEnv, mockReq, mockRes, consentSession, TEST_KEK_HEX } from "./oauth-helpers.mjs";
+import { oauthRedis, withEnv, mockReq, mockRes, consentSession, callbackOf, TEST_KEK_HEX } from "./oauth-helpers.mjs";
 import { __setRedisForTests, registerClient, consumeAuthCode, mintTokens } from "../api/oauth/_lib/storage.mjs";
-import authorize from "../api/oauth/authorize.mjs";
+import authorize, { HOP_CSP } from "../api/oauth/authorize.mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { resolveAuth } from "../src/http/auth.mjs";
 
@@ -70,8 +70,13 @@ test("fleet: approve mints a token pinned to the space and locked to the agent, 
   await withEnv(ENV, async () => {
     const { query } = await setup();
     const r = await post(query, { fleet: "1", space: "madez", agent: "gemini-app" }, admin());
-    assert.equal(r.statusCode, 302, String(r.body).slice(0, 300));
-    const loc = new URL(String(r.getHeader("location")));
+    const loc = callbackOf(r);
+    // Gemini's callback redirects again to another Google origin. Chromium
+    // checks form-action on that hop too, so a 302 here made "Allow" do nothing.
+    assert.equal(r.getHeader("content-security-policy"), HOP_CSP);
+    assert.equal(r.getHeader("cache-control"), "no-store");
+    assert.equal(r.getHeader("referrer-policy"), "no-referrer");
+    assert.ok(!/<script/i.test(String(r.body)), "the hop page runs no script");
     assert.equal(loc.origin + loc.pathname, CB);
     assert.equal(loc.searchParams.get("iss"), "https://logmem.si", "RFC 9207 iss on the fleet redirect too (#91)");
     const rec = await consumeAuthCode(loc.searchParams.get("code"));
@@ -123,7 +128,7 @@ test("fleet: the admin sees each web connection and disconnect ends its tokens (
     const c = await registerClient({ redirect_uris: [CB], client_name: "Gemini" });
     const query = { response_type: "code", client_id: c.client_id, redirect_uri: CB, code_challenge: CHALLENGE, code_challenge_method: "S256", state: "st", scope: "mcp" };
     const ok = await post(query, { fleet: "1", space: "madez", agent: "gemini-app" }, admin());
-    const tok = await mintTokens(await consumeAuthCode(new URL(String(ok.getHeader("location"))).searchParams.get("code")));
+    const tok = await mintTokens(await consumeAuthCode(callbackOf(ok).searchParams.get("code")));
     assert.ok(await lookupAccessToken(tok.access_token));
 
     const keys = createHandler({ env: process.env, redis: () => r });

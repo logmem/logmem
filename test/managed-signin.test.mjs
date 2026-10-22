@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { oauthRedis, withEnv, mockReq, mockRes, TEST_KEK_HEX } from "./oauth-helpers.mjs";
+import { oauthRedis, withEnv, mockReq, mockRes, callbackOf, TEST_KEK_HEX } from "./oauth-helpers.mjs";
 import { __setRedisForTests, registerClient, consumeAuthCode, mintTokens } from "../api/oauth/_lib/storage.mjs";
 import authorize, { __setManagedDepsForTests, defaultAgentFor } from "../api/oauth/authorize.mjs";
 import { inviteMany } from "../src/http/invites.mjs";
@@ -109,8 +109,7 @@ test("managed: approve mints a code bound to the tenant, its space and the app's
     try {
       const { query } = await setup();
       const r = await approve(query);
-      assert.equal(r.statusCode, 302);
-      const loc = new URL(String(r.getHeader("location")));
+      const loc = callbackOf(r);
       assert.equal(loc.searchParams.get("state"), "s1");
       const rec = await consumeAuthCode(loc.searchParams.get("code"));
       assert.equal(rec.backend.kind, "managed");
@@ -130,7 +129,7 @@ test("managed: a custom agent name is used, and a bad one re-shows the page", as
     try {
       const { query } = await setup();
       const ok = await approve(query, { agent: "muse-work" });
-      const rec = await consumeAuthCode(new URL(String(ok.getHeader("location"))).searchParams.get("code"));
+      const rec = await consumeAuthCode(callbackOf(ok).searchParams.get("code"));
       assert.equal(rec.backend.agent, "muse-work");
       const bad = await approve(query, { agent: "not ok!" });
       assert.equal(bad.statusCode, 400);
@@ -146,7 +145,7 @@ test("managed: the token resolves to the jailed customer Redis, locked to its ag
     try {
       const { query, customer } = await setup();
       const r = await approve(query);
-      const rec = await consumeAuthCode(new URL(String(r.getHeader("location"))).searchParams.get("code"));
+      const rec = await consumeAuthCode(callbackOf(r).searchParams.get("code"));
       const tok = await mintTokens(rec);
       const auth = await resolveAuth({ headers: { host: "logmem.test", authorization: `Bearer ${tok.access_token}`, "x-logmem-space": "madez" } }, {}, process.env);
       assert.equal(auth.source, "managed");
@@ -186,7 +185,7 @@ test("managed: no customer Redis is a 503 page, and a managed token without it i
     try {
       const { query } = await setup();
       const r = await approve(query);
-      const tok = await mintTokens(await consumeAuthCode(new URL(String(r.getHeader("location"))).searchParams.get("code")));
+      const tok = await mintTokens(await consumeAuthCode(callbackOf(r).searchParams.get("code")));
       assert.equal((await resolveAuth({ headers: { authorization: `Bearer ${tok.access_token}` } }, {}, process.env)).source, "none");
     } finally {
       done();
