@@ -71,3 +71,14 @@ test("recovered limits: rejected lifecycle entries leave no new slot or recap", 
   assert.equal((await call(lm, "logmem_recap", { notes: "Denied" })).ok, false);
   assert.equal(await lm.store.getRecap("muse"), null);
 });
+
+
+test("recovered limits: denied assignment cannot create the default plan", async () => {
+  const redis = createMemoryRedis(), lm = make(redis);
+  await call(lm, "logmem_start", { agent: "muse" });
+  assert.equal(await redis("GET", `lm:${space}:plan:general`), null);
+  await redis("SET", countKey(), "1100");
+  assert.equal((await call(lm, "logmem_assign", { job: "denied", title: "Denied" })).ok, false);
+  assert.equal(await redis("GET", `lm:${space}:plan:general`), null);
+  assert.deepEqual(await redis("SMEMBERS", `lm:${space}:plan:list`), []);
+});
