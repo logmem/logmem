@@ -151,6 +151,23 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     },
 
     /**
+     * Who is working, for a read-only tool, with no write: the open shift if
+     * there is one, else this connection's agent with no shift. Never starts,
+     * recaps or bumps last_seen (pure reads, plugin pilot spec section 8).
+     */
+    async peek() {
+      let rec = await load();
+      if (rec && !validAgent(rec.agent)) rec = null;
+      if (rec && locked && rec.agent !== locked) rec = null;
+      if (rec && !rec.ended && now() - rec.last_seen <= idleMs) return rec;
+      try {
+        return { agent: (rec && validAgent(rec.agent)) || fallbackAgent(), surface, shift: null, peek: true };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
      * Call before every tool. Handles idle Recap + auto Start. Returns the
      * open shift plus what happened (`events`) so tools can surface it.
      */

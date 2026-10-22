@@ -8,6 +8,12 @@
 //   4. Agent key Bearer (lmk_...) -> server env backend, pinned to one space and one agent
 //   5. Break-glass Bearer LOGMEM_DIRECT_AUTH_TOKEN -> server env backend
 //
+// Audience: an OAuth token is bound to one resource (<issuer>/mcp). A token
+// minted for another resource resolves as unauthenticated with
+// error "invalid_token". Tokens minted before resource binding carry none and
+// count as this server's. `scopes` is set for OAuth tokens only; other
+// credentials are not limited by scope.
+//
 // Space: a token-bound space always wins and cannot be overridden. Otherwise
 // x-logmem-space header, config.space, or LOGMEM_SPACE (default madez). The
 // connection only ever sees that one space.
@@ -23,6 +29,7 @@ import { descriptorFromEnv } from "../lib/backend.mjs";
 import { assertPublicTarget } from "./net-guard.mjs";
 import { lookupAgentKey, keySpaces, AGENT_KEY_PREFIX } from "./agent-keys.mjs";
 import { customerRedisUri } from "./jail.mjs";
+import { canonicalResource, resourceMetadataUrl, scopesOf, ALL_SCOPES } from "./issuer.mjs";
 
 const TARGET_CACHE_MS = 60_000;
 const targetCache = new Map(); // sha256(target) -> { ok, until }
@@ -80,7 +87,7 @@ export function bearerOf(req) {
 
 export async function resolveAuth(req, cfg = {}, env = process.env, opts = {}) {
   const defaultSpace = h(req, "x-logmem-space") || cfg.space || cfg.LOGMEM_SPACE || cfg.acmiDefaultTenant || env.LOGMEM_SPACE || "madez";
-  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null, tenant: extra.tenant || null });
+  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null, tenant: extra.tenant || null, ...(extra.scopes ? { scopes: extra.scopes } : {}) });
 
   // Raw Redis creds in headers or ?config= turn a public deploy into an open
   // relay to any host. Production accepts only OAuth (and break-glass).
@@ -107,6 +114,10 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
     try {
       const tok = await lookupAccessToken(bearer);
       if (tok && (tok.expires_at ?? 0) > Math.floor(Date.now() / 1000)) {
+        if (tok.resource && tok.resource !== canonicalResource(req, env)) {
+          return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false, error: "invalid_token" };
+        }
+        const scopes = scopesOf(tok.scope);
         // Managed account (one-click connect): the server's customer Redis, jailed
         // to the token's space and locked to its agent by the MCP route.
         if (tok.backend?.kind === "managed") {
@@ -117,10 +128,18 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
             // not configured: unauthenticated, never another backend
           }
           if (!uri || !tok.backend.tenant || !tok.backend.agent || !tok.space) return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
-          return out({ kind: "redis", uri }, "managed", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, tenant: tok.backend.tenant, keyId: `mf_${tok.fid || "x"}` });
+          return out({ kind: "redis", uri }, "managed", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, tenant: tok.backend.tenant, keyId: `mf_${tok.fid || "x"}`, scopes });
+        }
+        // Fleet sign-in (an admin picked a deploy space on the consent page): the
+        // deploy's own backend, pinned to the token's space and locked to its
+        // agent, exactly like an agent key. The token holds no backend creds.
+        if (tok.backend?.kind === "fleet") {
+          const d = tok.backend.agent && tok.space && keySpaces(env).includes(tok.space) ? descriptorFromEnv(env) : null;
+          if (!d) return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
+          return out(d, "fleet-oauth", { space: tok.space, sub: tok.sub, agent: tok.backend.agent, keyId: `ff_${tok.fid || "x"}`, scopes });
         }
         const b = tok.backend?.kind === "redis" ? { kind: "redis", uri: tok.backend.uri } : { url: tok.backend?.url || tok.upstash_url, token: tok.backend?.token || tok.upstash_token };
-        if (await backendTargetAllowed(b, env, opts)) return out(b, "oauth", { sub: tok.sub, space: tok.space });
+        if (await backendTargetAllowed(b, env, opts)) return out(b, "oauth", { sub: tok.sub, space: tok.space, scopes });
       }
     } catch {
       // fall through
@@ -142,8 +161,20 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
   return { backend: null, source: "none", space: defaultSpace, sub: null, pinned: false };
 }
 
-export function wwwAuthenticate(req) {
-  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0];
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return `Bearer realm="logmem", resource_metadata="${proto}://${host}/.well-known/oauth-protected-resource"`;
+/**
+ * The 401/403 challenge (RFC 6750, RFC 9728). resource_metadata and scope let
+ * a client find the authorization server and ask for the right scopes;
+ * error names why a presented token failed.
+ */
+export function wwwAuthenticate(req, { error, scope = ALL_SCOPES } = {}, env = process.env) {
+  let metadata;
+  try {
+    metadata = resourceMetadataUrl(req, env);
+  } catch {
+    metadata = resourceMetadataUrl(req, {}); // misconfigured LOGMEM_ISSUER: the metadata route reports it
+  }
+  const parts = [`Bearer realm="logmem"`, `resource_metadata="${metadata}"`, `scope="${scope}"`];
+  if (error) parts.push(`error="${error}"`);
+  return parts.join(", ");
 }
+

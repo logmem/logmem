@@ -124,3 +124,18 @@ export async function consentSession(authorizeHandler, query) {
   const m = String(res.body).match(/name="csrf_token" value="([^"]+)"/);
   return { cookie, csrf_token: m && m[1], res };
 }
+
+/**
+ * The client callback URL a consent POST sends the browser to. POSTs answer
+ * with a 200 hop page (meta refresh), never a 302, because Chromium checks
+ * form-action on every redirect of a form navigation. Asserts that shape.
+ */
+export function callbackOf(res) {
+  if (res.statusCode !== 200) throw new Error(`expected the 200 callback hop page, got ${res.statusCode}: ${String(res.body).slice(0, 200)}`);
+  if (res.getHeader("location") !== undefined) throw new Error("the hop page must not send a Location header");
+  const m = /data-callback="([^"]+)"/.exec(String(res.body));
+  if (!m) throw new Error("no data-callback on the hop page");
+  const href = m[1].replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  if (!String(res.body).includes(`<meta http-equiv="refresh" content="0;url=${m[1]}">`)) throw new Error("meta refresh does not match the callback");
+  return new URL(href);
+}
