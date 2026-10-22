@@ -13,6 +13,25 @@ export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }
       read_errors.push({ ref: `${ns}:*`, reason: "roster_read_failed" });
     }
   }
+  // An append can land before its roster update fails. Discover those logs
+  // too, so a missing index member cannot turn written work into silence.
+  try {
+    let cursor = "0";
+    const prefix = `lm:${store.space}:`;
+    do {
+      const [next, keys] = await store.redis("SCAN", cursor, "MATCH", `${prefix}*:log`, "COUNT", "1000");
+      cursor = String(next);
+      for (const key of keys) {
+        if (!key.startsWith(prefix) || !key.endsWith(":log")) continue;
+        const ref = key.slice(prefix.length, -4);
+        const split = ref.indexOf(":");
+        const ns = ref.slice(0, split), id = ref.slice(split + 1);
+        if (["agent", "job", "channel"].includes(ns)) sources.set(ref, [ns, id]);
+      }
+    } while (cursor !== "0");
+  } catch {
+    read_errors.push({ ref: "logs:*", reason: "log_discovery_failed" });
+  }
   const unique = new Map();
   const refs = [...sources.entries()];
   // Bound concurrent bridge requests. Never cap the number of logs or entries.

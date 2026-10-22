@@ -83,3 +83,15 @@ test("recap counts more than 200 job entries without a recent-log cutoff", async
   assert.equal(recap.entry_count, 206);
   assert.match(recap.summary, /^206 entries this shift:/);
 });
+
+test("recap finds a written log even when its roster index update was lost", async () => {
+  const { lm, redis, advance } = setup();
+  const started = await call(lm, "logmem_start", { agent: "atlas" });
+  await lm.store.append("job", "orphan", { ts: started.started.started_at + 1, by: "agent:atlas", shift: started.started.shift, kind: "progress", trail: "orphan-work", summary: "Written work" });
+  await redis("SREM", "lm:acme:job:list", "orphan");
+  advance(31 * 60 * 1000);
+  await lm.shifts.sweep();
+  const recap = await lm.store.getRecap("atlas");
+  assert.equal(recap.entry_count, 2);
+  assert.equal(recap.coverage, "complete");
+});
