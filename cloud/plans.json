@@ -1,5 +1,5 @@
 {
-  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Agency/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. Free is one tenth of the fleet's real monthly use (Mikey's ruling of 2026-10-20): 1,000 adds, 2 agents, 100 recalls. Other plans' recall limits are placeholders: Mikey to confirm. Change numbers here, not in code.",
+  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Agency/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. Free is one tenth of the fleet's real monthly use (Mikey's ruling of 2026-10-20): 1,000 adds, 2 agents, 100 recalls. Paid plans follow ladder A (Mikey's ruling of 2026-10-21): Dev 10k, Pro 50k, Team 150k, Agency 500k adds, with recall at 10:1. Change numbers here, not in code.",
   "version": 1,
   "default": "free",
   "grace_ratio": 0.1,
@@ -22,42 +22,42 @@
     "dev": {
       "name": "Dev",
       "price_usd_month": 19,
-      "limits": { "add": 50000, "read": null, "recall": 10000 },
+      "limits": { "add": 10000, "read": null, "recall": 1000 },
       "overage": null,
       "history_days": 30,
       "spaces": 1,
       "agents": 5,
-      "_note": "recall limit: Mikey to confirm. No overage: writes refused after the 10% grace (upgrade)."
+      "_note": "Ladder A (Mikey, Oct 21): 10x Free. No overage: writes refused after the 10% grace (upgrade)."
     },
     "pro": {
       "name": "Pro",
       "price_usd_month": 49,
-      "limits": { "add": 150000, "read": null, "recall": 50000 },
+      "limits": { "add": 50000, "read": null, "recall": 5000 },
       "overage": { "billed": true, "usd_per_10k": 2 },
       "history_days": 90,
       "spaces": 3,
       "agents": 25,
-      "_note": "recall limit: Mikey to confirm. Overage billed (~$2 / 10k), never refused."
+      "_note": "Ladder A (Mikey, Oct 21). The fleet today (about 29k a month) fits Pro. Overage billed (~$2 / 10k), never refused."
     },
     "team": {
       "name": "Team",
       "price_usd_month": 99,
-      "limits": { "add": 500000, "read": null, "recall": 200000 },
+      "limits": { "add": 150000, "read": null, "recall": 15000 },
       "overage": { "billed": true, "usd_per_10k": 2 },
       "history_days": 365,
       "spaces": 10,
       "agents": null,
-      "_note": "recall limit: Mikey to confirm. Overage billed (~$2 / 10k), never refused. agents null = unlimited."
+      "_note": "Ladder A (Mikey, Oct 21). Overage billed (~$2 / 10k), never refused. agents null = unlimited."
     },
     "agency": {
       "name": "Agency",
       "price_usd_month": 199,
-      "limits": { "add": 1500000, "read": null, "recall": 600000 },
+      "limits": { "add": 500000, "read": null, "recall": 50000 },
       "overage": { "billed": true, "usd_per_10k": 1.5 },
       "history_days": 365,
       "spaces": 30,
       "agents": null,
-      "_note": "recall limit: Mikey to confirm. Overage billed (~$1.50 / 10k), never refused. 30 client spaces."
+      "_note": "Ladder A (Mikey, Oct 21). Overage billed (~$1.50 / 10k), never refused. 30 client spaces."
     },
     "enterprise": {
       "name": "Enterprise",

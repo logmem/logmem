@@ -79,25 +79,39 @@ export function checkAgentId(agent, field = "agent", env = process.env) {
   return id;
 }
 
+/** The namespaces a reference can name. */
+export const REF_NAMESPACES = ["agent", "channel", "job"];
+/** Channel and job ids: letters, digits, '.', '_', '@', '+', '-', starting with a letter or digit. */
+export const REF_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@+-]*$/;
+
+function checkRefId(ns, id) {
+  if (ns === "agent") return checkAgentId(id);
+  validateKeySegments(id);
+  if (!REF_ID_RE.test(id)) {
+    throw new Error(`${ns} id '${id.slice(0, 64)}' is not valid: use letters, digits, '.', '_', '@', '+' or '-', starting with a letter or digit`);
+  }
+  return id;
+}
+
 /**
  * Parse an entity reference. Accepts "channel:field-notes", "job:issue-14",
  * "agent:quill", the ACMI forms "thread:x" / "work:x", or a bare id with a
- * default namespace.
+ * default namespace. An unknown namespace or a malformed id is refused, so a
+ * typo never reads or writes an empty record.
  */
 export function parseRef(ref, defaultNs = "channel") {
   const s = String(ref ?? "").trim();
   if (!s) throw new Error("empty reference");
   const i = s.indexOf(":");
-  if (i < 0) {
-    if (defaultNs === "agent") checkAgentId(s);
-    return { ns: defaultNs, id: s };
-  }
+  if (i < 0) return { ns: defaultNs, id: checkRefId(defaultNs, s) };
   const rawNs = s.slice(0, i);
   const id = s.slice(i + 1);
   const ns = { thread: "channel", work: "job" }[rawNs] ?? rawNs;
-  validateKeySegments(ns, id);
-  if (ns === "agent") checkAgentId(id);
-  return { ns, id };
+  if (!REF_NAMESPACES.includes(ns)) {
+    throw new Error(`unknown namespace '${rawNs.slice(0, 32)}': use agent:<id>, channel:<id> or job:<id>`);
+  }
+  if (!id) throw new Error(`empty ${ns} id`);
+  return { ns, id: ns === "agent" ? checkAgentId(id) : checkRefId(ns, id) };
 }
 
 /**
