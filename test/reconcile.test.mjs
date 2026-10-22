@@ -258,3 +258,63 @@ test("a job the backend can't read is skipped and the run goes on", async () => 
   assert.deepEqual(r.closes.map((c) => c.job), ["by-pr"]);
   assert.ok(r.skipped.some((x) => x.job === "bad" && x.why === "unreadable"));
 });
+
+// Codex on PR 106 at 620ab01: three ways a job closed too early.
+test("P2: an unreadable job may be a milestone's part, so no milestone closes on parts that run", async () => {
+  const inner = createMemoryRedis();
+  const cc = owner(inner);
+  await sc(cc, "logmem_assign", { job: "m1", title: "M1", details: { milestone: true } });
+  await sc(cc, "logmem_assign", { job: "a", title: "A", details: { milestone: "m1" } });
+  await sc(cc, "logmem_assign", { job: "hidden", title: "Hidden part", details: { milestone: "m1" } });
+  await sc(cc, "logmem_stage", { job: "a", stage: "done", note: "x" });
+  const redis = (cmd, ...args) => {
+    if (String(args[0] || "").includes(":job:hidden:")) throw new Error("bad response body");
+    return inner(cmd, ...args);
+  };
+  const r = await run(redis, { fetchImpl: gh([]) });
+  assert.equal(r.closes.find((c) => c.job === "m1"), undefined, "the unread part is unknown, not done");
+  assert.ok(r.skipped.some((x) => x.job === "hidden" && x.why === "unreadable"));
+});
+
+test("P2: a finished task closes nothing while another decision or task still waits", async () => {
+  const redis = createMemoryRedis();
+  const cc = owner(redis);
+  const store = cc.store;
+  await sc(cc, "logmem_assign", { job: "two", title: "Two waits" });
+  await store.setNow("job", "two", { stage: "blocked", blocked_on: { type: "task", ref: "taskA", note: "Mikey" }, waits: [{ type: "task", ref: "taskA", note: "Mikey" }, { type: "decision", ref: "askB", note: "Pick one" }] });
+  const done = { taskA: { done: true, done_by: "human:mikey" }, taskC: { done: true, done_by: "human:mikey" } };
+  const plan = () => planCloses(store, { blockerOf: async (ref) => done[ref] || { done: false } });
+  assert.equal((await plan()).closes.find((c) => c.job === "two"), undefined, "the decision still waits");
+
+  await store.setNow("job", "two", { waits: [{ type: "task", ref: "taskA", note: "x" }, { type: "task", ref: "taskD", note: "y" }] });
+  assert.equal((await plan()).closes.find((c) => c.job === "two"), undefined, "the second task is not done");
+
+  await store.setNow("job", "two", { waits: [{ type: "task", ref: "taskA", note: "x" }, { type: "task", ref: "taskC", note: "y" }] });
+  const c = (await plan()).closes.find((x) => x.job === "two");
+  assert.ok(c, "every wait is a finished task");
+  assert.match(c.evidence, /All 2 tasks it waited on are done/);
+});
+
+test("P2: a blocker added after the plan wins; the close is refused and nothing is overwritten", async () => {
+  const redis = createMemoryRedis();
+  const cc = owner(redis);
+  await sc(cc, "logmem_assign", { job: "by-pr", title: "Closed by a PR" });
+  const github = { repo: REPO, merged: async () => [{ number: 96, merged_at: new Date(Date.now() + 60000).toISOString(), merge_commit_sha: "124842a", body: "Closes job: by-pr" }] };
+  const { applyPlan } = await import("../src/core/reconcile.mjs");
+  const plan = await planCloses(cc.store, { github });
+  assert.deepEqual(plan.closes.map((c) => c.job), ["by-pr"]);
+
+  // A person's task lands on the job between the plan and the apply.
+  await sc(cc, "logmem_stage", { job: "by-pr", stage: "blocked", blocked_on: { type: "task", ref: "late", note: "Mikey must check" } });
+
+  const rec = createLogmem({ workRules: "warn", redis, space: SPACE, sessionId: "s-rec", surface: "t", defaultAgent: RECONCILER, decideSecret: SECRET });
+  const out = await applyPlan(rec, rec.store, plan);
+  assert.deepEqual(out.closed, []);
+  assert.deepEqual(out.failed, [{ job: "by-pr", error: "changed since the plan, not closed" }]);
+  const now = await cc.store.getNow("job", "by-pr");
+  assert.equal(now.stage, "blocked");
+  assert.equal(now.blocked_on.ref, "late");
+  assert.equal(now.auto_closed, undefined);
+  const log = await cc.store.readLog("job", "by-pr", { reverse: true, limit: 5 });
+  assert.ok(!log.some((e) => e.kind === "done"), "no Done entry was written");
+});

@@ -11,6 +11,31 @@ import { lmKey, lmIndexKey, acmiKey, acmiIndexKey, PROTECTED } from "./keys.mjs"
 import { asEntry, normalizeKind, stageFromStatus } from "./vocab.mjs";
 import { isProtectedKey } from "../lib/helpers.mjs";
 import { unreadableTypeWarning } from "../lib/redact.mjs";
+import { registerEvalScript } from "../lib/lua-scripts.mjs";
+
+// Compare-and-set on a Now hash (setNowIf). ARGV: n, then n pairs of field
+// and expected raw text (NOW_MISSING = the field must be absent), then the
+// field/value pairs to write.
+const NOW_MISSING = "__lm_missing__";
+export const NOW_CAS_LUA = `
+local n = tonumber(ARGV[1])
+for i = 0, n - 1 do
+  local got = redis.call('HGET', KEYS[1], ARGV[2 + i * 2])
+  if got == false then got = '${NOW_MISSING}' end
+  if got ~= ARGV[3 + i * 2] then return 'changed' end
+end
+redis.call('HSET', KEYS[1], unpack(ARGV, 2 + n * 2))
+return 'ok'
+`;
+registerEvalScript(NOW_CAS_LUA, (call, keys, argv) => {
+  const n = Number(argv[0]);
+  for (let i = 0; i < n; i++) {
+    const got = call("HGET", keys[0], argv[1 + i * 2]) ?? NOW_MISSING;
+    if (got !== argv[2 + i * 2]) return "changed";
+  }
+  call("HSET", keys[0], ...argv.slice(1 + n * 2));
+  return "ok";
+});
 
 export function normTs(n) {
   // ISO / date strings ("2026-10-12T20:52:00Z", "2026-10-12 20:52Z") were
@@ -256,6 +281,31 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       await index(ns, id);
       await mirrorWrite({ slot: "now", ns, id, fields });
       return store.getNow(ns, id);
+    },
+    /**
+     * The raw stored text of some Now fields in this space's own hash (null
+     * when a field is missing). The guard a later setNowIf compares against.
+     */
+    async nowFieldsRaw(ns, id, fields) {
+      const out = {};
+      for (const f of fields) out[f] = (await redis("HGET", k(ns, id, "now"), f)) ?? null;
+      return out;
+    },
+    /**
+     * Compare-and-set on Now: write `fields` only if every field in `expect`
+     * still holds exactly the raw text nowFieldsRaw returned (null = missing).
+     * One EVAL, so a write that lands between the read and this call wins and
+     * this one is refused. Returns true when it wrote.
+     */
+    async setNowIf(ns, id, expect, fields) {
+      const checks = Object.entries(expect).flatMap(([f, v]) => [f, v == null ? NOW_MISSING : String(v)]);
+      const sets = Object.entries(fields).flatMap(([f, v]) => [f, JSON.stringify(v)]);
+      if (!sets.length) throw new Error("setNowIf: no fields to set");
+      const res = await redis("EVAL", NOW_CAS_LUA, 1, k(ns, id, "now"), String(checks.length / 2), ...checks, ...sets);
+      if (res !== "ok") return false;
+      await index(ns, id);
+      await mirrorWrite({ slot: "now", ns, id, fields });
+      return true;
     },
     /** ACMI semantics: signals are replaced wholesale, not merged. */
     async replaceNow(ns, id, fields) {

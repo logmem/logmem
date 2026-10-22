@@ -43,6 +43,12 @@ export const REOPEN_RE = /^\s*Reopen\b/i;
 /** The last report, for the app's Needs you and the board's stale badge. */
 export const reportKey = (space) => `lm:${space}:reconcile:report`;
 
+/**
+ * Now fields a close must find unchanged when it applies (codex on PR 106):
+ * a blocker, a reopen or a "still open" that lands after the plan wins.
+ */
+export const GUARD_FIELDS = ["stage", "blocked_on", "waits", "auto_close", "auto_closed", "reconcile_dismissed"];
+
 const agentOf = (ref) => String(ref || "").replace(/^agent:/, "");
 const isAgentRef = (ref) => /^agent:/.test(String(ref || ""));
 
@@ -91,7 +97,9 @@ export async function planCloses(store, { now = Date.now(), github = null, block
   // One job the backend can't read is skipped; the run goes on.
   for (const id of ids) {
     try {
-      jobs.set(id, { id, who: (await store.getWho("job", id)) || {}, now: (await store.getNow("job", id)) || {} });
+      // The guard is read before Now, so any write after it fails the close's compare-and-set.
+      const guard = await store.nowFieldsRaw("job", id, GUARD_FIELDS);
+      jobs.set(id, { id, guard, who: (await store.getWho("job", id)) || {}, now: (await store.getNow("job", id)) || {} });
     } catch {
       unreadable.push(id);
     }
@@ -150,10 +158,10 @@ export async function planCloses(store, { now = Date.now(), github = null, block
     if (j.now.auto_close === "off") { plan.skipped.push({ job: j.id, why: "a person reopened it" }); continue; }
     if (reopen.pending) { plan.skipped.push({ job: j.id, why: "reopen ask waiting" }); continue; }
 
-    const hit = await evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf });
+    const hit = await evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf, unreadable });
     // A person said "still open": no suggestion until the job gets a newer entry.
     const dismissed = !!j.now.reconcile_dismissed && log[0]?.trail === j.now.reconcile_dismissed.trail;
-    if (hit) plan.closes.push({ job: j.id, title: j.who.title || null, owner, prev_stage: stage, ...hit });
+    if (hit) plan.closes.push({ job: j.id, title: j.who.title || null, owner, prev_stage: stage, guard: j.guard, ...hit });
     else if (dismissed) plan.skipped.push({ job: j.id, why: "a person said it is still open" });
     else if (ownerSaysDone(log, owner)) {
       // Agents also write "done" for one finished step, so an owner's Done only suggests.
@@ -172,7 +180,7 @@ export async function planCloses(store, { now = Date.now(), github = null, block
   return plan;
 }
 
-async function evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf }) {
+async function evidenceFor(j, { log, owner, children, closedBy, byNumber, github, blockerOf, unreadable }) {
   // 1. A merged PR says it closes the job, and nobody worked on the job after the merge.
   const pr = closedBy.get(j.id);
   if (pr) {
@@ -181,16 +189,40 @@ async function evidenceFor(j, { log, owner, children, closedBy, byNumber, github
     if (!later) return { signal: "pr", evidence: `PR #${pr.number} merged as ${String(pr.merge_commit_sha || "").slice(0, 7)} and closes this job`, link: pr.html_url || null };
   }
   // 2. Its parts are done.
-  if (j.who.milestone === true) {
+  // A job we could not read may belong to this milestone, so its parts are
+  // unknown: no milestone closes on parts in that run (codex on PR 106).
+  if (j.who.milestone === true && !unreadable.length) {
     const kids = children.get(j.id) || [];
     if (kids.length && kids.every((k) => k.now.stage === "done")) return { signal: "parts", evidence: `All ${kids.length} jobs of milestone ${j.id} are done` };
   }
-  const b = j.now.blocked_on;
-  if (j.now.stage === "blocked" && b?.type === "task" && b.ref && blockerOf) {
-    const t = await blockerOf(b.ref);
-    if (t?.done && t.outcome !== "cant_do") return { signal: "parts", evidence: `The task it waited on is done (${b.ref}, by ${t.done_by || "a person"})` };
+  // A blocked job closes on its task only when every wait on it is a task a
+  // person finished. Any other wait (a decision, an agent, an outside thing,
+  // a task not done or can't-do) keeps it open (codex on PR 106).
+  if (j.now.stage === "blocked" && blockerOf) {
+    const waits = waitsOf(j.now);
+    if (!waits.length || !waits.every((w) => w?.type === "task" && w.ref)) return null;
+    const tasks = [];
+    for (const w of waits) {
+      const t = await blockerOf(w.ref).catch(() => null);
+      if (!t?.done || t.outcome === "cant_do") return null;
+      tasks.push(`${w.ref}, by ${t.done_by || "a person"}`);
+    }
+    const what = tasks.length === 1 ? `The task it waited on is done (${tasks[0]})` : `All ${tasks.length} tasks it waited on are done (${tasks.join("; ")})`;
+    return { signal: "parts", evidence: what };
   }
   return null;
+}
+
+/** blocked_on and every entry in waits, once each by ref. */
+function waitsOf(now) {
+  const all = [now.blocked_on, ...(Array.isArray(now.waits) ? now.waits : [])].filter(Boolean);
+  const seen = new Set();
+  return all.filter((w) => {
+    const key = w.ref ?? JSON.stringify(w);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** The job's newest entry is a Done by its owner (not a person's task Done). A suggestion, never a close. */
@@ -228,9 +260,16 @@ export async function applyPlan(lm, store, plan, { now = Date.now() } = {}) {
   const done = [], reopened = [], failed = [];
   for (const c of plan.closes) {
     try {
-      const r = await call("logmem_stage", { job: c.job, stage: "done", note: `auto-closed. ${c.evidence}` });
-      if (!r?.ok) throw new Error(r?.error || "stage refused");
-      await store.setNow("job", c.job, { auto_closed: { at: now, prev_stage: c.prev_stage, signal: c.signal, evidence: c.evidence } });
+      // One compare-and-set: the close lands only if the job's Now is still what the plan read.
+      if (!c.guard) throw new Error("no guard in the plan");
+      const auto_closed = { at: now, prev_stage: c.prev_stage, signal: c.signal, evidence: c.evidence };
+      const wrote = await store.setNowIf("job", c.job, c.guard, { stage: "done", stage_at: now, blocked_on: null, auto_closed });
+      if (!wrote) {
+        failed.push({ job: c.job, error: "changed since the plan, not closed" });
+        continue;
+      }
+      const r = await call("logmem_note", { where: `job:${c.job}`, kind: "done", summary: `auto-closed. ${c.evidence}`.slice(0, 1000) });
+      if (!r?.ok) throw new Error(r?.error || "done entry refused");
       if (isAgentRef(c.owner) && agentOf(c.owner) !== RECONCILER) {
         await call("logmem_handoff", {
           to: agentOf(c.owner),
