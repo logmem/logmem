@@ -738,15 +738,19 @@ export const TOOLS = [
       }
       // Check the owner before the plan, so a refused call writes nothing (not even "general").
       const own = agentRef(owner == null ? me(ctx) : checkAgentId(owner, "owner"));
+      const defaultPlan = details?.plan == null || details.plan === "" || details.plan === "general";
       let filed;
       try {
-        filed = await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
+        // General is created only after the assignment passes write admission.
+        filed = defaultPlan ? { plan: "general", filed: details?.plan !== "general" }
+          : await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
       } catch (e) {
         if (e instanceof PlanError) return { ok: false, error: e.message };
         throw e;
       }
       const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details, plan: filed.plan };
       const entry = await write(ctx, "job", id, { kind: "assigned", summary: `New job: ${title}` });
+      if (defaultPlan) await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
       await ctx.store.setWho("job", id, who);
       await ctx.store.setNow("job", id, { stage: "open", owner: own });
       await ctx.store.addJobSession(id, ctx.shift.shift);
