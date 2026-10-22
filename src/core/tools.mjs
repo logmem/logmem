@@ -746,10 +746,10 @@ export const TOOLS = [
         throw e;
       }
       const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details, plan: filed.plan };
+      const entry = await write(ctx, "job", id, { kind: "assigned", summary: `New job: ${title}` });
       await ctx.store.setWho("job", id, who);
       await ctx.store.setNow("job", id, { stage: "open", owner: own });
       await ctx.store.addJobSession(id, ctx.shift.shift);
-      const entry = await write(ctx, "job", id, { kind: "assigned", summary: `New job: ${title}` });
       return { ok: true, job: id, who, entry, ...(filed.filed ? { note: "No plan given: filed in 'general'. Move it with a plan when you know where it belongs." } : {}) };
     },
   },
@@ -811,8 +811,8 @@ export const TOOLS = [
     annotations: WRITE,
     async run({ job, summary, kind, trail, origin }, ctx) {
       const { id } = parseRef(job, "job");
-      await ctx.store.addJobSession(id, ctx.shift.shift);
       const entry = await write(ctx, "job", id, { kind: kind || "progress", summary, trail, origin });
+      await ctx.store.addJobSession(id, ctx.shift.shift);
       return { ok: true, job: id, entry };
     },
   },
@@ -844,10 +844,10 @@ export const TOOLS = [
         }
       }
       const fields = { stage, stage_at: clock(ctx), blocked_on: stage === "blocked" ? reason : null };
-      const now = await ctx.store.setNow("job", id, fields);
       const kind = { blocked: "stuck", done: "done" }[stage] || "progress";
       const text = stage === "blocked" ? (reason.parked ? `parked${reason.until ? ` until ${reason.until}` : ""}: ${note || reason.note}` : `blocked on ${reason.type}${reason.ref ? ` ${reason.ref}` : ""}: ${note || reason.note}`) : note ? `${stage}: ${note}` : `Stage -> ${stage}`;
       const entry = await write(ctx, "job", id, { kind, summary: text.slice(0, LIMITS.summary), ...(reason ? { payload: { blocked_on: reason } } : {}) });
+      const now = await ctx.store.setNow("job", id, fields);
       return { ok: true, job: id, now, entry, ...(warning ? { warning } : {}) };
     },
   },
