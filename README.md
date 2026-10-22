@@ -33,8 +33,13 @@ Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
 
 ## Shifts
 
-- First call in a session with no open shift starts one automatically
-  (agent = `LOGMEM_AGENT`, else the client name).
+- A new session resumes the agent's open shift on the same surface, or starts one automatically.
+  The agent comes from `LOGMEM_AGENT`, else the client name.
+- Unmanaged automatic starts write metadata only and do not add log entries.
+  Managed accounts retain admitted start entries, which count toward their write quota.
+  Quota rejection happens before new shift metadata is written.
+- An ended shift stays ended after another session replaces the shared open slot.
+  Returning sessions join the current shift instead of writing to the ended shift.
 - 30 minutes idle: the next call (or the stdio timer) writes an automatic
   Recap of the old shift, then starts a new one.
 - `logmem start`: starts the agent set for this connection (`LOGMEM_AGENT`,
