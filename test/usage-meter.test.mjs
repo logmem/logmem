@@ -138,3 +138,25 @@ test("usage: agents cannot remove usage counters", async () => {
   assert.match(r.error, /protected/);
   assert.ok((await readUsage(redis, SPACE)).add > 0);
 });
+
+// Rebase onto #91: a pure read makes zero Redis writes, so the meter skips it.
+test("meter: with pureReads, reads and recalls are not counted (no write); adds still are", async () => {
+  const redis = createMemoryRedis();
+  const lm = lmFor(redis, { pureReads: true });
+  assert.equal((await sc(lm, "logmem_note", { where: "channel:ops", summary: "First write." })).ok, true);
+  await sc(lm, "logmem_brief", {});
+  await sc(lm, "logmem_view", { ref: "channel:ops" });
+  await sc(lm, "logmem_recall", { query: "write" });
+  const u = await readUsage(redis, SPACE);
+  assert.equal(u.add, 2, "the note and its shift-start entry");
+  assert.equal(u.read, 0, "pure reads are not counted");
+  assert.equal(u.recall, 0, "a pure recall is not counted");
+
+  // The same calls without pureReads are counted.
+  const lm2 = lmFor(redis, { sessionId: "s2" });
+  await sc(lm2, "logmem_view", { ref: "channel:ops" });
+  await sc(lm2, "logmem_recall", { query: "write" });
+  const v = await readUsage(redis, SPACE);
+  assert.equal(v.read, 1);
+  assert.equal(v.recall, 1);
+});

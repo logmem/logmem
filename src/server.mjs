@@ -51,12 +51,15 @@ export { mirrorConfigFromEnv };
 /** Recall tools. Each call counts as one recall, never also as a read. */
 const RECALL_TOOLS = new Set(["logmem_recall", "acmi_search_semantic"]);
 
-/** Without limits, the usage meter counts each recall. It never refuses one. */
-function countedRecall(run, usage) {
+/**
+ * Without limits, the usage meter counts each recall. It never refuses one.
+ * A pure read (pureReads, PR 91) writes nothing, so it is not counted.
+ */
+function countedRecall(run, usage, isPure) {
   if (!usage) return run;
   return async (q, n) => {
     const out = await run(q, n);
-    await usage.count("recall");
+    if (!isPure()) await usage.count("recall");
     return out;
   };
 }
@@ -185,7 +188,7 @@ export function createLogmem({
     spaces: allowed,
     shift: null,
     now: now || Date.now,
-    recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage),
+    recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage, () => ctx.pure === true),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
   };
@@ -226,6 +229,8 @@ export function createLogmem({
       args = c.args;
     }
     const pure = pureReads && tool.annotations?.readOnlyHint === true;
+    // A pure read makes zero Redis writes (PR 91), so the usage meter skips it.
+    ctx.pure = pure;
     try {
       let events = [];
       if (pure) {
@@ -238,7 +243,7 @@ export function createLogmem({
       store.mirrorEvents = [];
       if (mirror && !pure) await mirror.drain().catch(() => {});
       const out = await tool.run(args || {}, ctx);
-      if (usage && tool.annotations?.readOnlyHint === true && !RECALL_TOOLS.has(name) && out?.ok !== false) await usage.count("read");
+      if (usage && !pure && tool.annotations?.readOnlyHint === true && !RECALL_TOOLS.has(name) && out?.ok !== false) await usage.count("read");
       if (events.length) out.shift_events = events;
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
