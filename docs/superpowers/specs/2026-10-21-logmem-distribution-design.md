@@ -6,7 +6,7 @@ Plan: `launch` (P0). Track: `distribution`. Driver: claude-code. Reviewer: codex
 ## Goal
 
 Every supported agent connects to LogMem and starts the same way, and LogMem is
-installable from npm, the MCP Registry and Smithery by Show HN (Nov 10).
+installable from npm, the MCP Registry and Smithery by Show HN (Wed Nov 18, 9:30 AM ET; Mikey G-01 C). The 48h dogfood starts Mon Nov 16.
 
 Supported at Show HN: Claude Code, Codex, Claude web and desktop, ChatGPT,
 the Gemini app and the Gemini CLI.
