@@ -79,6 +79,45 @@ test("log: a huddle opens its round table", async ({ page }) => {
   await expect(page.locator(".lmx-seat").first()).toContainText("No reply yet");
 });
 
+test("walkthrough player: one step at a time, what you should see, no admin rail", async ({ page }) => {
+  await signIn(page, "#/job/i15-subject");
+  await page.locator(".lmx-drawer").getByRole("link", { name: "Open the player" }).click();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 1 of 3");
+  await expect(page.locator(".lmw-card h1")).toHaveText("Open the newsletter tool");
+  await expect(page.locator(".lmw-see")).toContainText("The Issue 15 draft in your list");
+  await expect(page.locator(".lmw-card a[target=_blank]")).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(page.locator(".lmx-rail")).toHaveCount(0);
+  await expect(page.locator(".lmx-tabs")).toHaveCount(0);
+});
+
+test("walkthrough: write one on a job page, preview it, play it, send the reply", async ({ page }, testInfo) => {
+  test.skip(!laptop(testInfo), "writes the shared seed once");
+  await signIn(page, "#/write/i15-lead");
+  await page.getByLabel("Title *").fill("Check the photo credits");
+  await page.getByLabel("What to do *").fill("Open the lead story draft");
+  await page.getByLabel("What you should see").fill("Three photos under the headline");
+  await page.getByRole("button", { name: /Add a step/ }).click();
+  await page.getByLabel("What to do *").nth(1).fill("Check each credit line");
+  await expect(page.getByLabel("Title *")).toHaveValue("Check the photo credits");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.locator(".lmw-preview")).toContainText("Nothing is saved");
+  await page.getByRole("link", { name: "Back to the writer" }).click();
+  await page.getByRole("button", { name: "Save walkthrough" }).click();
+  await expect(page.locator(".lmx-toast").last()).toContainText("Saved");
+  const card = page.locator(".lmx-drawer .lmx-card").filter({ hasText: "Check the photo credits" }).filter({ has: page.getByRole("link", { name: "Open the player" }) });
+  await card.getByRole("link", { name: "Open the player" }).click();
+  await page.getByRole("button", { name: "Done, next step" }).click();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 2 of 2");
+  await expect(page.getByRole("button", { name: "Done, last step" })).toBeEnabled(); // lit reuses the button
+  // Progress comes back to the same step after a reload.
+  await page.reload();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 2 of 2");
+  await page.getByRole("button", { name: "Done, last step" }).click();
+  await page.getByLabel("Your reply to the agent").fill("Credits checked.");
+  await page.getByRole("button", { name: "Send reply" }).click();
+  await expect(page.locator(".lmw-card")).toContainText("Your reply: “Credits checked.”");
+});
+
 // Codex review of PR 87: notes and buttons on decisions. /api/decide is intercepted, so the seed is not written.
 async function captureDecides(page) {
   const sent = [];
@@ -142,4 +181,84 @@ test("decisions: after Defer the answer buttons work again", async ({ page }) =>
   await expect(card.getByRole("button", { name: "Reject" })).toBeEnabled();
   await card.getByRole("button", { name: "Reject" }).click();
   await expect.poll(() => sent.length).toBe(2);
+});
+
+test("walkthrough writer: a draft saves only to the space it was written in", async ({ page }) => {
+  await signIn(page, "#/write/i15-lead");
+  const posts = [];
+  await page.route("**/api/tasks", async (route) => { if (route.request().method() === "POST") posts.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, blocker: { trail: "x", to: "human:admin" } } }); });
+  await page.getByLabel("Title *").fill("Draft from fieldnotes");
+  await page.getByLabel("What to do *").fill("Step one");
+  // The space changes under the open writer (another tab or the space picker).
+  await page.evaluate(async () => { (await import("/app/core.js")).state.space = "another-space"; });
+  await page.getByRole("button", { name: "Save walkthrough" }).click();
+  await expect(page.locator(".lmx-toast").last()).toContainText("This draft is for space fieldnotes");
+  expect(posts).toHaveLength(0);
+  await page.evaluate(async () => { (await import("/app/core.js")).state.space = "fieldnotes"; });
+  await page.getByRole("button", { name: "Save walkthrough" }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].space).toBe("fieldnotes");
+});
+
+
+test("homepage v3: short tagline, one handoff in the hero, connect below it, raw entry view", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("One memory for all your agents.");
+  const hero = page.locator("#hero-log");
+  await expect(hero.locator(".lm-event")).toHaveCount(4);
+  await expect(hero.locator(".h-via").first()).toHaveText("via claude-code");
+  await expect(page.locator(".h-mini-ask")).toContainText("Demo: buttons are inactive");
+  // Connect is its own section, after the hero.
+  const order = await page.evaluate(() => ({
+    after: !!(document.querySelector(".h-hero").compareDocumentPosition(document.querySelector("#connect")) & Node.DOCUMENT_POSITION_FOLLOWING),
+    outside: !document.querySelector(".h-hero #connect"),
+  }));
+  expect(order).toEqual({ after: true, outside: true });
+  // Raw entry shows the stored shape and hides the readable log.
+  await page.locator("#demo").scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: "Raw entry" }).click();
+  await expect(page.locator("#demo-raw")).toBeVisible();
+  await expect(page.locator("#demo-log")).toBeHidden();
+  await expect(page.locator("#demo-raw")).toContainText('"byline"');
+  await page.getByRole("button", { name: "Readable" }).click();
+  await expect(page.locator("#demo-log")).toBeVisible();
+  await expect(page.locator("#demo-raw")).toBeHidden();
+});
+
+// Two spaces in every response, so the picker has a choice. Requests made after a switch are recorded.
+async function twoSpaces(page) {
+  const asked = [];
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("space")) asked.push(url.searchParams.get("space"));
+    const res = await route.fetch();
+    let body = await res.text();
+    try {
+      const j = JSON.parse(body);
+      if (j && Array.isArray(j.spaces)) { j.spaces = ["fieldnotes", "madez"]; body = JSON.stringify(j); }
+    } catch { /* not JSON: pass through */ }
+    await route.fulfill({ response: res, body });
+  });
+  return asked;
+}
+
+test("spaces: the picker is reachable at every width, and More signs out on a phone", async ({ page }, testInfo) => {
+  const asked = await twoSpaces(page);
+  await signIn(page);
+  const rail = page.locator(".lmx-rail select");
+  const head = page.getByRole("combobox", { name: "Space" }).and(page.locator(".lmx-head select"));
+  if (laptop(testInfo)) {
+    await expect(rail).toBeVisible();
+    await expect(head).toBeHidden();
+    return;
+  }
+  await expect(rail).toBeHidden();
+  await expect(head).toBeVisible();
+  await expect(head.locator("option")).toHaveText(["fieldnotes", "madez"]);
+  const box = await head.boundingBox();
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
+  await head.selectOption("madez");
+  await expect.poll(() => asked.includes("madez")).toBe(true);
+  await page.goto("/app#/more");
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });

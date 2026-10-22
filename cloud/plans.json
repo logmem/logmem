@@ -1,5 +1,5 @@
 {
-  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Agency/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. Free recall is 1,000 a month, confirmed by Mikey on 2026-10-19. Other plans' recall limits are placeholders: Mikey to confirm. Change numbers here, not in code.",
+  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Agency/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. Free is one tenth of the fleet's real monthly use (Mikey's ruling of 2026-10-20): 1,000 adds, 2 agents, 100 recalls. Other plans' recall limits are placeholders: Mikey to confirm. Change numbers here, not in code.",
   "version": 1,
   "default": "free",
   "grace_ratio": 0.1,
@@ -12,12 +12,12 @@
     "free": {
       "name": "Free",
       "price_usd_month": 0,
-      "limits": { "add": 10000, "read": null, "recall": 1000 },
+      "limits": { "add": 1000, "read": null, "recall": 100 },
       "overage": null,
       "history_days": 7,
       "spaces": 1,
-      "agents": 3,
-      "_note": "recall limit: 1,000 a month, confirmed by Mikey on 2026-10-19. No overage: writes refused after the 10% grace."
+      "agents": 2,
+      "_note": "One tenth of the fleet's measured use, Mikey's ruling of 2026-10-20. The fleet (space madez) wrote 2,183 entries in the 7 days to Oct 21 (about 9,360 a month), with 15 agents and 1 space. So Free is 1,000 adds, 2 agents and 1 space. Recalls are not logged, so recall keeps the 10:1 add-to-recall ratio: 100. No overage: writes refused after the 10% grace."
     },
     "dev": {
       "name": "Dev",

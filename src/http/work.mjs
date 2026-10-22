@@ -43,7 +43,7 @@ registerEvalScript(UNBLOCK_LUA, (call, keys, argv) => {
   call("HSET", keys[0], "stage", '"active"', "stage_at", argv[3], "blocked_on", "null", "unblock_op", argv[4]);
   call("SADD", keys[1], argv[4]);
   return "ok";
-});
+}, { jail: true });
 const pendingKey = (space, job) => `lm:${space}:job:${job}:unblock_pending`;
 const opTrail = (op) => `unblockedBy-${op.id}`.replace(/[^A-Za-z0-9_.:-]/g, "-").slice(0, 200);
 import { setLane, laneText, PlanError } from "../core/plans.mjs";

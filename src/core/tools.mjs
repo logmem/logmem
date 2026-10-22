@@ -1,4 +1,4 @@
-// tools.mjs — the 21 logmem_* tools.
+// tools.mjs — the 23 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
@@ -176,6 +176,22 @@ const camel = (s) =>
  */
 export const makeTrail = (kind, id, ts) => `${camel(`${kind}-${id}`)}-${ts}-${trailNonce()}`;
 
+export const NO_BOUND_AGENT =
+  "No agent is set for this connection. Say 'logmem start <name>', or set LOGMEM_AGENT in this client's LogMem config.";
+
+/** The first-start welcome: the three habits, each with one example call. */
+export function welcome(agent) {
+  return {
+    agent,
+    message: `Welcome, ${agent}. This is your first shift. Three habits keep the team in sync.`,
+    habits: [
+      { habit: "Read the Brief first. It holds your last Recap, your Now and handoffs waiting for you.", example: { tool: "logmem_brief", args: {} } },
+      { habit: "Write as you go: one entry for each change, in plain words.", example: { tool: "logmem_note", args: { where: "channel:agent-coordination", kind: "progress", summary: `${agent} is connected and read its Brief.` } } },
+      { habit: "Recap before you stop: what you did and what comes next.", example: { tool: "logmem_recap", args: { notes: "What I did this shift.", next: ["What the next shift does first."] } } },
+    ],
+  };
+}
+
 export function me(ctx) {
   if (!ctx.shift) throw new Error("no open shift (call logmem_start)");
   return ctx.shift.agent;
@@ -352,16 +368,21 @@ export const TOOLS = [
     name: "logmem_start",
     title: "Start",
     description:
-      "Become an agent and begin a shift. Use this when someone says \"logmem start <agent>\". If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
+      "Become an agent and begin a shift. Use this when someone says \"logmem start\" or \"logmem start <agent>\". With no agent, LogMem starts the agent this connection was set to. If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
     params: params({
-      agent: { type: "string", desc: "Agent to become, e.g. 'quill' or 'agent:quill'" },
+      agent: { type: "string", desc: "Agent to become, e.g. 'quill'. Leave out to start the agent this connection is set to", optional: true },
       model: { type: "string", desc: "Model id running this shift (optional)", optional: true },
     }),
     annotations: WRITE,
     async run({ agent, model }, ctx) {
-      const { shift, events } = await ctx.shifts.start(agent, { modelId: model });
+      const name = agent == null || String(agent).trim() === "" ? ctx.shifts.boundAgent() : agent;
+      if (!name) throw new Error(NO_BOUND_AGENT);
+      const first = (await ctx.store.recentShifts(agentId(checkAgentId(name)), 1)).length === 0;
+      const { shift, events } = await ctx.shifts.start(name, { modelId: model });
       ctx.shift = shift;
-      return { ok: true, started: shift, switch: events, brief: await brief(ctx, shift.agent) };
+      const out = { ok: true, started: shift, switch: events, brief: await brief(ctx, shift.agent) };
+      if (first) out.welcome = welcome(shift.agent);
+      return out;
     },
   },
   {
@@ -427,7 +448,7 @@ export const TOOLS = [
       trail: { type: "string", desc: "Trail id (auto if omitted). Refused when that trail is already used on the receiver", optional: true },
       origin: { type: "string", desc: "Trail id this handoff follows from", optional: true },
       create_agent: { type: "boolean", desc: "Hand off to an agent that is not in the roster yet (default false: refuse unknown agents)", optional: true },
-      walkthrough: { type: "object", desc: "Person handoffs only: { steps: [{ title, detail?, cmd? }], time?, place?, done_when?, reply?, due? }", optional: true },
+      walkthrough: { type: "object", desc: "Person handoffs only: { steps: [{ title (what to do), go? (where to go), detail?, cmd?, see? (what they should see) }], time?, place?, done_when?, reply?, due? }", optional: true },
     }),
     annotations: WRITE,
     async run({ to, summary, where: whereRef, trail, origin, create_agent, walkthrough }, ctx) {

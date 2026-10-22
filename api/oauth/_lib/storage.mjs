@@ -436,10 +436,13 @@ async function consumeOnce(r, key, fallbackTtl) {
 
 // ───── Clients ─────
 
+/** Auth methods that get a client secret at registration. */
+export const SECRET_METHODS = new Set(["client_secret_post", "client_secret_basic"]);
+
 export async function registerClient(meta) {
   const r = deployRedis();
   const client_id = `cli_${randomToken(8)}`;
-  const client_secret = meta.token_endpoint_auth_method === "client_secret_post" ? randomToken(24) : null;
+  const client_secret = SECRET_METHODS.has(meta.token_endpoint_auth_method) ? randomToken(24) : null;
   const record = {
     client_id,
     client_secret,
@@ -498,7 +501,7 @@ const isFid = (f) => typeof f === "string" && /^[0-9a-f]{32}$/.test(f);
  * Mint an access + refresh pair. `fid` is the grant's family id: omit it for
  * a new grant (auth-code exchange), pass the refresh record's fid on rotation.
  */
-export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space, fid }) {
+export async function mintTokens({ client_id, scope, upstash_url, upstash_token, backend, sub, space, fid, resource }) {
   const r = deployRedis();
   const family = isFid(fid) ? fid : randomToken(16);
   const access = randomToken(32);
@@ -511,15 +514,21 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   // sealRecord throws KekMissingError before anything is written.
   const hAt = sha256hex(access);
   const hRt = sha256hex(refresh);
-  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access, fid: family }, "access", hAt);
+  // `resource` is the token's audience (RFC 8707): the MCP route refuses a
+  // token whose resource is not its own. Records from before it carry none.
+  const aud = resource ? { resource } : {};
+  const accessRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, expires_at: issued_at + TTL.access, fid: family, ...aud }, "access", hAt);
   // sibling_at lets reuse detection revoke the access token minted alongside.
-  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt, fid: family }, "refresh", hRt);
+  const refreshRecord = sealRecord({ client_id, scope, sub, space, upstash_url, upstash_token, backend, issued_at, sibling_at: hAt, fid: family, ...aud }, "refresh", hRt);
 
   await r("SET", KEY.access(hAt), JSON.stringify(accessRecord), "EX", String(TTL.access));
   await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
   await r("SADD", KEY.family(family), `at:${hAt}`, `rt:${hRt}`);
   await r("EXPIRE", KEY.family(family), String(TTL.refresh));
   if (backend?.kind === "managed") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend });
+  // Fleet sign-ins (an admin connected a web client to a deploy space) go in the
+  // same index under FLEET_OWNER, so the admin can see and disconnect them.
+  if (backend?.kind === "fleet") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend: { tenant: FLEET_OWNER, agent: backend.agent }, space });
 
   return { access_token: access, token_type: "Bearer", expires_in: TTL.access, refresh_token: refresh, scope };
 }
@@ -531,7 +540,10 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
 //   lm:account:apps:{tenant}   — SET of fids
 const APP_KEY = { app: (fid) => `lm:account:app:${fid}`, apps: (tenant) => `lm:account:apps:${tenant}` };
 
-async function recordManagedApp(r, { family, isNew, client_id, backend }) {
+/** The index owner for fleet sign-ins. Not a valid tenant id, so it never meets a managed account. */
+export const FLEET_OWNER = "fleet:admin";
+
+async function recordManagedApp(r, { family, isNew, client_id, backend, space }) {
   const now = Math.floor(Date.now() / 1000);
   const prev = parse(await r("GET", APP_KEY.app(family)));
   if (prev) {
@@ -545,7 +557,7 @@ async function recordManagedApp(r, { family, isNew, client_id, backend }) {
   } catch {
     // name is cosmetic
   }
-  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now };
+  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now, ...(space ? { space } : {}) };
   await r("SET", APP_KEY.app(family), JSON.stringify(rec), "EX", String(TTL.refresh));
   await r("SADD", APP_KEY.apps(backend.tenant), family);
 }
@@ -739,4 +751,81 @@ export async function revokeAccessToken(access_token) {
     const lk = KEY.legacyAccess(access_token);
     if (openLegacy(parse(await r("GET", lk)))) await r("DEL", lk);
   }
+}
+
+/**
+ * Legacy raw-keyed tokens (pre-hash), revoked under the same rules that let
+ * them work: only before LEGACY_CUTOFF_MS, only unsealed records, and only
+ * the client's own (codex review of PR 91, P2).
+ * TODO(remove after LEGACY_CUTOFF_MS)
+ */
+async function revokeLegacy(r, token, client_id) {
+  if (!legacyOpen() || !isRawToken(token)) return null;
+  const ak = KEY.legacyAccess(token);
+  const a = openLegacy(parse(await r("GET", ak)));
+  if (a && a.client_id === client_id) {
+    await r("DEL", ak);
+    return "access";
+  }
+  const rk = KEY.legacyRefresh(token);
+  const rf = openLegacy(parse(await r("GET", rk)));
+  if (rf && rf.client_id === client_id) {
+    await r("DEL", rk);
+    if (isRawToken(String(rf.sibling_at || ""))) {
+      const sk = KEY.legacyAccess(rf.sibling_at);
+      const sib = openLegacy(parse(await r("GET", sk)));
+      if (sib && sib.client_id === client_id) await r("DEL", sk);
+    }
+    return "refresh";
+  }
+  return null;
+}
+
+/**
+ * RFC 7009 revocation for `client_id`. An access token revokes itself. A
+ * refresh token revokes its whole grant: every access and refresh token of
+ * the family, and a managed account's connected-app record. A token that is
+ * unknown, already gone, or another client's changes nothing. The caller
+ * answers 200 either way (RFC 7009 2.2). Returns what was revoked, for logs.
+ */
+export async function revokeToken(token, client_id) {
+  if (!token || typeof token !== "string" || !client_id) return null;
+  const r = deployRedis();
+  const h = sha256hex(token);
+  const at = parse(await r("GET", KEY.access(h)));
+  if (at) {
+    if (at.client_id !== client_id) return null;
+    await r("DEL", KEY.access(h));
+    return "access";
+  }
+  const rt = parse(await r("GET", KEY.refresh(h)));
+  if (!rt) {
+    // A refresh in flight already consumed the live record and left its grace
+    // record. Revoke through that: the family and revoked markers go up first,
+    // so linkRefreshChildren discards whatever the racing refresh mints, and a
+    // managed app's connected-app record goes too (codex review of PR 91, P1).
+    const g = parse(await r("GET", KEY.refreshGrace(h)));
+    const grec = g && parse(g.rec);
+    if (grec && grec.client_id === client_id) {
+      const gfid = grec.fid;
+      const gopen = openSealed(grec, "refresh", h);
+      if (isFid(gfid)) await r("SET", KEY.familyRevoked(gfid), "1", "EX", String(TTL.refreshGrace));
+      if (isFid(gfid) && gopen?.backend?.kind === "managed" && gopen.backend.tenant) await revokeManagedApp(gopen.backend.tenant, gfid);
+      await revokeFamily(r, h);
+      return "grant";
+    }
+    return revokeLegacy(r, token, client_id);
+  }
+  if (rt.client_id !== client_id) return null;
+  const rec = openSealed(rt, "refresh", h);
+  const fid = rec?.fid ?? rt.fid;
+  if (isFid(fid)) {
+    if (rec?.backend?.kind === "managed" && rec.backend.tenant && (await revokeManagedApp(rec.backend.tenant, fid))) return "grant";
+    await r("SET", KEY.familyRevoked(fid), "1", "EX", String(TTL.refreshGrace));
+    await revokeFamilySet(r, fid);
+    return "grant";
+  }
+  await r("DEL", KEY.refresh(h));
+  if (/^[0-9a-f]{64}$/.test(String(rt.sibling_at))) await r("DEL", KEY.access(rt.sibling_at));
+  return "refresh";
 }

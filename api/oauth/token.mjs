@@ -3,13 +3,21 @@
 //   - refresh_token
 //
 // Per MCP spec: PKCE verification is mandatory; client_secret check only when
-// the registered client used token_endpoint_auth_method=client_secret_post.
+// the registered client used client_secret_post or client_secret_basic.
+//
+// Resource (RFC 8707): the grant's resource comes from the auth code (or the
+// refresh record). A `resource` the client sends here must name the same one,
+// or the answer is invalid_target. Codes and grants from before resource
+// binding take the canonical resource.
 
-import { consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
+import { SECRET_METHODS, consumeAuthCode, consumeRefresh, getClient, mintTokens, sha256base64url, safeEqual, assertKekReady, touchClient, linkRefreshChildren } from "./_lib/storage.mjs";
+import { bindResource, normalizeScope } from "../../src/http/issuer.mjs";
 
 export const config = { runtime: "nodejs" };
 
-function bad(res, status, error, description) {
+function bad(res, status, error, description, { basic = false } = {}) {
+  // RFC 6749 5.2: a 401 to a client that sent an Authorization header names the scheme.
+  if (status === 401 && basic) res.setHeader("WWW-Authenticate", 'Basic realm="logmem"');
   res.status(status).setHeader("Content-Type", "application/json").setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify({ error, error_description: description }));
 }
@@ -29,6 +37,30 @@ function readBody(req) {
   return {};
 }
 
+/**
+ * Client credentials from an HTTP Basic header (RFC 6749 2.3.1), or null.
+ * Both parts are form-urlencoded.
+ */
+export function basicClient(header) {
+  const m = /^Basic\s+([A-Za-z0-9+/=]+)\s*$/i.exec(String(header || ""));
+  if (!m) return null;
+  const raw = Buffer.from(m[1], "base64").toString("utf8");
+  const i = raw.indexOf(":");
+  if (i < 0) return null;
+  const dec = (v) => { try { return decodeURIComponent(v.replace(/\+/g, " ")); } catch { return null; } };
+  const client_id = dec(raw.slice(0, i));
+  const client_secret = dec(raw.slice(i + 1));
+  return client_id ? { client_id, client_secret } : null;
+}
+
+/** Merge Basic credentials into the body. A client_id in both places must match. */
+function withBasic(body, header) {
+  const b = basicClient(header);
+  if (!b) return { body };
+  if (body.client_id && body.client_id !== b.client_id) return { error: "client_id in the body and the Authorization header differ" };
+  return { basic: true, body: { ...body, client_id: b.client_id, client_secret: body.client_secret ?? b.client_secret } };
+}
+
 // client_secret_post: constant-time compare; a record without a stored
 // secret never matches (no "" == "" bypass).
 function secretMatches(client, presented) {
@@ -44,21 +76,25 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "method_not_allowed");
 
   try {
-    const body = readBody(req);
+    const merged = withBasic(readBody(req), req.headers?.authorization);
+    if (merged.error) return bad(res, 401, "invalid_client", merged.error, { basic: true });
+    const body = merged.body;
     const grant_type = body.grant_type;
     // Refuse before consuming a code/refresh token we could not re-seal.
     assertKekReady();
 
     if (grant_type === "authorization_code") {
       const { code, redirect_uri, client_id, client_secret, code_verifier } = body;
+      const asked = bindResource(body.resource, req);
+      if (asked.error) return bad(res, 400, "invalid_target", "unknown resource");
       if (!code || !redirect_uri || !client_id || !code_verifier) {
         return bad(res, 400, "invalid_request", "code, redirect_uri, client_id, code_verifier required");
       }
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
-      if (client.token_endpoint_auth_method === "client_secret_post" && !secretMatches(client, client_secret)) {
-        return bad(res, 401, "invalid_client", "client_secret mismatch");
+      if (SECRET_METHODS.has(client.token_endpoint_auth_method) && !secretMatches(client, client_secret)) {
+        return bad(res, 401, "invalid_client", "client_secret mismatch", { basic: !!merged.basic });
       }
 
       const codeRecord = await consumeAuthCode(code);
@@ -71,10 +107,13 @@ export default async function handler(req, res) {
       if (!safeEqual(computed, String(codeRecord.code_challenge ?? ""))) {
         return bad(res, 400, "invalid_grant", "code_verifier failed PKCE check");
       }
+      const resource = codeRecord.resource || bindResource(undefined, req).resource;
+      if (body.resource && asked.resource !== resource) return bad(res, 400, "invalid_target", "resource does not match the authorization");
 
       const tokens = await mintTokens({
         client_id,
-        scope: codeRecord.scope,
+        scope: normalizeScope(codeRecord.scope),
+        resource,
         sub: codeRecord.sub,
         upstash_url: codeRecord.upstash_url,
         upstash_token: codeRecord.upstash_token,
@@ -90,11 +129,13 @@ export default async function handler(req, res) {
     if (grant_type === "refresh_token") {
       const { refresh_token, client_id, client_secret } = body;
       if (!refresh_token || !client_id) return bad(res, 400, "invalid_request", "refresh_token + client_id required");
+      const asked = bindResource(body.resource, req);
+      if (asked.error) return bad(res, 400, "invalid_target", "unknown resource");
 
       const client = await getClient(client_id);
       if (!client) return bad(res, 400, "invalid_client", "unknown client_id");
-      if (client.token_endpoint_auth_method === "client_secret_post" && !secretMatches(client, client_secret)) {
-        return bad(res, 401, "invalid_client", "client_secret mismatch");
+      if (SECRET_METHODS.has(client.token_endpoint_auth_method) && !secretMatches(client, client_secret)) {
+        return bad(res, 401, "invalid_client", "client_secret mismatch", { basic: !!merged.basic });
       }
 
       // client_id is checked inside consumeRefresh BEFORE the token is
@@ -106,10 +147,13 @@ export default async function handler(req, res) {
       // already revoked; the presenter (legitimate or not) gets nothing.
       if (got.reuse) return bad(res, 400, "invalid_grant", "refresh token reuse detected; all tokens for this grant were revoked");
       const rec = got.rec;
+      const resource = rec.resource || bindResource(undefined, req).resource;
+      if (body.resource && asked.resource !== resource) return bad(res, 400, "invalid_target", "resource does not match the grant");
 
       const tokens = await mintTokens({
         client_id,
-        scope: rec.scope,
+        scope: normalizeScope(rec.scope),
+        resource,
         sub: rec.sub,
         upstash_url: rec.upstash_url,
         upstash_token: rec.upstash_token,

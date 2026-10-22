@@ -16,7 +16,7 @@ MIT under its own names.
 | `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
 | `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
 | `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
-| `src/core/tools.mjs` | The 21 `logmem_*` tools |
+| `src/core/tools.mjs` | The 23 `logmem_*` tools |
 | `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
 | `src/stdio/index.mjs` | stdio entry (`logmem-mcp`) |
 | `api/mcp.mjs` | Streamable HTTP route (Vercel) |
@@ -26,9 +26,9 @@ MIT under its own names.
 
 ## Tools
 
-Start, Brief, Recap, Note, Handoff (new), Ask (new), Status, Bio, View,
-Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Recall, Remove,
-Spaces, Connection, all as `logmem_<word>`. Names follow the Action Map.
+Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
+Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
+Remove, Spaces, Connection, all as `logmem_<word>`. Names follow the Action Map.
 Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
 
 ## Shifts
@@ -37,8 +37,10 @@ Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
   (agent = `LOGMEM_AGENT`, else the client name).
 - 30 minutes idle: the next call (or the stdio timer) writes an automatic
   Recap of the old shift, then starts a new one.
-- `logmem start <agent>`: if someone else holds the shift, they get a Recap
-  first, then the new agent starts and gets a Brief.
+- `logmem start`: starts the agent set for this connection (`LOGMEM_AGENT`,
+  the agent key, or the name picked at sign-in). `logmem start <agent>` picks
+  another. If someone else holds the shift, they get a Recap first, then the
+  new agent starts and gets a Brief. An agent's first start adds a short welcome.
 - Every entry carries `by`, `via` and `byline: "quill (via claude-code)"`.
 
 ## ACMI compatibility
