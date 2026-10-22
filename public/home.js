@@ -136,10 +136,10 @@
     row.appendChild(rule);
     var main = el('div', 'lm-event-main');
     var line = el('div', 'lm-event-line');
+    // Host first: the tool that wrote it is the main signal, the agent second.
+    line.appendChild(el('span', 'lm-badge h-via', 'via ' + it.via));
     line.appendChild(el('span', 'lm-kind', it.kind));
-    var who = el('strong', null, it.who + ' ');
-    who.appendChild(el('span', 'h-by', '(via ' + it.via + ')'));
-    line.appendChild(who);
+    line.appendChild(el('strong', null, it.who));
     line.appendChild(el('span', 'lm-event-summary', it.sum));
     main.appendChild(line);
     main.appendChild(prov(it.prov || []));
@@ -242,6 +242,38 @@
     return eventRow({ time: '10:05', k: 'decision', kind: 'decided', who: 'noor', via: 'claude-web', sum: 'Approved: send issue 14 Tue 09:00.', prov: ['human', 'origin approvalIssue14'] });
   }
 
+  // ─── Raw entry view: the last entry exactly as LogMem stores it ───────
+  var rawPre = $('#demo-raw'), viewSeg = $('#demo-view'), rawMode = false, lastEv = null;
+  var DAY_MS = Date.UTC(2026, 9, 13, 12, 0) - 12 * 3600000; // Oct 13, 00:00 UTC (the demo day)
+  function rawOf(it) {
+    var hm = String(it.time || '00:00').split(':');
+    var ts = DAY_MS + (Number(hm[0]) * 60 + Number(hm[1])) * 60000;
+    var e = { ts: ts, kind: it.kind, by: (it.who === 'noor' ? 'human:' : 'agent:') + it.who, via: it.via, byline: it.who + ' (via ' + it.via + ')' };
+    (it.prov || []).forEach(function (p) {
+      var m = /^(trail|origin|to|shift) (.+)$/.exec(p);
+      if (m) e[m[1] === 'to' ? 'to' : m[1]] = m[1] === 'to' ? 'agent:' + m[2] : m[2];
+    });
+    e.summary = it.sum;
+    return JSON.stringify(e, null, 2);
+  }
+  function showRaw() {
+    if (!rawPre) return;
+    rawPre.textContent = lastEv ? rawOf(lastEv) : 'Press Play: the newest entry shows here.';
+  }
+  function setView(raw) {
+    rawMode = raw;
+    if (rawPre) rawPre.hidden = !raw;
+    if (log) log.hidden = raw;
+    if (viewSeg) $$('button', viewSeg).forEach(function (b) { b.setAttribute('aria-pressed', String((b.getAttribute('data-view') === 'raw') === raw)); });
+    if (raw) showRaw();
+  }
+  if (viewSeg && rawPre) {
+    viewSeg.hidden = false;
+    $$('button', viewSeg).forEach(function (b) {
+      b.addEventListener('click', function () { setView(b.getAttribute('data-view') === 'raw'); });
+    });
+  }
+
   function append(node, animate) {
     if (animate && !reduced) node.classList.add('h-in');
     log.appendChild(node);
@@ -254,7 +286,7 @@
     switch (it.t) {
       case 'session': append(sessionRow(it), animate); break;
       case 'idle': append(idleRow(it), animate); break;
-      case 'ev': append(eventRow(it), animate); break;
+      case 'ev': lastEv = it; append(eventRow(it), animate); if (rawMode) showRaw(); break;
       case 'cmd':
         if (animate && !reduced) { append(cmdRow(it, true, next), true); return true; }
         append(cmdRow(it, false), animate); break;
@@ -384,4 +416,20 @@
     window.addEventListener('resize', check, { passive: true });
     check(); // panel already in view on load
   }
+
+  // ─── Hero: one handoff plays once (rows ship in the HTML; no JS = all shown) ───
+  (function () {
+    var heroLog = $('#hero-log');
+    if (!heroLog || reduced) return;
+    var rows = $$('.lm-event', heroLog);
+    rows.forEach(function (r) { r.classList.add('h-wait-in'); });
+    var i = 0;
+    (function next() {
+      if (i >= rows.length) return;
+      rows[i].classList.remove('h-wait-in');
+      rows[i].classList.add('h-in');
+      i++;
+      setTimeout(next, 900);
+    })();
+  })();
 })();

@@ -355,7 +355,12 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     const slimLog = log.map((e) => slim(e, `job:${id}`));
     // Open asks are computed here with the same rule as the Decisions page, not in the browser.
     const decisions = await withState(slimLog);
-    return { id, who, now: nowSlot, log: await annotate(slimLog), open_asks: decisions.waiting, shifts: sessions };
+    // Open tasks on this job, for anyone: the job page lists its walkthroughs and their progress.
+    const tasks = (await listBlockers(store)).filter((b) => b.where === `job:${id}`).map((b) => ({
+      trail: b.trail, to: b.to, by: b.by, summary: b.summary, created_at: b.created_at,
+      steps: (b.walkthrough?.steps || []).length, steps_done: (b.steps_done || []).length,
+    }));
+    return { id, who, now: nowSlot, log: await annotate(slimLog), open_asks: decisions.waiting, tasks, shifts: sessions };
   }
 
   if (what === "channels") {

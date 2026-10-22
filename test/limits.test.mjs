@@ -31,11 +31,11 @@ test("limits: Free writes stop after the 10% grace, reads keep working", async (
   const redis = createMemoryRedis();
   const lm = lmFor(redis);
   await sc(lm, "logmem_note", { where: "channel:ideas", summary: "before the limit" });
-  await redis("SET", counter(), "10999"); // limit 10,000 plus 10% grace = 11,000
+  await redis("SET", counter(), "1099"); // limit 1,000 plus 10% grace = 1,100
   assert.equal((await sc(lm, "logmem_note", { where: "channel:ideas", summary: "the last one in grace" })).ok, true);
   const refused = await lm.callTool("logmem_note", { where: "channel:ideas", summary: "over" });
   assert.equal(refused.isError, true);
-  assert.match(refused.structuredContent.error, /used its 10000 Free entries this month\. Reads still work/);
+  assert.match(refused.structuredContent.error, /used its 1000 Free entries this month\. Reads still work/);
   const log = await redis("ZRANGE", `lm:${SPACE}:channel:ideas:log`, "0", "-1");
   assert.ok(!log.some((x) => x.includes('"over"')), "nothing was written");
   const view = await sc(lm, "logmem_view", { ref: "channel:ideas" });
@@ -46,20 +46,20 @@ test("limits: two writes at the grace edge at once, only one passes", async () =
   const redis = createMemoryRedis();
   const a = lmFor(redis, { session: "s-a" });
   await sc(a, "logmem_note", { where: "channel:ideas", summary: "warm up" });
-  await redis("SET", counter(), "10999");
+  await redis("SET", counter(), "1099");
   const [x, y] = await Promise.all([1, 2].map((i) => a.callTool("logmem_note", { where: "channel:ideas", summary: `race ${i}` })));
   assert.equal([x, y].filter((r) => r.isError !== true).length, 1);
 });
 
-test("limits: Free allows 3 agents; the 4th agent's writes are refused", async () => {
+test("limits: Free allows 2 agents; the 3rd agent's writes are refused", async () => {
   const redis = createMemoryRedis();
-  for (const agent of ["muse", "atlas", "quill"]) {
+  for (const agent of ["muse", "atlas"]) {
     assert.equal((await sc(lmFor(redis, { agent }), "logmem_note", { where: "channel:ideas", summary: `hi from ${agent}` })).ok, true, agent);
   }
-  const fourth = await lmFor(redis, { agent: "nova" }).callTool("logmem_note", { where: "channel:ideas", summary: "me too" });
-  assert.equal(fourth.isError, true);
-  assert.match(JSON.stringify(fourth.structuredContent), /Free allows 3 agents/);
-  assert.equal(Number(await redis("SCARD", `lm:${SPACE}:agents`)), 3, "the refused agent holds no slot");
+  const third = await lmFor(redis, { agent: "nova" }).callTool("logmem_note", { where: "channel:ideas", summary: "me too" });
+  assert.equal(third.isError, true);
+  assert.match(JSON.stringify(third.structuredContent), /Free allows 2 agents/);
+  assert.equal(Number(await redis("SCARD", `lm:${SPACE}:agents`)), 2, "the refused agent holds no slot");
   assert.equal((await sc(lmFor(redis, { agent: "atlas" }), "logmem_note", { where: "channel:ideas", summary: "still fine" })).ok, true);
 });
 
@@ -93,17 +93,17 @@ test("limits: off for the fleet and self-hosted (no limits passed)", async () =>
   assert.equal((await redis("SCAN", "0", "MATCH", "acmi:cloud:meter:*"))[1].length, 0, "no meter keys");
 });
 
-test("limits: each recall counts; Free recall stops after 1,000 plus the 10% grace, other tools keep working", async () => {
+test("limits: each recall counts; Free recall stops after 100 plus the 10% grace, other tools keep working", async () => {
   const redis = createMemoryRedis();
   const lm = lmFor(redis);
   await sc(lm, "logmem_note", { where: "channel:ideas", summary: "river cleanup notes" });
   assert.equal((await sc(lm, "logmem_recall", { query: "river cleanup" })).ok, true);
   assert.equal(Number(await redis("GET", counter("recall"))), 1, "one recall, one count");
-  await redis("SET", counter("recall"), "1099"); // 1,000 plus 10% grace = 1,100
+  await redis("SET", counter("recall"), "109"); // 100 plus 10% grace = 110
   assert.equal((await sc(lm, "logmem_recall", { query: "river" })).ok, true, "the last one in grace");
   const refused = await lm.callTool("logmem_recall", { query: "river" });
   assert.equal(refused.isError, true);
-  assert.match(refused.structuredContent.error, /used its 1000 Free recalls this month\. Notes, views and the Brief still work/);
+  assert.match(refused.structuredContent.error, /used its 100 Free recalls this month\. Notes, views and the Brief still work/);
   assert.equal((await sc(lm, "logmem_note", { where: "channel:ideas", summary: "still writing" })).ok, true, "notes still work");
   assert.equal((await sc(lm, "logmem_brief", {})).ok, true, "the Brief still works");
 });

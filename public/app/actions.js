@@ -31,11 +31,11 @@ export async function doWork(ev, op, job, agent) {
 }
 
 // ─── tasks: tick, done, can't do ─────────────────────────────────────
-export async function doStep(ev, trail, step) {
+export async function doStep(ev, trail, step, rev) {
   const c = ev.currentTarget, want = c.checked;
   busy(c, true);
   try {
-    await postJSON('/api/tasks', 'blockers', { action: 'step', trail, step, checked: want });
+    await postJSON('/api/tasks', 'blockers', { action: 'step', trail, step, checked: want, ...(Number.isInteger(rev) ? { rev } : {}) });
     toast(want ? 'Step saved. The agent sees your progress.' : 'Step unticked.');
   } catch (e) { c.checked = !want; toast('Not saved: ' + e.message, true); } finally { busy(c, false); }
 }

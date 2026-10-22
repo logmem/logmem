@@ -99,7 +99,7 @@ Plan numbers come from `cloud/plans.json` and are never hard-coded.
   - Reads are counted and never refused.
 - **Agents:**
   - The first write by an agent adds it to `lm:t-{id}:agents` (a set).
-  - On Free, a 4th agent's first write is refused with "Free allows 3 agents. Disconnect one at logmem.si/app, or upgrade."
+  - On Free, a 3rd agent's first write is refused with "Free allows 2 agents. Disconnect one at logmem.si/app, or upgrade."
 - **History:**
   - On Free, every read tool gets a floor of now minus `history_days` (7). This covers `logmem_brief`, `feed`, `view`, `open`, `recall`, `jobs` and the Brief inside `logmem_start`.
   - Entries older than the floor are not returned. They are not deleted.
@@ -144,7 +144,7 @@ Plan numbers come from `cloud/plans.json` and are never hard-coded.
 | Who | What | Cost |
 |---|---|---|
 | Mikey | Create a Clerk application on the free plan with Google, GitHub and email sign-in. Put `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` in Infisical, then in Vercel (Preview first, Production at launch) | $0 |
-| Mikey | Free numbers in `cloud/plans.json`: 10k adds a month, 3 agents, 1 space, 7 days of history. Free recall is 1,000 a month, confirmed by Mikey on 2026-10-19 | none |
+| Mikey | Free numbers in `cloud/plans.json`: 1,000 adds a month, 2 agents, 1 space, 7 days of history, 100 recalls. One tenth of the fleet's measured use, Mikey's ruling of 2026-10-20 (was 10k adds, 3 agents, 1,000 recalls) | none |
 | Mikey | Send the first invites from `/app` | none |
 | Avery | Widen the brief `madezmedia/fleet docs/LOGMEM-OAUTH-REDIS.md` from "sign-in records" to "customer Redis" (see the ACL below). Same VM, TLS, AOF, `noeviction` | $0 extra |
 | claude-code | The build, in small PRs with tests. No merge or deploy without Mikey's GO | none |

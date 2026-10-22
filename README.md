@@ -37,8 +37,10 @@ Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
   (agent = `LOGMEM_AGENT`, else the client name).
 - 30 minutes idle: the next call (or the stdio timer) writes an automatic
   Recap of the old shift, then starts a new one.
-- `logmem start <agent>`: if someone else holds the shift, they get a Recap
-  first, then the new agent starts and gets a Brief.
+- `logmem start`: starts the agent set for this connection (`LOGMEM_AGENT`,
+  the agent key, or the name picked at sign-in). `logmem start <agent>` picks
+  another. If someone else holds the shift, they get a Recap first, then the
+  new agent starts and gets a Brief. An agent's first start adds a short welcome.
 - Every entry carries `by`, `via` and `byline: "quill (via claude-code)"`.
 
 ## ACMI compatibility
