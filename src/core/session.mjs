@@ -125,7 +125,9 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     const ts = now();
     const shift = `${a}Shift-${ts}-${randomBytes(12).toString("hex")}`;
     const rec = { agent: a, surface, shift, started_at: ts, last_seen: ts, auto };
-    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto });
+    // mirror: whether this connection writes ACMI twins, so the dogfood check can tell a
+    // connection that is set up without the mirror from a twin that failed.
+    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto, mirror: store.mirror ? "on" : "off" });
     await store.append("agent", a, {
       ts,
       kind: "started",
