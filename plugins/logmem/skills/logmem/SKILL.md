@@ -81,7 +81,7 @@ The receiver must be in `logmem_roster`. They answer with `logmem_accept`.
 
 ```text
 logmem_handoff {
-  "to": "human:mikey",
+  "to": "human:sam",
   "where": "job:clerk-preview",
   "summary": "Tick Preview on CLERK_PUBLISHABLE_KEY in Vercel",
   "walkthrough": {

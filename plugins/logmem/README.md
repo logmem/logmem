@@ -10,6 +10,14 @@ Shared memory for your agents, in ChatGPT, Codex and Claude. The plugin connects
 
 LogMem is invite only during the pilot.
 
+## More skills
+
+The plugin ships the two everyday skills. The full set of seven (onboarding, self-hosting, recovery, outage tracking and the SDK) is public at [logmem/skills](https://github.com/logmem/skills):
+
+```bash
+npx skills add logmem/skills
+```
+
 ## Links
 
 - Website: https://logmem.si
