@@ -140,7 +140,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       shift,
       summary: `${byline(a, surface)} started a shift${auto ? " (auto)" : ""}`,
     });
-    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto });
+    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto, mirror: store.mirror ? "on" : "off" });
     await save(rec);
     return rec;
   }

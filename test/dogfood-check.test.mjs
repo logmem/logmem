@@ -42,6 +42,47 @@ test("missing ACMI twin = mismatch = fail", async () => {
   assert.equal(day.pass, false);
 });
 
+test("connection without the mirror: counted as opt-out, not a mismatch", async () => {
+  const redis = createMemoryRedis();
+  await team(redis, "madez");
+  const h = createLogmem({ redis, space: "madez", sessionId: "h", surface: "hermes-telegram", mirror: { enabled: false, spaces: [] } });
+  await sc(h, "logmem_start", { agent: "hermes" });
+  await sc(h, "logmem_note", { where: "agent:hermes", kind: "memo", summary: "native only" });
+  const [rec] = (await redis("ZRANGE", "lm:madez:agent:hermes:shifts", 0, -1)).map(JSON.parse);
+  assert.equal(rec.mirror, "off");
+  const { day } = await runCheck(redis, { space: "madez" });
+  assert.equal(day.mirror_mismatches, 0);
+  assert.equal(day.mirror_opt_out, 2, "started + memo");
+  assert.deepEqual(day.mirror_opt_out_writers, ["agent:hermes (via hermes-telegram)"]);
+  assert.equal(day.health_pass, true);
+});
+
+test("mirror on but twin missing is still a mismatch", async () => {
+  const redis = createMemoryRedis();
+  await team(redis, "madez");
+  const [rec] = (await redis("ZRANGE", "lm:madez:agent:claude-code:shifts", 0, -1)).map(JSON.parse);
+  assert.equal(rec.mirror, "on");
+  await redis("DEL", "acmi:madez:agent:claude-code:timeline");
+  const { day } = await runCheck(redis, { space: "madez", write: false });
+  assert.equal(day.mirror_mismatches, 1);
+  assert.equal(day.mirror_opt_out, 0);
+});
+
+test("a shift record without the setting (older shifts) never counts as opted out", async () => {
+  const redis = createMemoryRedis();
+  const h = createLogmem({ redis, space: "madez", sessionId: "h", surface: "hermes", mirror: { enabled: false, spaces: [] } });
+  await sc(h, "logmem_start", { agent: "hermes" });
+  const key = "lm:madez:agent:hermes:shifts";
+  const [member, score] = await redis("ZRANGE", key, 0, -1, "WITHSCORES");
+  const { mirror, ...legacy } = JSON.parse(member);
+  assert.equal(mirror, "off");
+  await redis("ZREM", key, member);
+  await redis("ZADD", key, score, JSON.stringify(legacy));
+  const { day } = await runCheck(redis, { space: "madez", write: false });
+  assert.equal(day.mirror_opt_out, 0);
+  assert.equal(day.mirror_mismatches, 1);
+});
+
 test("ACMI-side handoff-ack counts as accepted (VM agents)", async () => {
   const redis = createMemoryRedis();
   const { a } = await team(redis, "madez");

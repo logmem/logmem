@@ -3,6 +3,9 @@
 //
 // For one space and one day (default: the 24h ending now):
 //   - parity:   every lm log entry in the window has its ACMI twin (mirror spaces only)
+//               An entry written in a shift whose connection runs without the mirror
+//               (shift record mirror: "off") is counted as mirror_opt_out, not a mismatch.
+//               A missing or older shift record still counts as a mismatch.
 //   - agents:   distinct agent writers
 //   - handoffs: handoffs in the window, and how many were accepted
 //               (LogMem "accepted" with origin=trail, or ACMI "handoff-ack" with parentCorrelationId=trail)
@@ -149,8 +152,22 @@ export async function runCheck(redis, {
   const mirrored = mirrorSpaces.includes(space);
   const logKeys = (await scan(redis, `lm:${space}:*:log`)).map((k) => ({ key: k, ...parseLogKey(k, space) })).filter((x) => x.ns);
 
-  const day = { date: new Date(now).toISOString().slice(0, 10), window: [from, now], ran: true, space, mirror_checked: mirrored, entries: 0, agents: [], mirror_mismatches: 0, mismatch_examples: [], degraded_sessions: 0, handoffs: 0, accepted: 0, unanswered_24h: 0, stuck_written: 0 };
+  const day = { date: new Date(now).toISOString().slice(0, 10), window: [from, now], ran: true, space, mirror_checked: mirrored, entries: 0, agents: [], mirror_mismatches: 0, mismatch_examples: [], mirror_opt_out: 0, mirror_opt_out_writers: [], degraded_sessions: 0, handoffs: 0, accepted: 0, unanswered_24h: 0, stuck_written: 0 };
   const agents = new Set();
+  const optOutWriters = new Set();
+  // The mirror setting of the shift an entry was written in: "on", "off", or null when the
+  // shift record is missing or predates the setting (then a missing twin is a mismatch).
+  const shiftCache = new Map();
+  const shiftMirror = async (e) => {
+    const m = String(e.shift || "").match(/Shift-(\d+)-[0-9a-f]+$/);
+    if (!m || !String(e.by || "").startsWith("agent:")) return null;
+    if (!shiftCache.has(e.shift)) {
+      const rows = (await redis("ZRANGEBYSCORE", store.key("agent", e.by.slice(6), "shifts"), m[1], m[1])) || [];
+      const rec = rows.map(tryParse).find((r) => r && r.shift === e.shift);
+      shiftCache.set(e.shift, rec && ["on", "off"].includes(rec.mirror) ? rec.mirror : null);
+    }
+    return shiftCache.get(e.shift);
+  };
   const handoffs = new Map(); // trail -> { ts, to, where, logs: [{ ns, id }] } (a handoff is written to more than one log)
   const accepts = new Set(); // trails accepted (lm side)
   const stuckAlready = new Set();
@@ -174,7 +191,11 @@ export async function runCheck(redis, {
       if (mirrored && e.by !== BY) {
         const twins = await acmiRows(redis, acmiKey(space, ns, id, "log"), e.ts, e.ts);
         const ok = twins.some((t) => t.correlationId === e.trail && t.summary === e.summary);
-        if (!ok) {
+        if (!ok && (await shiftMirror(e)) === "off") {
+          // Written on a connection set up without the mirror: reported, not a failure.
+          day.mirror_opt_out++;
+          optOutWriters.add(`${e.by} (via ${e.via || "unknown"})`);
+        } else if (!ok) {
           day.mirror_mismatches++;
           if (day.mismatch_examples.length < 10) day.mismatch_examples.push({ log: `${ns}:${id}`, ts: e.ts, trail: e.trail });
         }
@@ -208,6 +229,7 @@ export async function runCheck(redis, {
   }
 
   day.agents = [...agents].sort();
+  day.mirror_opt_out_writers = [...optOutWriters].sort();
   day.health_pass = day.mirror_mismatches === 0 && day.degraded_sessions === 0 && day.unanswered_24h === 0;
   day.volume_pass = day.agents.length >= 3 && day.handoffs >= 1 && day.accepted >= day.handoffs;
   day.pass = day.health_pass && day.volume_pass;
@@ -238,7 +260,7 @@ export async function runCheck(redis, {
       .filter((e) => e.kind === "checkup" && e.by === BY && e.trail === trail && e.ts !== now);
     await writer.append("job", CHECK_JOB, {
       ts: now, kind: "checkup", by: BY, via: "dogfood-check", byline: "logmem-check (via dogfood-check)",
-      trail, summary: `${day.date} ${day.pass ? "PASS" : "FAIL"}: ${day.agents.length} agents, ${day.entries} entries, ${day.handoffs} handoffs (${day.accepted} accepted), ${day.mirror_mismatches} mirror mismatches, ${day.unanswered_24h} unanswered >24h, ${day.degraded_sessions} degraded`,
+      trail, summary: `${day.date} ${day.pass ? "PASS" : "FAIL"}: ${day.agents.length} agents, ${day.entries} entries, ${day.handoffs} handoffs (${day.accepted} accepted), ${day.mirror_mismatches} mirror mismatches${day.mirror_opt_out ? ` (${day.mirror_opt_out} opted out)` : ""}, ${day.unanswered_24h} unanswered >24h, ${day.degraded_sessions} degraded`,
       payload: day,
     });
     for (const p of priors) {
