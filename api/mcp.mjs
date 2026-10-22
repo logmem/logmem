@@ -65,7 +65,7 @@ function send(res, wantsSSE, reply, headers = {}) {
 
 /** Bind session state to the credential: an agent key's sessions never share a record with any other caller. */
 export function scopedSessionId(sessionId, auth) {
-  return (auth?.source === "agent-key" || auth?.source === "managed") && auth.keyId ? `${sessionId}~${auth.keyId}` : sessionId;
+  return (auth?.source === "agent-key" || auth?.source === "managed" || auth?.source === "fleet-oauth") && auth.keyId ? `${sessionId}~${auth.keyId}` : sessionId;
 }
 
 const tenantCache = new Map(); // tenant id -> { at, tenant }

@@ -24,6 +24,10 @@
       return '<tr><td class="mono">' + esc(k.agent) + '</td><td class="mono">' + esc(k.space) + '</td><td>' + esc(k.label) + '</td><td class="muted" style="font-size:13px">' + esc(when(k.created_at)) + '</td>' +
         '<td><button class="lm-btn" data-revoke="' + esc(k.id) + '" data-agent="' + esc(k.agent) + '">Revoke</button></td></tr>';
     }).join('');
+    var web = (data.web || []).map(function (a) {
+      return '<tr><td>' + esc(a.app) + '</td><td class="mono">' + esc(a.agent) + '</td><td class="mono">' + esc(a.space || '') + '</td><td class="muted" style="font-size:13px">' + esc(when((a.last_used || 0) * 1000)) + '</td>' +
+        '<td><button class="lm-btn" data-disconnect="' + esc(a.fid) + '" data-app="' + esc(a.app) + '">Disconnect</button></td></tr>';
+    }).join('');
     root.innerHTML = '<h1 style="margin:0">Agent keys</h1>' +
       '<p class="muted" style="margin:0">One key per agent. A key works for one space and one agent name only, and never expires. Revoke it here at any time. Put each key in that agent\'s vault, never in a chat or a log.</p>' +
       (fresh ? '<section class="lm-panel" style="padding:16px;display:flex;flex-direction:column;gap:8px;border-color:var(--brand)" aria-label="New key"><strong>New key for ' + esc(fresh.agent) + '. Copy it now. It is not shown again.</strong>' +
@@ -36,7 +40,11 @@
         '<button class="lm-btn lm-btn--primary">Create key</button></form>' +
       (err ? '<p role="alert" style="margin:0;color:var(--danger)">' + esc(err) + '</p>' : '') +
       '<div class="lm-panel" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:8px">Agent</th><th style="text-align:left;padding:8px">Space</th><th style="text-align:left;padding:8px">Label</th><th style="text-align:left;padding:8px">Created</th><th></th></tr></thead><tbody>' +
-        (rows || '<tr><td colspan="5" class="muted" style="padding:8px">No keys yet.</td></tr>') + '</tbody></table></div>';
+        (rows || '<tr><td colspan="5" class="muted" style="padding:8px">No keys yet.</td></tr>') + '</tbody></table></div>' +
+      '<h2 style="margin:8px 0 0;font-size:18px">Web connections</h2>' +
+      '<p class="muted" style="margin:0">Apps such as Gemini or Claude web that you connected to a fleet space on the sign-in page. Disconnect ends every token of that connection.</p>' +
+      '<div class="lm-panel" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:8px">App</th><th style="text-align:left;padding:8px">Agent</th><th style="text-align:left;padding:8px">Space</th><th style="text-align:left;padding:8px">Last used</th><th></th></tr></thead><tbody>' +
+        (web || '<tr><td colspan="5" class="muted" style="padding:8px">No web connections.</td></tr>') + '</tbody></table></div>';
 
     document.getElementById('cf').addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -49,6 +57,12 @@
     if (copy) copy.addEventListener('click', function () { navigator.clipboard.writeText(fresh.key).then(function () { copy.textContent = 'Copied'; }); });
     var hide = document.getElementById('hide');
     if (hide) hide.addEventListener('click', function () { load(); });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-disconnect]'), function (b) {
+      b.addEventListener('click', function () {
+        if (!window.confirm('Disconnect ' + b.getAttribute('data-app') + '? Every token of this connection stops working.')) return;
+        post({ action: 'disconnect', fid: b.getAttribute('data-disconnect') }).then(function () { load(); }).catch(function () { load(null, 'Could not disconnect.'); });
+      });
+    });
     Array.prototype.forEach.call(root.querySelectorAll('[data-revoke]'), function (b) {
       b.addEventListener('click', function () {
         if (!window.confirm('Revoke the key for ' + b.getAttribute('data-agent') + '? That agent loses access at once.')) return;

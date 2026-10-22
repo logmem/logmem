@@ -526,6 +526,9 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   await r("SADD", KEY.family(family), `at:${hAt}`, `rt:${hRt}`);
   await r("EXPIRE", KEY.family(family), String(TTL.refresh));
   if (backend?.kind === "managed") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend });
+  // Fleet sign-ins (an admin connected a web client to a deploy space) go in the
+  // same index under FLEET_OWNER, so the admin can see and disconnect them.
+  if (backend?.kind === "fleet") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend: { tenant: FLEET_OWNER, agent: backend.agent }, space });
 
   return { access_token: access, token_type: "Bearer", expires_in: TTL.access, refresh_token: refresh, scope };
 }
@@ -537,7 +540,10 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
 //   lm:account:apps:{tenant}   — SET of fids
 const APP_KEY = { app: (fid) => `lm:account:app:${fid}`, apps: (tenant) => `lm:account:apps:${tenant}` };
 
-async function recordManagedApp(r, { family, isNew, client_id, backend }) {
+/** The index owner for fleet sign-ins. Not a valid tenant id, so it never meets a managed account. */
+export const FLEET_OWNER = "fleet:admin";
+
+async function recordManagedApp(r, { family, isNew, client_id, backend, space }) {
   const now = Math.floor(Date.now() / 1000);
   const prev = parse(await r("GET", APP_KEY.app(family)));
   if (prev) {
@@ -551,7 +557,7 @@ async function recordManagedApp(r, { family, isNew, client_id, backend }) {
   } catch {
     // name is cosmetic
   }
-  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now };
+  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now, ...(space ? { space } : {}) };
   await r("SET", APP_KEY.app(family), JSON.stringify(rec), "EX", String(TTL.refresh));
   await r("SADD", APP_KEY.apps(backend.tenant), family);
 }
