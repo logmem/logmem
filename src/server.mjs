@@ -130,6 +130,9 @@ export function createLogmem({
   pureReads = false,
   // Key that verifies human decisions in the Brief. Default: LOGMEM_DECIDE_SECRET, read at call time.
   decideSecret,
+  // Remote decision verification (src/core/tools.mjs remoteVerified). Default: LOGMEM_VERIFY_URL.
+  verifyUrl,
+  fetchImpl,
   // Work rules (taxonomy spec): "strict" refuses tasks and decisions off a job and
   // blocked with no reason; "warn" allows them with a warning. Default: LOGMEM_WORK_RULES, else strict.
   workRules = process.env.LOGMEM_WORK_RULES === "warn" ? "warn" : "strict",
@@ -169,6 +172,9 @@ export function createLogmem({
     recall: limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
+    // Trusted server that verifies web decisions for a process with no signing key (opt-in: LOGMEM_VERIFY_URL).
+    verifyUrl: verifyUrl !== undefined ? verifyUrl : process.env.LOGMEM_VERIFY_URL || null,
+    fetchImpl,
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
   const byName = new Map(tools.map((t) => [t.name, t]));
