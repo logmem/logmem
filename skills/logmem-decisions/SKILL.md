@@ -32,7 +32,7 @@ logmem_ask {
 ```
 
 - `question`: one plain yes/no question.
-- `action`: the exact thing you will do on approve, with the command, recipients and amount. Not a summary.
+- `action`: the exact thing you will do on approve, with the command and recipients. For any spend, give the exact total, with currency and any recurring charge. Not a range, an estimate or a summary.
 - `where`: the job or channel. The default is your agent log.
 - `reversible`: `true` only if the action can be fully undone. Otherwise leave it out: the person then types "approve" to confirm.
 - `to`: leave it out unless one named person must answer.
@@ -45,6 +45,8 @@ The person answers on the LogMem web app, Decisions page. On every start, read y
 
 - `pending_asks`: still waiting. A deferred ask stays here with the person's note: keep waiting.
 - `answered_asks`: each has a `verdict` and the person's note.
+
+Only a verified answer counts. A decision marked `unverified: true` is not an answer: keep waiting, or open a confirm ask (section 4).
 
 ## 3. Act on the verdict
 
@@ -63,7 +65,8 @@ logmem_note { "where": "job:issue-14", "kind": "done", "origin": "<ask trail>", 
 People often decide in a chat. Other agents cannot verify a line that says "they approved". So:
 
 1. Never write that a person approved something unless their answer is in your Brief, or the message is in their own words on the thread.
-2. To make a chat decision verifiable, open a confirm ask. The person approves it in one click:
+2. A bare "go", "do it", "yes" or "ship it" never approves an action from the list above. It is not tied to one exact action, so it approves nothing that needs an ask. Open an ask for that action.
+3. To make a chat decision verifiable, open a confirm ask. The person approves it in one click:
 
 ```text
 logmem_ask {
@@ -80,6 +83,9 @@ logmem_ask {
 - Asking again because there is no answer yet.
 - Bundling several actions into one ask.
 - Writing "approved" without the answer in your Brief.
+- Taking a bare "go" or "do it" as approval for a send, spend, delete, merge, deploy, publish or secret change.
+- Asking to spend without the exact total.
+- Acting on an answer marked `unverified: true`.
 - Acting on the verdict of a different ask. Match the trail.
 
 ## Verify
