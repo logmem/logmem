@@ -1,7 +1,8 @@
 // LogMem skills: the repo's skills pass the lint, and the lint and link script behave.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, readlinkSync, lstatSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, readlinkSync, lstatSync, copyFileSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +44,16 @@ test("skills lint: raw Redis only in the self-host and recovery skills", () => {
   assert.deepEqual(lintSkill(fixture("logmem-self-host", body), "logmem-self-host").errors, []);
 });
 
+test("skills lint: Compatibility permits legacy calls, but never exempts raw Redis", () => {
+  const body = OK + "\n## Compatibility\n\nCall acmi_event.\n### Details\nCall acmi_query.\nRun redis-cli HSET key field value.\n";
+  const errors = lintSkill(fixture("compat", body), "compat").errors;
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /raw Redis/);
+  const ended = lintSkill(fixture("ended", body.replace("Run redis-cli HSET key field value.", "# New chapter\nCall acmi_event.")), "ended").errors;
+  assert.equal(ended.length, 1);
+  assert.match(ended[0], /acmi_\* call/);
+});
+
 test("skills lint: secret-shaped strings fail, placeholders pass", () => {
   for (const bad of [
     "Bearer lmk_" + "A".repeat(43),
@@ -50,11 +61,49 @@ test("skills lint: secret-shaped strings fail, placeholders pass", () => {
     "rediss://logmem-app:s3cretpass@host:6380/0",
     "Authorization: Bearer " + "x".repeat(30),
     "token: " + "a1b2c3d4e5f6g7h8",
+    'token: "' + "a1b2c3d4e5f6g7h8" + '"',
+    "password: '" + "a1b2c3d4e5f6g7h8" + "'",
+    JSON.stringify({ api_key: "a1b2c3d4e5f6g7h8" }),
+    JSON.stringify({ token: "a1b2c3d4e5f6g7h8" }),
   ]) {
     assert.match(lintSkill(fixture("h", `\n${bad}\n` + OK), "h").errors.join(), /looks like a secret/, bad);
   }
-  for (const good of ["Authorization: Bearer <vault: custom.logmem>", "rediss://logmem-app:<password>@<host>:<port>/0", "token: `<token>`"]) {
+  for (const good of ["Authorization: Bearer <vault: custom.logmem>", "rediss://logmem-app:<password>@<host>:<port>/0", "token: `<token>`", 'token: "<vault: custom.logmem>"', JSON.stringify({ api_key: "<your-api-key>" }), 'password: "${LOGMEM_PASSWORD}"', "secret: ..."]) {
     assert.deepEqual(lintSkill(fixture("i", `\n${good}\n` + OK), "i").errors, [], good);
+  }
+});
+
+test("skills CLI: absolute paths with spaces and symlink entry points execute", () => {
+  const root = mkdtempSync(join(tmpdir(), "skills cli with spaces-"));
+  const scripts = join(root, "scripts");
+  const skills = fixture("cli-skill", OK);
+  mkdirSync(scripts);
+  symlinkSync(skills, join(root, "skills"), "dir");
+  for (const script of ["skills-lint.mjs", "skills-link.mjs"]) {
+    const copied = join(scripts, script);
+    copyFileSync(fileURLToPath(new URL(`../scripts/${script}`, import.meta.url)), copied);
+    const alias = join(root, `alias-${script}`);
+    symlinkSync(copied, alias);
+    for (const entry of [copied, alias]) {
+      if (script === "skills-lint.mjs") {
+        const good = spawnSync(process.execPath, [entry, skills], { encoding: "utf8" });
+        assert.equal(good.status, 0, good.stderr);
+        assert.match(good.stdout, /1 skills, 0 errors/);
+        const badSkills = fixture("bad-cli", "\n# Missing verify\n");
+        const bad = spawnSync(process.execPath, [entry, badSkills], { encoding: "utf8" });
+        assert.equal(bad.status, 1, bad.stderr);
+        assert.match(bad.stderr, /Verify/);
+      } else {
+        const target = mkdtempSync(join(tmpdir(), "cli-target-"));
+        mkdirSync(join(target, "cli-skill"));
+        const marker = join(target, "cli-skill", "keep.txt");
+        writeFileSync(marker, "keep");
+        const result = spawnSync(process.execPath, [entry, "--target", target], { encoding: "utf8" });
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stdout, /skipped .*cli-skill/);
+        assert.equal(readFileSync(marker, "utf8"), "keep");
+      }
+    }
   }
 });
 
@@ -78,4 +127,16 @@ test("skills link: links new skills, keeps its own links, never overwrites anoth
   assert.ok(r2.already.includes("logmem-decisions"));
   const dry = linkSkills({ source: SKILLS, target: mkdtempSync(join(tmpdir(), "dry-")), dry: true });
   assert.ok(dry.linked.length >= 3);
+});
+
+
+test("skills scripts can be imported from stdin", () => {
+  for (const script of ["skills-lint.mjs", "skills-link.mjs"]) {
+    const url = new URL(`../scripts/${script}`, import.meta.url).href;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-"], {
+      input: `await import(${JSON.stringify(url)}); console.log("imported");`, encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "imported");
+  }
 });

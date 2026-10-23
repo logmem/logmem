@@ -128,3 +128,98 @@ test("connections: no customer Redis is a 503", async () => {
   const h = createHandler(() => ({ ready: () => true, session: async () => ({ status: "signed-out" }), redis: () => { throw new Error("none"); } }));
   assert.equal((await call(h)).status, 503);
 });
+
+test("connections: token expiry leaves token-free app metadata available to disconnect", async () => {
+  await withEnv(ENV, async () => {
+    try {
+      const { redis, ada, connect } = await setup();
+      await connect(ada, "muse");
+      const app = (await listManagedApps(ada.tenant))[0];
+      const metadataKey = `lm:account:app:${app.fid}`;
+      assert.equal(await redis("TTL", metadataKey), -1, "app metadata must not expire with refresh tokens");
+      await redis("SADD", `lm:${ada.space}:agents`, "muse");
+      // Remove token records to represent expiry. Metadata remains disconnectable.
+      for (const key of [...redis.data.keys()]) if (/^lm:oauth:(at|rt|fam):/.test(key)) await redis("DEL", key);
+      const result = await call(handler(redis, ADA), { method: "POST", body: { action: "disconnect", fid: app.fid }, headers: { "x-logmem-intent": "connections" } });
+      assert.deepEqual(result.body, { disconnected: true });
+      assert.equal(await redis("SISMEMBER", `lm:${ada.space}:agents`, "muse"), 0);
+    } finally { __setRedisForTests(null); }
+  });
+});
+
+test("connections: failed customer cleanup keeps a revocable app for retry", async () => {
+  await withEnv(ENV, async () => {
+    try {
+      const { redis, ada, connect } = await setup();
+      const token = await connect(ada, "muse");
+      const app = (await listManagedApps(ada.tenant))[0];
+      const agents = `lm:${ada.space}:agents`;
+      await redis("SADD", agents, "muse");
+      let fail = true;
+      const flaky = async (...args) => {
+        if (fail && args[0] === "SREM" && args[1] === agents) {
+          fail = false;
+          throw new Error("customer cleanup unavailable");
+        }
+        return redis(...args);
+      };
+      const h = handler(flaky, ADA);
+      const request = { method: "POST", body: { action: "disconnect", fid: app.fid }, headers: { "x-logmem-intent": "connections" } };
+      assert.equal((await call(h, request)).status, 500);
+      assert.equal(await lookupAccessToken(token.access_token), null);
+      assert.equal((await listManagedApps(ada.tenant)).length, 1);
+      assert.deepEqual((await call(h, request)).body, { disconnected: true });
+      assert.equal(await redis("SISMEMBER", agents, "muse"), 0);
+      assert.equal((await listManagedApps(ada.tenant)).length, 0);
+    } finally { __setRedisForTests(null); }
+  });
+});
+
+test("connections: simultaneous disconnects release a shared agent once both apps revoke", async () => {
+  await withEnv(ENV, async () => {
+    try {
+      const { redis, ada, connect } = await setup();
+      await connect(ada, "muse");
+      await connect(ada, "muse");
+      await redis("SADD", `lm:${ada.space}:agents`, "muse");
+      const apps = await listManagedApps(ada.tenant);
+      const h = handler(redis, ADA);
+      const results = await Promise.all(apps.map((app) => call(h, { method: "POST", body: { action: "disconnect", fid: app.fid }, headers: { "x-logmem-intent": "connections" } })));
+      assert.ok(results.every((r) => r.body.disconnected));
+      assert.equal(await redis("SISMEMBER", `lm:${ada.space}:agents`, "muse"), 0);
+    } finally { __setRedisForTests(null); }
+  });
+});
+
+test("connections: failed token revocation keeps the app active for shared-slot cleanup", async () => {
+  await withEnv(ENV, async () => {
+    try {
+      const { redis, ada, connect } = await setup();
+      const live = await connect(ada, "muse");
+      await connect(ada, "muse");
+      const apps = await listManagedApps(ada.tenant);
+      const liveFid = (await lookupAccessToken(live.access_token)).fid;
+      const failedApp = apps.find((a) => a.fid === liveFid);
+      const otherApp = apps.find((a) => a.fid !== liveFid);
+      const agents = `lm:${ada.space}:agents`;
+      await redis("SADD", agents, "muse");
+      let fail = true;
+      __setRedisForTests(async (...args) => {
+        if (fail && args[0] === "SET" && args[1] === `lm:oauth:fam:${failedApp.fid}:revoked`) {
+          fail = false;
+          throw new Error("revocation unavailable");
+        }
+        return redis(...args);
+      });
+      const h = handler(redis, ADA);
+      const disconnect = (fid) => call(h, { method: "POST", body: { action: "disconnect", fid }, headers: { "x-logmem-intent": "connections" } });
+      assert.equal((await disconnect(failedApp.fid)).status, 500);
+      assert.ok(await lookupAccessToken(live.access_token), "the failed revocation leaves its token live");
+      assert.equal((await listManagedApps(ada.tenant)).find((a) => a.fid === failedApp.fid).disconnected, undefined);
+      assert.deepEqual((await disconnect(otherApp.fid)).body, { disconnected: true });
+      assert.equal(await redis("SISMEMBER", agents, "muse"), 1, "a live app still owns the slot");
+      assert.deepEqual((await disconnect(failedApp.fid)).body, { disconnected: true });
+      assert.equal(await redis("SISMEMBER", agents, "muse"), 0);
+    } finally { __setRedisForTests(null); }
+  });
+});
