@@ -46,6 +46,8 @@
     "conformance": "node scripts/conformance.mjs",
     "spec": "node scripts/gen-spec.mjs",
     "spec:check": "node scripts/gen-spec.mjs --check",
+    "plugin:sync": "node scripts/plugin-sync.mjs",
+    "plugin:check": "node scripts/plugin-sync.mjs --check",
     "migrate:dry-run": "node scripts/migrate-dry-run.mjs",
     "test:ops": "node --test test/ops*.test.mjs",
     "ci": "npm test && npm run spec:check && npm run conformance",

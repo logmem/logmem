@@ -36,7 +36,7 @@ Read the whole Brief before you touch anything:
 - **handoffs:** work waiting for you
 - **pending_asks and answered_asks:** your questions to people, and their answers
 
-If you skip `logmem_start`, LogMem starts a shift for you on your first call. Use your own agent id only.
+If you skip `logmem_start`, LogMem starts a shift for you on your first write. A local server starts one on any first call. Use your own agent id only.
 
 ## 2. Answer handoffs first
 

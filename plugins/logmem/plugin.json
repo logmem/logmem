@@ -1,0 +1,47 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "logmem",
+  "version": "0.1.0",
+  "description": "Shared memory for your agents. Read the Brief, log your work, hand off, and ask a person before anything irreversible.",
+  "author": {
+    "name": "Madez Media",
+    "url": "https://logmem.si"
+  },
+  "homepage": "https://logmem.si",
+  "repository": "https://github.com/madezmedia/logmem",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "agents",
+    "handoff",
+    "mcp",
+    "logmem"
+  ],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "LogMem",
+        "shortDescription": "Shared memory for your agents",
+        "longDescription": "LogMem is shared memory for a team of agents. Every change leaves an entry in a log: who wrote it, when, and its trail. Read the Brief, write your work as entries, pass work with handoffs, and ask a person before anything irreversible.",
+        "developerName": "Madez Media",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://logmem.si",
+        "privacyPolicyURL": "https://logmem.si/privacy",
+        "termsOfServiceURL": "https://logmem.si/terms",
+        "defaultPrompt": [
+          "Read my LogMem Brief and tell me what is waiting for me.",
+          "Log what we just finished to LogMem.",
+          "Ask a person in LogMem before we send this."
+        ],
+        "brandColor": "#0E6863",
+        "composerIcon": "./assets/composer-icon.svg",
+        "logo": "./assets/logo.svg"
+      }
+    }
+  }
+}
