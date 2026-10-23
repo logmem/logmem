@@ -12,7 +12,22 @@ const here = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
 const port = Number(argv.includes("--port") ? argv[argv.indexOf("--port") + 1] : 4317);
 
-if (argv.includes("--seed")) {
+if (argv.includes("--business-demos")) {
+  // Deliberately isolated local examples. Never connect this flag to a real backend.
+  if (process.env.VERCEL_ENV === "production") throw new Error("Business demos are local only");
+  const { createMemoryRedis } = await import("../src/lib/memory-redis.mjs");
+  const { seedBusinessDemos, BUSINESS_DEMOS } = await import("./seed-business-demos.mjs");
+  const redis = createMemoryRedis();
+  await seedBusinessDemos(redis);
+  globalThis.__lmDevRedis = redis;
+  delete process.env.LOGMEM_REDIS_URI;
+  delete process.env.ACMI_REDIS_URI;
+  process.env.LOGMEM_REST_URL = "memory://business-demos";
+  process.env.LOGMEM_REST_TOKEN = "local-synthetic-demo";
+  process.env.LOGMEM_VIEW_SPACES = BUSINESS_DEMOS.map(d => d.id).join(",");
+}
+
+if (argv.includes("--seed") && !argv.includes("--business-demos")) {
   const { createMemoryRedis } = await import("../src/lib/memory-redis.mjs");
   const { runDay } = await import("../scripts/fieldnotes-day.mjs");
   const redis = createMemoryRedis();
@@ -102,4 +117,4 @@ http.createServer(async (req, res) => {
     if (e.code !== "ENOENT") console.error("[dev-site]", e);
     res.status(e.code === "ENOENT" ? 404 : 500).end(e.code === "ENOENT" ? "not found" : "internal error");
   }
-}).listen(port, () => console.log(`site on http://localhost:${port}`));
+}).listen(port, argv.includes("--business-demos") ? "127.0.0.1" : undefined, () => console.log(`site on http://localhost:${port}`));

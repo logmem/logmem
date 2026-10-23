@@ -96,10 +96,13 @@ export function createHandler(getDeps = defaultDeps) {
       }
       const b = body(req);
       if (!b || b.action !== "disconnect") return res.status(400).json({ error: "action must be disconnect" });
-      const rec = await revokeManagedApp(acct.tenant, String(b.fid || ""));
+      const rec = await revokeManagedApp(acct.tenant, String(b.fid || ""), {
+        beforeRemove: async (app) => {
+          const stillUsed = (await listManagedApps(acct.tenant)).some((a) => a.fid !== app.fid && !a.disconnected && a.agent === app.agent);
+          if (!stillUsed) await redis("SREM", `lm:${namespaceFor(acct.tenant)}:agents`, app.agent);
+        },
+      });
       if (!rec) return res.status(200).json({ disconnected: false });
-      const stillUsed = (await listManagedApps(acct.tenant)).some((a) => a.agent === rec.agent);
-      if (!stillUsed) await redis("SREM", `lm:${namespaceFor(acct.tenant)}:agents`, rec.agent);
       return res.status(200).json({ disconnected: true });
     } catch (e) {
       return sendServerError(res, "connections", e);

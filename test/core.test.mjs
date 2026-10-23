@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
+import { createMirror } from "../src/core/mirror.mjs";
 import { createStore, normTs } from "../src/core/store.mjs";
 import { entryFromAcmi, entryToAcmi, kindFromAcmi, normalizeKind, KINDS, TOOLS } from "../src/core/vocab.mjs";
 import { parseRef } from "../src/core/keys.mjs";
@@ -60,6 +61,26 @@ test("store: writes go to lm:{space}:*, ts in ms, exact duplicates collapse", as
   assert.ok(keys.every((k) => k.startsWith("lm:acme:")), keys.join(","));
   const [score] = (await redis("ZRANGE", "lm:acme:channel:c:log", 0, -1, "WITHSCORES")).slice(1);
   assert.equal(Number(score), 1791731538741);
+});
+
+test("store: caller cannot replace the connection's mirror policy", async () => {
+  const redis = createMemoryRedis();
+  const on = createStore(redis, { space: "madez", mirror: createMirror(redis, "madez") });
+  const off = createStore(redis, { space: "madez" });
+  const entry = { ts: 1791731538741, kind: "memo", by: "agent:a", summary: "policy" };
+  await on.append("channel", "c", { ...entry, trail: "on", mirror: "off" });
+  await off.append("channel", "c", { ...entry, trail: "off", mirror: "on" });
+  const log = await off.readLog("channel", "c");
+  assert.deepEqual(log.map((e) => e.mirror), ["on", "off"]);
+  assert.equal(await redis("ZCARD", "acmi:madez:thread:c:timeline"), 1);
+});
+
+test("store: rollback removes an entry using its original unstamped fields", async () => {
+  const s = createStore(createMemoryRedis(), { space: "madez" });
+  const entry = { ts: 1791731538741, kind: "memo", by: "agent:a", trail: "rollback", summary: "rollback" };
+  await s.append("channel", "c", entry);
+  assert.equal(await s.removeEntry("channel", "c", entry), 1);
+  assert.equal(await s.logSize("channel", "c"), 0);
 });
 
 test("store: same-ms entries keep append order", async () => {
