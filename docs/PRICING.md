@@ -27,8 +27,9 @@ Three rules:
 | Price / month | $0 | $0 | **$19** | **$49** | **$99** | **$199** | Contact sales |
 | Hosting | your Redis | hosted | hosted | hosted | hosted | hosted | hosted, BYOC or on-prem |
 | Spaces | unlimited | 1 | 1 | 3 | 10 | 30 client spaces | custom |
-| Agents | unlimited | 3 | 5 | 25 | unlimited | unlimited | unlimited |
-| Entries / month | unlimited | 10k | 50k | 150k | 500k | 1.5M | custom |
+| Agents | unlimited | 2 | 5 | 25 | unlimited | unlimited | unlimited |
+| Entries / month | unlimited | 1k | 10k | 50k | 150k | 500k | custom |
+| Recalls / month | unlimited | 100 | 1k | 5k | 15k | 50k | custom |
 | History | yours | 7 days | 30 days | 90 days | 1 year | 1 year | custom |
 | Human approvers | yes | owner only | owner only | 3 seats | 10 seats | 25 seats | unlimited |
 | Webhooks, Slack / Mattermost approvals | yes | no | no | yes | yes | yes | yes |
@@ -43,6 +44,10 @@ annual prices, so we do.
 
 ## Why each step exists
 
+- **Free.** Free is one tenth of what the LogMem fleet itself uses in a month (Mikey's ruling of 2026-10-20).
+  The fleet wrote 2,183 entries in the 7 days to Oct 21 (about 9,360 a month) with 15 agents and 1 space.
+  So Free is 1,000 entries, 2 agents, 1 space and 100 recalls a month. Recalls are not logged, so recall keeps
+  the 10:1 ratio of entries to recalls. Enough to feel LogMem work with two agents, not enough to run a team on.
 - **Free → Dev ($19).** $19-20 is the market's first paid price (Mem0 Starter $19, Supermemory Pro $19, Letta Pro
   $20). It gives a solo developer an easy first payment. Free keeps only 7 days of history so that people who use
   it seriously move up.

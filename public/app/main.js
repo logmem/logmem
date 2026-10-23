@@ -8,6 +8,7 @@ import { drawRender, drawerOpen, closeDrawer, setSyncHook } from './drawer.js';
 import { renderView, refreshFrame, renderBare, setShellHooks, currentRoute, setTitle, LIVE_LABEL } from './shell.js';
 import { pages, setOkHook } from './views.js';
 import { openSearch, searchOpen, closeSearch } from './search.js';
+import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 
 // ─── responses, sign-in ──────────────────────────────────────────────
 function ok(d) {
@@ -39,6 +40,7 @@ function login(msg) {
   draw();
 }
 setOkHook(ok);
+setWalkOkHook(ok);
 setSignedOutHook(login);
 setShellHooks({
   space: (s) => { state.space = s; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
@@ -47,6 +49,7 @@ setShellHooks({
 
 // ─── router ──────────────────────────────────────────────────────────
 function route() {
+  cancelWalkLoads();
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
   return Promise.resolve(page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined)).catch((e) => {

@@ -17,7 +17,7 @@ import tokenHandler from "../api/oauth/token.mjs";
 import { resolveAuth, __clearTargetCache } from "../src/http/auth.mjs";
 import { isBlockedIp } from "../src/http/net-guard.mjs";
 import { migrateLegacy } from "../scripts/oauth-legacy-seal.mjs";
-import { oauthRedis, withEnv, mockReq, mockRes, consentSession, TEST_KEK_HEX } from "./oauth-helpers.mjs";
+import { oauthRedis, withEnv, mockReq, mockRes, consentSession, callbackOf, TEST_KEK_HEX } from "./oauth-helpers.mjs";
 
 afterEach(() => {
   __setRedisForTests(null);
@@ -72,8 +72,7 @@ test("review #9: consent POST requires a CSRF token bound to the cookie nonce an
     assert.equal([...r.data.keys()].filter((k) => k.startsWith("lm:oauth:code:")).length, 0);
     // the genuine form works
     const ok = await post({ csrf_token }, { cookie });
-    assert.equal(ok.statusCode, 302);
-    assert.equal(new URL(ok.getHeader("location")).searchParams.get("error"), "access_denied");
+    assert.equal(callbackOf(ok).searchParams.get("error"), "access_denied");
   });
 });
 

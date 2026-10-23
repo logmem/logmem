@@ -47,9 +47,15 @@ These are the main env settings on the deploy:
 | `LOGMEM_DEPLOY_REDIS_URI` (or `LOGMEM_DEPLOY_REST_URL` and `_TOKEN`) | Where sign-in records live. Keep it separate from shared team data |
 | `LOGMEM_OAUTH_KEK` | 32 random bytes. It seals stored connection credentials |
 | `LOGMEM_ADMIN_PASSWORD` | The web app's admin sign-in |
+| `LOGMEM_DECIDE_SECRET` | The secret that signs human decisions |
 | `LOGMEM_MANAGED=1`, `LOGMEM_CUSTOMER_REDIS_URI`, `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | Managed accounts with one-click connect |
 
-Make each key with `openssl rand -base64 32`, piped straight to the clipboard, and save it in your vault before the deploy settings.
+Generate `LOGMEM_OAUTH_KEK`, `LOGMEM_ADMIN_PASSWORD` and `LOGMEM_DECIDE_SECRET` locally. Use a separate `openssl rand -base64 32` result for each.
+Pipe each result straight to the clipboard. Save it in your vault before adding it to the deploy settings.
+
+Copy `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` from your Clerk application. Do not generate replacement Clerk keys locally.
+Get Redis URIs and REST credentials from your Redis operator or provider. Use separate deploy and customer stores.
+Set `LOGMEM_MANAGED=1` only when you configure managed accounts with the required customer store and Clerk credentials.
 
 ## 4. Key layout
 

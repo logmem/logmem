@@ -12,7 +12,22 @@ const here = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
 const port = Number(argv.includes("--port") ? argv[argv.indexOf("--port") + 1] : 4317);
 
-if (argv.includes("--seed")) {
+if (argv.includes("--business-demos")) {
+  // Deliberately isolated local examples. Never connect this flag to a real backend.
+  if (process.env.VERCEL_ENV === "production") throw new Error("Business demos are local only");
+  const { createMemoryRedis } = await import("../src/lib/memory-redis.mjs");
+  const { seedBusinessDemos, BUSINESS_DEMOS } = await import("./seed-business-demos.mjs");
+  const redis = createMemoryRedis();
+  await seedBusinessDemos(redis);
+  globalThis.__lmDevRedis = redis;
+  delete process.env.LOGMEM_REDIS_URI;
+  delete process.env.ACMI_REDIS_URI;
+  process.env.LOGMEM_REST_URL = "memory://business-demos";
+  process.env.LOGMEM_REST_TOKEN = "local-synthetic-demo";
+  process.env.LOGMEM_VIEW_SPACES = BUSINESS_DEMOS.map(d => d.id).join(",");
+}
+
+if (argv.includes("--seed") && !argv.includes("--business-demos")) {
   const { createMemoryRedis } = await import("../src/lib/memory-redis.mjs");
   const { runDay } = await import("../scripts/fieldnotes-day.mjs");
   const redis = createMemoryRedis();
@@ -32,6 +47,8 @@ if (argv.includes("--seed")) {
   await call("logmem_stage", { job: "i15-photos", stage: "blocked", blocked_on: { type: "agent", ref: "atlas", note: "Atlas has the raw photos and has not sent them." } });
   await call("logmem_stage", { job: "i15-list", stage: "blocked", blocked_on: { type: "external", note: "The email provider's import is down." } });
   await call("logmem_handoff", { to: "human:admin", where: "job:i15-sponsor", summary: "Approve the sponsor's logo and link in the newsletter tool", walkthrough: { time: "3 min", place: "Newsletter tool", done_when: "The sponsor block shows the new logo.", reply: "[handoff @quill] Sponsor block is approved.", steps: [{ title: "Open the issue 15 draft", detail: "Drafts, then Issue 15." }, { title: "Check the sponsor logo", detail: "It should be the green version." }, { title: "Check the link", cmd: "https://example.com/sponsor" }] } });
+  // A walkthrough with where to go and what you should see (the walkthrough player).
+  await call("logmem_handoff", { to: "human:admin", where: "job:i15-subject", summary: "Set up the subject line test in the newsletter tool", walkthrough: { done_when: "Both subject lines show in the test panel.", reply: "[handoff @quill] Subject test is set: A and B at 50/50.", steps: [{ title: "Open the newsletter tool", go: "https://example.com/newsletter", see: "The Issue 15 draft in your list" }, { title: "Turn on the A/B test", go: "Issue 15 › Settings › Subject test", detail: "Pick a 50/50 split on 20% of the list.", see: "A green 'Test on' tag next to the subject" }, { title: "Paste subject B", cmd: "The river came back. So did 400 volunteers.", see: "Subject A and Subject B side by side" }] } });
   await call("logmem_ask", { question: "Send issue 15 to 2,184 subscribers on Tue at 9 am?", action: "Schedule the issue-15 campaign to list 'main' for Tue Oct 27, 09:00 ET.", where: "job:i15-subject" });
   await redis("HSET", "lm:fieldnotes:job:i15-draft-done:now", "stage", JSON.stringify("active"));
   // Lanes demo: issue 15 is the P0 lane, a podcast plan is active, the shop is parked, and one job parks inside the P0 lane.
@@ -100,4 +117,4 @@ http.createServer(async (req, res) => {
     if (e.code !== "ENOENT") console.error("[dev-site]", e);
     res.status(e.code === "ENOENT" ? 404 : 500).end(e.code === "ENOENT" ? "not found" : "internal error");
   }
-}).listen(port, () => console.log(`site on http://localhost:${port}`));
+}).listen(port, argv.includes("--business-demos") ? "127.0.0.1" : undefined, () => console.log(`site on http://localhost:${port}`));

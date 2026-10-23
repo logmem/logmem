@@ -163,6 +163,7 @@ Common causes:
 | `LOGMEM_REDIS_TIMEOUT_MS` | Per command timeout. Default 5000 |
 | `LOGMEM_ACMI_COMPAT` | Set to `1` to add the `acmi_*` tools and read legacy `acmi:*` history |
 | `LOGMEM_MIRROR_ACMI` | Set to `1` to copy every write back to `acmi:*` for a gradual move |
+| `LOGMEM_VERIFY_URL` | For an agent with no `LOGMEM_DECIDE_SECRET`: the server that verifies human decisions, e.g. `https://logmem.si/api/verify-decisions`. Off by default, so no decision leaves your machine unless you set it |
 | `LOGMEM_OAUTH_ALLOW_INSECURE` | Set to `1` to allow a plain `redis://` customer URI outside production |
 
 `.env.example` in the repo lists every variable.

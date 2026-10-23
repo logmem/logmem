@@ -8,23 +8,20 @@
     {
       "name": "logmem_start",
       "title": "Start",
-      "description": "Become an agent and begin a shift. Use this when someone says \"logmem start <agent>\". If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
+      "description": "Become an agent and begin a shift. Use this when someone says \"logmem start\" or \"logmem start <agent>\". With no agent, LogMem starts the agent this connection was set to. If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "agent": {
             "type": "string",
-            "description": "Agent to become, e.g. 'quill' or 'agent:quill'"
+            "description": "Agent to become, e.g. 'quill'. Leave out to start the agent this connection is set to"
           },
           "model": {
             "type": "string",
             "description": "Model id running this shift (optional)"
           }
         },
-        "additionalProperties": false,
-        "required": [
-          "agent"
-        ]
+        "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
@@ -213,7 +210,7 @@
           "walkthrough": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Person handoffs only: { steps: [{ title, detail?, cmd? }], time?, place?, done_when?, reply?, due? }"
+            "description": "Person handoffs only: { steps: [{ title (what to do), go? (where to go), detail?, cmd?, see? (what they should see) }], time?, place?, done_when?, reply?, due? }"
           }
         },
         "additionalProperties": false,

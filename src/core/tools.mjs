@@ -176,6 +176,22 @@ const camel = (s) =>
  */
 export const makeTrail = (kind, id, ts) => `${camel(`${kind}-${id}`)}-${ts}-${trailNonce()}`;
 
+export const NO_BOUND_AGENT =
+  "No agent is set for this connection. Say 'logmem start <name>', or set LOGMEM_AGENT in this client's LogMem config.";
+
+/** The first-start welcome: the three habits, each with one example call. */
+export function welcome(agent) {
+  return {
+    agent,
+    message: `Welcome, ${agent}. This is your first shift. Three habits keep the team in sync.`,
+    habits: [
+      { habit: "Read the Brief first. It holds your last Recap, your Now and handoffs waiting for you.", example: { tool: "logmem_brief", args: {} } },
+      { habit: "Write as you go: one entry for each change, in plain words.", example: { tool: "logmem_note", args: { where: "channel:agent-coordination", kind: "progress", summary: `${agent} is connected and read its Brief.` } } },
+      { habit: "Recap before you stop: what you did and what comes next.", example: { tool: "logmem_recap", args: { notes: "What I did this shift.", next: ["What the next shift does first."] } } },
+    ],
+  };
+}
+
 export function me(ctx) {
   if (!ctx.shift) throw new Error("no open shift (call logmem_start)");
   return ctx.shift.agent;
@@ -278,6 +294,10 @@ async function brief(ctx, agent) {
   const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
+  // No signing key here (a local agent): ask the trusted server which decisions verify.
+  if (!usableSecret(verify.secret) && ctx.verifyUrl) {
+    verify.remote = await remoteVerified([...week, ...log.slice(0, 20), ...state.claims.values()], { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
+  }
   const tasks = await blockersFrom(s, agentRef(a));
   const asks = asksOf(a, week, { ...verify, ...state });
   return {
@@ -325,9 +345,9 @@ async function needsPeople(store, tasks, pending) {
  * nothing counts as answered (fail closed). See settledFor for which answer
  * wins.
  */
-export function asksOf(a, entries, { secret, space, registry, claims } = {}) {
+export function asksOf(a, entries, { secret, space, registry, claims, remote } = {}) {
   const canon = canonicalAsks(entries.filter((e) => e.by === agentRef(a)), registry);
-  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims });
+  const { answers, deferrals } = decisionsFor(canon, entries, { secret, space, claims, remote });
   const ask = (x) => ({ trail: x.trail, question: x.summary, action: x.action, reversible: x.reversible === true, where: x.where, to: x.to ?? null, asked_at: x.ts });
   const deferred = (t) => {
     const d = deferrals.get(t);
@@ -352,16 +372,21 @@ export const TOOLS = [
     name: "logmem_start",
     title: "Start",
     description:
-      "Become an agent and begin a shift. Use this when someone says \"logmem start <agent>\". If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
+      "Become an agent and begin a shift. Use this when someone says \"logmem start\" or \"logmem start <agent>\". With no agent, LogMem starts the agent this connection was set to. If another agent was working in this session, LogMem writes their Recap first, then starts the new one. Returns the new agent's Brief.",
     params: params({
-      agent: { type: "string", desc: "Agent to become, e.g. 'quill' or 'agent:quill'" },
+      agent: { type: "string", desc: "Agent to become, e.g. 'quill'. Leave out to start the agent this connection is set to", optional: true },
       model: { type: "string", desc: "Model id running this shift (optional)", optional: true },
     }),
     annotations: WRITE,
     async run({ agent, model }, ctx) {
-      const { shift, events } = await ctx.shifts.start(agent, { modelId: model });
+      const name = agent == null || String(agent).trim() === "" ? ctx.shifts.boundAgent() : agent;
+      if (!name) throw new Error(NO_BOUND_AGENT);
+      const first = (await ctx.store.recentShifts(agentId(checkAgentId(name)), 1)).length === 0;
+      const { shift, events } = await ctx.shifts.start(name, { modelId: model });
       ctx.shift = shift;
-      return { ok: true, started: shift, switch: events, brief: await brief(ctx, shift.agent) };
+      const out = { ok: true, started: shift, switch: events, brief: await brief(ctx, shift.agent) };
+      if (first) out.welcome = welcome(shift.agent);
+      return out;
     },
   },
   {
@@ -427,7 +452,7 @@ export const TOOLS = [
       trail: { type: "string", desc: "Trail id (auto if omitted). Refused when that trail is already used on the receiver", optional: true },
       origin: { type: "string", desc: "Trail id this handoff follows from", optional: true },
       create_agent: { type: "boolean", desc: "Hand off to an agent that is not in the roster yet (default false: refuse unknown agents)", optional: true },
-      walkthrough: { type: "object", desc: "Person handoffs only: { steps: [{ title, detail?, cmd? }], time?, place?, done_when?, reply?, due? }", optional: true },
+      walkthrough: { type: "object", desc: "Person handoffs only: { steps: [{ title (what to do), go? (where to go), detail?, cmd?, see? (what they should see) }], time?, place?, done_when?, reply?, due? }", optional: true },
     }),
     annotations: WRITE,
     async run({ to, summary, where: whereRef, trail, origin, create_agent, walkthrough }, ctx) {
@@ -717,18 +742,22 @@ export const TOOLS = [
       }
       // Check the owner before the plan, so a refused call writes nothing (not even "general").
       const own = agentRef(owner == null ? me(ctx) : checkAgentId(owner, "owner"));
+      const defaultPlan = details?.plan == null || details.plan === "" || details.plan === "general";
       let filed;
       try {
-        filed = await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
+        // General is created only after the assignment passes write admission.
+        filed = defaultPlan ? { plan: "general", filed: details?.plan !== "general" }
+          : await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
       } catch (e) {
         if (e instanceof PlanError) return { ok: false, error: e.message };
         throw e;
       }
       const who = { title, owner: own, created_by: agentRef(me(ctx)), created_at: clock(ctx), ...details, plan: filed.plan };
+      const entry = await write(ctx, "job", id, { kind: "assigned", summary: `New job: ${title}` });
+      if (defaultPlan) await planForJob(ctx.store, details?.plan, { now: () => clock(ctx) });
       await ctx.store.setWho("job", id, who);
       await ctx.store.setNow("job", id, { stage: "open", owner: own });
       await ctx.store.addJobSession(id, ctx.shift.shift);
-      const entry = await write(ctx, "job", id, { kind: "assigned", summary: `New job: ${title}` });
       return { ok: true, job: id, who, entry, ...(filed.filed ? { note: "No plan given: filed in 'general'. Move it with a plan when you know where it belongs." } : {}) };
     },
   },
@@ -790,8 +819,8 @@ export const TOOLS = [
     annotations: WRITE,
     async run({ job, summary, kind, trail, origin }, ctx) {
       const { id } = parseRef(job, "job");
-      await ctx.store.addJobSession(id, ctx.shift.shift);
       const entry = await write(ctx, "job", id, { kind: kind || "progress", summary, trail, origin });
+      await ctx.store.addJobSession(id, ctx.shift.shift);
       return { ok: true, job: id, entry };
     },
   },
@@ -823,10 +852,10 @@ export const TOOLS = [
         }
       }
       const fields = { stage, stage_at: clock(ctx), blocked_on: stage === "blocked" ? reason : null };
-      const now = await ctx.store.setNow("job", id, fields);
       const kind = { blocked: "stuck", done: "done" }[stage] || "progress";
       const text = stage === "blocked" ? (reason.parked ? `parked${reason.until ? ` until ${reason.until}` : ""}: ${note || reason.note}` : `blocked on ${reason.type}${reason.ref ? ` ${reason.ref}` : ""}: ${note || reason.note}`) : note ? `${stage}: ${note}` : `Stage -> ${stage}`;
       const entry = await write(ctx, "job", id, { kind, summary: text.slice(0, LIMITS.summary), ...(reason ? { payload: { blocked_on: reason } } : {}) });
+      const now = await ctx.store.setNow("job", id, fields);
       return { ok: true, job: id, now, entry, ...(warning ? { warning } : {}) };
     },
   },
@@ -1087,8 +1116,8 @@ export async function askState(store, entries) {
 }
 
 /** True when decided entry `d` answers canonical ask `c`: signature verifies and it signed c's hash. */
-function answersAsk(d, c, { secret, space }) {
-  return !!c && c.answerable && !!d && d.kind === "decided" && d.legacy !== true && d.origin === c.ask.trail && d.payload?.ask_hash === c.hash && verifyDecision(d, { secret, space });
+function answersAsk(d, c, { secret, space, remote }) {
+  return !!c && c.answerable && !!d && d.kind === "decided" && d.legacy !== true && d.origin === c.ask.trail && d.payload?.ask_hash === c.hash && verifyDecision(d, { secret, space, remote });
 }
 
 /**
@@ -1102,18 +1131,18 @@ function answersAsk(d, c, { secret, space }) {
  *   - a defer never settles; the latest valid defer is reported.
  * Returns { answers: Map trail -> entry, deferrals: Map trail -> entry }.
  */
-export function decisionsFor(canon, entries, { secret, space, claims = new Map() } = {}) {
+export function decisionsFor(canon, entries, { secret, space, claims = new Map(), remote } = {}) {
   const answers = new Map();
   const deferrals = new Map();
   for (const [t, c] of canon) {
     const d = claims.get(t);
-    if (d && SETTLES.includes(d.payload?.verdict) && answersAsk(d, c, { secret, space })) answers.set(t, d);
+    if (d && SETTLES.includes(d.payload?.verdict) && answersAsk(d, c, { secret, space, remote })) answers.set(t, d);
   }
   // `entries` are newest first. Walk them oldest first (by ts, ties keep that
   // order reversed) so the earliest settling answer and the latest defer win.
   const decided = (entries || [])
     .map((e, i) => ({ e, i }))
-    .filter(({ e }) => e && e.kind === "decided" && answersAsk(e, canon.get(e.origin), { secret, space }))
+    .filter(({ e }) => e && e.kind === "decided" && answersAsk(e, canon.get(e.origin), { secret, space, remote }))
     .sort((x, y) => x.e.ts - y.e.ts || y.i - x.i)
     .map(({ e }) => e);
   for (const e of decided) {
@@ -1125,12 +1154,88 @@ export function decisionsFor(canon, entries, { secret, space, claims = new Map()
 }
 
 /** Mark decided rows that don't answer their canonical ask (unsigned, forged, altered ask) as unverified. */
-export function annotateDecisions(entries, { secret, space, canon = new Map() } = {}) {
+export function annotateDecisions(entries, { secret, space, canon = new Map(), remote } = {}) {
   return (entries || []).map((e) => {
     if (!e || e.kind !== "decided") return e;
-    if (answersAsk(e, canon.get(e.origin), { secret, space })) return e;
+    if (answersAsk(e, canon.get(e.origin), { secret, space, remote })) return e;
     return { ...e, unverified: true, payload: { ...(e.payload || {}), unverified: true } };
   });
+}
+
+// ─── Remote verification (local agents hold no signing key) ─────────────
+// The server that signs decisions answers which ones verify; it never shares
+// the key. A verified answer is bound to every signed field plus the sig, so
+// a valid sig moved onto an altered decision never matches.
+/** The key a remote verification is bound to: the signed message and the sig. */
+export const remoteKey = (e, space) =>
+  `${decisionMessage({ space, origin: e.origin, ask_hash: e.payload?.ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts })}|${e.payload?.sig}`;
+
+/** The wire form of a decided entry for /api/verify-decisions. */
+const wireDecision = (e) => ({ origin: e.origin, ask_hash: e.payload?.ask_hash ?? null, verdict: e.payload?.verdict, note: e.payload?.note ?? null, by: e.by, ts: e.ts, sig: e.payload?.sig });
+
+/** Decisions per request: the endpoint refuses more. */
+export const REMOTE_VERIFY_MAX = 200;
+/**
+ * Decisions per Brief: the Brief reads at most 2,000 entries for the week, so
+ * this covers every one in at most 10 requests, sent at the same time.
+ */
+export const REMOTE_VERIFY_TOTAL = 2000;
+export const REMOTE_VERIFY_TIMEOUT_MS = 4000;
+
+/**
+ * Ask the trusted server which decided entries verify. Returns a Set of
+ * remoteKey()s. Sends them in batches of REMOTE_VERIFY_MAX, so decisions past
+ * the first 200 are verified too (codex on PR 102). Each batch fails closed on
+ * its own: a network, status or shape failure verifies nothing in that batch.
+ */
+export async function remoteVerified(entries, { space, url, fetchImpl = globalThis.fetch, timeoutMs = REMOTE_VERIFY_TIMEOUT_MS } = {}) {
+  const seen = new Set();
+  const list = [];
+  for (const e of entries || []) {
+    if (!e || e.kind !== "decided" || typeof e.payload?.sig !== "string" || e.payload?.ask_hash == null) continue;
+    const k = remoteKey(e, space);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    list.push({ e, k });
+    if (list.length >= REMOTE_VERIFY_TOTAL) break;
+  }
+  const out = new Set();
+  if (!list.length || !url || typeof fetchImpl !== "function") return out;
+  const batches = [];
+  for (let i = 0; i < list.length; i += REMOTE_VERIFY_MAX) batches.push(list.slice(i, i + REMOTE_VERIFY_MAX));
+  const results = await Promise.all(batches.map((b) => verifyBatch(b, { space, url, fetchImpl, timeoutMs })));
+  for (const keys of results) for (const k of keys) out.add(k);
+  return out;
+}
+
+/** One request for up to REMOTE_VERIFY_MAX decisions. Returns the keys that verify, or none on any failure. */
+async function verifyBatch(batch, { space, url, fetchImpl, timeoutMs }) {
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ space, decisions: batch.map((x) => wireDecision(x.e)) }),
+      redirect: "error",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return [];
+    const j = await res.json();
+    if (!Array.isArray(j?.valid)) return [];
+    return j.valid.filter((i) => Number.isInteger(i) && i >= 0 && i < batch.length).map((i) => batch[i].k);
+  } catch {
+    return [];
+  }
+}
+
+/** Which of `decisions` (wire form) verify for `space` under `secret`. Returns their indexes. */
+export function verifyWireDecisions(space, decisions, secret) {
+  const valid = [];
+  (decisions || []).slice(0, REMOTE_VERIFY_MAX).forEach((d, i) => {
+    if (!d || typeof d !== "object") return;
+    const e = { kind: "decided", origin: d.origin, by: d.by, ts: d.ts, payload: { ask_hash: d.ask_hash, verdict: d.verdict, note: d.note, sig: d.sig } };
+    if (verifyDecision(e, { secret, space })) valid.push(i);
+  });
+  return valid;
 }
 
 /** HMAC-SHA256 (hex) over a decision. `ask_hash`, or `ask` (hashed here). Throws if the secret is unusable. */
@@ -1147,8 +1252,8 @@ export function signDecision(fields, secret) {
  * signed ask_hash): changing any field a person saw fails. False for anything
  * unsigned, tampered, from another space, or when the secret is missing.
  */
-export function verifyDecision(e, { secret, space, ask } = {}) {
-  if (!e || e.kind !== "decided" || !e.origin || !isHuman(e.by) || !usableSecret(secret)) return false;
+export function verifyDecision(e, { secret, space, ask, remote } = {}) {
+  if (!e || e.kind !== "decided" || !e.origin || !isHuman(e.by)) return false;
   const sig = e.payload?.sig;
   if (typeof sig !== "string" || !/^[0-9a-f]{64}$/.test(sig)) return false;
   let ask_hash = e.payload?.ask_hash;
@@ -1157,6 +1262,10 @@ export function verifyDecision(e, { secret, space, ask } = {}) {
     const want = askDigest(ask);
     if (ask_hash != null && ask_hash !== want) return false;
     ask_hash = want;
+  }
+  if (!usableSecret(secret)) {
+    // No key here: only a decision the trusted server verified, field for field, counts.
+    return remote instanceof Set && e.payload?.ask_hash != null && e.payload.ask_hash === ask_hash && remote.has(remoteKey(e, space));
   }
   const want = createHmac("sha256", secret)
     .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
