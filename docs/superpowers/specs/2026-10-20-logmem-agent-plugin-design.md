@@ -60,7 +60,7 @@ plugins/logmem/
     logmem/                   copy of skills/logmem
     logmem-decisions/         copy of skills/logmem-decisions
     setup/                    plugin-only onboarding skill
-  assets/                     placeholder logo and composer icon (SVG)
+  assets/                     LogMem logo and symbol copied from public/ds/logos (SVG)
   README.md                   install lines and links
 .agents/plugins/marketplace.json   OpenAI repo marketplace
 .claude-plugin/marketplace.json    Claude Code repo marketplace
@@ -114,12 +114,16 @@ The package is ready before the server is. These gaps block the pilot, not this 
 
 ## 9. Before public submission (not in this PR)
 
-- Real logo, composer icon and screenshots. Check OpenAI's accepted image formats (the placeholders are SVG).
+- Brand logo and symbol are now copied from `public/ds/logos`. Check target image formats and sizes before submission.
+- Capture approved screenshots with provenance before adding directory screenshots.
 - `https://logmem.si/privacy` and `/terms` must exist (sub-project 4).
 - A verified OpenAI developer identity and domain verification for logmem.si.
 - A ZIP build of `plugins/logmem/` that follows no symlinks.
 - Run `claude plugin validate --strict` and the OpenAI plugin guidelines check.
-- Decide the license field. The repo is `UNLICENSED` today.
+- Both plugin manifests now declare the approved MIT license. The package includes `plugins/logmem/LICENSE`.
+
+Package merge does not approve public submission. The package README keeps the current release checklist.
+Repository catalogs do not establish a public directory listing.
 
 ## 10. Pilot test plan
 
@@ -127,7 +131,7 @@ The package is ready before the server is. These gaps block the pilot, not this 
 |---|---|---|
 | Claude Code | `/plugin marketplace add` this repo, then install `logmem` | `/mcp` sign-in, `logmem_connection`, `logmem_start` |
 | Codex desktop | Open this repo; the plugin shows from `.agents/plugins/marketplace.json` | sign-in on install, then the same two calls |
-| ChatGPT | Developer mode, add the plugin or the custom MCP server | the same two calls, plus the API Playground for raw requests |
+| ChatGPT | Public submission pending. Use a custom MCP pilot connection where supported | the same two calls |
 | claude.ai | Custom connector with `https://logmem.si/mcp` | the same two calls |
 
 Each pilot user runs the evaluation set from the review: a direct request, an indirect one, a follow-up, a write, and an unsupported request.

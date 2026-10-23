@@ -9,7 +9,7 @@
   },
   "homepage": "https://logmem.si",
   "repository": "https://github.com/madezmedia/logmem",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "keywords": [
     "memory",
     "agents",

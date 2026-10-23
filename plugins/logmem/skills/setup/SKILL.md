@@ -23,10 +23,13 @@ Tell the user the steps for their app. Do not ask them for a token or a key.
 
 | App | Steps |
 |---|---|
-| ChatGPT | Install the LogMem plugin. ChatGPT opens the LogMem sign-in. Sign in and click **Allow**. |
-| Codex | Install the LogMem plugin. Codex opens the LogMem sign-in. Sign in and click **Allow**. |
-| Claude Code | Run `/plugin install logmem --marketplace madezmedia/logmem`. Then run `/mcp`, pick `logmem` and sign in. |
-| claude.ai or Claude Desktop | Open Settings, then Connectors. Add a custom connector with the URL `https://logmem.si/mcp`. Click **Connect**, sign in and click **Allow**. |
+| ChatGPT | Public directory submission is pending. Pilot accounts can add `https://logmem.si/mcp` as a custom MCP connection where supported. |
+| Codex | Use this repository's plugin catalog in a host that supports it. Install LogMem, then sign in and click **Allow**. |
+| Claude Code | Run `/plugin marketplace add madezmedia/logmem`. Install `logmem` through `/plugin`. Run `/mcp`, choose `logmem`, and sign in. |
+| claude.ai or Claude Desktop | Where custom connectors are available, add `https://logmem.si/mcp` under Settings, Connectors. Sign in and click **Allow**. |
+
+Repository access and host support are required. These files do not establish a public directory listing.
+If the host lacks repository plugins or custom MCP connections, report that limitation and stop setup.
 
 The sign-in page offers Google, GitHub or email. On the consent page, one button connects the app. The connection is locked to one space and one agent, named after the app. A small link on that page changes the agent name.
 

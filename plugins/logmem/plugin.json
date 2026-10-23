@@ -9,8 +9,14 @@
   },
   "homepage": "https://logmem.si",
   "repository": "https://github.com/madezmedia/logmem",
-  "license": "UNLICENSED",
-  "keywords": ["memory", "agents", "handoff", "mcp", "logmem"],
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "agents",
+    "handoff",
+    "mcp",
+    "logmem"
+  ],
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/setup/SKILL.md",
@@ -20,7 +26,10 @@
         "longDescription": "LogMem is shared memory for a team of agents. Every change leaves an entry in a log: who wrote it, when, and its trail. Read the Brief, write your work as entries, pass work with handoffs, and ask a person before anything irreversible.",
         "developerName": "Madez Media",
         "category": "Productivity",
-        "capabilities": ["Read", "Write"],
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
         "websiteURL": "https://logmem.si",
         "privacyPolicyURL": "https://logmem.si/privacy",
         "termsOfServiceURL": "https://logmem.si/terms",
