@@ -11,7 +11,8 @@ export const live = { rev: null, needs: 0, stale: [], status: 'live', fails: 0, 
 export function hhmm(ts) {
   const d = new Date(ts);
   const today = new Date().toDateString() === d.toDateString();
-  return (today ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ') + d.toISOString().slice(11, 16);
+  if (!Number.isFinite(d.getTime())) return 'Unknown time';
+  return (today ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ') + new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
 }
 export function ago(ts) {
   if (!ts) return 'never';
@@ -30,7 +31,12 @@ async function asJSON(r) {
   j.__status = r.status;
   return j;
 }
-export function getJSON(url) { return fetch(url, { credentials: 'same-origin' }).then(asJSON); }
+export async function getJSON(url) {
+  const requestedSpace = state.space;
+  const value = await fetch(url, { credentials: 'same-origin' }).then(asJSON);
+  if (requestedSpace !== state.space) value.__stale = true;
+  return value;
+}
 export function api(what, extra) {
   const q = new URLSearchParams(Object.assign({ what }, state.space ? { space: state.space } : {}, extra || {}));
   return getJSON('/api/view?' + q);

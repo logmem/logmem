@@ -27,8 +27,9 @@ const STAGE = { open: ['deferred', 'Open'], active: ['in-progress', 'Active'], b
 export function stage(s) { const x = STAGE[s] || ['deferred', s || 'Open']; return decision(x[0], x[1]); }
 
 export function entry(e) {
+  const timestamp = new Date(e.ts), validTime = Number.isFinite(timestamp.getTime());
   return html`<div class="lm-event" data-k=${e.group || ''}>
-    <time class="lm-event-time time" datetime=${new Date(e.ts).toISOString()}>${hhmm(e.ts)}</time><span class="lm-event-rule" aria-hidden="true"></span>
+    <time class="lm-event-time time" datetime=${validTime ? timestamp.toISOString() : nothing}>${hhmm(e.ts)}</time><span class="lm-event-rule" aria-hidden="true"></span>
     <div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">${e.kind}</span><strong style="font-size:14px">${agentName(e.by)}</strong><span class="lm-event-summary">${e.summary}</span>
       ${e.kind === 'huddle' && e.trail ? html`<button type="button" class="lm-btn lm-btn--ghost" data-open-huddle=${e.trail} data-where=${e.where || ''}>Round table</button>` : nothing}</div>
     <div class="lm-prov"><span>${e.where}</span>${e.trail ? html`<span>trail ${e.trail}</span>` : nothing}${e.origin ? html`<span>↳ origin ${e.origin}</span>` : nothing}${e.via ? html`<span>via ${e.via}</span>` : nothing}${e.unverified ? html`<span>unverified</span>` : nothing}</div></div></div>`;

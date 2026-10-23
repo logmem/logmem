@@ -1,6 +1,19 @@
 // dashboard-model.js — pure dashboard ordering, summaries, and action validation.
 const SAMPLES = new Set(['fieldnotes', 'demo-solo', 'demo-development', 'demo-trades', 'demo-restaurant', 'demo-sales']);
 export const isSampleSpace = space => SAMPLES.has(space);
+export const workFilterKey = space => 'work:' + String(space || '');
+export function groupUpdates(rows, now = Date.now()) {
+  const invalid = [], bySource = new Map();
+  for (const row of rows) {
+    if (!Number.isFinite(row.ts) || row.ts > now) { invalid.push(row); continue; }
+    const where = row.where || 'Unknown source';
+    if (!bySource.has(where)) bySource.set(where, []);
+    bySource.get(where).push(row);
+  }
+  const groups = [...bySource].map(([where, entries]) => ({ where, entries: entries.slice().sort((a,b)=>b.ts-a.ts) }));
+  groups.sort((a,b)=>b.entries[0].ts-a.entries[0].ts || a.where.localeCompare(b.where));
+  return { groups, invalid };
+}
 
 const rank = job => {
   if (job.stage === 'blocked' && job.blocked_on?.parked !== true) {

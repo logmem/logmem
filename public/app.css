@@ -1,4 +1,4 @@
-/* app.css — the live web app: mission control on every screen size.
+/* app.css — the live web app: daily work and evidence on every screen size.
    Spec: docs/superpowers/specs/2026-10-19-logmem-live-app-design.md.
    Tokens come from ds/tokens/logmem.css. Breakpoints: phone < 640,
    tablet 640-1023, laptop 1024-1439, wide >= 1440. */
@@ -267,3 +267,44 @@
   .lmw-savebar{bottom:56px}
 }
 .lmw textarea.lm-input,.lmw-writer textarea.lm-input{height:auto;min-height:88px;padding-top:8px;padding-bottom:8px;resize:vertical}
+
+/* Dashboard foundation: Today, Work, and truthful capability states. */
+.lmx-today-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.lmx-today-heading h1{font:800 clamp(27px,3.5vw,40px)/1.14 var(--font-display,var(--font-sans));letter-spacing:-.045em;margin:10px 0}
+.lmx-today-heading p{margin:0;color:var(--text-muted);font-size:15px;line-height:1.6}
+.lmx-brief{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border:1px solid var(--border);border-radius:var(--radius-lg,14px);background:var(--brand-subtle);padding:20px 22px}
+.lmx-brief p{font-size:16px;line-height:1.65;margin:7px 0 10px;max-width:680px}
+.lmx-brief a,.lmx-text-link,.lmx-update a{color:var(--brand);font-size:13px;font-weight:500;text-underline-offset:3px}
+.lmx-brief>.lmx-meta{white-space:nowrap}
+.lmx-coverage{font-size:12px;line-height:1.6;color:var(--text-muted);padding:0 2px}
+.lmx-coverage summary{cursor:pointer;min-height:28px;display:list-item}
+.lmx-coverage p{margin:6px 0}
+.lmx-today-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(230px,1fr);gap:26px;align-items:start}
+.lmx-today-grid>.lmx-stack{gap:26px}
+.lmx-section-title{font:600 15px/1.4 var(--font-sans);margin:0 0 12px;display:flex;gap:9px;align-items:center}
+.lmx-section-title>span{font-size:12px;color:var(--text-subtle);font-weight:400}
+.lmx-attention-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.lmx-attention{border-top:3px solid var(--decision);padding:18px;gap:12px}
+.lmx-attention h3{font-size:17px;line-height:1.4}
+.lmx-attention .lm-btn{align-self:flex-start;min-height:44px}
+.lmx-update-list{padding:3px 17px}
+.lmx-update{padding:15px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.lmx-update:last-child{border-bottom:0}
+.lmx-update p{font-size:14px;line-height:1.5;margin:7px 0}
+.lmx-text-link{display:inline-flex;align-items:center;min-height:44px}
+.lmx-work-toolbar{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center}
+.lmx-work-toolbar .lmx-tabsbar{margin:0;border:0}
+.lmx-tabsbar button[aria-pressed="true"]{color:var(--brand);border-bottom:2px solid var(--brand);background:var(--brand-subtle)}
+.lmx-work-list{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);overflow:hidden}
+.lmx-work-row{display:grid;grid-template-columns:minmax(160px,1.3fr) minmax(90px,.65fr) minmax(160px,1.5fr) minmax(85px,.6fr);gap:17px;align-items:center;padding:18px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.lmx-work-row:last-child{border-bottom:0}
+.lmx-work-row h3{margin:0 0 6px;font:600 14px/1.45 var(--font-sans)}
+.lmx-work-row h3 a{color:var(--text);text-underline-offset:3px}
+.lmx-settings-links{display:flex;gap:10px;flex-wrap:wrap}
+.lmx-mobile-settings{display:none}
+.lmx-capability-note{border:1px solid var(--border);border-radius:var(--radius-md);padding:15px 18px;background:var(--surface);font-size:13px;line-height:1.6;color:var(--text-muted)}
+.lmx-capability-note strong{color:var(--text)}
+.lmx-capability-note p{margin:5px 0 0}
+.lmx-main .lmx-acts .lm-btn,.lmx-head .lm-btn,.lmx-tabsbar button,.lmx-needs{min-height:44px}
+@media (max-width:1023px){.lmx-today-grid{grid-template-columns:minmax(0,1fr)}.lmx-today-grid>aside{display:grid;grid-template-columns:1fr 1fr;align-items:start}.lmx-work-row{grid-template-columns:minmax(160px,1fr) minmax(90px,.5fr)}.lmx-brief{flex-wrap:wrap;gap:10px}}
+@media (max-width:639px){.lmx-today-heading{gap:12px}.lmx-today-heading h1{font-size:29px}.lmx-brief{padding:17px}.lmx-today-grid>aside{display:flex}.lmx-work-row{grid-template-columns:minmax(0,1fr);gap:10px;padding:16px}.lmx-mobile-settings{display:inline-flex;padding:0 9px}.lmx-head{gap:7px}.lmx-head .lm-crumbs{flex-basis:100%}.lmx-live{font-size:11px}.lmx-work-toolbar{align-items:stretch}.lmx-work-toolbar>a{font-size:12px}.lmx-today-grid{gap:24px}.lmx-brief>.lmx-meta{white-space:normal}.lmx-tabs{grid-template-columns:repeat(4,1fr)}}

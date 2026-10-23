@@ -5,6 +5,8 @@ import { createMemoryRedis } from '../src/lib/memory-redis.mjs';
 import { buildView } from '../src/http/view.mjs';
 import { createHandler } from '../api/work.mjs';
 import { mockReq, mockRes } from './oauth-helpers.mjs';
+import { execFileSync } from 'node:child_process';
+import { filt, state, api } from '../public/app/core.js';
 
 const model = await import('../public/app/dashboard-model.js').catch(e => {
   if (e.code === 'ERR_MODULE_NOT_FOUND') return {};
@@ -98,3 +100,45 @@ test('dashboard: seeded spaces are labeled as samples without mislabeling a real
   assert.equal(model.isSampleSpace?.('madez'), false);
 });
 
+test('dashboard: work layout preferences do not cross space boundaries', () => {
+  const key = space => model.workFilterKey?.(space) || 'jobs';
+  filt(key('demo-solo')).layout = 'list';
+  filt(key('demo-sales')).layout = 'board';
+  assert.equal(filt(key('demo-solo')).layout, 'list');
+  assert.equal(filt(key('demo-sales')).layout, 'board');
+});
+
+test('dashboard: timestamps use the viewer timezone instead of UTC clock digits', () => {
+  const script = "import {hhmm} from './public/app/core.js'; console.log(hhmm(Date.parse('2026-10-23T18:15:00Z')));";
+  const value = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: new URL('..', import.meta.url), env: { ...process.env, TZ:'America/New_York' }, encoding:'utf8',
+  }).trim();
+  assert.ok(value.endsWith('14:15'), value);
+});
+
+test('dashboard: a delayed read cannot replace another selected space', async () => {
+  const oldFetch = globalThis.fetch;
+  let release;
+  globalThis.fetch = async () => new Promise(resolve => { release = resolve; });
+  try {
+    state.space = 'demo-solo';
+    const request = api('home');
+    state.space = 'demo-sales';
+    release({ status:200, json:async()=>({space:'demo-solo',needs_count:9}) });
+    assert.equal((await request).__stale, true);
+  } finally { globalThis.fetch = oldFetch; state.space = null; }
+});
+
+test('dashboard: grouped updates keep work together and disclose future timestamps', () => {
+  const rows = [
+    {ts:10,where:'job:a',kind:'progress',summary:'First'},
+    {ts:30,where:'job:b',kind:'done',summary:'Finished'},
+    {ts:20,where:'job:a',kind:'handoff',summary:'Review'},
+    {ts:200,where:'job:c',kind:'progress',summary:'Future'},
+    {ts:'bad',where:'job:c',kind:'progress',summary:'Invalid'},
+  ];
+  const r = model.groupUpdates?.(rows, 100);
+  assert.deepEqual(r?.groups.map(g=>[g.where,g.entries.map(e=>e.summary)]), [['job:b',['Finished']],['job:a',['Review','First']]]);
+  assert.equal(r?.invalid.length, 2);
+  assert.equal(rows.length, 5);
+});
