@@ -40,6 +40,14 @@
     {
       "source": "/api/lane",
       "destination": "/api/work?op=lane"
+    },
+    {
+      "source": "/api/confirm-done",
+      "destination": "/api/work?op=confirm_done"
+    },
+    {
+      "source": "/api/keep-open",
+      "destination": "/api/work?op=keep_open"
     }
   ],
   "cleanUrls": true,
@@ -47,6 +55,10 @@
     {
       "path": "/api/cron/dogfood-check",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "30 13 * * *"
     }
   ],
   "headers": [

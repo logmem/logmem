@@ -1,13 +1,15 @@
 // cards.js — the shared parts (live app spec, section 3): one job card, one plan card, one agent
 // chip, one task card, one decision card, one lane card. Every view is built from these.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { num, ago, agentName, glow, toast, state } from './core.js';
+import { num, ago, agentName, glow, toast, state, live } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
 import { openDrawer } from './drawer.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
 const jobLink = (id, title) => html`<a href=${`#/job/${encodeURIComponent(id)}`} @click=${openJob(id)}>${title}</a>`;
+/** Overdue with no entry for 48 hours (the reconciler's last report). */
+export const staleTag = (id) => ((live.stale || []).includes(id) ? html`<span class="lm-badge lm-badge--warning" title="Overdue, and nothing written for 48 hours">Stale</span>` : nothing);
 const noteBox = (key, ph, required) => html`<input class="lm-input" data-note-for=${key} maxlength="300" placeholder=${ph} aria-label=${ph} ?required=${required}>`;
 const WAIT = { task: 'Waits on a task for a person', decision: 'Waits on a decision', agent: 'Waits on agent', external: 'Waits on something outside the team' };
 
@@ -74,7 +76,16 @@ export function askCard(a, { select } = {}) {
     <div class="lm-approval-foot"><input class="lm-input" data-note-for=${'ask:' + a.trail} maxlength="1000" autocomplete="off" placeholder="Note for the agent (optional)" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">
       ${btn('Approve', 'primary', (e) => decide(e, a, 'approve'))}${btn('Reject', 'danger', (e) => decide(e, a, 'reject'))}${btn('Defer', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
 }
+/** A "looks done?" suggestion from the reconciler: the evidence, then Close it or Still open. */
+export function suggestionCard(i) {
+  return html`<article class="lmx-card" data-key=${'suggestion:' + i.job}>
+    <div class="lmx-meta">Looks done? · ${[i.plan, i.job].filter(Boolean).join(' › ')}</div><h3>${jobLink(i.job, i.summary)}</h3>
+    <div class="lmx-why">${i.evidence}</div>
+    <div class="lmx-meta">${joinDot([i.owner ? 'owner ' + agentName(i.owner) : '', i.created_at ? 'checked ' + ago(i.created_at) : ''])}</div>
+    <div class="lmx-acts">${noteBox(`confirm-done:${i.job}`, 'Note (optional)')}${btn('Close it', 'primary', (e) => doWork(e, 'confirm-done', i.job))}${btn('Still open', 'secondary', (e) => doWork(e, 'keep-open', i.job))}</div></article>`;
+}
 export function needItem(i, opts) {
+  if (i.type === 'suggestion') return suggestionCard(i);
   return i.type === 'task' ? taskCard(i) : html`<div data-key=${'decision:' + i.trail}><div class="lmx-meta" style="margin:0 0 4px">Decision · ${[i.plan, i.job].filter(Boolean).join(' › ')}</div>${askCard(i.ask, opts)}</div>`;
 }
 
@@ -82,13 +93,13 @@ export function needItem(i, opts) {
 export function boardCard(j, route) {
   return html`<article class="lmx-card ${glow(route, 'job:' + j.id)}" tabindex="0" data-key=${'job:' + j.id} data-w=${j.stage === 'blocked' ? (j.blocked_on ? j.blocked_on.type : 'none') : nothing}>
     <h3>${jobLink(j.id, j.title)}</h3>
-    <div class="lmx-meta">${joinDot([[j.plan, j.track].filter(Boolean).join(' › '), j.owner ? agentName(j.owner) : '', dueTag(j.due, j.stage)])}</div>
+    <div class="lmx-meta">${joinDot([[j.plan, j.track].filter(Boolean).join(' › '), j.owner ? agentName(j.owner) : '', dueTag(j.due, j.stage)])} ${staleTag(j.id)}</div>
     ${j.stage === 'blocked' ? html`<div class="lmx-why">${j.blocked_on ? html`${waitsTag(j.blocked_on)} ${j.blocked_on.note}` : html`<span class="lmx-flag">No reason given</span>`}</div>`
       : j.last ? html`<div class="lmx-why">${j.last.summary} <span class="subtle">${ago(j.last.ts)}</span></div>` : nothing}</article>`;
 }
 export function planRow(i) {
   return html`<div class="lmx-prow" data-key=${'job:' + i.id}>${jobLink(i.id, i.title)}<span>${stage(i.stage)}</span>
-    <span class="lmx-meta">${joinDot([i.owner ? agentName(i.owner) : '', dueTag(i.due, i.stage)])}</span>
+    <span class="lmx-meta">${joinDot([i.owner ? agentName(i.owner) : '', dueTag(i.due, i.stage)])} ${staleTag(i.id)}</span>
     <span>${i.stage === 'blocked' ? (i.blocked_on ? waitsTag(i.blocked_on) : html`<span class="lmx-flag">No reason</span>`) : nothing}</span></div>`;
 }
 export function agentCard(a) {
