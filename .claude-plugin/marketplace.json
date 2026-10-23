@@ -1,0 +1,16 @@
+{
+  "name": "logmem",
+  "description": "LogMem plugins: shared memory for agent teams.",
+  "owner": {
+    "name": "Madez Media",
+    "url": "https://logmem.si"
+  },
+  "plugins": [
+    {
+      "name": "logmem",
+      "source": "./plugins/logmem",
+      "description": "Shared memory for your agents. Read the Brief, log your work, hand off, and ask a person before anything irreversible.",
+      "category": "productivity"
+    }
+  ]
+}
