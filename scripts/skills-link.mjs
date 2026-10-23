@@ -8,7 +8,7 @@
 //
 // Usage: node scripts/skills-link.mjs [--target ~/.claude/skills] [--dry]
 
-import { readdirSync, existsSync, lstatSync, readlinkSync, symlinkSync, mkdirSync, statSync } from "node:fs";
+import { readdirSync, existsSync, lstatSync, readlinkSync, symlinkSync, mkdirSync, statSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,15 @@ export function linkSkills({ source, target, dry = false }) {
   return out;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+function isMain() {
+  try {
+    return !!process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]));
+  } catch {
+    return false; // Stdin and other non-file entry points can import this module.
+  }
+}
+
+if (isMain()) {
   const argv = process.argv.slice(2);
   const arg = (n, d) => (argv.includes(`--${n}`) ? argv[argv.indexOf(`--${n}`) + 1] : d);
   const source = fileURLToPath(new URL("../skills", import.meta.url));
