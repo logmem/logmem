@@ -185,8 +185,9 @@ test("P2: a lost audit response and failed owner notification replay one durable
   const entries = await cc.store.readLog("job", "lost-response");
   assert.equal(entries.filter((e) => e.kind === "done").length, 1);
   assert.equal(entries.filter((e) => e.kind === "handoff").length, 1);
-  const brief = await sc(cc, "logmem_brief", {});
-  assert.equal(brief.handoffs_to_me.filter((e) => e.job === "job:lost-response").length, 1);
+  // Check the durable receiver log rather than the bounded recent Brief page.
+  const receiver = await cc.store.readLog("agent", "claude-code");
+  assert.equal(receiver.filter((e) => e.kind === "handoff" && e.job === "job:lost-response").length, 1);
 });
 
 test("reopen: the owner asks, the job is held while it waits, a person approves, the stage comes back and auto-close stays off", async () => {
