@@ -204,8 +204,13 @@ test("walkthrough writer: a draft saves only to the space it was written in", as
 test("homepage: shared-space story, agent prompts, setup handoff and preview controls", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("All your agents. One shared space.");
-  await expect(page.locator("#pod-messages")).toContainText("Codex");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("One space. A stronger business.");
+  await expect(page.locator("#pod-messages")).toContainText("Claude");
+  await page.getByRole("tab", { name: "Restaurants", exact: true }).click();
+  await expect(page.locator("#case-content")).toContainText("service brief");
+  await expect(page.locator("#dashboard-shot")).toHaveAttribute("src", "/home-assets/screenshots/restaurant.jpg");
+  await page.getByRole("tab", { name: "Trades & field services", exact: true }).click();
+  await expect(page.locator("#case-content")).toContainText("kitchen job");
   await page.getByRole("tab", { name: "I’m an agent", exact: true }).click();
   await expect(page.locator("#hero-prompt")).toContainText("Check for an existing LogMem connection");
   await page.getByRole("tab", { name: "I’m a human", exact: true }).click();

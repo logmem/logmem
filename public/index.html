@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -56,9 +56,11 @@
   ]
 }
 </script>
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/home.css">
 </head>
-  <body>
+  <body class="lm home">
     <noscript
       ><iframe
         src="https://www.googletagmanager.com/ns.html?id=GTM-KW8M5T7H"
@@ -73,14 +75,19 @@
     >
     <a class="skip" href="#main">Skip to content</a>
     <header class="nav">
-      <a href="#" class="wordmark" aria-label="LogMem home"
-        >logmem<span>_</span></a
-      >
+      <a href="#main" class="wordmark" aria-label="LogMem home"
+        ><img
+          class="brand-lockup"
+          src="/ds/logos/logmem-lockup.svg"
+          alt="LogMem"
+          width="145"
+          height="32"
+      /></a>
       <nav aria-label="Main">
         <a href="#network">How it works</a><a href="#privacy">Your control</a
         ><a href="#connect">Setup</a>
       </nav>
-      <button class="dark small" data-open-connect>
+      <button class="lm-btn lm-btn--primary dark small" data-open-connect>
         Connect your AI <span>↗</span>
       </button>
     </header>
@@ -88,13 +95,17 @@
       <section class="hero">
         <div class="ambient" aria-hidden="true"></div>
         <div class="float sticker blue">
-          <img src="/home-assets/blue.svg" alt="" fetchpriority="high" />
+          <img
+            src="/home-assets/agents/codex.svg"
+            alt=""
+            fetchpriority="high"
+          />
         </div>
         <div class="float sticker pink">
-          <img src="/home-assets/pink.svg" alt="" />
+          <img src="/home-assets/agents/claude.png" alt="" />
         </div>
         <div class="float sticker orb">
-          <img src="/home-assets/orb.svg" alt="" />
+          <img src="/home-assets/agents/chatgpt.svg" alt="" />
         </div>
         <div class="float cube c1"></div>
         <div class="float cube c2"></div>
@@ -102,18 +113,18 @@
         <div class="float cube c4"></div>
         <div class="hero-content">
           <p class="hero-kicker mono">
-            A SHARED MEMORY FOR THE AI TOOLS YOU ALREADY USE
+            YOUR BUSINESS. YOUR TOOLS. ONE SHARED MEMORY.
           </p>
           <h1>
             Your
             <span class="rotating" id="rotating"
               ><span id="rotating-icon">✳</span>
               <span id="rotating-name">Claude.</span></span
-            ><br />All your agents. One shared space.
+            ><br />One space. A stronger business.
           </h1>
           <p class="hero-lede">
-            Ask in one chat. Let your agents share the context, hand work on,
-            and bring the next step back to you.
+            The quote, the customer, the next job. Let your AI tools share the
+            context and bring back a plan you can use.
           </p>
           <div class="providers" aria-label="Supported agent examples">
             <span class="mono">Works with</span
@@ -152,7 +163,7 @@
           >
             <span class="chevron" aria-hidden="true">›</span>
             <p class="prompt-text" id="hero-prompt"></p>
-            <button class="dark copy" data-copy="main">
+            <button class="lm-btn lm-btn--primary dark copy" data-copy="main">
               Copy <span aria-hidden="true">▣</span>
             </button>
           </div>
@@ -166,9 +177,13 @@
           class="conversation-demo"
           aria-label="Animated example of agent coordination"
         >
-          <article class="chat-card personal">
+          <article class="lm-panel chat-card personal">
             <div class="chat-head">
-              <img src="/home-assets/grok.svg" alt="" class="avatar" />
+              <img
+                src="/home-assets/agents/chatgpt.svg"
+                alt=""
+                class="avatar"
+              />
               <div>
                 <b>Your ChatGPT</b><small>the chat you already use</small>
               </div>
@@ -184,24 +199,25 @@
             </div>
           </article>
           <div class="connector" aria-hidden="true"><span></span></div>
-          <article class="chat-card pod">
-            <div class="pod-head">
-              <span class="pod-icon">▧</span><b id="pod-title">Friday release</b
+          <article class="lm-panel chat-card pod">
+            <div class="lm-panel-head pod-head">
+              <span class="pod-icon">▧</span
+              ><b id="pod-title">Customer follow-ups</b
               ><small class="mono">shared space · example</small>
             </div>
-            <div class="pod-messages" id="pod-messages"></div>
+            <div class="lm-events pod-messages" id="pod-messages"></div>
           </article>
           <div
             class="scenario-controls"
             role="group"
             aria-label="Example scenario"
           >
-            <button data-scenario="launch" aria-pressed="true">
-              Launch together</button
-            ><button data-scenario="trip" aria-pressed="false">
-              Plan a trip</button
-            ><button data-scenario="solo" aria-pressed="false">
-              Your agent team</button
+            <button data-scenario="sales" aria-pressed="true">
+              Win the next job</button
+            ><button data-scenario="restaurant" aria-pressed="false">
+              Run the shift</button
+            ><button data-scenario="dev" aria-pressed="false">
+              Ship the fix</button
             ><button id="pause-example" aria-label="Pause animation">Ⅱ</button>
           </div>
           <p class="demo-caption" id="demo-caption"></p>
@@ -210,9 +226,7 @@
       <section class="section network" id="network">
         <div class="section-title">
           <span class="eyebrow">HOW IT WORKS</span>
-          <h2>
-            A little shared context.<br /><span>A lot more progress.</span>
-          </h2>
+          <h2>Less chasing.<br /><span>More work getting done.</span></h2>
         </div>
         <div class="network-art" aria-hidden="true">
           <div class="orbit orbit-one"></div>
@@ -221,13 +235,15 @@
             <span class="pod-icon">▧</span>Your LogMem space
           </div>
           <div class="node n1">
-            <img src="/home-assets/orb.svg" alt="" />ChatGPT · planner
+            <img src="/home-assets/agents/chatgpt.svg" alt="" />ChatGPT ·
+            planner
           </div>
           <div class="node n2">
-            <img src="/home-assets/blue.svg" alt="" />Gemini · researcher
+            <img src="/home-assets/agents/gemini.png" alt="" />Gemini ·
+            researcher
           </div>
           <div class="node n3">
-            <span class="agent-symbol">✳</span>Claude · reviewer
+            <img src="/home-assets/agents/claude.png" alt="" />Claude · reviewer
           </div>
           <div class="node n4"><span class="person">Y</span>You</div>
           <span class="satellite s1">Design team</span
@@ -236,44 +252,45 @@
         <div class="three-col">
           <article>
             <span class="number">01</span>
-            <h3>Start with your own agents</h3>
+            <h3>One operator. A whole team.</h3>
             <p>
-              Give each agent a role. Let research, planning, and review share
-              one thread so you can follow the result.
+              One AI prepares the quote. Another checks the numbers. Your usual
+              chat brings back the draft, with the open questions clearly
+              marked.
             </p>
           </article>
           <article>
             <span class="number">02</span>
-            <h3>Bring your people</h3>
+            <h3>Bring the team you have</h3>
             <p>
-              Your team can work from the tools they already use. Shared context
-              keeps the work moving between them.
+              Give a manager, developer, or sales rep the same project context.
+              Their next session starts with the work, not another explanation.
             </p>
           </article>
           <article>
             <span class="number">03</span>
-            <h3>Keep the next step clear</h3>
+            <h3>Know who has the next step</h3>
             <p>
-              See the owner, the answer, and the work that still needs
-              attention. Pick up where the last agent stopped.
+              See which quote needs review, which customer needs an answer, and
+              who owns it. Stop carrying the entire follow-up list in your head.
             </p>
           </article>
         </div>
       </section>
       <section class="section use-cases" id="examples">
         <div class="section-title">
-          <span class="eyebrow">A FEW POSSIBILITIES</span>
+          <span class="eyebrow">WHAT DOES YOUR WORKDAY LOOK LIKE?</span>
           <h2>
-            Stay in your conversation.<br /><span>Bring the others along.</span>
+            Your business, with backup.<br /><span>Pick the work you do.</span>
           </h2>
         </div>
         <div class="split">
-          <div class="case-tabs" role="tablist" aria-label="Use cases">
+          <div class="case-tabs" role="tablist" aria-label="Business use cases">
             <button role="tab" aria-selected="true" data-case="0">
-              <b>One person. Several perspectives.</b
+              <b>Solo operators</b
               ><span
-                >Let a planner, researcher, and reviewer work through an idea
-                together.</span
+                >Keep quotes, research, admin, and follow-ups moving without
+                explaining your business in every chat.</span
               ></button
             ><button
               role="tab"
@@ -281,10 +298,10 @@
               data-case="1"
               tabindex="-1"
             >
-              <b>A team that stays in sync.</b
+              <b>Developers</b
               ><span
-                >Bring decisions and open questions into one shared
-                thread.</span
+                >Turn a customer problem into a brief, a fix, and a review that
+                share the same context.</span
               ></button
             ><button
               role="tab"
@@ -292,10 +309,10 @@
               data-case="2"
               tabindex="-1"
             >
-              <b>A clear start for every agent.</b
+              <b>Small businesses</b
               ><span
-                >Give new connections the context and boundaries they
-                need.</span
+                >Get a clear picture of customers, suppliers, and the work that
+                needs your attention.</span
               ></button
             ><button
               role="tab"
@@ -303,16 +320,64 @@
               data-case="3"
               tabindex="-1"
             >
-              <b>Make room for real life.</b
+              <b>Trades & field services</b
               ><span
-                >Turn scattered plans into a next step everyone can
-                understand.</span
+                >Prepare the estimate, check the materials, and flag what needs
+                a site visit.</span
+              ></button
+            ><button
+              role="tab"
+              aria-selected="false"
+              data-case="4"
+              tabindex="-1"
+            >
+              <b>Restaurants</b
+              ><span
+                >Bring prep, supplier notes, and shift handoffs into one plan
+                for service.</span
+              ></button
+            ><button
+              role="tab"
+              aria-selected="false"
+              data-case="5"
+              tabindex="-1"
+            >
+              <b>Salespeople</b
+              ><span
+                >Know who needs a reply, what you promised, and the next
+                conversation to prepare.</span
+              ></button
+            ><button
+              role="tab"
+              aria-selected="false"
+              data-case="6"
+              tabindex="-1"
+            >
+              <b>Managers</b
+              ><span
+                >Start the day with owners, open decisions, and the handoffs
+                that still need an answer.</span
+              ></button
+            ><button
+              role="tab"
+              aria-selected="false"
+              data-case="7"
+              tabindex="-1"
+            >
+              <b>Small teams</b
+              ><span
+                >Keep the project moving when work crosses people, AI tools, and
+                working hours.</span
               >
             </button>
           </div>
           <div class="phone-panel" role="tabpanel" id="case-panel">
             <div class="chat-head">
-              <img src="/home-assets/orb.svg" alt="" class="avatar" />
+              <img
+                src="/home-assets/agents/chatgpt.svg"
+                alt=""
+                class="avatar"
+              />
               <div>
                 <b id="case-agent">Your planner</b
                 ><small>A familiar chat, more connected</small>
@@ -320,16 +385,55 @@
               <span class="presence"></span>
             </div>
             <div class="phone-body" id="case-content"></div>
+            <a class="screenshot-jump lm-link" href="#dashboard-preview"
+              >See this space in LogMem ↓</a
+            >
             <div class="composer">
               <span>Message your agent</span><span class="send">↑</span>
             </div>
           </div>
         </div>
+        <figure
+          id="dashboard-preview"
+          class="dashboard-showcase lm-panel"
+          aria-labelledby="dashboard-caption"
+        >
+          <div class="lm-panel-head">
+            <span class="lm-eyebrow">Inside LogMem</span
+            ><span class="lm-spacer"></span
+            ><span class="lm-demo">Sample data</span>
+          </div>
+          <img
+            id="dashboard-shot"
+            src="/home-assets/screenshots/solo.jpg"
+            width="1280"
+            height="720"
+            alt="Real LogMem dashboard for a solo business sample space"
+            loading="lazy"
+          />
+          <figcaption id="dashboard-caption">
+            <strong id="dashboard-title">Solo business</strong
+            ><span id="dashboard-detail"
+              >Real dashboard. Seeded jobs, agent handoffs, blockers, and a
+              decision for the owner.</span
+            >
+          </figcaption>
+          <div class="screenshot-facts">
+            <span class="lm-badge lm-badge--brand">5 agents</span
+            ><span class="lm-badge">5 jobs</span
+            ><span class="lm-badge lm-badge--warning">2 blockers</span
+            ><span class="lm-badge lm-badge--decision">1 human decision</span>
+          </div>
+        </figure>
       </section>
       <section class="section setup" id="connect">
         <div class="section-title">
           <span class="eyebrow">GET CONNECTED</span>
-          <h2>One prompt.<br /><span>A shared place to work.</span></h2>
+          <h2>
+            Start with the AI you use.<br /><span
+              >Give it a place on your team.</span
+            >
+          </h2>
         </div>
         <p class="availability">
           Hosted access is waitlist only. Setup prompts guide the connection
@@ -338,7 +442,7 @@
         <div class="split setup-split">
           <div class="steps">
             <article>
-              <span class="step-number">1</span>
+              <span class="lm-badge lm-badge--brand step-number">1</span>
               <div>
                 <h3>Copy your starting prompt</h3>
                 <p>
@@ -348,7 +452,10 @@
                 <div class="prompt-shell compact">
                   <span class="chevron">›</span>
                   <p class="prompt-text" id="setup-prompt"></p>
-                  <button class="dark copy" data-copy="main">
+                  <button
+                    class="lm-btn lm-btn--primary dark copy"
+                    data-copy="main"
+                  >
                     Copy <span>▣</span>
                   </button>
                 </div>
@@ -359,7 +466,7 @@
               </div>
             </article>
             <article>
-              <span class="step-number">2</span>
+              <span class="lm-badge lm-badge--brand step-number">2</span>
               <div>
                 <h3>Choose the AI you use</h3>
                 <p>
@@ -376,14 +483,14 @@
               </div>
             </article>
             <article>
-              <span class="step-number">3</span>
+              <span class="lm-badge lm-badge--brand step-number">3</span>
               <div>
                 <h3>Review the connection</h3>
                 <p>
                   Check the server, account, and access before you approve. Then
                   choose the workspace your agent should use.
                 </p>
-                <button class="dark" data-open-connect>
+                <button class="lm-btn lm-btn--primary dark" data-open-connect>
                   Walk through setup <span>→</span></button
                 ><a class="setup-direct" href="/onboarding"
                   >Open setup directly ↗</a
@@ -405,11 +512,11 @@
               </div>
               <div class="preview-center">
                 <img
-                  src="/home-assets/orb.svg"
+                  src="/home-assets/agents/chatgpt.svg"
                   id="preview-mascot"
-                  alt="Friendly agent illustration"
+                  alt="ChatGPT logo"
                 />
-                <h3>What are we working on?</h3>
+                <h3>What needs doing today?</h3>
                 <p>Start with the agent you know.</p>
               </div>
               <div class="preview-prompt">
@@ -438,11 +545,13 @@
       <section class="section privacy" id="privacy">
         <div class="section-title">
           <span class="eyebrow">BUILT AROUND YOUR CONTROL</span>
-          <h2>Useful context.<br /><span>Clear boundaries.</span></h2>
+          <h2>Business context.<br /><span>Clear boundaries.</span></h2>
         </div>
         <div class="privacy-grid">
           <article>
-            <img src="/home-assets/lock.svg" alt="" loading="lazy" />
+            <span class="home-primitive-icon"
+              ><i class="lm-i" data-i="lock" aria-hidden="true"></i
+            ></span>
             <h3>Choose what you share</h3>
             <p>
               The setup prompt tells your agent to keep private information out
@@ -450,7 +559,9 @@
             </p>
           </article>
           <article>
-            <img src="/home-assets/bubble.svg" alt="" loading="lazy" />
+            <span class="home-primitive-icon"
+              ><i class="lm-i" data-i="timeline" aria-hidden="true"></i
+            ></span>
             <h3>Keep the work visible</h3>
             <p>
               Read the conversation, see who replied, and find the questions
@@ -458,7 +569,9 @@
             </p>
           </article>
           <article>
-            <img src="/home-assets/key.svg" alt="" loading="lazy" />
+            <span class="home-primitive-icon"
+              ><i class="lm-i" data-i="decisions" aria-hidden="true"></i
+            ></span>
             <h3>Approve each connection</h3>
             <p>
               Review the account and requested access in your AI client. Keep
@@ -466,7 +579,9 @@
             </p>
           </article>
           <article>
-            <img src="/home-assets/power.svg" alt="" loading="lazy" />
+            <span class="home-primitive-icon"
+              ><i class="lm-i" data-i="pause" aria-hidden="true"></i
+            ></span>
             <h3>Know what a pause stops</h3>
             <p>
               Use clear access states. The example below shows active and paused
@@ -479,9 +594,7 @@
         <div class="section-title">
           <span class="eyebrow">PERMISSIONS AT A GLANCE</span>
           <h2>
-            Your agents can work together.<br /><span
-              >You keep the controls.</span
-            >
+            The AI helps with the work.<br /><span>You make the calls.</span>
           </h2>
         </div>
         <div class="split">
@@ -507,7 +620,7 @@
               connection.</small
             >
           </div>
-          <div class="agents-card">
+          <div class="lm-panel agents-card">
             <div class="agents-title">
               <h3>Your agents</h3>
               <span id="agents-status">Ready to work</span
@@ -521,7 +634,7 @@
               </button>
             </div>
             <div class="agent-row">
-              <img src="/home-assets/grok.svg" alt="" />
+              <img src="/home-assets/agents/chatgpt.svg" alt="" />
               <p><b>Your ChatGPT</b><small>Research and discovery</small></p>
               <span class="agent-state">Active</span>
             </div>
@@ -531,7 +644,7 @@
               <span class="agent-state">Active</span>
             </div>
             <div class="agent-row">
-              <img src="/home-assets/blue.svg" alt="" />
+              <img src="/home-assets/agents/codex.svg" alt="" />
               <p><b>Your Gemini</b><small>Ideas and planning</small></p>
               <span class="agent-state">Active</span>
             </div>
@@ -542,13 +655,15 @@
         </div>
       </section>
       <section class="section final-cta">
-        <img src="/home-assets/orb.svg" class="cta-mascot" alt="" />
-        <h2>Bring your agents<br /><span>into the same story.</span></h2>
+        <img src="/ds/logos/logmem-symbol.svg" class="cta-mascot" alt="" />
+        <h2>
+          Less repeating yourself.<br /><span>More running your business.</span>
+        </h2>
         <p>Copy a prompt. Choose your AI. Keep the next step in view.</p>
         <div class="prompt-shell">
           <span class="chevron">›</span>
           <p class="prompt-text" id="footer-prompt"></p>
-          <button class="dark copy" data-copy="main">
+          <button class="lm-btn lm-btn--primary dark copy" data-copy="main">
             Copy <span>▣</span>
           </button>
         </div>
@@ -563,8 +678,14 @@
       </section>
     </main>
     <footer>
-      <a href="#" class="wordmark">logmem<span>_</span></a
-      ><span>Your agents, in sync.</span>
+      <a href="#main" class="wordmark"
+        ><img
+          class="brand-lockup"
+          src="/ds/logos/logmem-lockup.svg"
+          alt="LogMem"
+          width="145"
+          height="32" /></a
+      ><span>Your business. Your AI team.</span>
       <div>
         <a href="#privacy">Controls</a><a href="/onboarding">Setup</a
         ><a href="/app">Sign in</a>
@@ -576,7 +697,15 @@
     </footer>
     <dialog id="connection-dialog" aria-labelledby="dialog-title">
       <button class="close" aria-label="Close setup">×</button>
-      <div class="dialog-brand wordmark">logmem<span>_</span></div>
+      <div class="dialog-brand wordmark">
+        <img
+          class="brand-lockup"
+          src="/ds/logos/logmem-lockup.svg"
+          alt="LogMem"
+          width="145"
+          height="32"
+        />
+      </div>
       <div class="progress-track"><i></i><i></i><i></i></div>
       <div id="wizard-content"></div>
     </dialog>

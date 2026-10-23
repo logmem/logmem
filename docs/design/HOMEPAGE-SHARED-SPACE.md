@@ -1,35 +1,43 @@
-# Shared-space homepage replacement
+# Business homepage with shared LogMem spaces
 
-Mikey approved the OpenPod UI direction on October 23, 2026.
-He requested its smooth motion, prompt-first conversion, and familiar agent interactions.
-He rejected the Fieldnotes and Quill newsletter example.
+Mikey approved the OpenPod layout and conversion direction, then requested LogMem's own design system and business examples.
+The homepage replaces the fictional newsletter and agent personas with familiar AI tools and practical work.
 
 ## Experience
 
-A centered hero leads with familiar AI tools and one shared LogMem space.
-The hero offers human and agent prompts before the visitor needs technical setup details.
-An animated conversation shows a website launch, a trip plan, and an idea review.
-Each example shows agents exchanging context and returning a concrete next step.
-Use-case tabs explain continuity, teamwork, and shared context through short conversations.
-Agent choices update the prompt, preview, and platform guidance together.
-A three-step dialog ends at the existing /onboarding route.
-The homepage does not authenticate, store credentials, or claim a connection succeeded.
+The centered hero introduces one shared space for the tools a business already uses.
+A copyable prompt appears before technical setup instructions. Human and agent tabs provide separate guidance.
+Real agent marks identify Claude, ChatGPT, Codex, Cursor, Gemini, and Hermes. Codex uses OpenAI's provider mark.
+Animated timelines show customer follow-ups, restaurant readiness, and a customer signup fix.
+Eight business tabs cover solo operators, developers, small businesses, trades, restaurants, salespeople, managers, and small teams.
+Each shows a conversation, a next step, and an actual dashboard capture from the relevant synthetic sample space.
 
-## Implementation
+## Design system
 
-Replace public/index.html, home.css and home.js.
-Use original SVG illustrations and existing LogMem fonts. No runtime dependencies or third-party artwork ship.
-Keep attribution scripts, sign-in, hosted waitlist truth, and the existing approval caveat.
-Do not change backend access, onboarding APIs, or application fixtures.
-A visible switch demonstrates connection states only. It changes no real agent.
+Load the existing token and component CSS bundles.
+Use Schibsted Grotesk, IBM Plex Sans, IBM Plex Mono, the existing LogMem lockup, and semantic colors.
+Use the shared panels, timeline rows, agent identities, badges, buttons, and demo label.
+All fonts, logos, and screenshots load locally. Logo provenance lives beside the files.
+Motion respects reduced-motion settings. Timed examples pause when the document is hidden.
+Native scrolling and keyboard tabs remain available.
+
+## Conversion and truth
+
+The setup dialog changes guidance for the selected client and ends at the existing `/onboarding` route.
+It does not authenticate, save credentials, or claim an agent connected.
+Preserve attribution scripts, sign-in, hosted waitlist wording, and the existing approval caveat.
+The access switch demonstrates interface states only. It changes no live agent.
+Conversations and dashboard screenshots carry clear synthetic-data labels.
+
+## Sample data
+
+Five spaces use real LogMem tool calls over isolated in-memory Redis.
+See `docs/demo/BUSINESS-SPACES.md` for audiences, contents, commands, and isolation boundaries.
+Screenshots show the existing application over those spaces. They are not dashboard mockups.
 
 ## Verification
 
-Check keyboard tabs, prompt updates, clipboard behavior, scenario changes, setup handoff, modal dismissal, and phone layout.
-Honor reduced motion and pause the timed example while the document is hidden.
-Retain site security checks and update the old homepage layout assertions for the new experience.
-
-## Feature boundary
-
-Cross-person sharing, unattended replies, universal wake support, enforced pause, and provider integrations require separate backend verification.
-The homepage must not describe those capabilities as universally available.
+Check all audience tabs, screenshot selection, prompt branches, client choices, copy feedback, setup handoff, modal dismissal, and phone layout.
+Check that fixtures contain real jobs, stages, decisions, and handoff trails without cross-space data leakage.
+Retain site security, attribution, and social metadata tests.
+Backend connections, cross-person sharing, unattended replies, and enforced pause remain outside this change.

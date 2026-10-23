@@ -155,9 +155,11 @@ test("homepage: shared-space examples, honest access, safe prompts and self-cont
   const js = readFileSync(new URL("../public/home.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../public/home.css", import.meta.url), "utf8");
   assert.match(html, /<title>LogMem:/);
-  assert.match(html, /All your agents\. One shared space\./);
+  assert.match(html, /One space\. A stronger business\./);
   assert.doesNotMatch(html + js, /Field Notes|fieldnotes|quill|atlas|tally|issue 14/i);
   assert.match(html, /Hosted access is waitlist only/);
+  for (const key of ["sales", "restaurant", "dev"]) assert.ok(html.includes(`data-scenario="${key}"`));
+  assert.doesNotMatch(html + js, /Plan a trip|weekend away|data-scenario="launch"/i);
   assert.match(html, /href="\/onboarding"/);
   assert.match(html, /href="\/app"/);
   const caveat = "Today, agents that follow LogMem pause and ask before anything that can’t be undone, and LogMem does not stop an agent that skips that ask.";
@@ -168,11 +170,26 @@ test("homepage: shared-space examples, honest access, safe prompts and self-cont
   assert.match(js, /Keep private information out unless I approve sharing it/);
   assert.doesNotMatch(js, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/);
   assert.match(css, /prefers-reduced-motion/);
+  assert.match(html, /href="\/ds\/tokens\/logmem\.css"/);
+  assert.match(html, /src="\/ds\/logos\/logmem-lockup\.svg"/);
+  assert.match(html, /href="\/ds\/components\/bundle\.css"/);
+  assert.match(html, /lm-panel/);
+  assert.match(js, /lm-event/);
+  assert.match(html, /id="dashboard-shot"/);
+  assert.match(css, /var\(--font-display\)/);
+  assert.match(css, /var\(--brand\)/);
+  assert.equal((html.match(/data-case="\d+"/g) || []).length, 8);
+  for (const label of ["Solo operators", "Developers", "Small businesses", "Trades &amp; field services", "Restaurants", "Salespeople", "Managers", "Small teams"]) {
+    assert.ok(html.includes(label.replace("&amp;", "&")) || html.includes(label), label);
+  }
+  for (const m of js.matchAll(/logo: "(\/home-assets\/agents\/[^" ]+)"/g)) {
+    assert.ok(existsSync(new URL(`../public${m[1]}`, import.meta.url)), `missing agent mark ${m[1]}`);
+  }
   assert.match(js, /document\.hidden/);
   assert.doesNotMatch(html, /<script(?![^>]*\b(?:src=|type="application\/ld\+json"))[^>]*>/);
   assert.doesNotMatch(html, /\son[a-z]+=/i);
   assert.doesNotMatch(html, /https?:\/\/(?!logmem\.si)[a-z0-9.-]+\.[a-z]{2,}\/[^" ]*\.(?:js|css|woff2?)/i);
-  for (const m of html.matchAll(/(?:src|href)="(\/[^"?#]+\.(?:svg|js|css))"/g)) {
+  for (const m of html.matchAll(/(?:src|href)="(\/[^"?#]+\.(?:svg|png|jpg|js|css))"/g)) {
     if (m[1].startsWith("/_vercel/")) continue; // platform-injected analytics
     assert.ok(existsSync(new URL(`../public${m[1]}`, import.meta.url)), `missing asset ${m[1]}`);
   }
