@@ -16,7 +16,7 @@ test("usage: each written entry is one add, and its agent is active this month",
   const lm = lmFor(redis);
   await sc(lm, "logmem_note", { where: "channel:ideas", summary: "one" });
   const u1 = await readUsage(redis, SPACE);
-  assert.ok(u1.add >= 2, "the auto-started shift and the note both count");
+  assert.equal(u1.add, 1, "the note counts once; the unmanaged auto start is metadata");
   assert.equal(u1.agents, 1);
   await sc(lm, "logmem_note", { where: "channel:ideas", summary: "two" });
   const u2 = await readUsage(redis, SPACE);
@@ -148,7 +148,7 @@ test("meter: with pureReads, reads and recalls are not counted (no write); adds 
   await sc(lm, "logmem_view", { ref: "channel:ops" });
   await sc(lm, "logmem_recall", { query: "write" });
   const u = await readUsage(redis, SPACE);
-  assert.equal(u.add, 2, "the note and its shift-start entry");
+  assert.equal(u.add, 1, "the note counts once; the unmanaged auto start is metadata");
   assert.equal(u.read, 0, "pure reads are not counted");
   assert.equal(u.recall, 0, "a pure recall is not counted");
 
