@@ -12,8 +12,8 @@
 //
 // Usage: node scripts/skills-lint.mjs [skills-dir]
 
-import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, existsSync, statSync, realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const RAW_REDIS_ALLOWED = new Set(["logmem-self-host", "logmem-read-path-recovery", "logmem-track-outage"]);
@@ -28,8 +28,18 @@ export const SECRET_RES = [
   [/\bvm-local-bridge\b/, "fleet bridge token"],
   [/\brediss?:\/\/[^\s:/@<>]+:(?!<)[^\s@<>]{3,}@/, "Redis URI with a password"],
   [/\bBearer\s+(?!<)[A-Za-z0-9._~+/-]{20,}/, "bearer token"],
-  [/\b(token|password|secret|api[_-]?key)\s*[=:]\s*(?![<`"'\s]|\.\.\.)[^\s`"']{12,}/i, "assigned secret value"],
 ];
+const ASSIGNED_SECRET_RE = /\b(?:[a-z][\w-]*[_-])?(?:token|password|secret|api[_-]?key)\b["']?\s*[=:]\s*("[^"\n]*"|'[^'\n]*'|`[^`\n]*`|[^\s,;}]+)/gi;
+
+function hasAssignedSecret(line) {
+  for (const match of line.matchAll(ASSIGNED_SECRET_RE)) {
+    const raw = match[1];
+    const value = /^["'`]/.test(raw) ? raw.slice(1, -1) : raw;
+    if (/^(?:<[^>]+>|\$\{[^}]+\}|\.\.\.)$/.test(value)) continue;
+    if (value.length >= 12) return true;
+  }
+  return false;
+}
 
 function frontmatter(text) {
   const m = text.match(/^---\n([\s\S]*?)\n---\n/);
@@ -47,7 +57,7 @@ function linesOutsideCompat(text) {
   const out = [];
   let inCompat = false;
   text.split("\n").forEach((line, i) => {
-    if (/^##\s/.test(line)) inCompat = /^##\s+Compatibility\b/i.test(line);
+    if (/^#{1,2}\s/.test(line)) inCompat = /^##\s+Compatibility\b/i.test(line);
     if (!inCompat) out.push([i + 1, line]);
   });
   return out;
@@ -81,10 +91,11 @@ export function lintSkill(dir, name) {
   }
   for (const [n, line] of linesOutsideCompat(text)) {
     if (ACMI_CALL_RE.test(line)) errors.push(`${name}:${n}: acmi_* call outside a Compatibility section`);
-    if (!RAW_REDIS_ALLOWED.has(name) && RAW_REDIS_RE.test(line)) errors.push(`${name}:${n}: raw Redis is only allowed in ${[...RAW_REDIS_ALLOWED].join(", ")}`);
   }
   text.split("\n").forEach((line, i) => {
+    if (!RAW_REDIS_ALLOWED.has(name) && RAW_REDIS_RE.test(line)) errors.push(`${name}:${i + 1}: raw Redis is only allowed in ${[...RAW_REDIS_ALLOWED].join(", ")}`);
     for (const [re, what] of SECRET_RES) if (re.test(line)) errors.push(`${name}:${i + 1}: looks like a secret (${what})`);
+    if (hasAssignedSecret(line)) errors.push(`${name}:${i + 1}: looks like a secret (assigned secret value)`);
   });
   if (!/^##\s+Verify\b/m.test(text)) errors.push(`${name}: needs a "## Verify" section`);
   for (const [n, line] of proseLines(text)) {
@@ -109,7 +120,15 @@ export function lintSkills(dir) {
   return { skills: names, errors, warnings };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+function isMain() {
+  try {
+    return !!process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]));
+  } catch {
+    return false; // Stdin and other non-file entry points can import this module.
+  }
+}
+
+if (isMain()) {
   const dir = process.argv[2] || fileURLToPath(new URL("../skills", import.meta.url));
   const r = lintSkills(dir);
   for (const w of r.warnings) console.warn(`warn  ${w}`);

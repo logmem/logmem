@@ -9,7 +9,7 @@
 // are thin shells around this.
 
 import { applyLimits } from "./core/apply-limits.mjs";
-import { createStore } from "./core/store.mjs";
+import { createStore, normTs } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
 import { TOOLS, keywordRecall } from "./core/tools.mjs";
@@ -52,9 +52,10 @@ function limitedRecall(run, limits) {
   if (!limits || typeof limits.beforeRecall !== "function") return run;
   return async (q, n) => {
     const commit = await limits.beforeRecall();
-    const out = await run(q, n);
+    const floor = limits.historyFloorMs();
+    const out = await run(q, n, floor == null ? undefined : { sinceMs: floor });
     await commit();
-    return out;
+    return floor == null ? out : { ...out, results: (out.results || []).filter(hit => normTs(hit.ts) >= floor) };
   };
 }
 export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());
@@ -130,6 +131,9 @@ export function createLogmem({
   pureReads = false,
   // Key that verifies human decisions in the Brief. Default: LOGMEM_DECIDE_SECRET, read at call time.
   decideSecret,
+  // Remote decision verification (src/core/tools.mjs remoteVerified). Default: LOGMEM_VERIFY_URL.
+  verifyUrl,
+  fetchImpl,
   // Work rules (taxonomy spec): "strict" refuses tasks and decisions off a job and
   // blocked with no reason; "warn" allows them with a warning. Default: LOGMEM_WORK_RULES, else strict.
   workRules = process.env.LOGMEM_WORK_RULES === "warn" ? "warn" : "strict",
@@ -169,6 +173,9 @@ export function createLogmem({
     recall: limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
+    // Trusted server that verifies web decisions for a process with no signing key (opt-in: LOGMEM_VERIFY_URL).
+    verifyUrl: verifyUrl !== undefined ? verifyUrl : process.env.LOGMEM_VERIFY_URL || null,
+    fetchImpl,
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
   const byName = new Map(tools.map((t) => [t.name, t]));

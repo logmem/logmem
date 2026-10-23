@@ -201,28 +201,34 @@ test("walkthrough writer: a draft saves only to the space it was written in", as
 });
 
 
-test("homepage v3: short tagline, one handoff in the hero, connect below it, raw entry view", async ({ page }) => {
+test("homepage: shared-space story, agent prompts, setup handoff and preview controls", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("One memory for all your agents.");
-  const hero = page.locator("#hero-log");
-  await expect(hero.locator(".lm-event")).toHaveCount(4);
-  await expect(hero.locator(".h-via").first()).toHaveText("via claude-code");
-  await expect(page.locator(".h-mini-ask")).toContainText("Demo: buttons are inactive");
-  // Connect is its own section, after the hero.
-  const order = await page.evaluate(() => ({
-    after: !!(document.querySelector(".h-hero").compareDocumentPosition(document.querySelector("#connect")) & Node.DOCUMENT_POSITION_FOLLOWING),
-    outside: !document.querySelector(".h-hero #connect"),
-  }));
-  expect(order).toEqual({ after: true, outside: true });
-  // Raw entry shows the stored shape and hides the readable log.
-  await page.locator("#demo").scrollIntoViewIfNeeded();
-  await page.getByRole("button", { name: "Raw entry" }).click();
-  await expect(page.locator("#demo-raw")).toBeVisible();
-  await expect(page.locator("#demo-log")).toBeHidden();
-  await expect(page.locator("#demo-raw")).toContainText('"byline"');
-  await page.getByRole("button", { name: "Readable" }).click();
-  await expect(page.locator("#demo-log")).toBeVisible();
-  await expect(page.locator("#demo-raw")).toBeHidden();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("One space. A stronger business.");
+  await expect(page.locator("#pod-messages")).toContainText("Claude");
+  await page.getByRole("tab", { name: "Restaurants", exact: true }).click();
+  await expect(page.locator("#case-content")).toContainText("service brief");
+  await expect(page.locator("#dashboard-shot")).toHaveAttribute("src", "/home-assets/screenshots/restaurant.jpg");
+  await page.getByRole("tab", { name: "Trades & field services", exact: true }).click();
+  await expect(page.locator("#case-content")).toContainText("kitchen job");
+  await page.getByRole("tab", { name: "I’m an agent", exact: true }).click();
+  await expect(page.locator("#hero-prompt")).toContainText("Check for an existing LogMem connection");
+  await page.getByRole("tab", { name: "I’m a human", exact: true }).click();
+  await page.locator("#agent-picker").getByRole("button", { name: "Codex" }).click();
+  await expect(page.locator("#full-prompt")).toContainText("set up Codex");
+  await page.getByRole("button", { name: "Connect your AI", exact: false }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog).toContainText("Connect Codex");
+  await dialog.getByRole("button", { name: "Next step" }).click();
+  await expect(dialog).toContainText("This guide has not connected an agent");
+  await expect(dialog.getByRole("link", { name: "Open LogMem setup" })).toHaveAttribute("href", "/onboarding");
+  await page.keyboard.press("Escape");
+  const toggle = page.getByRole("switch", { name: "Preview agent access" });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(page.locator("#pause-note")).toContainText("No real agent or service changed");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 // Two spaces in every response, so the picker has a choice. Requests made after a switch are recorded.
@@ -261,4 +267,23 @@ test("spaces: the picker is reachable at every width, and More signs out on a ph
   await expect.poll(() => asked.includes("madez")).toBe(true);
   await page.goto("/app#/more");
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
+
+test("walkthrough player: the step rail is one row of dots on phones and tablets, titles on desktop", async ({ page }) => {
+  await signIn(page, "#/job/i15-subject");
+  await page.locator(".lmx-drawer").getByRole("link", { name: "Open the player" }).click();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 1 of 3");
+  const url = page.url();
+  for (const [w, h, compact] of [[390, 844, true], [768, 1024, true], [1280, 800, false]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(url);
+    await page.locator(".lmw-rail .ob-step").nth(1).click();
+    await expect(page.locator(".lmw-card h1")).toHaveText("Turn on the A/B test");
+    const m = await page.evaluate(() => ({ railH: document.querySelector(".lmw-rail").getBoundingClientRect().height, sw: document.documentElement.scrollWidth, iw: innerWidth }));
+    expect(m.sw, `no sideways scroll at ${w}px`).toBeLessThanOrEqual(m.iw);
+    if (compact) expect(m.railH, `one row of dots at ${w}px`).toBeLessThanOrEqual(60);
+    else await expect(page.locator(".lmw-rail .ob-step-title").first()).toBeVisible();
+    // Every dot keeps its step title for screen readers.
+    await expect(page.getByRole("button", { name: /Turn on the A\/B test/ })).toHaveCount(1);
+  }
 });
