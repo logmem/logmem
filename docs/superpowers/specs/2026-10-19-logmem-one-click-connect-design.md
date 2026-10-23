@@ -176,7 +176,7 @@ Each step is one PR with its own tests:
 5. Connected apps in `/app` (4.7).
 6. The preview end-to-end run and the codex review.
 
-Target: invites go out before the beta on Nov 16. Show HN on Nov 10 can say "beta invites open".
+Target: invites go out before the beta on Nov 16. Show HN on Nov 18 can say "beta invites open".
 
 ## 9. Not in this spec
 
