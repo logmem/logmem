@@ -121,6 +121,67 @@ test("apply: Done by the reconciler with evidence, the owner gets an ack handoff
   assert.equal(again.applied, undefined);
 });
 
+test("P2: a failed Done append stays repairable after closure and recovers exactly once", async () => {
+  const inner = createMemoryRedis();
+  const cc = owner(inner);
+  await sc(cc, "logmem_assign", { job: "repair", title: "Repair closure" });
+  let fail = true;
+  const redis = async (command, ...args) => {
+    // Fail the job-log append, including an atomic audit append.
+    if (fail && ((command === "ZADD" && args[0] === `lm:${SPACE}:job:repair:log`) ||
+      (command === "EVAL" && String(args[0]).includes("reconcile audit append")))) {
+      fail = false;
+      throw new Error("audit append unavailable");
+    }
+    return inner(command, ...args);
+  };
+  const fetchImpl = gh([{ number: 106, body: "Closes job: repair" }]);
+  const first = await run(redis, { fetchImpl, apply: true });
+  assert.equal(first.applied.failed.length, 1);
+  assert.equal((await cc.store.getNow("job", "repair")).stage, "done");
+  assert.equal((await cc.store.readLog("job", "repair")).filter((e) => e.kind === "done").length, 0);
+  const second = await run(redis, { fetchImpl, apply: true });
+  assert.deepEqual(second.applied?.closed, ["repair"], "closed jobs with pending audit evidence must be repaired");
+  await run(redis, { fetchImpl, apply: true });
+  const entries = await cc.store.readLog("job", "repair");
+  assert.equal(entries.filter((e) => e.kind === "done").length, 1);
+  assert.equal((await cc.store.getNow("job", "repair")).auto_closed.audit_pending, false);
+  assert.equal((await sc(cc, "logmem_brief", {})).handoffs_to_me.filter((h) => h.job === "job:repair").length, 1);
+});
+
+test("P2: a lost audit response and failed owner notification replay one durable Done entry", async () => {
+  const inner = createMemoryRedis();
+  const cc = owner(inner);
+  await sc(cc, "logmem_assign", { job: "lost-response", title: "Lost response" });
+  let loseResponse = true;
+  let failHandoff = true;
+  const redis = async (command, ...args) => {
+    const result = await inner(command, ...args);
+    if (loseResponse && command === "EVAL" && String(args[0]).includes("reconcile audit append")) {
+      loseResponse = false;
+      throw new Error("response lost after durable audit append");
+    }
+    if (failHandoff && command === "ZADD" && args[0] === `lm:${SPACE}:agent:claude-code:log`) {
+      failHandoff = false;
+      throw new Error("response lost after owner append");
+    }
+    return result;
+  };
+  const fetchImpl = gh([{ number: 106, body: "Closes job: lost-response" }]);
+  const first = await run(redis, { fetchImpl, apply: true });
+  assert.equal(first.applied.failed.length, 1);
+  const second = await run(redis, { fetchImpl, apply: true });
+  assert.equal(second.applied.failed.length, 1);
+  const third = await run(redis, { fetchImpl, apply: true });
+  assert.deepEqual(third.applied.closed, ["lost-response"]);
+  await run(redis, { fetchImpl, apply: true });
+  const entries = await cc.store.readLog("job", "lost-response");
+  assert.equal(entries.filter((e) => e.kind === "done").length, 1);
+  assert.equal(entries.filter((e) => e.kind === "handoff").length, 1);
+  const brief = await sc(cc, "logmem_brief", {});
+  assert.equal(brief.handoffs_to_me.filter((e) => e.job === "job:lost-response").length, 1);
+});
+
 test("reopen: the owner asks, the job is held while it waits, a person approves, the stage comes back and auto-close stays off", async () => {
   const redis = createMemoryRedis();
   const cc = owner(redis);

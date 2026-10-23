@@ -31,7 +31,8 @@ export async function runReconcile(redis, { space, apply = false, env = process.
     briefOf: apply ? async (agent) => (await lm.callTool("logmem_brief", { agent: String(agent).replace(/^agent:/, "") })).structuredContent : null,
   });
   const report = { github: plan.github, closes: plan.closes, reopens: plan.reopens, suggestions: plan.suggestions, stale: plan.stale, skipped: plan.skipped };
-  if (apply && (plan.closes.length || plan.reopens.length)) report.applied = await applyPlan(lm, store, plan, { now });
+  if (plan.repairs.length) report.repairs = plan.repairs;
+  if (apply && (plan.closes.length || plan.repairs.length || plan.reopens.length)) report.applied = await applyPlan(lm, store, plan, { now });
   // The app reads the last report (Needs you, the stale badge). It is not a job write.
   await redis("SET", reportKey(space), JSON.stringify({ at: now, mode: apply ? "on" : "dry", github: report.github, suggestions: report.suggestions, stale: report.stale }));
   return report;

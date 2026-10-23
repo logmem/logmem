@@ -30,7 +30,29 @@
 // approves, the next run restores the old stage and turns auto-close off for
 // that job. Agents can never reopen on their own.
 
+import { randomUUID } from "node:crypto";
+import { stableJson } from "./store.mjs";
+import { registerEvalScript } from "../lib/lua-scripts.mjs";
+
 export const RECONCILER = "logmem-reconciler";
+
+// Record the Done entry and its durable receipt together. A lost response can
+// retry without another log member, including when two workers repair at once.
+const AUDIT_LUA = `-- reconcile audit append
+if redis.call('HGET', KEYS[1], 'auto_closed') ~= ARGV[1] then return 'changed' end
+local n = #redis.call('ZRANGEBYSCORE', KEYS[2], ARGV[2], ARGV[2])
+local member = '{"_o":"' .. string.format('%06d', n) .. '",' .. string.sub(ARGV[3], 2)
+redis.call('ZADD', KEYS[2], ARGV[2], member)
+redis.call('HSET', KEYS[1], 'auto_closed', ARGV[4])
+return 'ok'
+`;
+registerEvalScript(AUDIT_LUA, (call, keys, argv) => {
+  if (call("HGET", keys[0], "auto_closed") !== argv[0]) return "changed";
+  const n = call("ZRANGEBYSCORE", keys[1], argv[1], argv[1]).length;
+  call("ZADD", keys[1], argv[1], `{"_o":"${String(n).padStart(6, "0")}",${argv[2].slice(1)}`);
+  call("HSET", keys[0], "auto_closed", argv[3]);
+  return "ok";
+});
 export const STALE_MS = 48 * 3600 * 1000;
 /** Entries more than an hour after a merge mean the work went on: the PR only suggests. */
 export const LATER_MS = 3600 * 1000;
@@ -129,9 +151,14 @@ export async function planCloses(store, { now = Date.now(), github = null, block
     if (parent) (children.get(parent) || children.set(parent, []).get(parent)).push(j);
   }
 
-  const plan = { closes: [], reopens: [], suggestions: [], stale: [], skipped: unreadable.map((job) => ({ job, why: "unreadable" })), github: ghState };
+  const plan = { closes: [], repairs: [], reopens: [], suggestions: [], stale: [], skipped: unreadable.map((job) => ({ job, why: "unreadable" })), github: ghState };
   for (const j of jobs.values()) {
     const stage = j.now.stage || "open";
+    // A closed stage is not proof that its audit and owner notification landed.
+    if (j.now.auto_closed?.audit_pending) {
+      plan.repairs.push({ job: j.id });
+      continue;
+    }
     let log;
     try {
       log = await store.readLog("job", j.id, { reverse: true, limit: 50 });
@@ -258,27 +285,58 @@ export function reopenState(b, j) {
 export async function applyPlan(lm, store, plan, { now = Date.now() } = {}) {
   const call = async (name, args) => (await lm.callTool(name, args)).structuredContent;
   const done = [], reopened = [], failed = [];
-  for (const c of plan.closes) {
+  const finishAudit = async (job) => {
+    let guard = await store.nowFieldsRaw("job", job, ["auto_closed"]);
+    let closed = JSON.parse(guard.auto_closed || "null");
+    if (!closed?.audit_pending) return false;
+    if (!closed.audit_written) {
+      const written = { ...closed, audit_written: true };
+      const result = await store.redis("EVAL", AUDIT_LUA, 2, store.key("job", job, "now"), store.key("job", job, "log"),
+        guard.auto_closed, String(closed.audit_entry.ts), stableJson(closed.audit_entry), JSON.stringify(written));
+      if (result !== "ok") throw new Error("audit changed during repair; retry next run");
+      closed = written;
+      guard = { auto_closed: JSON.stringify(written) };
+    }
+    await store.repairEntry("job", job, closed.audit_entry);
+    if (isAgentRef(closed.owner) && agentOf(closed.owner) !== RECONCILER) {
+      const recipient = agentOf(closed.owner);
+      const prior = await store.readLog("agent", recipient, { reverse: true, limit: 200 });
+      if (!prior.some((e) => e.kind === "handoff" && e.trail === closed.ack_trail && e.to === closed.owner)) {
+        const r = await call("logmem_handoff", {
+          to: recipient, where: `job:${job}`, trail: closed.ack_trail, create_agent: true,
+          summary: `Auto-closed job ${job}: ${closed.evidence}. Accept to acknowledge. If the work is not finished, call logmem_ask on job:${job} with a question that starts "Reopen ${job}?" and your reason. A person approves it, then LogMem restores the old stage.`.slice(0, 1000),
+        });
+        if (!r?.ok) throw new Error(r?.error || "owner handoff refused");
+      }
+    }
+    if (!await store.setNowIf("job", job, guard, { auto_closed: { ...closed, audit_pending: false } })) {
+      throw new Error("audit changed during completion; retry next run");
+    }
+    return true;
+  };
+  for (const c of [...(plan.repairs || []), ...plan.closes]) {
     try {
+      if (!c.guard) {
+        if ((plan.repairs || []).some((r) => r.job === c.job)) {
+          if (await finishAudit(c.job)) done.push(c.job);
+          continue;
+        }
+        throw new Error("no guard in the plan");
+      }
       // One compare-and-set: the close lands only if the job's Now is still what the plan read.
-      if (!c.guard) throw new Error("no guard in the plan");
-      const auto_closed = { at: now, prev_stage: c.prev_stage, signal: c.signal, evidence: c.evidence };
+      const operation = randomUUID();
+      const auto_closed = {
+        at: now, prev_stage: c.prev_stage, signal: c.signal, evidence: c.evidence,
+        audit_pending: true, owner: c.owner, ack_trail: `reconcileAck-${operation}`,
+        audit_entry: { ts: now, kind: "done", by: `agent:${RECONCILER}`, via: "reconciler",
+          trail: `reconcileDone-${operation}`, summary: `auto-closed. ${c.evidence}`.slice(0, 1000) },
+      };
       const wrote = await store.setNowIf("job", c.job, c.guard, { stage: "done", stage_at: now, blocked_on: null, auto_closed });
       if (!wrote) {
         failed.push({ job: c.job, error: "changed since the plan, not closed" });
         continue;
       }
-      const r = await call("logmem_note", { where: `job:${c.job}`, kind: "done", summary: `auto-closed. ${c.evidence}`.slice(0, 1000) });
-      if (!r?.ok) throw new Error(r?.error || "done entry refused");
-      if (isAgentRef(c.owner) && agentOf(c.owner) !== RECONCILER) {
-        await call("logmem_handoff", {
-          to: agentOf(c.owner),
-          where: `job:${c.job}`,
-          summary: `Auto-closed job ${c.job}: ${c.evidence}. Accept to acknowledge. If the work is not finished, call logmem_ask on job:${c.job} with a question that starts "Reopen ${c.job}?" and your reason. A person approves it, then LogMem restores the old stage.`.slice(0, 1000),
-          create_agent: true,
-        });
-      }
-      done.push(c.job);
+      if (await finishAudit(c.job)) done.push(c.job);
     } catch (e) {
       failed.push({ job: c.job, error: String(e?.message || e).slice(0, 200) });
     }
