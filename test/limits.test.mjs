@@ -22,7 +22,7 @@ test("limits: each written entry is one add, counted on the meter", async () => 
   const lm = lmFor(redis);
   await sc(lm, "logmem_note", { where: "channel:ideas", summary: "one" });
   const n = Number(await redis("GET", counter()));
-  assert.ok(n >= 2, "the auto-started shift and the note both count");
+  assert.equal(n, 2, "the managed start and note both pass write admission and count");
   await sc(lm, "logmem_note", { where: "channel:ideas", summary: "two" });
   assert.equal(Number(await redis("GET", counter())), n + 1);
 });

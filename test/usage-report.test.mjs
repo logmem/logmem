@@ -14,7 +14,7 @@ test("usage report: counts entries, writers and a month estimate, read only", as
   const calls = [];
   const spy = async (...c) => { calls.push(c[0]); return redis(...c); };
   const r = await usageReport(spy, { space: "madez", days: 7 });
-  assert.ok(r.entries >= 3, "started, the note and the assigned entry");
+  assert.equal(r.entries, 2, "the note and the assigned entry; the auto Start writes none");
   assert.equal(r.agents, 1);
   assert.equal(r.month_estimate, Math.round((r.entries * 30) / 7));
   assert.deepEqual([...new Set(calls)].sort(), ["SMEMBERS", "ZRANGEBYSCORE"], "read-only commands only");

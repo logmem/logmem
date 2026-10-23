@@ -8,6 +8,7 @@
 /** Apply limits to a store in place: every append is checked, every log read gets the history floor. */
 export function applyLimits(store, limits) {
   if (!limits) return store;
+  store.managedLimits = true;
   // Readers can disclose when plan retention truncates their requested range.
   store.historyFloorMs = () => limits.historyFloorMs();
   const append = store.append.bind(store);
