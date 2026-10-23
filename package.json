@@ -1,13 +1,41 @@
 {
-  "name": "@logmem/server",
+  "name": "@logmem/mcp",
   "version": "0.1.0",
-  "private": true,
-  "description": "LogMem server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
+  "description": "LogMem MCP server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "src/server.mjs",
   "bin": {
     "logmem-mcp": "src/stdio/index.mjs"
+  },
+  "files": [
+    "LICENSE",
+    "server.json",
+    "src/stdio/index.mjs",
+    "src/server.mjs",
+    "src/core/",
+    "src/compat/acmi-tools.mjs",
+    "src/lib/backend.mjs",
+    "src/lib/helpers.mjs",
+    "src/lib/lua-scripts.mjs",
+    "src/lib/memory-redis.mjs",
+    "src/lib/redis-native.mjs",
+    "src/lib/redis-rest.mjs",
+    "src/lib/redact.mjs",
+    "src/http/log.mjs",
+    "src/http/pin.mjs",
+    "src/http/net-guard.mjs"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://logmem.si",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/madezmedia/logmem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/madezmedia/logmem/issues"
   },
   "engines": {
     "node": ">=22"
@@ -25,14 +53,15 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "@clerk/backend": "^3.25.0",
     "@modelcontextprotocol/sdk": "1.32.1",
-    "@vercel/blob": "2.7.0",
     "redis": "^4.7.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.25.0",
     "@madezmedia/acmi": "1.2.0",
-    "@playwright/test": "1.63.0"
-  }
+    "@playwright/test": "1.63.0",
+    "@vercel/blob": "2.7.0"
+  },
+  "mcpName": "si.logmem/mcp"
 }
