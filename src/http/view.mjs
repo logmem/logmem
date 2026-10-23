@@ -182,12 +182,14 @@ async function readReport(r, space) {
 
 /** Mission control (live app spec, Home): plans, blocked jobs with their reasons, agents' Now. */
 export async function homeView(store, r, space, { secret, person, now = Date.now() } = {}) {
+  const errors = [];
   const ids = await store.list("job");
   const jobs = (await inBatches(ids, 25, async (id) => {
     try {
       const [who, n] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
       return who ? { id, who, now: n || {} } : null;
     } catch {
+      errors.push({ source: `job:${id}`, message: "Could not read this job." });
       return null;
     }
   })).filter(Boolean);
@@ -234,7 +236,29 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
   const order = { active: 0, idle: 1, offline: 2, unknown: 3 };
   agents.sort((a, b) => (order[a.seen.state] ?? 9) - (order[b.seen.state] ?? 9) || a.id.localeCompare(b.id));
   const needs = await needsView(store, r, space, { secret, person });
-  return { plans, blocked, parked_count: jobs.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length, agents, needs_count: needs.count };
+  const updates = await inBatches(jobs.slice(0, 100), 20, async (j) => {
+    try {
+      return (await store.readLog("job", j.id, { reverse: true, limit: 3 })).map(e => slim(e, `job:${j.id}`));
+    } catch {
+      errors.push({ source: `job:${j.id}:log`, message: "Could not read recent updates." });
+      return [];
+    }
+  });
+  const recent = updates.flat().filter(e => {
+    if (!Number.isFinite(e.ts) || e.ts > now) {
+      errors.push({ source: e.where, message: "An update has an invalid or future timestamp." });
+      return false;
+    }
+    return true;
+  }).sort((a, b) => b.ts - a.ts).slice(0, 12);
+  return {
+    plans, blocked, parked_count: jobs.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length,
+    agents, needs_count: needs.count, needs_items: needs.items, recent,
+    coverage: {
+      complete: false, errors,
+      notes: ["The full coordination backlog is not indexed in this view yet.", "Recent updates cover up to 100 job logs, with three entries per job."],
+    },
+  };
 }
 
 /**
