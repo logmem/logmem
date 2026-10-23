@@ -9,7 +9,7 @@
 // are thin shells around this.
 
 import { applyLimits } from "./core/apply-limits.mjs";
-import { createStore } from "./core/store.mjs";
+import { createStore, normTs } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
 import { TOOLS, keywordRecall } from "./core/tools.mjs";
@@ -52,9 +52,10 @@ function limitedRecall(run, limits) {
   if (!limits || typeof limits.beforeRecall !== "function") return run;
   return async (q, n) => {
     const commit = await limits.beforeRecall();
-    const out = await run(q, n);
+    const floor = limits.historyFloorMs();
+    const out = await run(q, n, floor == null ? undefined : { sinceMs: floor });
     await commit();
-    return out;
+    return floor == null ? out : { ...out, results: (out.results || []).filter(hit => normTs(hit.ts) >= floor) };
   };
 }
 export const compatFromEnv = (env = process.env) => ["1", "true", "yes"].includes(String(env.LOGMEM_ACMI_COMPAT || "").toLowerCase());

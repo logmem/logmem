@@ -109,7 +109,6 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       next: next || [],
       updated_at: ts,
     };
-    await store.setRecap(agent, recap);
     await store.append("agent", agent, {
       ts,
       kind: "recap",
@@ -121,6 +120,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       shift: rec.shift,
       summary: `${agentId(agent)} recap (${recap.mode}${reason ? `, ${reason}` : ""}): ${recap.summary}`,
     });
+    await store.setRecap(agent, recap);
     return recap;
   }
 
@@ -130,7 +130,6 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     const ts = now();
     const shift = `${a}Shift-${ts}-${randomBytes(12).toString("hex")}`;
     const rec = { agent: a, surface, shift, started_at: ts, last_seen: ts, auto };
-    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto });
     await store.append("agent", a, {
       ts,
       kind: "started",
@@ -141,6 +140,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       shift,
       summary: `${byline(a, surface)} started a shift${auto ? " (auto)" : ""}`,
     });
+    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto });
     await save(rec);
     return rec;
   }
