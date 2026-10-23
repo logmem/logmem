@@ -275,7 +275,8 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     async append(ns, id, entry) {
       if (!entry || typeof entry !== "object") throw new Error("entry must be an object");
       const ts = entry.ts == null ? Date.now() : normTs(entry.ts);
-      const full = { ...entry, ...normalizeKind(entry.kind), ts };
+      // Stamp the trusted connection policy after caller fields. Repairs preserve this value.
+      const full = { ...entry, ...normalizeKind(entry.kind), ts, mirror: mirror ? "on" : "off" };
       if (entry.acmi_kind) full.acmi_kind = entry.acmi_kind;
       delete full._o;
       const key = k(ns, id, "log");
@@ -309,6 +310,8 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
         const parsed = tryParse(m);
         if (!parsed || typeof parsed !== "object") continue;
         const { _o, ...rest } = parsed;
+        // Rollbacks can pass the original entry before append stamped its policy.
+        if (!Object.hasOwn(entry, "mirror")) delete rest.mirror;
         if (stableJson(rest) !== body) continue;
         n += Number(await redis("ZREM", key, m)) || 0;
       }

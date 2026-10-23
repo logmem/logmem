@@ -3,9 +3,8 @@
 //
 // For one space and one day (default: the 24h ending now):
 //   - parity:   every lm log entry in the window has its ACMI twin (mirror spaces only)
-//               An entry written in a shift whose connection runs without the mirror
-//               (shift record mirror: "off") is counted as mirror_opt_out, not a mismatch.
-//               A missing or older shift record still counts as a mismatch.
+//               Entries stamped mirror: "off" count as mirror_opt_out, not mismatches.
+//               Older entries use the shift setting. Missing metadata fails closed.
 //   - agents:   distinct agent writers
 //   - handoffs: handoffs in the window, and how many were accepted
 //               (LogMem "accepted" with origin=trail, or ACMI "handoff-ack" with parentCorrelationId=trail)
@@ -155,10 +154,11 @@ export async function runCheck(redis, {
   const day = { date: new Date(now).toISOString().slice(0, 10), window: [from, now], ran: true, space, mirror_checked: mirrored, entries: 0, agents: [], mirror_mismatches: 0, mismatch_examples: [], mirror_opt_out: 0, mirror_opt_out_writers: [], degraded_sessions: 0, handoffs: 0, accepted: 0, unanswered_24h: 0, stuck_written: 0 };
   const agents = new Set();
   const optOutWriters = new Set();
-  // The mirror setting of the shift an entry was written in: "on", "off", or null when the
-  // shift record is missing or predates the setting (then a missing twin is a mismatch).
+  // Each append records its connection policy. One shift can span different policies.
+  // Only older entries fall back to shift metadata. Unknown policy fails closed.
   const shiftCache = new Map();
-  const shiftMirror = async (e) => {
+  const entryMirror = async (e) => {
+    if (Object.hasOwn(e, "mirror")) return ["on", "off"].includes(e.mirror) ? e.mirror : null;
     const m = String(e.shift || "").match(/Shift-(\d+)-[0-9a-f]+$/);
     if (!m || !String(e.by || "").startsWith("agent:")) return null;
     if (!shiftCache.has(e.shift)) {
@@ -191,7 +191,7 @@ export async function runCheck(redis, {
       if (mirrored && e.by !== BY) {
         const twins = await acmiRows(redis, acmiKey(space, ns, id, "log"), e.ts, e.ts);
         const ok = twins.some((t) => t.correlationId === e.trail && t.summary === e.summary);
-        if (!ok && (await shiftMirror(e)) === "off") {
+        if (!ok && (await entryMirror(e)) === "off") {
           // Written on a connection set up without the mirror: reported, not a failure.
           day.mirror_opt_out++;
           optOutWriters.add(`${e.by} (via ${e.via || "unknown"})`);
