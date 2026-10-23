@@ -300,7 +300,7 @@ export async function applyPlan(lm, store, plan, { now = Date.now() } = {}) {
     await store.repairEntry("job", job, closed.audit_entry);
     if (isAgentRef(closed.owner) && agentOf(closed.owner) !== RECONCILER) {
       const recipient = agentOf(closed.owner);
-      const prior = await store.readLog("agent", recipient, { reverse: true, limit: 200 });
+      const prior = await store.readLog("agent", recipient, { reverse: true });
       if (!prior.some((e) => e.kind === "handoff" && e.trail === closed.ack_trail && e.to === closed.owner)) {
         const r = await call("logmem_handoff", {
           to: recipient, where: `job:${job}`, trail: closed.ack_trail, create_agent: true,

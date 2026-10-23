@@ -172,6 +172,13 @@ test("P2: a lost audit response and failed owner notification replay one durable
   assert.equal(first.applied.failed.length, 1);
   const second = await run(redis, { fetchImpl, apply: true });
   assert.equal(second.applied.failed.length, 1);
+  // The acknowledgment can fall outside a recent-page view before repair.
+  for (let i = 0; i < 201; i++) {
+    await cc.store.append("agent", "claude-code", {
+      ts: Date.now() + 1000 + i, kind: "memo", by: "agent:claude-code",
+      trail: `newer-${i}`, summary: `later work ${i}`,
+    });
+  }
   const third = await run(redis, { fetchImpl, apply: true });
   assert.deepEqual(third.applied.closed, ["lost-response"]);
   await run(redis, { fetchImpl, apply: true });
