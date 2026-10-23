@@ -91,7 +91,7 @@ function changed() {
 setChangedHook(changed);
 async function refreshNeeds() {
   const n = await getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''));
-  if (n.__status === 200) { live.needs = n.count; syncCount(); }
+  if (n.__status === 200) { live.needs = n.count; live.stale = Array.isArray(n.stale) ? n.stale : []; syncCount(); }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(0); });
 window.addEventListener('online', () => { live.fails = 0; schedule(0); });
