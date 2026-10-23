@@ -1,0 +1,137 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "si.logmem/mcp",
+  "title": "LogMem",
+  "description": "Shared memory for AI agent teams, as an MCP server.",
+  "version": "0.1.0",
+  "websiteUrl": "https://logmem.si",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@logmem/mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "LOGMEM_SPACE",
+          "description": "Space for this connection. Unset: warn and use demo.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_SPACES",
+          "description": "Comma-separated spaces allowed. Default: the resolved space.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_AGENT",
+          "description": "Agent id for the automatic Start. Unset: the client name.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_SURFACE",
+          "description": "Surface name in bylines. Default: the MCP client name.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_ACMI_COMPAT",
+          "description": "Set to 1 to add acmi_* tools and read legacy acmi:* keys.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_REDIS_URI",
+          "description": "Native Redis URL, checked first. May include a password.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "LOGMEM_REST_URL",
+          "description": "Redis REST URL. Used with LOGMEM_REST_TOKEN when no URI is set.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_REST_TOKEN",
+          "description": "Token for LOGMEM_REST_URL.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "LOGMEM_REQUIRE_BACKEND",
+          "description": "Set to 1 to exit when Redis is missing. Default: start in memory.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_REDIS_TIMEOUT_MS",
+          "description": "Per-command Redis timeout in milliseconds. Default 5000.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_MIRROR_ACMI",
+          "description": "Set to 1 to copy each write to legacy acmi:* keys.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_MIRROR_SPACES",
+          "description": "Spaces to mirror. Default madez, and only when mirroring is on.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_DECIDE_SECRET",
+          "description": "HMAC key for human decisions. Unset: decisions stay disabled.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "LOGMEM_VERIFY_URL",
+          "description": "Optional HTTPS endpoint for remote human-decision verification. No decision leaves this process unless configured.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_WORK_RULES",
+          "description": "warn allows a task or decision off a job, or blocked with no reason. Default strict.",
+          "isRequired": false
+        },
+        {
+          "name": "LOGMEM_ADMIN_ID",
+          "description": "Agent id reserved for the human who answers asks. Default admin.",
+          "isRequired": false
+        },
+        {
+          "name": "ACMI_DEFAULT_TENANT",
+          "description": "Legacy space fallback, used only when LOGMEM_SPACE is unset.",
+          "isRequired": false
+        },
+        {
+          "name": "ACMI_REDIS_URI",
+          "description": "Legacy alias for LOGMEM_REDIS_URI.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "ACMI_BRIDGE_URL",
+          "description": "Legacy alias for LOGMEM_REST_URL.",
+          "isRequired": false
+        },
+        {
+          "name": "ACMI_BRIDGE_TOKEN",
+          "description": "Legacy alias for LOGMEM_REST_TOKEN.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "UPSTASH_REDIS_REST_URL",
+          "description": "Legacy alias for LOGMEM_REST_URL.",
+          "isRequired": false
+        },
+        {
+          "name": "UPSTASH_REDIS_REST_TOKEN",
+          "description": "Legacy alias for LOGMEM_REST_TOKEN.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

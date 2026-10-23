@@ -59,6 +59,7 @@ R = read only, W = writes. ACMI column = the tool it stands in for under compat 
 | `logmem_feed` | Feed | R | `refs[]` | `since` (`30m`/`24h`/`7d`), `limit` (50) | `acmi_cat` |
 | `logmem_follow` | Follow | W | `action` ∈ follow·unfollow·list | `ref`, `role`, `agent` | `acmi_active` |
 | `logmem_assign` | Assign | W | `job`, `title` | `owner`, `details{}`, `reopen` | `acmi_work_create` |
+| `logmem_plan` | Plan | W | — | `action` ∈ list·create, `plan`, `title`, `desc` | *new* |
 | `logmem_update` | Update | W | `job`, `summary` | `kind` (progress), `trail`, `origin` | `acmi_work_event` |
 | `logmem_stage` | Stage | W | `job`, `stage` ∈ open·active·blocked·done | `note` | `acmi_work_signal` |
 | `logmem_open` | Open | R | `job` | `limit` (50) | `acmi_work_get` |
@@ -101,6 +102,8 @@ If the call triggered shift bookkeeping, the result carries
 - **Tool errors.** Expected refusals keep their message. Backend failures and programming errors return `{ ok: false, error: "internal error", ref }`; the detail is logged server-side under the same `ref`.
 - **Compat writes** (`acmi_*`) run in the session's shift like native tools. `acmi_event` into another agent's log is refused (own-agent rule). `acmi_event` / `acmi_work_event` record `by` as the shift's agent; the caller's `source` is kept only as `claimed_source` when it differs. `acmi_profile` / `acmi_signal` on namespace `agent`, `acmi_rollup_set`, `acmi_spawn` and `acmi_active add/remove` follow the same own-agent rule as `logmem_status`, and `acmi_event` refuses a `tenant` other than the bound space.
 - **stage** writes `stuck` for blocked, `done` for done, and `progress` otherwise.
+- **recall** matches keywords in summaries and payloads and returns `mode: "keyword"`. It does not search by meaning, and it does not use a vector index.
+- **plan** lists the plans in the space, or creates one (`action: "create"`). Every job belongs to one plan; with no plan, Assign files the job in `general`.
 - **jobs** hides `done` jobs unless `include_done: true` or `stage: done`, and returns `hidden_done` (the count left out). In compat mode a legacy job with no LogMem stage gets one from its ACMI `status`: completed/complete/done/merged/archived/closed/cancelled → `done`; stalled/blocked → `blocked`; in_progress/active/running → `active`; pending/open/acknowledged/todo/new → `open`. The status is kept, a LogMem stage always wins, and `acmi:*` is never rewritten (decision 2026-10-13, cid `logmemStatusToStageDecision-1791921700000`). Compat `acmi_work_list` keeps ACMI semantics and lists every id.
 - **Caller-chosen trails.** `logmem_handoff` refuses a `trail` already used on the receiver's log; `POST /api/inbox/:agent` refuses one already used on that agent's log (409). A stored shift whose agent id doesn't validate is dropped, not recapped.
 - **remove** works only inside the connection's space, never on protected keys (`lm:*:registry:*`, `lm:*:session:*`, `lm:*:decision:*`, `lm:*:ask:*`, `lm:oauth:*`). Called by an agent (`logmem_remove`, `acmi_delete`) it also refuses another agent's keys, the roster indexes, and any log that holds asks or decisions. It previews unless `confirm: true`. A successful remove logs a `fix` entry on the remover's agent log.
@@ -167,7 +170,7 @@ rules from the tool descriptions: Start, Ask, Recap and Remove each carry their 
 
 | | `logmem_*` (always) | `acmi_*` (compat only) |
 |---|---|---|
-| Tools | 22 | 19, ACMI names and parameters |
+| Tools | 23 | 19, ACMI names and parameters |
 | Writes go to | `lm:{space}:*` | `lm:{space}:*`, never `acmi:*` |
 | Reads | `lm:*` **merged with** legacy `acmi:{space}:*` | same, returned in ACMI shape |
 | Fields | trail/origin/by/space/speaker | correlationId/parentCorrelationId/source/tenant_id/speaker_type |

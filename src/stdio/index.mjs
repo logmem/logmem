@@ -2,7 +2,7 @@
 // LogMem MCP over stdio.
 //
 // Env:
-//   LOGMEM_SPACE            space for this connection (default: madez)
+//   LOGMEM_SPACE            space for this connection (unset: warn and use "demo")
 //   LOGMEM_SPACES           comma list of spaces allowed (default: LOGMEM_SPACE)
 //   LOGMEM_AGENT            agent for the auto Start if none is chosen
 //   LOGMEM_SURFACE          surface name for "agent (via surface)" (default: MCP client name)
@@ -10,6 +10,7 @@
 //   LOGMEM_REDIS_URI / LOGMEM_REST_URL + LOGMEM_REST_TOKEN   backend (see lib/backend.mjs)
 //   LOGMEM_REQUIRE_BACKEND=1  exit 1 instead of starting in degraded (in-memory) mode
 //   LOGMEM_REDIS_TIMEOUT_MS   per-command Redis timeout (default 5000)
+//   LOGMEM_WORK_RULES=warn    allow a task or decision off a job, or blocked with no reason (default strict)
 //
 // Degraded mode: if the backend is unreachable at startup (and
 // LOGMEM_REQUIRE_BACKEND is not set) this process runs on an in-memory store,
@@ -19,15 +20,75 @@
 // Every tool result carries degraded:true while this is the case.
 
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createLogmem, compatFromEnv, mirrorConfigFromEnv, SERVER_INFO, INSTRUCTIONS } from "../server.mjs";
 import { resilientBackendFromEnv, BackendRequiredError } from "../lib/backend.mjs";
 
+function readPkgVersion() {
+  try {
+    const v = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
+    return typeof v === "string" && v ? v : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const argv = process.argv.slice(2);
+const wantsHelp = argv.includes("--help") || argv.includes("-h");
+const wantsVersion = argv.includes("--version") || argv.includes("-V");
+if (wantsHelp || wantsVersion) {
+  const version = readPkgVersion();
+  if (wantsHelp) {
+    console.log(`logmem-mcp ${version}
+
+Usage:
+  npx @logmem/mcp
+  logmem-mcp [--help|-h] [--version|-V]
+
+LogMem MCP server on stdio. An MCP client starts it and speaks JSON-RPC on stdin.
+
+  LOGMEM_SPACE=your-space LOGMEM_AGENT=quill \\
+    LOGMEM_REST_URL=your-redis-url LOGMEM_REST_TOKEN=space-token \\
+    npx @logmem/mcp
+
+Environment:
+  LOGMEM_SPACE              space for this connection
+  LOGMEM_SPACES             comma list of spaces allowed (default: LOGMEM_SPACE)
+  LOGMEM_AGENT              agent for the automatic Start
+  LOGMEM_SURFACE            surface name (default: MCP client name)
+  LOGMEM_ACMI_COMPAT=1      also expose acmi_* tools and read acmi:* keys
+  LOGMEM_REDIS_URI          native Redis URL
+  LOGMEM_REST_URL           Redis REST URL (with LOGMEM_REST_TOKEN)
+  LOGMEM_REST_TOKEN         Redis REST token
+  LOGMEM_REQUIRE_BACKEND=1  exit 1 instead of an in-memory store
+  LOGMEM_REDIS_TIMEOUT_MS   per-command Redis timeout in ms (default 5000)
+  LOGMEM_WORK_RULES=warn    allow a task or decision off a job, or blocked with no reason
+
+If LOGMEM_SPACE is not set, the process warns on stderr and uses "demo"
+(or ACMI_DEFAULT_TENANT, or the first LOGMEM_SPACES entry).
+
+Product site: https://logmem.si
+`);
+  } else {
+    console.log(version);
+  }
+  process.exit(0);
+}
+
 const log = (m) => console.error(`[logmem] ${m}`);
 const env = process.env;
-const space = env.LOGMEM_SPACE || env.ACMI_DEFAULT_TENANT || "madez";
-const spaces = (env.LOGMEM_SPACES || space).split(",").map((s) => s.trim()).filter(Boolean);
+const csv = (v) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+const explicitSpace = String(env.LOGMEM_SPACE || "").trim();
+const legacySpace = String(env.ACMI_DEFAULT_TENANT || "").trim();
+const listedSpaces = csv(env.LOGMEM_SPACES);
+let space = explicitSpace;
+if (!space) {
+  space = legacySpace || listedSpaces[0] || "demo";
+  log(`LOGMEM_SPACE is not set; using "${space}". Set LOGMEM_SPACE to choose a space.`);
+}
+const spaces = listedSpaces.length ? listedSpaces : [space];
 let backend;
 try {
   backend = await resilientBackendFromEnv(env, log);

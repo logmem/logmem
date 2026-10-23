@@ -2,7 +2,9 @@
 // acmi:{space}:* in ACMI shape, so agents still on ACMI miss nothing.
 //
 // On only when LOGMEM_MIRROR_ACMI=1 and the space is listed in
-// LOGMEM_MIRROR_SPACES (default "madez"). Slots mirrored: log, now, who.
+// LOGMEM_MIRROR_SPACES (default "madez" while mirroring is on). The madez
+// list is omitted from the config when mirroring is off. Slots mirrored:
+// log, now, who.
 // A failed twin goes to lm:{space}:mirror:retry (ZSET, score = ms) and is
 // retried at the start of the next write. The daily check counts anything
 // still unmirrored as a mismatch.
@@ -15,8 +17,9 @@ export const MIRROR_MARK = "lm";
 
 export function mirrorConfigFromEnv(env = process.env) {
   const on = ["1", "true", "yes"].includes(String(env.LOGMEM_MIRROR_ACMI || "").toLowerCase());
+  if (!on) return { enabled: false };
   const spaces = String(env.LOGMEM_MIRROR_SPACES || "madez").split(",").map((s) => s.trim()).filter(Boolean);
-  return { enabled: on, spaces };
+  return { enabled: true, spaces };
 }
 
 const retryKey = (space) => `lm:${space}:mirror:retry`;
