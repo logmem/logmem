@@ -9,6 +9,7 @@
 // are thin shells around this.
 
 import { applyLimits } from "./core/apply-limits.mjs";
+import { createUsageMeter, applyUsageMeter, meterOnFromEnv } from "./core/usage-meter.mjs";
 import { createStore, normTs } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
@@ -46,6 +47,22 @@ export const SERVER_INFO = { name: "logmem", version: versionString() };
 export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
+
+/** Recall tools. Each call counts as one recall, never also as a read. */
+const RECALL_TOOLS = new Set(["logmem_recall", "acmi_search_semantic"]);
+
+/**
+ * Without limits, the usage meter counts each recall. It never refuses one.
+ * A pure read (pureReads, PR 91) writes nothing, so it is not counted.
+ */
+function countedRecall(run, usage, isPure) {
+  if (!usage) return run;
+  return async (q, n) => {
+    const out = await run(q, n);
+    if (!isPure()) await usage.count("recall");
+    return out;
+  };
+}
 
 /** A managed account's recall counts against its plan (Free: 100 a month). Off when there are no limits. */
 function limitedRecall(run, limits) {
@@ -121,6 +138,9 @@ export function createLogmem({
   lockedAgent = null,
   // A managed account's plan limits (src/http/limits.mjs createLimits). Off for the fleet and self-hosted.
   limits = null,
+  // Count-only usage meter (src/core/usage-meter.mjs) for spaces without limits:
+  // adds, reads, recalls and active agents a month. Never refuses. Default: on unless LOGMEM_METER=off.
+  meter = meterOnFromEnv(),
   recall,
   idleMs,
   now,
@@ -160,7 +180,9 @@ export function createLogmem({
 
   const mirrorOn = !!mirrorCfg.enabled && (mirrorCfg.spaces || []).includes(space);
   const mirror = mirrorOn ? createMirror(redis, space, { now }) : null;
-  const store = applyLimits(createStore(redis, { space, compat, mirror }), limits);
+  // Managed accounts are metered by their limits; the usage meter covers everyone else.
+  const usage = !limits && meter ? createUsageMeter(redis, space, { now: now || Date.now }) : null;
+  const store = applyUsageMeter(applyLimits(createStore(redis, { space, compat, mirror }), limits), usage);
   const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, lockedAgent, idleMs, now });
   const ctx = {
     store,
@@ -170,7 +192,7 @@ export function createLogmem({
     spaces: allowed,
     shift: null,
     now: now || Date.now,
-    recall: limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits),
+    recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage, () => ctx.pure === true),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
     // Trusted server that verifies web decisions for a process with no signing key (opt-in: LOGMEM_VERIFY_URL).
@@ -214,6 +236,8 @@ export function createLogmem({
       args = c.args;
     }
     const pure = pureReads && tool.annotations?.readOnlyHint === true;
+    // A pure read makes zero Redis writes (PR 91), so the usage meter skips it.
+    ctx.pure = pure;
     try {
       let events = [];
       if (pure) {
@@ -226,6 +250,7 @@ export function createLogmem({
       store.mirrorEvents = [];
       if (mirror && !pure) await mirror.drain().catch(() => {});
       const out = await tool.run(args || {}, ctx);
+      if (usage && !pure && tool.annotations?.readOnlyHint === true && !RECALL_TOOLS.has(name) && out?.ok !== false) await usage.count("read");
       if (events.length) out.shift_events = events;
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
