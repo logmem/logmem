@@ -35,11 +35,23 @@ LogMem keys are `lm:{space}:{ns}:{id}:{slot}`. Always run `TYPE <key>` before re
 | `...:recap` | string (JSON) | `GET` |
 | `lm:{space}:{ns}:list` | set (the index) | `SMEMBERS` |
 
-Older ACMI keys (`acmi:{space}:*`) drift between types:
+Older ACMI keys (`acmi:{space}:*`) can use several types. Read `TYPE` first, then choose the matching command.
 
-- `acmi:...:signals` and `...:profile` may be a JSON string or a hash. Use `GET` first. If it is empty, use `HGETALL` and turn the flat `[k, v, ...]` list into an object.
-- The thread and work timelines and `acmi:{space}:bus:events` are sorted sets. List or stream commands (`LRANGE`, `LPUSH`, `XRANGE`) on them return WRONGTYPE.
-- On WRONGTYPE for one key, skip that key and continue. Never abort a whole audit for one key, and never report "0 healthy" because of it.
+| Legacy slot | Type | Read with |
+|---|---|---|
+| `signals`, `profile`, `rollup` | hash | `HGETALL`, then parse each field's JSON value |
+| `signals`, `profile`, `rollup` | string | `GET`, then parse JSON |
+| Timelines, including thread, work and bus events | zset | `ZRANGE key 0 -1 WITHSCORES` |
+| Timelines | list | `LRANGE key 0 -1`, then parse each member |
+| Timelines | string | `GET`, then parse the JSON array or single object |
+| Any slot | none | Report the key as missing |
+
+Turn flat `HGETALL` replies such as `[k, v, ...]` into an object. Signals must decode to an object, not an array.
+Keep every supported timeline row. For list or string rows, use each entry's `ts` or `timestamp` when present.
+Do not infer a missing timestamp from the read time.
+
+If a read returns WRONGTYPE after `TYPE`, report that key as unreadable. The key may have changed during the read.
+Continue the audit without treating that key as empty or healthy. Report unsupported types separately. Do not retry in a loop.
 
 ## 3. Watch for mixed timestamp units
 

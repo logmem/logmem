@@ -16,6 +16,7 @@
 import { lmSessionKey, checkAgentId } from "./keys.mjs";
 import { tryParse } from "./store.mjs";
 import { randomBytes, createHash } from "node:crypto";
+import { readShiftEntries } from "./shift-entries.mjs";
 
 export const IDLE_MS = 30 * 60 * 1000;
 /** Shift bookkeeping is dropped a week after the last call. */
@@ -85,12 +86,12 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
   async function recapShift(rec, { reason, notes, next } = {}) {
     const agent = rec.agent;
     const since = rec.started_at;
-    const mine = (await store.readLog("agent", agent, { sinceMs: since })).filter(
-      (e) => e.shift === rec.shift,
-    );
+    const ts = now();
+    const { entries: mine, coverage, read_errors } = await readShiftEntries(store, {
+      agent, shift: rec.shift, sinceMs: since, untilMs: ts,
+    });
     const kinds = {};
     for (const e of mine) kinds[e.kind] = (kinds[e.kind] || 0) + 1;
-    const ts = now();
     const recap = {
       agent,
       shift: rec.shift,
@@ -99,12 +100,15 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       started_at: since,
       ended_at: ts,
       surface: rec.surface,
-      summary: notes || `${mine.length} entries this shift${mine.length ? `: ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(", ")}` : ""}.`,
+      summary: notes || `${coverage === "partial" ? "Partial recap: at least " : ""}${mine.length} entries this shift${mine.length ? `: ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(", ")}` : ""}.`,
+      entry_count: mine.length,
+      entry_kinds: kinds,
+      coverage,
+      read_errors,
       last_entries: mine.slice(-5).map((e) => ({ ts: e.ts, kind: e.kind, summary: e.summary })),
       next: next || [],
       updated_at: ts,
     };
-    await store.setRecap(agent, recap);
     await store.append("agent", agent, {
       ts,
       kind: "recap",
@@ -116,6 +120,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       shift: rec.shift,
       summary: `${agentId(agent)} recap (${recap.mode}${reason ? `, ${reason}` : ""}): ${recap.summary}`,
     });
+    await store.setRecap(agent, recap);
     return recap;
   }
 
@@ -125,9 +130,6 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
     const ts = now();
     const shift = `${a}Shift-${ts}-${randomBytes(12).toString("hex")}`;
     const rec = { agent: a, surface, shift, started_at: ts, last_seen: ts, auto };
-    // mirror: whether this connection writes ACMI twins, so the dogfood check can tell a
-    // connection that is set up without the mirror from a twin that failed.
-    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto, mirror: store.mirror ? "on" : "off" });
     await store.append("agent", a, {
       ts,
       kind: "started",
@@ -138,6 +140,7 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       shift,
       summary: `${byline(a, surface)} started a shift${auto ? " (auto)" : ""}`,
     });
+    await store.addShift(a, { ts, shift, session_id: sessionId, surface, model_id: modelId || "unknown", auto, mirror: store.mirror ? "on" : "off" });
     await save(rec);
     return rec;
   }

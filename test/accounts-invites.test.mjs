@@ -5,7 +5,7 @@ import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { oauthRedis, mockRes, mockReq } from "./oauth-helpers.mjs";
 import { accountFor, newTenantId, ownerOf, AccountError } from "../src/http/accounts.mjs";
 import { inviteMany, isInvited, listInvites, inviteHash, InviteError } from "../src/http/invites.mjs";
-import { getTenant, listTenants, validTenantId } from "../cloud/tenants/index.mjs";
+import { createTenant, getTenant, listTenants, validTenantId } from "../cloud/tenants/index.mjs";
 import { listSignups } from "../src/http/waitlist-store.mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { createHandler } from "../api/invites.mjs";
@@ -101,4 +101,62 @@ test("invites API: admin only, intent header and same origin on writes, hashes o
 test("invites API: no customer Redis is a 503, not a crash", async () => {
   const h = createHandler({ env: ENV });
   assert.equal((await call(h, { headers: { cookie } })).status, 503);
+});
+
+test("accounts: an interrupted owner write is repaired on the next sign-in", async () => {
+  const redis = oauthRedis();
+  const tenant = "urepair00000";
+  await redis("SET", `lm:account:clerk:${USER}`, tenant);
+  let fail = true;
+  const flaky = async (...args) => {
+    if (fail && args[0] === "SET" && args[1] === `lm:account:tenant:${tenant}`) {
+      fail = false;
+      throw new Error("owner write unavailable");
+    }
+    return redis(...args);
+  };
+  await assert.rejects(accountFor({ clerkUserId: USER }, { redis: flaky }), /unavailable/);
+  const account = await accountFor({ clerkUserId: USER }, { redis: flaky });
+  assert.equal(account.tenant, tenant);
+  assert.equal(await ownerOf(tenant, { redis }), USER);
+});
+
+test("accounts: a candidate collision never adopts or overwrites another account", async () => {
+  const redis = oauthRedis();
+  const other = "user_OTHER123456789";
+  const first = await accountFor({ clerkUserId: USER, email: EMAIL }, { redis, env: { LOGMEM_SIGNUP_OPEN: "1" }, newId: () => "ucollision0" });
+  const ids = [first.tenant, "ufresh00000"];
+  const second = await accountFor({ clerkUserId: other, email: EMAIL }, { redis, env: { LOGMEM_SIGNUP_OPEN: "1" }, newId: () => ids.shift() });
+  assert.notEqual(first.tenant, second.tenant);
+  assert.equal(await ownerOf(first.tenant, { redis }), USER);
+  assert.equal(await ownerOf(second.tenant, { redis }), other);
+  await redis("SET", `lm:account:clerk:${other}`, first.tenant);
+  await assert.rejects(accountFor({ clerkUserId: other }, { redis }), /owner does not match/);
+  assert.equal(await ownerOf(first.tenant, { redis }), USER);
+});
+
+test("accounts: concurrent users cannot share a generated candidate", async () => {
+  const redis = oauthRedis();
+  const other = "user_OTHER123456789";
+  const result = await Promise.allSettled([USER, other].map((clerkUserId, index) => {
+    let attempt = 0;
+    return accountFor({ clerkUserId, email: EMAIL }, {
+      redis, env: { LOGMEM_SIGNUP_OPEN: "1" }, newId: () => attempt++ === 0 ? "usame000000" : `ufallback00${index}`,
+    });
+  }));
+  assert.ok(result.every((r) => r.status === "fulfilled"));
+  assert.notEqual(result[0].value.tenant, result[1].value.tenant);
+  assert.equal(await ownerOf(result[0].value.tenant, { redis }), USER);
+  assert.equal(await ownerOf(result[1].value.tenant, { redis }), other);
+});
+
+test("accounts: a generated id never adopts a tenant without an account owner", async () => {
+  const redis = oauthRedis();
+  await createTenant(redis, { id: "uexisting00", name: "Existing", plan: "free" });
+  const ids = ["uexisting00", "uavailable0"];
+  const account = await accountFor({ clerkUserId: USER, email: EMAIL }, {
+    redis, env: { LOGMEM_SIGNUP_OPEN: "1" }, newId: () => ids.shift(),
+  });
+  assert.equal(account.tenant, "uavailable0");
+  assert.equal(await ownerOf("uexisting00", { redis }), null);
 });
