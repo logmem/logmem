@@ -192,3 +192,32 @@ test("ended state survives removal of the shared open slot", async () => {
   assert.notEqual(back.entry.shift, first.entry.shift);
   assert.equal((await allEntries(redis)).filter(e => e.kind === "recap").length, 1);
 });
+
+test("a delayed session refresh cannot replace a newer shared shift", async () => {
+  const inner = createMemoryRedis(), now = clock();
+  const slot = "lm:madez:session:open-shift-muse-logmem-exec";
+  let armed = false, blocked, release;
+  const waiting = new Promise(resolve => { blocked = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const redis = async (command, ...args) => {
+    const refresh = (command === "SET" && args[0] === slot) ||
+      (command === "EVAL" && String(args[0]).includes("refresh shared shift"));
+    if (armed && refresh) { armed = false; blocked(); await gate; }
+    return inner(command, ...args);
+  };
+  const a = call(redis, now), b = call(inner, now);
+  const original = await sc(a, "logmem_note", { where: "channel:ops", summary: "old" });
+  await sc(b, "logmem_note", { where: "channel:ops", summary: "joined" });
+  armed = true;
+  const delayed = sc(a, "logmem_note", { where: "channel:ops", summary: "delayed" });
+  await waiting;
+  await sc(b, "logmem_recap", { notes: "Finished" });
+  now.advance(MIN);
+  const newer = await sc(call(inner, now), "logmem_note", { where: "channel:ops", summary: "newer" });
+  assert.notEqual(newer.entry.shift, original.entry.shift);
+  release();
+  await delayed;
+  assert.equal(JSON.parse(await inner("GET", slot)).shift, newer.entry.shift);
+  const fresh = await sc(call(inner, now), "logmem_note", { where: "channel:ops", summary: "fresh" });
+  assert.equal(fresh.entry.shift, newer.entry.shift);
+});

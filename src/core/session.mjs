@@ -24,6 +24,46 @@ import { lmSessionKey, checkAgentId } from "./keys.mjs";
 import { tryParse } from "./store.mjs";
 import { randomBytes, createHash } from "node:crypto";
 import { readShiftEntries } from "./shift-entries.mjs";
+import { registerEvalScript } from "../lib/lua-scripts.mjs";
+
+// Compare the slot and durable ended marker inside the same Redis operation.
+const OPEN_STATE_LUA = `-- refresh shared shift without replacing a newer owner
+local mode, shift, value, ttl = ARGV[1], ARGV[2], ARGV[3], ARGV[4]
+local raw = redis.call('GET', KEYS[1])
+local cur = raw and cjson.decode(raw) or nil
+if mode == 'end' then
+  redis.call('SET', KEYS[2], value, 'EX', ttl)
+  if cur and cur.shift == shift then
+    cur.ended = true
+    cur.ended_at = cjson.decode(value).ended_at
+    redis.call('SET', KEYS[1], cjson.encode(cur), 'EX', ttl)
+  end
+  return 1
+end
+if redis.call('GET', KEYS[2]) then return 0 end
+if cur and (cur.shift ~= shift or cur.ended) then return 0 end
+local next = cjson.decode(value)
+if cur and tonumber(cur.last_seen) and tonumber(cur.last_seen) > tonumber(next.last_seen) then
+  next.last_seen = cur.last_seen
+end
+redis.call('SET', KEYS[1], cjson.encode(next), 'EX', ttl)
+return 1`;
+registerEvalScript(OPEN_STATE_LUA, (call, keys, [mode, shift, value, ttl]) => {
+  const raw = call('GET', keys[0]);
+  const cur = raw ? JSON.parse(raw) : null;
+  if (mode === 'end') {
+    call('SET', keys[1], value, 'EX', ttl);
+    if (cur?.shift === shift) {
+      call('SET', keys[0], JSON.stringify({ ...cur, ended: true, ended_at: JSON.parse(value).ended_at }), 'EX', ttl);
+    }
+    return 1;
+  }
+  if (call('GET', keys[1]) || (cur && (cur.shift !== shift || cur.ended))) return 0;
+  const next = JSON.parse(value);
+  if (cur && Number(cur.last_seen) > Number(next.last_seen)) next.last_seen = cur.last_seen;
+  call('SET', keys[0], JSON.stringify(next), 'EX', ttl);
+  return 1;
+}, { jail: true });
 
 export const IDLE_MS = 30 * 60 * 1000;
 /** Shift bookkeeping is dropped a week after the last call. */
@@ -87,7 +127,9 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
 
   async function loadOpen(agent) {
     const r = tryParse(await store.redis("GET", openKey(agent)));
-    return r && typeof r === "object" && r.agent === agent && typeof r.shift === "string" ? r : null;
+    if (!r || typeof r !== "object" || r.agent !== agent || typeof r.shift !== "string") return null;
+    const ended = tryParse(await store.redis("GET", endedKey(r.shift)));
+    return ended ? { ...r, ended: true, ended_at: ended.ended_at } : r;
   }
   async function saveOpen(rec) {
     const k = openKey(rec.agent);
@@ -97,14 +139,14 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
   }
   /** Mark the open shift ended when it is this one, so no other session recaps or resumes it. */
   async function endOpen(rec, t) {
-    await store.redis("SET", endedKey(rec.shift), JSON.stringify({ ended_at: t }), "EX", SESSION_TTL_S);
-    const cur = await loadOpen(rec.agent);
-    if (cur && cur.shift === rec.shift && !cur.ended) await saveOpen({ ...cur, ended: true, ended_at: t });
+    await store.redis("EVAL", OPEN_STATE_LUA, 2, openKey(rec.agent), endedKey(rec.shift),
+      "end", rec.shift, JSON.stringify({ ended_at: t }), String(SESSION_TTL_S));
   }
-  /** Bump the open shift's last_seen, unless a newer live shift holds the slot. */
-  async function touchOpen(rec, t, cur) {
-    if (cur && cur.shift !== rec.shift && isLive(cur, t) && cur.started_at > rec.started_at) return;
-    await saveOpen({ ...rec, last_seen: t });
+  /** Refresh only if this shift still owns the slot and has not ended. */
+  async function touchOpen(rec, t) {
+    const next = { ...rec, last_seen: t };
+    return Number(await store.redis("EVAL", OPEN_STATE_LUA, 2, openKey(rec.agent), endedKey(rec.shift),
+      "refresh", rec.shift, JSON.stringify(next), String(SESSION_TTL_S))) === 1;
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -308,7 +350,10 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
       }
       if (rec && !rec.ended) {
         rec = await save({ ...rec, last_seen: t });
-        await touchOpen(rec, t, open);
+        if (!await touchOpen(rec, t)) {
+          rec = await resumeOrStart(rec.agent, events);
+          rec = await save({ ...rec, last_seen: t });
+        }
       }
       return { shift: rec && !rec.ended ? rec : null, events };
     },
@@ -335,7 +380,11 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
         if (rec.agent === a) {
           const t = now();
           await save({ ...rec, last_seen: t });
-          await touchOpen(rec, t, await loadOpen(a));
+          if (!await touchOpen(rec, t)) {
+            const current = await resumeOrStart(a, events);
+            await save(current);
+            return { shift: current, events };
+          }
           return { shift: rec, events: [{ type: "already-started", agent: a, shift: rec.shift }] };
         }
         const recap = await recapShift(rec, { reason: `switch to ${a}` });
