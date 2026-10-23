@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
+import { createStore } from "../src/core/store.mjs";
+import { acmiKey } from "../src/core/keys.mjs";
 import { createLogmem } from "../src/server.mjs";
 import { runCheck, updateScorecard, gate, DAY_MS } from "../scripts/dogfood-check.mjs";
 
@@ -40,6 +42,101 @@ test("missing ACMI twin = mismatch = fail", async () => {
   assert.ok(day.mirror_mismatches >= 1);
   assert.equal(day.health_pass, false);
   assert.equal(day.pass, false);
+});
+
+test("connection without the mirror: counted as opt-out, not a mismatch", async () => {
+  const redis = createMemoryRedis();
+  await team(redis, "madez");
+  const h = createLogmem({ redis, space: "madez", sessionId: "h", surface: "hermes-telegram", mirror: { enabled: false, spaces: [] } });
+  await sc(h, "logmem_start", { agent: "hermes" });
+  await sc(h, "logmem_note", { where: "agent:hermes", kind: "memo", summary: "native only" });
+  const [rec] = (await redis("ZRANGE", "lm:madez:agent:hermes:shifts", 0, -1)).map(JSON.parse);
+  assert.equal(rec.mirror, "off");
+  const { day } = await runCheck(redis, { space: "madez" });
+  assert.equal(day.mirror_mismatches, 0);
+  assert.equal(day.mirror_opt_out, 2, "started + memo");
+  assert.deepEqual(day.mirror_opt_out_writers, ["agent:hermes (via hermes-telegram)"]);
+  assert.equal(day.health_pass, true);
+});
+
+for (const firstOn of [false, true]) {
+  test(`shared session keeps each connection's mirror policy (${firstOn ? "on to off" : "off to on"})`, async () => {
+    const redis = createMemoryRedis();
+    const connect = (enabled) => createLogmem({
+      redis, space: "madez", sessionId: "shared", surface: "hermes",
+      mirror: { enabled, spaces: ["madez"] },
+    });
+    const first = connect(firstOn);
+    await sc(first, "logmem_start", { agent: "hermes" });
+    await sc(first, "logmem_note", { where: "job:policy-change", summary: "first connection" });
+    const second = connect(!firstOn);
+    await sc(second, "logmem_note", { where: "job:policy-change", summary: "second connection" });
+    const store = createStore(redis, { space: "madez" });
+    const entries = await store.readLog("job", "policy-change");
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].shift, entries[1].shift, "both connections reuse one shift");
+    if (!firstOn) {
+      const key = acmiKey("madez", "job", "policy-change", "log");
+      const members = await redis("ZRANGE", key, 0, -1);
+      const twin = members.find((m) => JSON.parse(m).correlationId === entries[1].trail);
+      assert.ok(twin, "mirror-on note has an ACMI twin before removal");
+      assert.equal(await redis("ZREM", key, twin), 1);
+    }
+    const { day } = await runCheck(redis, { space: "madez", write: false });
+    assert.equal(day.mirror_mismatches, firstOn ? 0 : 1);
+    assert.equal(day.mirror_opt_out, firstOn ? 1 : 2);
+    assert.equal(day.health_pass, firstOn);
+  });
+}
+
+// Legacy fixtures predate per-entry mirror metadata.
+async function setEntryMirror(redis, value) {
+  const key = "lm:madez:agent:hermes:log";
+  const [member, score] = await redis("ZRANGE", key, 0, -1, "WITHSCORES");
+  const entry = JSON.parse(member);
+  delete entry.mirror;
+  if (value !== undefined) entry.mirror = value;
+  await redis("ZREM", key, member);
+  await redis("ZADD", key, score, JSON.stringify(entry));
+}
+
+for (const metadata of [undefined, "invalid"]) {
+  test(`entry policy ${metadata === undefined ? "absent uses legacy shift" : "invalid fails closed"}`, async () => {
+    const redis = createMemoryRedis();
+    const h = createLogmem({ redis, space: "madez", sessionId: "h", surface: "hermes", mirror: { enabled: false } });
+    await sc(h, "logmem_start", { agent: "hermes" });
+    await setEntryMirror(redis, metadata);
+    const { day } = await runCheck(redis, { space: "madez", write: false });
+    assert.equal(day.mirror_opt_out, metadata === undefined ? 1 : 0);
+    assert.equal(day.mirror_mismatches, metadata === undefined ? 0 : 1);
+  });
+}
+
+test("mirror on but twin missing is still a mismatch", async () => {
+  const redis = createMemoryRedis();
+  await team(redis, "madez");
+  const [rec] = (await redis("ZRANGE", "lm:madez:agent:claude-code:shifts", 0, -1)).map(JSON.parse);
+  assert.equal(rec.mirror, "on");
+  await redis("DEL", "acmi:madez:agent:claude-code:timeline");
+  const { day } = await runCheck(redis, { space: "madez", write: false });
+  assert.equal(day.mirror_mismatches, 1);
+  assert.equal(day.mirror_opt_out, 0);
+});
+
+test("a shift record without the setting (older shifts) never counts as opted out", async () => {
+  const redis = createMemoryRedis();
+  const h = createLogmem({ redis, space: "madez", sessionId: "h", surface: "hermes", mirror: { enabled: false, spaces: [] } });
+  await sc(h, "logmem_start", { agent: "hermes" });
+  await setEntryMirror(redis);
+  const key = "lm:madez:agent:hermes:shifts";
+  const [member, score] = await redis("ZRANGE", key, 0, -1, "WITHSCORES");
+  const { mirror, ...legacy } = JSON.parse(member);
+  assert.equal(mirror, "off");
+  await redis("ZREM", key, member);
+  await redis("ZADD", key, score, JSON.stringify(legacy));
+  const { day } = await runCheck(redis, { space: "madez", write: false });
+  assert.equal(day.mirror_opt_out, 0);
+  assert.equal(day.mirror_mismatches, 1);
 });
 
 test("ACMI-side handoff-ack counts as accepted (VM agents)", async () => {
