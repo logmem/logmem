@@ -169,26 +169,27 @@ test("getTenant / setStatus: validation, transitions, deleted is terminal", asyn
 
 // ---------- plans ----------
 
-test("plans.json: PRICING.md ladder, Free recall confirmed, other recall placeholders flagged, aliases", () => {
+test("plans.json: PRICING.md ladder A, recall at 10:1, no placeholders left, aliases", () => {
   const raw = JSON.parse(readFileSync(new URL("../cloud/plans.json", import.meta.url), "utf8"));
   assert.match(raw._note, /one tenth of the fleet's real monthly use \(Mikey's ruling of 2026-10-20\)/);
-  assert.match(raw._note, /Mikey to confirm/);
+  assert.match(raw._note, /ladder A \(Mikey's ruling of 2026-10-21\)/);
+  assert.doesNotMatch(raw._note, /Mikey to confirm/);
   const doc = loadPlans();
   assert.deepEqual(Object.keys(doc.plans), ["free", "dev", "pro", "team", "agency", "enterprise"]);
-  const want = { free: [0, 1000, 7], dev: [19, 50000, 30], pro: [49, 150000, 90], team: [99, 500000, 365], agency: [199, 1500000, 365] };
+  const want = { free: [0, 1000, 7], dev: [19, 10000, 30], pro: [49, 50000, 90], team: [99, 150000, 365], agency: [199, 500000, 365] };
   for (const [id, [price, adds, days]] of Object.entries(want)) {
     const p = doc.plans[id];
     assert.equal(p.price_usd_month, price, id);
     assert.equal(p.limits.add, adds, id);
     assert.equal(p.limits.read, null, `${id}: reads unmetered for quota`);
-    assert.ok(Number.isInteger(p.limits.recall), id);
+    assert.equal(p.limits.recall, adds / 10, `${id}: recall is one tenth of adds`);
     if (id === "free") {
       assert.equal(p.limits.recall, 100);
       assert.equal(p.agents, 2);
       assert.match(p._note, /2,183 entries in the 7 days to Oct 21/);
       assert.doesNotMatch(p._note, /Mikey to confirm/);
     } else {
-      assert.match(p._note, /Mikey to confirm/, id);
+      assert.match(p._note, /Ladder A \(Mikey, Oct 21\)/, id);
     }
     assert.equal(p.history_days, days, id);
     assert.ok("spaces" in p && "agents" in p, id);
@@ -201,7 +202,7 @@ test("plans.json: PRICING.md ladder, Free recall confirmed, other recall placeho
 });
 
 test("planFor: tenant record or name, aliases, unknown fails closed", () => {
-  assert.equal(planFor({ id: "acme", plan: "pro" }).limits.add, 150000);
+  assert.equal(planFor({ id: "acme", plan: "pro" }).limits.add, 50000);
   assert.equal(planFor("pro").id, "pro");
   assert.equal(planFor("starter").id, "dev");
   assert.equal(planFor("scale").id, "agency");

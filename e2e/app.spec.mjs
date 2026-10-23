@@ -291,3 +291,22 @@ test("needs you: a Looks done? card shows the evidence; Close it and Still open 
   await expect.poll(() => posts.length).toBe(2);
   expect(posts[1][0]).toBe("keep-open");
 });
+
+test("walkthrough player: the step rail is one row of dots on phones and tablets, titles on desktop", async ({ page }) => {
+  await signIn(page, "#/job/i15-subject");
+  await page.locator(".lmx-drawer").getByRole("link", { name: "Open the player" }).click();
+  await expect(page.locator(".lmw-count")).toHaveText("Step 1 of 3");
+  const url = page.url();
+  for (const [w, h, compact] of [[390, 844, true], [768, 1024, true], [1280, 800, false]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(url);
+    await page.locator(".lmw-rail .ob-step").nth(1).click();
+    await expect(page.locator(".lmw-card h1")).toHaveText("Turn on the A/B test");
+    const m = await page.evaluate(() => ({ railH: document.querySelector(".lmw-rail").getBoundingClientRect().height, sw: document.documentElement.scrollWidth, iw: innerWidth }));
+    expect(m.sw, `no sideways scroll at ${w}px`).toBeLessThanOrEqual(m.iw);
+    if (compact) expect(m.railH, `one row of dots at ${w}px`).toBeLessThanOrEqual(60);
+    else await expect(page.locator(".lmw-rail .ob-step-title").first()).toBeVisible();
+    // Every dot keeps its step title for screen readers.
+    await expect(page.getByRole("button", { name: /Turn on the A\/B test/ })).toHaveCount(1);
+  }
+});
