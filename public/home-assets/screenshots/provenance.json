@@ -1,0 +1,32 @@
+{
+  "capturedAt": "2026-10-23T15:19:05.384230+00:00",
+  "source": "Actual LogMem /app home view on the local --business-demos server",
+  "data": "Synthetic fixtures created through real LogMem tools",
+  "files": [
+    {
+      "file": "development.jpg",
+      "sha256": "7df6d32d595bbd3c6b9051e4a3229cfdde64fe4e76cdefa73b9e245ce05436cf",
+      "bytes": 74070
+    },
+    {
+      "file": "restaurant.jpg",
+      "sha256": "c689c2c7a9fdaceda32eecca6c3ab8f1c40dce1dc7e473d8630ca467af3d5e50",
+      "bytes": 75352
+    },
+    {
+      "file": "sales.jpg",
+      "sha256": "9855ff52ea933c64faf5c5ba089fec174da10e9761ce7ac6422ab2c7c8ab95c5",
+      "bytes": 73077
+    },
+    {
+      "file": "solo.jpg",
+      "sha256": "aa177cf2a7f67e7aefda5739fc87b93f3a3f2bb9b7e51942316877361a55a6c9",
+      "bytes": 69474
+    },
+    {
+      "file": "trades.jpg",
+      "sha256": "c41820ee18e1e2c09c264dfb116f4d94eaacedd3732db7a07d6fcf729f9a739c",
+      "bytes": 77234
+    }
+  ]
+}
