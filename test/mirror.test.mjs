@@ -8,7 +8,9 @@ const ON = { enabled: true, spaces: ["madez"] };
 const sc = async (lm, n, a) => (await lm.callTool(n, a)).structuredContent;
 
 test("env config: off by default, madez by default when on", () => {
-  assert.deepEqual(mirrorConfigFromEnv({}), { enabled: false, spaces: ["madez"] });
+  assert.deepEqual(mirrorConfigFromEnv({}), { enabled: false });
+  assert.equal("spaces" in mirrorConfigFromEnv({}), false);
+  assert.deepEqual(mirrorConfigFromEnv({ LOGMEM_MIRROR_ACMI: "1" }), { enabled: true, spaces: ["madez"] });
   assert.deepEqual(mirrorConfigFromEnv({ LOGMEM_MIRROR_ACMI: "1", LOGMEM_MIRROR_SPACES: "a,b" }), { enabled: true, spaces: ["a", "b"] });
 });
 

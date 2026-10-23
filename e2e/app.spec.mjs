@@ -269,6 +269,35 @@ test("spaces: the picker is reachable at every width, and More signs out on a ph
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });
 
+test("needs you: a Looks done? card shows the evidence; Close it and Still open post for the job", async ({ page }) => {
+  await signIn(page);
+  const posts = [];
+  await page.route("**/api/needs**", async (route) => {
+    const res = await route.fetch();
+    const j = await res.json();
+    j.items = [{ type: "suggestion", trail: "suggest:i15-lead", job: "i15-lead", plan: "issue-15", summary: "Lead story", evidence: "PR #93 in this job's evidence merged.", owner: "agent:quill", created_at: Date.now() - 60000 }, ...(j.items || [])];
+    j.count = j.items.length;
+    j.stale = ["i15-lead"];
+    await route.fulfill({ response: res, json: j });
+  });
+  for (const op of ["confirm-done", "keep-open"]) {
+    await page.route(`**/api/${op}`, async (route) => { posts.push([op, route.request().postDataJSON()]); await route.fulfill({ json: { ok: true, job: "i15-lead" } }); });
+  }
+  await page.reload();
+  await expect(page.locator(".lmx")).toBeVisible();
+  await page.locator(".lmx-needs:visible, .lmx-tabs button:visible").filter({ hasText: "Needs you" }).first().click();
+  const card = page.locator('.lmx-drawer [data-key="suggestion:i15-lead"]');
+  await expect(card).toContainText("Looks done?");
+  await expect(card).toContainText("PR #93 in this job's evidence merged.");
+  await card.locator("input[data-note-for]").fill("checked the PR");
+  await card.getByRole("button", { name: "Close it" }).click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toEqual(["confirm-done", expect.objectContaining({ job: "i15-lead", note: "checked the PR" })]);
+  await card.getByRole("button", { name: "Still open" }).click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts[1][0]).toBe("keep-open");
+});
+
 test("walkthrough player: the step rail is one row of dots on phones and tablets, titles on desktop", async ({ page }) => {
   await signIn(page, "#/job/i15-subject");
   await page.locator(".lmx-drawer").getByRole("link", { name: "Open the player" }).click();

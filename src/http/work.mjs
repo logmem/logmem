@@ -100,6 +100,44 @@ export async function nudge(store, { job, agent, note, by, now = Date.now }) {
   return { ok: true, job, to, entry };
 }
 
+/** Stages a "looks done?" suggestion can come from (src/core/reconcile.mjs). */
+const OPEN_STAGES = new Set(["open", "active", "blocked"]);
+
+/**
+ * A person confirms a "looks done?" suggestion: the job moves to done, with
+ * their own Done entry. A job still waiting on a task or a decision is refused:
+ * answer those first.
+ */
+export async function confirmDone(store, { job, note, by, now = Date.now }) {
+  if (!PERSON_RE.test(String(by))) throw new WorkError(403, "only a person can close a job from Looks done?");
+  const j = await jobOrThrow(store, job);
+  if (!OPEN_STAGES.has(j.now.stage || "open")) throw new WorkError(409, "this job is already done");
+  const waits = (Array.isArray(j.now.waits) ? j.now.waits : []).filter((w) => w.type === "decision" || w.type === "task");
+  if (waits.length || ["decision", "task"].includes(j.now.blocked_on?.type)) throw new WorkError(409, "this job still waits on a task or a decision: answer it first");
+  const text = cleanNote(note);
+  const name = by.replace(/^human:/, "");
+  const entry = personEntry(by, "done", `Done: ${name} confirmed it from Looks done?${text ? `. ${text}` : ""}`, { job: `job:${job}` }, { suggestion: true, ...(text ? { note: text } : {}) }, now);
+  await store.setNow("job", job, { stage: "done", stage_at: entry.ts, blocked_on: null });
+  await store.append("job", job, entry);
+  return { ok: true, job, entry };
+}
+
+/**
+ * A person says a "looks done?" job is still open. The reconciler stops
+ * suggesting it until the job gets a new entry.
+ */
+export async function keepOpen(store, { job, note, by, now = Date.now }) {
+  if (!PERSON_RE.test(String(by))) throw new WorkError(403, "only a person can answer Looks done?");
+  await jobOrThrow(store, job);
+  const text = cleanNote(note);
+  const name = by.replace(/^human:/, "");
+  const entry = personEntry(by, "memo", `${name} says this job is still open${text ? `: ${text}` : "."}`, { job: `job:${job}` }, { suggestion: "dismissed", ...(text ? { note: text } : {}) }, now);
+  await store.append("job", job, entry);
+  // After the entry, so the entry itself does not count as "changed since".
+  await store.setNow("job", job, { reconcile_dismissed: { at: entry.ts, by, trail: entry.trail } });
+  return { ok: true, job, entry };
+}
+
 /**
  * A person unblocks a job that waits on something outside the team, or on
  * nothing named. A job blocked on a decision or a task clears when that is

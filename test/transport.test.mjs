@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -92,6 +94,75 @@ test("http dispatch: surface rides in the session id across stateless calls", as
   const r2 = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { where: "ops", summary: "x" } } }, { lmFactory, toolDefs: () => [] });
   assert.equal(r2.result.structuredContent.shift_events, undefined);
   assert.equal(r2.result.structuredContent.entry.byline, "quill (via perplexity)");
+});
+
+function runBin(args, { env = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [entry, ...args], {
+      env: { PATH: process.env.PATH, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`timed out stdout=${stdout} stderr=${stderr}`));
+    }, 4000);
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", (d) => { stderr += d; });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
+test("stdio --help and -h print usage and exit 0 without starting the server", async () => {
+  for (const flag of ["--help", "-h"]) {
+    const r = await runBin([flag]);
+    assert.equal(r.code, 0, flag);
+    assert.match(r.stdout, /Usage:/);
+    assert.match(r.stdout, /npx @logmem\/mcp/);
+    assert.match(r.stdout, /https:\/\/logmem\.si/);
+    assert.doesNotMatch(r.stderr, /ready:/);
+    assert.doesNotMatch(r.stderr, /LOGMEM_SPACE is not set/);
+  }
+});
+
+test("stdio --version and -V print the package version and exit 0", async () => {
+  const version = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  for (const flag of ["--version", "-V"]) {
+    const r = await runBin([flag]);
+    assert.equal(r.code, 0, flag);
+    assert.equal(r.stdout.trim(), version);
+    assert.doesNotMatch(r.stderr, /ready:/);
+  }
+});
+
+test("stdio warns when LOGMEM_SPACE is unset and uses demo", async () => {
+  const child = spawn(process.execPath, [entry], {
+    env: { PATH: process.env.PATH },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let stderr = "";
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no space warning: ${stderr}`)), 4000);
+      child.stderr.on("data", (d) => {
+        stderr += d;
+        if (/LOGMEM_SPACE is not set/.test(stderr) && /ready:/.test(stderr)) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    assert.match(stderr, /LOGMEM_SPACE is not set; using "demo"/);
+    assert.match(stderr, /space=demo/);
+    assert.match(stderr, /mirror=\{"enabled":false\}/);
+    assert.doesNotMatch(stderr, /madez/);
+  } finally {
+    child.kill("SIGTERM");
+  }
 });
 
 test("http: break-glass env backend refuses spaces outside LOGMEM_SPACES", async () => {

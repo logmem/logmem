@@ -714,7 +714,8 @@
         "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": false
-      }
+      },
+      "acmi_equivalent": null
     },
     {
       "name": "logmem_update",
@@ -907,7 +908,7 @@
     {
       "name": "logmem_recall",
       "title": "Recall",
-      "description": "Search memory for something you didn't write. Finds entries by meaning when a semantic index is attached, otherwise by words. Read only.",
+      "description": "Search memory for something you didn't write. Matches keywords in summaries and payloads. Read only.",
       "inputSchema": {
         "type": "object",
         "properties": {

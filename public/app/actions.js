@@ -16,14 +16,15 @@ const busy = (el, on) => { if (el) el.disabled = on; };
 
 // ─── jobs: nudge and unblock ─────────────────────────────────────────
 export async function doWork(ev, op, job, agent) {
-  const key = `${op}:${job}`, note = noteFor(key), b = ev.currentTarget, card = cardOf(ev);
+  // "Still open" shares the Close it note box.
+  const key = `${op === 'keep-open' ? 'confirm-done' : op}:${job}`, note = noteFor(key), b = ev.currentTarget, card = cardOf(ev);
   if (op === 'unblock' && !note) { toast('Say in one line why the job can move again.', true); focusNote(key); return; }
   busy(b, true);
   if (op === 'unblock' && card) card.style.opacity = '.4';
   try {
     const j = await postJSON('/api/' + op, 'work', { job, note: note || undefined, agent: agent || undefined });
     clearNote(key);
-    toast(op === 'nudge' ? `Nudged ${j.to || 'the agent'}.` : 'Unblocked. The owner sees it in their Brief.');
+    toast(op === 'nudge' ? `Nudged ${j.to || 'the agent'}.` : op === 'confirm-done' ? 'Closed. The job is done.' : op === 'keep-open' ? 'Kept open. It won’t be suggested again until the job changes.' : 'Unblocked. The owner sees it in their Brief.');
     onChanged();
   } catch (e) {
     toast('Not saved: ' + e.message, true);

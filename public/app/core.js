@@ -5,7 +5,7 @@ export const state = { space: null, spaces: [] };
 try { state.space = localStorage.getItem('lm-space'); } catch (e) { /* storage blocked */ }
 
 // Live app state: the last rev seen, the Needs you count, pulse status, cached view data.
-export const live = { rev: null, needs: 0, status: 'live', fails: 0, timer: null, signedOut: false, storageDown: false, jobs: null, log: null, recall: null, home: null };
+export const live = { rev: null, needs: 0, stale: [], status: 'live', fails: 0, timer: null, signedOut: false, storageDown: false, jobs: null, log: null, recall: null, home: null };
 
 // ─── time and numbers ────────────────────────────────────────────────
 export function hhmm(ts) {
