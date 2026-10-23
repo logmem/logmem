@@ -10,6 +10,7 @@
   },
   "files": [
     "LICENSE",
+    "server.json",
     "src/stdio/index.mjs",
     "src/server.mjs",
     "src/core/",
@@ -61,5 +62,6 @@
     "@madezmedia/acmi": "1.2.0",
     "@playwright/test": "1.63.0",
     "@vercel/blob": "2.7.0"
-  }
+  },
+  "mcpName": "si.logmem/mcp"
 }

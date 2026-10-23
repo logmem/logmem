@@ -12,6 +12,21 @@ npx @logmem/mcp
 
 The product site is https://logmem.si. License: [MIT](LICENSE), Copyright (c) 2026 Mad EZ Media.
 
+## Registry identity
+
+The approved domain is `logmem.si`. Its reverse-DNS namespace is `si.logmem`.
+The MCP Registry name is `si.logmem/mcp` in both `server.json` and the npm package's `mcpName`.
+The npm package remains `@logmem/mcp`, under the MIT license.
+
+The [official naming rules](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/authentication.mdx)
+require reverse-DNS names for domain authentication.
+The [npm ownership rules](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx)
+require `mcpName` to match the registry server name.
+
+Publishing still needs verified control of `logmem.si` through DNS or HTTP authentication.
+It also needs npm publishing access to `@logmem/mcp` and an explicit release decision.
+These package changes neither publish to npm nor register the server.
+
 ## Install
 
 ```bash
@@ -49,6 +64,7 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 | `LOGMEM_MIRROR_ACMI` | no | no | off |
 | `LOGMEM_MIRROR_SPACES` | no | no | `madez`, only when mirroring is on |
 | `LOGMEM_DECIDE_SECRET` | no | yes | unset; decisions stay disabled |
+| `LOGMEM_VERIFY_URL` | no | no | none; optional HTTPS endpoint for remote human-decision verification |
 | `LOGMEM_WORK_RULES` | no | no | `strict`; `warn` allows a task or decision off a job, or blocked with no reason |
 | `LOGMEM_ADMIN_ID` | no | no | `admin` |
 | `ACMI_DEFAULT_TENANT` | no | no | none (legacy space fallback) |
