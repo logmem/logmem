@@ -547,7 +547,7 @@ async function recordManagedApp(r, { family, isNew, client_id, backend, space })
   const now = Math.floor(Date.now() / 1000);
   const prev = parse(await r("GET", APP_KEY.app(family)));
   if (prev) {
-    await r("SET", APP_KEY.app(family), JSON.stringify({ ...prev, last_used: now }), "EX", String(TTL.refresh));
+    await r("SET", APP_KEY.app(family), JSON.stringify({ ...prev, last_used: now }));
     return;
   }
   if (!isNew && !prev) return; // a refresh of a grant that was disconnected: do not resurrect it
@@ -558,7 +558,8 @@ async function recordManagedApp(r, { family, isNew, client_id, backend, space })
     // name is cosmetic
   }
   const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now, ...(space ? { space } : {}) };
-  await r("SET", APP_KEY.app(family), JSON.stringify(rec), "EX", String(TTL.refresh));
+  // Keep token-free metadata until disconnect and customer cleanup finish.
+  await r("SET", APP_KEY.app(family), JSON.stringify(rec));
   await r("SADD", APP_KEY.apps(backend.tenant), family);
 }
 
@@ -576,13 +577,15 @@ export async function listManagedApps(tenant) {
 }
 
 /** Disconnect one app of `tenant`: every token of its grant goes. Returns the app record, or null. */
-export async function revokeManagedApp(tenant, fid) {
+export async function revokeManagedApp(tenant, fid, { beforeRemove } = {}) {
   if (!isFid(fid)) return null;
   const r = deployRedis();
   const rec = parse(await r("GET", APP_KEY.app(fid)));
   if (!rec || rec.tenant !== tenant) return null;
   await r("SET", KEY.familyRevoked(fid), "1", "EX", String(TTL.refreshGrace));
   await revokeFamilySet(r, fid);
+  await r("SET", APP_KEY.app(fid), JSON.stringify({ ...rec, disconnected: true }));
+  if (beforeRemove) await beforeRemove(rec);
   await r("DEL", APP_KEY.app(fid));
   await r("SREM", APP_KEY.apps(tenant), fid);
   return rec;
