@@ -1,4 +1,4 @@
-// tools.mjs — the 23 logmem_* tools.
+// tools.mjs — the 24 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
@@ -32,6 +32,7 @@ import {
   listCoordItemsForTrail,
   getCoordItemsByTrail,
 } from "./coord.mjs";
+import { executeSync, claimCoordAction } from "./sync.mjs";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -446,6 +447,36 @@ export const TOOLS = [
     },
   },
 
+  {
+    name: "logmem_sync",
+    title: "Sync",
+    description:
+      "Daily coordination sync (three daily runs: morning, midday, closeout). Without receipt: reads open handoffs, seats, and directed requests with deadlines and overdue status (pure read). With receipt: writes a verified run receipt and slot record.",
+    params: params({
+      receipt: { type: "boolean", desc: "Write a verified run receipt instead of reading only", optional: true },
+      run_id: { type: "string", desc: "Stable run ID for idempotent receipts and retries", optional: true },
+      slot: { type: "string", desc: "Daily coordination slot ('morning', 'midday', 'closeout', 'manual')", optional: true },
+      outcome: { type: "string", desc: "Receipt outcome ('pass', 'partial', 'failed')", optional: true },
+      notes: { type: "string", desc: "Summary note for the sync run", optional: true },
+      agent: { type: "string", desc: "Agent to sync (default: you)", optional: true },
+      claim_only: { type: "boolean", desc: "Acquire run claim without completing (crash test)", optional: true },
+    }),
+    annotations: WRITE,
+    async run({ receipt, run_id, slot, outcome, notes, agent, claim_only }, ctx) {
+      const targetAgent = agent == null ? me(ctx) : checkAgentId(agent);
+      return await executeSync(ctx.store, {
+        agent: targetAgent,
+        receipt: receipt === true,
+        run_id,
+        slot,
+        outcome,
+        notes,
+        claim_only,
+        now: ctx.now || Date.now,
+      });
+    },
+  },
+
   // ─── Log ────────────────────────────────────────────────────────────
   {
     name: "logmem_note",
@@ -462,9 +493,18 @@ export const TOOLS = [
       to: { type: "strings", desc: "Explicit recipient agents for huddles or directed memos (creates one obligation seat per recipient)", optional: true },
       answers: { type: "string", desc: "Item ID this note answers, e.g. 'ci_...'", optional: true },
       disposition: { type: "string", desc: "Disposition when answering an item: 'answered' (default), 'declined', or 'blocked'", optional: true },
+      action_id: { type: "string", desc: "Action ID to deduplicate reply writes (hash of run, item, disposition)", optional: true },
     }),
     annotations: WRITE,
-    async run({ where, summary, kind, trail, origin, payload, to, answers, disposition }, ctx) {
+    async run({ where, summary, kind, trail, origin, payload, to, answers, disposition, action_id }, ctx) {
+      if (action_id) {
+        capText("action_id", action_id, LIMITS.trail);
+        const claimed = await claimCoordAction(ctx.store, ctx.store.space, action_id);
+        if (!claimed) {
+          return { ok: false, error: `action '${action_id}' was already executed` };
+        }
+      }
+
       const { ns, id } = parseRef(where);
 
       // 1. If this note answers a specific coordination item:

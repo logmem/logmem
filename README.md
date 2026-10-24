@@ -160,6 +160,31 @@ Self-hosting the open-source core is free forever. Hosted plans open with the be
 - **Nov 6** — listings live: npm, the MCP Registry, and Smithery
 - **Nov 16** — hosted beta opens at logmem.space
 
+## Developer & Protocol Reference
+
+### What's here
+
+| Path | What it is |
+|------|-----------|
+| `src/server.mjs` | `createLogmem()`: one server, any transport |
+| `src/core/vocab.mjs` | The LogMem ↔ ACMI dictionary (tools, kinds, fields, namespaces) |
+| `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
+| `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
+| `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
+| `src/core/tools.mjs` | The 24 `logmem_*` tools |
+| `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
+| `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
+| `api/mcp.mjs` | Streamable HTTP route (Vercel) |
+| `api/oauth/`, `api/well-known/` | OAuth 2.1 + PKCE, ported from acmi-product, space-bound tokens |
+| `api/inbox/[agent].mjs` | Drop work on an agent (writes a Handoff entry) |
+| `reference/` | The ACMI originals this was built from, unchanged, for review diffs |
+
+### Tools
+
+Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
+Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
+Remove, Spaces, Connection, Sync: 24 tools, all as `logmem_<word>`. Names follow the Action Map.
+
 ## License
 
 MIT. The protocol, the skills, and this repo are open — the hosted service is how we keep the lights on.

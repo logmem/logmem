@@ -134,6 +134,7 @@ export function createLogmem({
   surface = "unknown",
   sessionId,
   defaultAgent,
+  agent,
   // An agent key binds the connection to one agent: other agent ids are refused.
   lockedAgent = null,
   // A managed account's plan limits (src/http/limits.mjs createLimits). Off for the fleet and self-hosted.
@@ -183,7 +184,7 @@ export function createLogmem({
   // Managed accounts are metered by their limits; the usage meter covers everyone else.
   const usage = !limits && meter ? createUsageMeter(redis, space, { now: now || Date.now }) : null;
   const store = applyUsageMeter(applyLimits(createStore(redis, { space, compat, mirror }), limits), usage);
-  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent, lockedAgent, idleMs, now });
+  const shifts = createShifts(store, { sessionId: sessionId || `proc-${process.pid}`, surface, defaultAgent: defaultAgent || agent, lockedAgent, idleMs, now });
   const ctx = {
     store,
     shifts,
@@ -235,7 +236,8 @@ export function createLogmem({
       if (c.error) return degradedMark(toResult({ ok: false, error: c.error, tool: name }));
       args = c.args;
     }
-    const pure = pureReads && tool.annotations?.readOnlyHint === true;
+    const isSyncReceipt = name === "logmem_sync" && args?.receipt === true;
+    const pure = pureReads && (tool.annotations?.readOnlyHint === true || (name === "logmem_sync" && !isSyncReceipt));
     // A pure read makes zero Redis writes (PR 91), so the usage meter skips it.
     ctx.pure = pure;
     try {
