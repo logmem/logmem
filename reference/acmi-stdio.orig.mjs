@@ -47,7 +47,7 @@ const nativeDb = parseInt(process.env.ACMI_REDIS_DB || "0");
 // Fleet PRIMARY for agents that cannot open TCP:6379/26379 (edge, cloud sandboxes).
 // Polar exec URLs stuffed into UPSTASH_* also count as bridge (no trailing slash).
 const bridgeUrl = process.env.ACMI_BRIDGE_URL || process.env.ACMI_REDIS_BRIDGE_URL || (isBridgeUrl(upstashUrl) ? upstashUrl : "");
-const bridgeToken = process.env.ACMI_BRIDGE_TOKEN || process.env.ACMI_REDIS_BRIDGE_TOKEN || (isBridgeUrl(upstashUrl) ? upstashToken : "") || "vm-local-bridge";
+const bridgeToken = process.env.ACMI_BRIDGE_TOKEN || process.env.ACMI_REDIS_BRIDGE_TOKEN || (isBridgeUrl(upstashUrl) ? upstashToken : "");
 
 const defaultTenant = process.env.ACMI_DEFAULT_TENANT || "madez";
 const allowedTenants = (process.env.ACMI_ALLOWED_TENANTS || "madez").split(",");
