@@ -1,6 +1,6 @@
-import {clearInteractions} from './interactions.js';
 // main.js — the LogMem web app: hash routes, sign-in, the live pulse and keyboard shortcuts.
 // Every view renders through lit-html (escaped templates); no file in public/app writes raw HTML.
+import {clearInteractions} from './interactions.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { state, live, getJSON, invalidateLoads, setSignedOutHook } from './core.js';

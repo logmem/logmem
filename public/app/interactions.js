@@ -12,7 +12,8 @@ export async function drawDiscussion(want,shell,current){
  const split=want.id.indexOf('/'),target={type:want.id.slice(0,split),id:want.id.slice(split+1)},space=state.space,version=generation;
  const key=space+':'+want.id;
  let model=drafts.get(key);if(!model){model={text:'',reason:'',to:'',error:'',busy:false,attempt:null,data:null,older:[]};drafts.set(key,model);}
- const active=()=>current()&&state.space===space&&version===generation;
+ const alive=()=>drafts.get(key)===model&&state.space===space&&version===generation;
+ const active=()=>current()&&alive();
  const draw=()=>{
   if(!active())return;
   const d=model.data;
@@ -23,16 +24,16 @@ export async function drawDiscussion(want,shell,current){
    model.busy=true;model.error='';draw();
    try{
     const saved=await postJSON('/api/interactions','interactions',model.attempt);
-    if(!active())return;
+    if(!alive())return;
     const completed=model.attempt.action;model.attempt=null;model.busy=false;model.older=[];
     if(completed==='reassign')model.reason='';else model.text='';
     toast(completed==='reassign'?'Owner updated.':completed==='nudge'?'Nudge recorded.':'Comment added.');
-    await load();
+    model.render?.();await model.reload?.();
    }catch(e){
-    if(!active()||e.stale)return;
+    if(!alive()||e.stale)return;
     model.busy=false;model.error=e.message||'Could not confirm the save. Retry to check the same request.';
     if(e.status&&e.status!==503)model.attempt=null;
-    draw();
+    model.render?.();
    }
   };
   const frozen=model.busy||!!model.attempt;
@@ -47,11 +48,12 @@ export async function drawDiscussion(want,shell,current){
   </section>`);
  };
  const load=async()=>{
+  if(!active())return;
   const request= model.loadSeq=(model.loadSeq||0)+1;
   try{const data=await getJSON(endpoint(target));if(!active()||data.__stale||model.loadSeq!==request)return;if(data.__status!==200)throw new Error(data.error||'Could not load this discussion.');model.data=data;draw();}
   catch(e){if(active())shell('Comments and actions',html`<p role="alert">${e.message}</p><button class="lm-btn" @click=${load}>Retry loading</button>`);}
  };
- draw();await load();
+ model.render=draw;model.reload=load;draw();await load();
 }
 export async function queuePage(){
  const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false;
@@ -63,7 +65,7 @@ export async function queuePage(){
    <form class="lmx-filters" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();cursor=0;load();}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
    ${data?html`${!data.coverage?.complete?html`<div class="lm-alert lm-alert--warning"><p>Coverage is incomplete. This is not the full handoff backlog.</p></div>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p class="lmx-meta">${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}
     <div class="lmx-stack">${data.items.length?data.items.map(item=>{
-     const next=Number(item.last_nudge_at||0)+300000,invalid=Number(item.created_at)>Date.now()||!Number(item.deadline)||!Number(item.created_at),disabled=state.customer&&!state.permissions?.write||next>Date.now()||invalid||pending.has(item.id);
+     const next=Number(item.last_nudge_at||0)+300000,invalid=Number(item.created_at)>Date.now()||!Number.isFinite(Number(item.deadline))||Number(item.deadline)<Number(item.created_at)||!Number.isFinite(Number(item.created_at))||Number(item.created_at)<=0,disabled=state.customer&&!state.permissions?.write||next>Date.now()||invalid||pending.has(item.id);
      return html`<article class="lmx-card"><div class="lmx-meta">${item.type} · ${agentName(item.from)} → ${agentName(item.to)}</div><h3>${item.summary}</h3><dl class="lm-kv"><dt>Created</dt><dd>${stamp(item.created_at)}</dd><dt>Deadline</dt><dd>${stamp(item.deadline)}${Number(item.deadline)<Date.now()?' · overdue':''}</dd><dt>Last nudge</dt><dd>${item.last_nudge_at?stamp(item.last_nudge_at):'No nudge recorded'}</dd><dt>Source</dt><dd>${item.where}</dd></dl>
       ${invalid?html`<p role="alert">Check the source timestamps before nudging.</p>`:nothing}<div class="lmx-acts"><button class="lm-btn lm-btn--secondary" ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>${queueRequests.has(space+':'+item.id)?html`<button class="lm-btn" ?disabled=${pending.has(item.id)} @click=${()=>nudge(item)}>Retry nudge delivery</button>`:nothing}<a href=${link({type:'coord',id:item.id})}>Comments and source</a>${item.where?.startsWith('job:')?html`<a href=${'#/job/'+encodeURIComponent(item.where.slice(4))}>Open work</a>`:nothing}</div>${next>Date.now()?html`<p class="lmx-meta">Next nudge available ${stamp(next)}.</p>`:nothing}</article>`;
     }):html`<p>No pending records were returned for this page. Check the coverage notice above.</p>`}</div><div class="lmx-acts">${cursor>0?html`<button class="lm-btn" @click=${()=>{cursor=Math.max(0,cursor-30);load();}}>Previous page</button>`:nothing}${data.nextCursor!=null?html`<button class="lm-btn" @click=${()=>{cursor=data.nextCursor;load();}}>Next page</button>`:nothing}</div>`:html`<p>Loading requests…</p>`}`);

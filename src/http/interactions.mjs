@@ -21,12 +21,12 @@ export function normalizeTarget(t){
 }
 async function loadTarget(store,input,{by,manager=false}={}){
  const target=normalizeTarget(input),{type,id}=target;
- let rec,key,owner='',where,watch,recordKind='string';
+ let rec,key,owner='',where,watch,snapshot,recordKind='string';
  if(type==='job'){
   rec=await store.getWho('job',id);const now=await store.getNow('job',id)||{};
   owner=now.owner||rec?.owner||'';where='job:'+id;key=lmKey(store.space,'job',id,'who');
  }else if(type==='task'){
-  key=`lm:${store.space}:blocker:${id}`;rec=parse(await store.redis('GET',key));
+  key=`lm:${store.space}:blocker:${id}`;snapshot=await store.redis('GET',key);rec=parse(snapshot);
   if(rec&&rec.trail!==id)rec=null;
   if(rec&&!manager&&![rec.to,rec.by].includes(by))fail(404,'Record unavailable.');
   owner=rec?.to||'';where=rec?.where;
@@ -42,7 +42,7 @@ async function loadTarget(store,input,{by,manager=false}={}){
  }
  if(!rec)fail(404,'Record unavailable.');
  if(!/^(job|channel|agent):[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(where||''))fail(409,'Record has no valid source.');
- if(recordKind==='string')watch=[['',await store.redis('GET',key)]];
+ if(recordKind==='string')watch=[['',target.type==='task'?snapshot:await store.redis('GET',key)]];
  else watch=['response','to','request_trail','last_nudge_at'].map(k=>[k,rec[k]??null]);
  return {target,rec,key,owner,where,watch,recordKind};
 }
@@ -66,11 +66,14 @@ end
 local count=redis.call('ZCARD',KEYS[2])
 if count>=1000 then return {'limit'} end
 local previous=redis.call('GET',KEYS[5])
-if ARGV[4]=='nudge' and previous and tonumber(previous)+300000>tonumber(ARGV[5]) then return {'cooldown'} end
+if ARGV[4]=='nudge' then
+ local canonical=redis.call('HGET',KEYS[1],'last_nudge_at')
+ if (previous and tonumber(previous)+300000>tonumber(ARGV[5])) or (canonical and canonical~='' and (tonumber(canonical) or 0)+300000>tonumber(ARGV[5])) then return {'cooldown'} end
+end
 local rate=tonumber(redis.call('GET',KEYS[6]) or '0')
 if rate>=30 then return {'rate'} end
 local revision=redis.call('GET',KEYS[4])
-if revision and (not tonumber(revision) or tonumber(revision)<0 or tonumber(revision)>9007199254740000) then return {'storage'} end
+if revision and (not string.match(revision,'^%d+$') or tonumber(revision)>9007199254740000) then return {'storage'} end
 local receipt=cjson.decode(ARGV[6])
 local fields=cjson.decode(ARGV[7])
 if ARGV[3]=='hash' then
@@ -87,7 +90,7 @@ registerEvalScript(INTERACTION_LUA,(call,k,a)=>{
  const old=call('GET',k[2]);if(old){if(parse(old).fingerprint!==a[0])return ['conflict'];return ['replay',old];}
  for(const[field,want]of parse(a[1])){const got=a[2]==='hash'?call('HGET',k[0],field):call('GET',k[0]);if((got??null)!==want)return ['changed'];}
  if(call('ZCARD',k[1])>=1000)return ['limit'];
- const prev=call('GET',k[4]);if(a[3]==='nudge'&&prev&&Number(prev)+300000>Number(a[4]))return ['cooldown'];
+ const prev=call('GET',k[4]);if(a[3]==='nudge'){const canonical=call('HGET',k[0],'last_nudge_at');if((prev&&Number(prev)+300000>Number(a[4]))||(canonical&&Number(canonical)+300000>Number(a[4])))return ['cooldown'];}
  const rate=Number(call('GET',k[5])||0);if(rate>=30)return ['rate'];
  const revision=call('GET',k[3]);if(revision!=null&&(!/^\d+$/.test(revision)||Number(revision)>9007199254740000))return ['storage'];
  if(a[2]==='hash'){for(const[f,v]of parse(a[6]))call('HSET',k[0],f,v);}else if(a[7])call('SET',k[0],a[7]);
@@ -138,7 +141,7 @@ export async function interact(store,{target:input,action,text='',requestId,by,m
  }else if(action==='nudge'){
   if(target.type!=='coord')fail(400,'Choose a pending coordination item.');
   if(t.rec.response!=='open')fail(409,'This item already has an answer.');
-  if(!Number.isFinite(Number(t.rec.deadline))||!Number.isFinite(Number(t.rec.created_at))||Number(t.rec.created_at)>at)fail(409,'This item has invalid timestamps.');
+  if(!Number.isFinite(Number(t.rec.deadline))||!Number.isFinite(Number(t.rec.created_at))||Number(t.rec.created_at)<=0||Number(t.rec.deadline)<Number(t.rec.created_at)||Number(t.rec.created_at)>at)fail(409,'This item has invalid timestamps.');
   try{recipient='agent:'+checkAgentId(t.rec.to);}catch{fail(409,'This item has no valid agent recipient.');}
   if(!await store.getWho('agent',recipient.slice(6)))fail(404,'Recipient unavailable in this space.');
   fields=[['last_nudge_at',String(at)]];
