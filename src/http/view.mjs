@@ -13,7 +13,7 @@ import { lmDecisionKey } from "../core/keys.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
-import { listCoordItemsForTrail } from "../core/coord.mjs";
+import { listCoordItemsForTrail, getCoordItem, coordOpenKey, coordAgentOpenKey, coordCoverageKey } from "../core/coord.mjs";
 
 const MAX_LOGS = 300;
 const GROUP = Object.fromEntries(Object.entries(KINDS).map(([k, d]) => [k, d.group]));
@@ -368,6 +368,132 @@ export async function huddleView(store, trail, where) {
   };
 }
 
+export async function auditView(store, redis, space, params = {}, now = Date.now()) {
+  const r = readOnly(redis);
+  const nowTs = typeof now === "function" ? now() : Number(now || Date.now());
+
+  // 1. Coverage: "full" if coordCoverageKey has "full", else "partial"
+  const covRaw = await r("GET", coordCoverageKey(space));
+  const coverage = covRaw === "full" ? "full" : "partial";
+
+  // 2. Open coordination items
+  let itemIds = [];
+  if (params.recipient) {
+    const norm = String(params.recipient).replace(/^agent:/, "");
+    itemIds = await r("ZRANGE", coordAgentOpenKey(space, norm), 0, -1);
+  } else {
+    itemIds = await r("ZRANGE", coordOpenKey(space), 0, -1);
+  }
+
+  const allItems = [];
+  const dataErrors = [];
+
+  for (const id of itemIds || []) {
+    const item = await getCoordItem(store, space, id);
+    if (!item) continue;
+
+    // Check future timestamps: ts > now + 60000 (flags such rows and sorts them out of current view)
+    if (item.created_at && item.created_at > nowTs + 60000) {
+      dataErrors.push({
+        type: "future_timestamp",
+        id: item.id,
+        created_at: item.created_at,
+        error: "future timestamp",
+      });
+      continue;
+    }
+
+    if (item.response === "open") {
+      allItems.push(item);
+    }
+  }
+
+  // Check jobs for missing stages (data errors)
+  try {
+    const jobIds = await store.list("job");
+    for (const jid of jobIds) {
+      const jnow = await store.getNow("job", jid);
+      if (!jnow || !jnow.stage) {
+        dataErrors.push({
+          type: "missing_stage",
+          id: `job:${jid}`,
+          error: "job has no stage",
+        });
+      }
+    }
+  } catch (_) {}
+
+  // 3. Filters
+  let filtered = allItems;
+  if (params.type) {
+    filtered = filtered.filter((i) => i.type === params.type);
+  }
+  if (params.recipient) {
+    const norm = String(params.recipient).replace(/^agent:/, "");
+    filtered = filtered.filter((i) => String(i.to).replace(/^agent:/, "") === norm);
+  }
+  if (params.plan) {
+    filtered = filtered.filter((i) => i.plan === params.plan || (i.where && i.where.includes(params.plan)));
+  }
+  if (params.overdue === true || params.overdue === "true") {
+    filtered = filtered.filter((i) => nowTs > i.deadline);
+  }
+
+  // 4. Sort:
+  // "The page leads with unanswered handoffs sorted by how overdue they are, then seats, then directed requests"
+  const typeRank = { handoff: 0, seat: 1 };
+  filtered.sort((a, b) => {
+    const ra = typeRank[a.type] ?? 2;
+    const rb = typeRank[b.type] ?? 2;
+    if (ra !== rb) return ra - rb;
+
+    const overdueA = Math.max(0, nowTs - a.deadline);
+    const overdueB = Math.max(0, nowTs - b.deadline);
+    if (overdueA !== overdueB) return overdueB - overdueA; // most overdue first
+
+    return a.deadline - b.deadline;
+  });
+
+  // 5. Cursor paging
+  const limit = Math.max(1, Math.min(200, parseInt(params.limit || "50", 10) || 50));
+  const cursor = Math.max(0, parseInt(params.cursor || "0", 10) || 0);
+  const pagedItems = filtered.slice(cursor, cursor + limit);
+  const nextCursor = cursor + limit < filtered.length ? String(cursor + limit) : null;
+
+  const counts = {
+    handoffs: allItems.filter((i) => i.type === "handoff").length,
+    seats: allItems.filter((i) => i.type === "seat").length,
+    directed: allItems.filter((i) => !["handoff", "seat"].includes(i.type)).length,
+    overdue: allItems.filter((i) => nowTs > i.deadline).length,
+    total: allItems.length,
+  };
+
+  // 6. Slots (three-run state per roster agent; PR D fills the rest)
+  const slots = [];
+
+  // 7. History (scorecard as today)
+  let history = null;
+  try {
+    history = await buildScorecard(r, space);
+  } catch (_) {
+    history = { space, days: [], gate: { pass: false } };
+  }
+
+  return {
+    pending: {
+      items: pagedItems,
+      total: filtered.length,
+      cursor: nextCursor,
+      counts,
+    },
+    coverage,
+    slots,
+    data_errors: dataErrors,
+    history,
+    ...(history || {}),
+  };
+}
+
 export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   const r = readOnly(redis);
   const verify = { secret, space };
@@ -472,7 +598,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
     return q ? { query: q, ...(await keywordRecall(store, q, 20)) } : { query: "", mode: "keyword", results: [] };
   }
 
-  if (what === "audit") return buildScorecard(redis, space);
+  if (what === "audit") return auditView(store, r, space, params, now);
 
   if (what === "settings") {
     const keys = await scanKeys(r, `lm:${space}:*`);
