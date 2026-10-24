@@ -39,13 +39,17 @@ Synthetic approval left the job active. Deferral kept the request open.
 - Propagate required read failures. A partial outage blocks the view until storage recovers. It cannot present zero pending requests.
 - Restrict sample APIs and clear customer settings. Unsupported sample administration pages return an unavailable message.
 
-## Deferred minors
+## Review follow-up
 
-Phone Settings lacks Sign out. The legacy More route still has it.
+Codex restored Sign out in Settings after the next user continuation.
+The phone browser check found zero visible controls before the fix and one after it.
+Fresh local CI passed 791 tests, schema validation, and 30 conformance cases.
+GitHub Actions could not start because account payments failed.
+Vercel built the previous preview successfully.
 
 ## Remaining integrations
 
 Claude retains the shared pending indexes.
 Ops retains schedules and runner mapping.
 Run controls need verified permissions, budgets, schedules, and execution evidence.
-This phase does not deploy the dashboard.
+Release status is tracked in PR #119.
