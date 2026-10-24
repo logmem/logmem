@@ -18,3 +18,20 @@ test('audit shows a real future deadline and links beyond its first page',async(
  await expect(page.getByText(/due in .*ago/)).toHaveCount(0);
  await expect(page.getByRole('link',{name:'Open full queue and nudge'})).toHaveAttribute('href','#/queue');
 });
+
+test('audit exposes three daily receipts without claiming an active schedule',async({page})=>{
+ await audit(page,{slots:[{agent:'codex',date:'2026-10-24',slots:{morning:{state:'pass',attempts:[{outcome:'pass'}]},midday:{state:'partial',attempts:[{}]},closeout:{state:'pending',attempts:[]}}}]});
+ await signIn(page);const runs=page.getByRole('region',{name:'Daily coordination runs'});
+ await expect(runs.getByRole('columnheader',{name:'Closeout',exact:true})).toBeVisible();
+ await expect(runs.getByText('pass',{exact:true})).toBeVisible();
+ await expect(runs.getByText('partial',{exact:true})).toBeVisible();
+ await expect(runs.getByText('pending',{exact:true})).toBeVisible();
+ await expect(runs.getByText('2026-10-24',{exact:true})).toBeVisible();
+ await expect(runs.getByRole('link',{name:'codex',exact:true})).toHaveAttribute('href','#/agent/codex');
+ await expect(runs.getByText('They do not prove an active runner',{exact:false})).toBeVisible();
+});
+test('audit marks missing daily receipts as unknown coverage',async({page})=>{
+ await audit(page,{});await signIn(page);
+ await expect(page.getByText('No daily run records were returned.',{exact:true})).toBeVisible();
+ await expect(page.getByText('Schedule coverage is unknown.',{exact:false})).toBeVisible();
+});
