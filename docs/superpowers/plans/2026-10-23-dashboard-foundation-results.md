@@ -1,6 +1,7 @@
 # Dashboard foundation results
 
 Codex implemented phase A of the approved dashboard design.
+Draft PR: https://github.com/madezmedia/logmem/pull/119.
 
 Today presents personal requests, team waits, source updates, and priorities.
 Work defaults to a prioritized list and stores its board preference per space.

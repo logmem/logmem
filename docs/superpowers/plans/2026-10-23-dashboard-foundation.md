@@ -169,7 +169,7 @@ The baseline content equals production main `dcef3b8`; its full CI already passe
   Record screenshots and actual limitations.
 - [x] Commit the verified result and request a fresh whole-branch review.
 - [x] Resolve important findings with a reproduced failing test.
-- [ ] Prepare a draft PR and attach it to the chat.
+- [x] Prepare a draft PR and attach it to the chat.
   Do not enable paid Vercel agent reviews.
   Keep runtime-dependent phases listed as follow-up work.
 
