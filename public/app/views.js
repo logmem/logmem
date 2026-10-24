@@ -204,7 +204,27 @@ pages.audit = async () => {
   const g = d.gate || {}, last7 = (d.days || []).slice(-7);
   const strip = Array.from({ length: 7 }, (_, i) => { const x = last7[i - (7 - last7.length)]; const st = !x ? 'background:var(--surface-sunken);color:var(--text-subtle)' : x.pass ? 'background:var(--success-subtle);color:var(--success)' : 'background:var(--danger-subtle);color:var(--danger)'; return html`<div style=${'display:flex;flex-direction:column;align-items:center;padding:10px 4px;border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;' + st}><span>${x ? x.date.slice(5) : '—'}</span><span>${x ? (x.pass ? 'PASS' : 'FAIL') : '—'}</span></div>`; });
   const rows = (d.days || []).slice().reverse().map((x) => html`<tr style="font-variant-numeric:tabular-nums"><td>${x.date}</td><td><span class=${'lm-badge lm-badge--' + (x.pass ? 'success' : 'danger')}>${x.pass ? 'Pass' : x.health_pass ? 'Low volume' : 'Fail'}</span></td><td>${num((x.agents || []).length)}</td><td>${num(x.entries)}</td><td>${num(x.accepted)} / ${num(x.handoffs)}</td><td>${x.mirror_checked ? num(x.mirror_mismatches) : 'n/a'}</td><td>${num(x.unanswered_24h)}</td><td>${num(x.degraded_sessions)}</td></tr>`);
-  renderView('audit', ['Audit'], html`${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}
+  // The coordination queue: open handoffs, seats and directed requests, sorted by how overdue they are.
+  const q = d.pending || { items: [], total: 0, counts: {} };
+  const c = q.counts || {};
+  const late = (i) => Number.isFinite(Number(i.deadline)) && Number(i.deadline) > 0 && Date.now() > Number(i.deadline);
+  const deadline = (i) => { const n=Number(i.deadline); return Number.isFinite(n)&&n>0 ? new Date(n).toLocaleString() : 'Timestamp unavailable'; };
+  const qrows = (q.items || []).map((i) => html`<tr style="font-variant-numeric:tabular-nums">
+    <td><span class=${'lm-badge lm-badge--' + (late(i) ? 'danger' : 'neutral')}>${i.type || 'handoff'}</span></td>
+    <td>${i.summary || '—'}</td>
+    <td class="mono">${agentName(i.from) || '—'} → ${agentName(i.to) || '—'}</td>
+    <td>${i.created_at ? ago(i.created_at) : '—'}</td>
+    <td>${deadline(i)}${late(i) ? ' · overdue' : ''}</td>
+    <td class="mono" style="font-size:12px">${i.where || ''}</td></tr>`);
+  const queue = html`<section class="lmx-stack">
+    <h2 class="lmx-section-title">Open coordination queue <span>${num(q.total)}</span></h2>
+    <p class="muted" style="font-size:13px">${num(c.handoffs)} handoffs · ${num(c.seats)} seats · ${num(c.directed)} directed · ${num(c.overdue)} overdue · coverage ${d.coverage || 'partial'}. Sorted by how overdue they are.</p>
+    ${d.coverage !== 'full' ? html`<div class="lm-alert lm-alert--warning"><p>Coverage is incomplete. These results do not describe the full coordination backlog.</p></div>` : nothing}
+    <p class="lmx-meta">Showing ${num(qrows.length)} of ${num(q.total)} returned records.</p>
+    ${qrows.length ? table(['Type', 'Summary', 'From → To', 'Age', 'Deadline', 'Where'], qrows) : emptyState('No open records were returned.', d.coverage === 'full' ? 'No unanswered handoffs, seats or directed requests were found.' : 'Check coverage before treating this as an empty backlog.')}
+    <a class="lm-btn lm-btn--secondary" href="#/queue">Open full queue and nudge</a>
+    ${(d.data_errors || []).length ? html`<p class="muted" style="font-size:12px">${d.data_errors.length} data error(s) flagged: ${d.data_errors.slice(0, 3).map((e) => e.type).join(', ')}</p>` : nothing}</section>`;
+  renderView('audit', ['Audit'], html`${queue}${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}
     <section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span></div>
       <div style="flex:2 1 420px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${strip}</div><div style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">Deliverable</span>${stage((d.deliverable || {}).stage)}<span class="mono subtle" style="font-size:12px">job:${(d.deliverable || {}).job || ''}</span></div></section>
     ${rows.length ? table(['Day', 'Result', 'Agents', 'Entries', 'Handoffs accepted', 'Mirror mismatches', 'Unanswered >24h', 'Degraded'], rows) : emptyState('No checks yet.', 'The first daily check writes its result here.')}`);
