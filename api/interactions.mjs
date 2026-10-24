@@ -40,6 +40,7 @@ export function createHandler(deps={}){return async(req,res)=>{
     for(const id of Object.keys(w.members)){try{accessPolicy(w,id,viewer.spaceId,'write');assignees.push({id:'human:'+id,label:w.members[id].name||'human:'+id});}catch{}}
    }else assignees.push({id:by,label:by.slice(6)});
   }
+  if(viewer)await viewer.revalidate();
   return res.status(200).json({...d,assignees});
  }catch(e){
   if(e instanceof InteractionError)return res.status(e.status).json({error:e.message});

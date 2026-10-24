@@ -53,10 +53,10 @@ test("blockers: only a person ticks steps or marks done; agents see progress in 
   const r = await sc(lm, "logmem_handoff", { to: "human:mikey", where: "job:clerk-preview", summary: "Tick Preview", walkthrough: WT });
   const store = createStore(redis, { space: "madez" });
   await assert.rejects(() => setStep(store, r.trail, { step: 0, checked: true, by: "agent:claude-code" }), /only a person/);
-  await setStep(store, r.trail, { step: 0, checked: true, by: "human:admin" });
+  await setStep(store, r.trail, { step: 0, checked: true, by: "human:admin", operator: true });
   assert.deepEqual((await sc(lm, "logmem_brief", {})).person_blockers.map((x) => x.progress), ["1/2"]);
-  await assert.rejects(() => setStep(store, r.trail, { step: 9, checked: true, by: "human:admin" }), /no such step/);
-  await markDone(store, r.trail, { by: "human:admin", note: "done in 2 min" });
+  await assert.rejects(() => setStep(store, r.trail, { step: 9, checked: true, by: "human:admin", operator: true }), /no such step/);
+  await markDone(store, r.trail, { by: "human:admin", operator: true, note: "done in 2 min" });
   assert.deepEqual(await listBlockers(store), []);
   assert.deepEqual((await sc(lm, "logmem_brief", {})).person_blockers, []);
   const log = (await redis("ZRANGE", "lm:madez:job:clerk-preview:log", "0", "-1")).map((x) => JSON.parse(x));

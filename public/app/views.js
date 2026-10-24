@@ -13,7 +13,10 @@ import { ADMIN, signOut } from './shell.js';
 import { briefFor, prioritizeWork, workFilterKey, groupUpdates } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 
+import {queuePage} from './interactions.js';
 export const pages = {};
+pages.queue=queuePage;
+pages.discussion=async id=>{const existing=drawerState();if(existing?.kind==='discussion'&&existing.id===id)return;renderView('discussion',['Work','Discussion'],html`<p>Record comments and actions.</p><a href="#/work">Back to work</a>`);return openDrawer('discussion',id);};
 let okHook = () => true;
 export function setOkHook(fn) { okHook = fn; }
 const ok = (d) => okHook(d);
@@ -85,6 +88,7 @@ pages.plan = async (name) => {
     <section class="lmx-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><h3 style="font-size:18px">${laneBadge(d.lane)}${d.title || d.plan}</h3><span class="lmx-pct">${num(d.percent)}%</span></div>
       <div class="lmx-bar"><i style=${`width:${num(d.percent)}%`}></i></div>
       <div class="lmx-meta">${done} of ${items.length} done${blocked ? html` · <b style="color:var(--warning)">${blocked} blocked</b>` : nothing}${late.length ? html` · <b style="color:var(--danger)">${late.length} late</b>` : nothing}</div></section>
+    <a class="lm-btn lm-btn--secondary" href=${'#/discussion/plan/'+encodeURIComponent(d.plan)}>Plan comments</a>
     ${d.milestones.length ? html`<div class="lmx-rail-ms">${d.milestones.map((m) => { const mine = toward(m), md = mine.filter((i) => i.stage === 'done').length; return html`<div class="lmx-card lmx-ms" data-key=${'ms:' + m.id} ?data-done=${m.stage === 'done'}><span class="lmx-meta mono">${m.date || 'no date'}</span><h3>${m.title}</h3><div class="lmx-why">${m.criteria}</div><div class="lmx-meta">${stage(m.stage)}${mine.length ? ` · ${md}/${mine.length} jobs` : ''}</div></div>`; })}</div>` : nothing}
     ${late.length ? html`<section class="lmx-card"><h3>Late</h3>${late.map(planRow)}</section>` : nothing}
     <div class="lmx-stack">${d.tracks.map((t) => {
@@ -124,7 +128,7 @@ function drawJobs() {
   const row = j => html`<article class="lmx-work-row" data-key=${j.id}><div><h3><a href=${'#/job/' + encodeURIComponent(j.id)}>${j.title}</a></h3><div class="lmx-meta">${j.plan || 'No plan'}${j.track ? ' · ' + j.track : ''} · ${j.owner ? agentName(j.owner) : 'Owner not assigned'}</div></div>
     <div>${stage(j.stage)}${j.blocked_on?.parked ? html`<span class="lm-badge">Parked</span>` : nothing}</div><div class="lmx-why">${j.blocked_on?.note || j.last?.summary || 'No next step recorded.'}</div><div class="lmx-meta">${j.due || 'No due date'}${j.due ? dueTag(j.due, j.stage) : nothing}</div></article>`;
   const unknown = list.filter(j => !BOARD.some(b => b[0] === j.stage));
-  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a></div>
+  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div>
     <div class="lmx-filters">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}</div>
     ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? keyed(list, j=>j.id, row) : emptyState('No work matches these filters.', 'Clear a filter or select another plan.')}</div>` : html`
       <div class="lmx-stagechips lmx-phone-only" role="tablist">${BOARD.map(b=>html`<button type="button" role="tab" aria-selected=${pick === b[0]} @click=${setPick(b[0])}>${b[1].split(',')[0]} ${list.filter(j=>j.stage===b[0]).length}</button>`)}</div>

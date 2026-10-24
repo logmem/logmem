@@ -27,7 +27,7 @@ const workspaceSelect=()=>html`<select class="lm-select" aria-label="Workspace" 
 const headSpace = () => state.customer?html`<div class="lmx-headspace lmx-account-switch-head">${workspaceSelect()}<select class="lm-select" aria-label="Space" @change=${e=>onSpace(e.target.value)}>${spaceOptions()}</select></div>`:state.spaces.length > 1 ? html`<select class="lm-select lmx-headspace" aria-label="Space" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select>` : nothing;
 
 function navItem(n, route) {
-  const cur = n[0] === (ROUTE_NAV[route] || route);
+  const cur = n[0] === (['queue','discussion'].includes(route)?'work':ROUTE_NAV[route] || route);
   return html`<a href=${n[3] || '#/' + n[0]} class="lm-nav-item" aria-current=${cur ? 'page' : nothing} style=${cur ? 'background:var(--brand-subtle);color:var(--brand)' : ''} title=${n[1]}>${icon(n[2])}<span>${n[1]}</span></a>`;
 }
 const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;

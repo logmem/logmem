@@ -5,6 +5,7 @@ import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
 import { api, getJSON, state, live, agentName, ago } from './core.js';
 import { emptyState, panel, entries, stage, btn, kv } from './ui.js';
 import { decideBatch } from './actions.js';
+import { drawDiscussion } from './interactions.js';
 import { jobWalkthroughs } from './walk.js';
 
 let drawer = null; // { kind: 'needs'|'job'|'huddle', id, where, last, selected: Set }
@@ -71,6 +72,7 @@ export async function drawRender(first = false) {
     focusHead(first);
     return;
   }
+  if (want.kind === 'discussion') return drawDiscussion(want,shell,()=>drawer===want);
   if (want.kind === 'huddle') return drawHuddle(want, first);
   const id = want.id;
   const [d, n] = await Promise.all([api('job', { id }), getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''))]);
@@ -82,6 +84,7 @@ export async function drawRender(first = false) {
   const card = now.stage === 'blocked' ? jobCard({ id, title: who.title || id, plan: who.plan, track: who.track, owner: now.owner || who.owner, blocked_on: now.blocked_on, since: now.stage_at }, { inPanel: true }) : nothing;
   const about = [['Plan', [who.plan, who.track].filter(Boolean).join(' › ')], ['Owner', agentName(now.owner || who.owner || '')], ['Milestone', typeof who.milestone === 'string' ? who.milestone : who.gate], ['Due', who.due], ['What', who.desc], ['Evidence', who.evidence]].filter((x) => x[1]);
   shell(who.title || id, html`${card}${repeat(mine, needKey, (i) => needItem(i))}
+    ${btn('Comments and actions','secondary',()=>openDrawer('discussion','job/'+id))}
     ${panel('About', html`<dl class="lm-kv"><dt>Stage</dt><dd>${stage(now.stage)}</dd>${about.map((x) => html`<dt>${x[0]}</dt><dd>${x[1]}</dd>`)}</dl>`)}
     ${panel('Walkthroughs', jobWalkthroughs(id, d.tasks))}
     ${panel('Log', entries((d.log || []).slice(0, 30)))}`);
