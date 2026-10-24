@@ -50,3 +50,5 @@ export function decisionProblem(ask, verdict, note = '') {
   if (verdict === 'reject' && !(typeof note === 'string' && note.trim())) return 'Say what needs to change in the note box.';
   return null;
 }
+
+export const receiptForSpace = (receipt, space) => receipt?.space === space ? receipt : null;

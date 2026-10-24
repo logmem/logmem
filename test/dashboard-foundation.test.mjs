@@ -142,3 +142,10 @@ test('dashboard: grouped updates keep work together and disclose future timestam
   assert.equal(r?.invalid.length, 2);
   assert.equal(rows.length, 5);
 });
+
+test('dashboard: saved decision receipts stay in their source space', () => {
+  const receipt = { space:'demo-solo', trail:'ask-one', verdict:'approve' };
+  assert.equal(model.receiptForSpace(receipt,'demo-solo'),receipt);
+  assert.equal(model.receiptForSpace(receipt,'demo-sales'),null);
+  assert.equal(model.receiptForSpace(null,'demo-solo'),null);
+});

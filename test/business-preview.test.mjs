@@ -28,7 +28,10 @@ test('business preview: decisions work only in isolated sample spaces and preser
   const send = (value,origin=base)=>fetch(base+'/api/decide',{method:'POST',headers:{'content-type':'application/json','x-logmem-intent':'decide',origin},body:JSON.stringify(value)});
   assert.equal((await send(body,'https://unrelated.example')).status,403);
   assert.equal((await send({...body,space:'madez'})).status,403);
-  const saved = await send(body);
+  const stale = await send({...body,expected_hash:'stale-action'});
+  assert.equal(stale.status,409);
+  assert.equal((await stale.json()).code,'stale_ask');
+  const saved = await send({...body,expected_hash:needs.items[0].ask.ask_digest});
   assert.equal(saved.status,201);
   const refreshed = await (await fetch(base+'/api/needs?space=demo-solo')).json();
   assert.equal(refreshed.count,1);

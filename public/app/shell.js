@@ -5,7 +5,7 @@ import { state, live, num, markSeen } from './core.js';
 import { icon } from './ui.js';
 import { openDrawer } from './drawer.js';
 import { openSearch } from './search.js';
-import { isSampleSpace } from './dashboard-model.js';
+import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
 
 export const NAV = [['home', 'Today', 'overview'], ['work', 'Work', 'work'], ['agents', 'Agents', 'agents'], ['activity', 'Activity', 'timeline']];
 export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
@@ -33,6 +33,7 @@ const banner = () => live.storageDown ? html`<div class="lm-alert lm-alert--dang
 
 function frame(route, crumbs, body) {
   const demo = isSampleSpace(state.space);
+  const receipt = receiptForSpace(live.decisionReceipt, state.space);
   const tab = (id, label, ic) => { const cur = id === (ROUTE_NAV[route] || route); return html`<a href=${'#/' + id} aria-current=${cur ? 'page' : nothing}>${icon(ic)}${label}</a>`; };
   return html`<div class="lmx"><nav class="lmx-rail" aria-label="LogMem">
       <div class="lm-rail-brand"><a href="/" style="display:flex"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height:26px;width:auto"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height:26px;width:auto"></a></div>
@@ -43,7 +44,7 @@ function frame(route, crumbs, body) {
       ${headSpace()}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href="#/settings" aria-label="Settings">${icon('settings')}</a></header>
-      <main class="lmx-main" id="main">${banner()}${body}</main></div>
+      <main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main></div>
     <nav class="lmx-tabs" aria-label="LogMem">${tab('home', 'Today', 'overview')}${tab('work', 'Work', 'work')}${tab('agents', 'Agents', 'agents')}${tab('activity', 'Activity', 'timeline')}</nav></div>`;
 }
 

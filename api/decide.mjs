@@ -32,7 +32,7 @@ import { sendServerError } from "../src/http/log.mjs";
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
 export const INTENT_HEADER = "x-logmem-intent";
-const STATUS = { bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, ambiguous: 409, confirm_required: 428, misconfigured: 503 };
+const STATUS = { stale_ask: 409, bad_request: 400, forbidden: 403, not_found: 404, not_pending: 409, ambiguous: 409, confirm_required: 428, misconfigured: 503 };
 
 /** The signed-in person: human:<LOGMEM_ADMIN_ID> (default "admin"). Asks addressed to someone else are refused (403). */
 export const deciderFrom = (env) => `human:${String(env.LOGMEM_ADMIN_ID || "admin")}`;
@@ -77,7 +77,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
 
   const b = body(req);
   if (!b) return res.status(400).json({ error: "JSON body required: {space, trail, verdict, note?, confirm?}" });
-  const { space, trail, verdict, note, confirm } = b;
+  const { space, trail, verdict, note, confirm, expected_hash } = b;
   if (typeof space !== "string" || !viewSpaces(env).includes(space)) {
     return res.status(403).json({ error: `space '${String(space)}' is not shown here`, spaces: viewSpaces(env) });
   }
@@ -93,7 +93,7 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
   }
   try {
     const store = webStore(runner, space, env); // mirrored, so a decision is never a dogfood mirror mismatch
-    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", confirm: confirm === "approve", reclaim: true, ...(now ? { now } : {}) });
+    const out = await writeDecision(store, trail, { verdict, note: note || undefined, by: deciderFrom(env), via: "web", confirm: confirm === "approve", reclaim: true, expectedHash: expected_hash, ...(now ? { now } : {}) });
     return res.status(201).json({ ok: true, space, ...out });
   } catch (e) {
     if (e instanceof DecisionError) return res.status(STATUS[e.code] || 400).json({ error: e.message, code: e.code });
