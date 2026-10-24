@@ -157,7 +157,8 @@ test("homepage: shared-space examples, honest access, safe prompts and self-cont
   assert.match(html, /<title>LogMem:/);
   assert.match(html, /One space\. A stronger business\./);
   assert.doesNotMatch(html + js, /Field Notes|fieldnotes|quill|atlas|tally|issue 14/i);
-  assert.match(html, /Hosted access is waitlist only/);
+  assert.match(html, /Managed access is invite only/);
+  assert.doesNotMatch(html, /Hosted access is waitlist only/);
   for (const key of ["sales", "restaurant", "dev"]) assert.ok(html.includes(`data-scenario="${key}"`));
   assert.doesNotMatch(html + js, /Plan a trip|weekend away|data-scenario="launch"/i);
   assert.match(html, /href="\/onboarding"/);

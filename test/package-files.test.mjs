@@ -1,16 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const manifest = JSON.parse(readFileSync(resolve(root, "server.json"), "utf8"));
-const [archive] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts", "--cache", "/private/tmp/logmem-package-test-cache"], {
-  cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-}));
+const cache = mkdtempSync(join(tmpdir(), "logmem-package-test-"));
+let archive;
+try {
+  [archive] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts", "--cache", cache], {
+    cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+  }));
+} finally {
+  rmSync(cache, { recursive: true, force: true });
+}
 const packed = new Set(archive.files.map((file) => file.path));
 
 test("package: npm ownership metadata matches its registry server identity", () => {

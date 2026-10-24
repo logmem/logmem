@@ -150,6 +150,21 @@
             "type": "object",
             "additionalProperties": true,
             "description": "Optional structured details"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Explicit recipient agents for huddles or directed memos (creates one obligation seat per recipient)"
+          },
+          "answers": {
+            "type": "string",
+            "description": "Item ID this note answers, e.g. 'ci_...'"
+          },
+          "disposition": {
+            "type": "string",
+            "description": "Disposition when answering an item: 'answered' (default), 'declined', or 'blocked'"
           }
         },
         "additionalProperties": false,
