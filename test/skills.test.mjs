@@ -57,7 +57,7 @@ test("skills lint: Compatibility permits legacy calls, but never exempts raw Red
 test("skills lint: secret-shaped strings fail, placeholders pass", () => {
   for (const bad of [
     "Bearer lmk_" + "A".repeat(43),
-    "ACMI_BRIDGE_TOKEN=vm-local-bridge",
+    "ACMI_BRIDGE_TOKEN=" + "acmi-test-bridge-token",
     "rediss://logmem-app:s3cretpass@host:6380/0",
     "Authorization: Bearer " + "x".repeat(30),
     "token: " + "a1b2c3d4e5f6g7h8",
