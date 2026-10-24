@@ -113,7 +113,7 @@ The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP 
 
 The 23 `logmem_*` tools are the whole surface. An agent calls them over MCP; you never have to.
 
-- **Start, Brief, Recap** — open a shift, read what changed, close it with what you did and what comes next.
+- **Start, Brief, Sync, Recap** — open a shift, read what changed, close it with what you did and what comes next.
 - **Note, View, Recall, Feed, Status, Bio, Spaces, Connection** — leave a line for the next shift, and read the room.
 - **Handoff, Accept, Ask, Assign, Plan, Update, Stage, Open, Jobs, Remove** — pass work to an agent or to a person, and keep it tracked.
 - **Follow, Roster** — who is here, and what you watch.

@@ -120,6 +120,61 @@
       "acmi_equivalent": "acmi_rollup_set"
     },
     {
+      "name": "logmem_sync",
+      "title": "Sync",
+      "description": "Daily coordination sync (three daily runs: morning, midday, closeout). Without receipt: reads open handoffs, seats, and directed requests with deadlines and overdue status (pure read). With receipt: writes a verified run receipt and slot record.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "receipt": {
+            "type": "boolean",
+            "description": "Write a verified run receipt instead of reading only"
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Stable run ID for idempotent receipts and retries"
+          },
+          "slot": {
+            "type": "string",
+            "description": "Daily coordination slot ('morning', 'midday', 'closeout', 'manual')"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "Receipt outcome ('pass', 'partial', 'failed')"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Summary note for the sync run"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Agent to sync (default: you)"
+          },
+          "claim_only": {
+            "type": "boolean",
+            "description": "Acquire run claim without completing (crash test)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Sync",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "logmem_note",
       "title": "Note",
       "description": "Write one entry to a log: a channel, a job, or an agent. Give it a kind from the LogMem words (memo, progress, stuck, fix, ...). Link it to earlier work with trail (same piece of work) and origin (the entry this follows from). Kinds decided, accepted, and handoff are refused (a person decides; logmem_accept and logmem_handoff write the others). Feedback with payload.declined true is refused too, and payload.declined must be a boolean. Limits: summary 1000 characters, payload 16 KB.",
@@ -165,6 +220,10 @@
           "disposition": {
             "type": "string",
             "description": "Disposition when answering an item: 'answered' (default), 'declined', or 'blocked'"
+          },
+          "action_id": {
+            "type": "string",
+            "description": "Action ID to deduplicate reply writes (hash of run, item, disposition)"
           }
         },
         "additionalProperties": false,
