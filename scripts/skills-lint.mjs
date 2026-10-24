@@ -19,13 +19,18 @@ import { fileURLToPath } from "node:url";
 export const RAW_REDIS_ALLOWED = new Set(["logmem-self-host", "logmem-read-path-recovery", "logmem-track-outage"]);
 const RAW_REDIS_RE = /\b(redis-cli|ZADD|HSET|ZRANGEBYSCORE|SCAN 0|UPSTASH_[A-Z_]+)\b|\/bridge\/exec/;
 const ACMI_CALL_RE = /\bacmi_[a-z_]+\b/;
+// The live fleet token is never written here. Set ACMI_BRIDGE_TOKEN to catch copies of it.
+const FLEET_BRIDGE_TOKEN = (process.env.ACMI_BRIDGE_TOKEN || "").trim();
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const SECRET_RES = [
   [/\blmk_[A-Za-z0-9_-]{20,}/, "LogMem agent key"],
   [/\bsk_(live|test)_[A-Za-z0-9]{10,}/, "Stripe or Clerk secret key"],
   [/\bghp_[A-Za-z0-9]{20,}/, "GitHub token"],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/, "Slack token"],
   [/\bAKIA[0-9A-Z]{16}\b/, "AWS access key"],
-  [/\bvm-local-bridge\b/, "fleet bridge token"],
+  ...(FLEET_BRIDGE_TOKEN.length >= 8
+    ? [[new RegExp(`\\b${escRe(FLEET_BRIDGE_TOKEN)}\\b`), "fleet bridge token"]]
+    : []),
   [/\brediss?:\/\/[^\s:/@<>]+:(?!<)[^\s@<>]{3,}@/, "Redis URI with a password"],
   [/\bBearer\s+(?!<)[A-Za-z0-9._~+/-]{20,}/, "bearer token"],
 ];

@@ -23,6 +23,15 @@ import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
 import { appendLogWarnings, readWarning } from "../lib/redact.mjs";
+import {
+  computeItemId,
+  createCoordItem,
+  settleCoordItem,
+  getCoordItem,
+  listOpenCoordItemsForAgent,
+  listCoordItemsForTrail,
+  getCoordItemsByTrail,
+} from "./coord.mjs";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -291,7 +300,25 @@ async function brief(ctx, agent) {
   const settled = new Set(
     log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin),
   );
-  const waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
+  let waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
+  try {
+    const openItems = await listOpenCoordItemsForAgent(s, s.space, a);
+    if (openItems && openItems.length > 0) {
+      const indexWaiting = openItems.map((item) => ({
+        kind: "handoff",
+        summary: item.summary,
+        trail: item.request_trail,
+        to: item.to,
+        job: item.where || undefined,
+        ts: item.created_at,
+        deadline: item.deadline,
+        item_id: item.id,
+        is_overdue: item.is_overdue,
+      }));
+      const seenTrails = new Set(indexWaiting.map((i) => i.trail));
+      waiting = [...indexWaiting, ...waiting.filter((w) => !seenTrails.has(w.trail))];
+    }
+  } catch (_) {}
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
   // No signing key here (a local agent): ask the trusted server which decisions verify.
@@ -432,12 +459,97 @@ export const TOOLS = [
       trail: { type: "string", desc: "Trail id shared by every entry about this piece of work (auto if omitted)", optional: true },
       origin: { type: "string", desc: "Trail id of the entry this one follows from", optional: true },
       payload: { type: "object", desc: "Optional structured details", optional: true },
+      to: { type: "strings", desc: "Explicit recipient agents for huddles or directed memos (creates one obligation seat per recipient)", optional: true },
+      answers: { type: "string", desc: "Item ID this note answers, e.g. 'ci_...'", optional: true },
+      disposition: { type: "string", desc: "Disposition when answering an item: 'answered' (default), 'declined', or 'blocked'", optional: true },
     }),
     annotations: WRITE,
-    async run({ where, summary, kind, trail, origin, payload }, ctx) {
+    async run({ where, summary, kind, trail, origin, payload, to, answers, disposition }, ctx) {
       const { ns, id } = parseRef(where);
-      const entry = await write(ctx, ns, id, { kind, summary, trail, origin, payload });
-      return { ok: true, where: `${ns}:${id}`, entry };
+
+      // 1. If this note answers a specific coordination item:
+      let answeredItem = null;
+      if (answers) {
+        capText("answers", answers, LIMITS.trail);
+        answeredItem = await getCoordItem(ctx.store, ctx.store.space, answers);
+        if (!answeredItem) {
+          return { ok: false, error: `coordination item '${answers}' not found` };
+        }
+        const normRecipient = String(answeredItem.to || "").replace(/^agent:/, "");
+        if (me(ctx) !== normRecipient) {
+          return {
+            ok: false,
+            error: `only the designated recipient ('${normRecipient}') can answer item '${answers}' (you are ${me(ctx)})`,
+          };
+        }
+        if (answeredItem.response !== "open") {
+          return {
+            ok: false,
+            error: `item '${answers}' is already settled (${answeredItem.response})`,
+          };
+        }
+      }
+
+      // 2. Check roundtable closing invariants if kind === "done"
+      if (kind === "done" && origin) {
+        const seats = await listCoordItemsForTrail(ctx.store, ctx.store.space, origin);
+        const openSeats = seats.filter((s) => s.response === "open");
+        if (openSeats.length > 0) {
+          return {
+            ok: false,
+            error: `roundtable '${origin}' has ${openSeats.length} open seat(s) pending response; missing seats keep it open`,
+            open_seats: openSeats.map((s) => ({ id: s.id, to: s.to, deadline: s.deadline })),
+          };
+        }
+      }
+
+      const extra = to ? { to: Array.isArray(to) ? to.map(agentRef) : [agentRef(to)] } : {};
+      const entry = await write(ctx, ns, id, { kind, summary, trail, origin, payload, extra: Object.keys(extra).length ? extra : undefined });
+
+      // 3. If answering an item, execute atomic CAS settlement
+      if (answeredItem) {
+        const disp = disposition || "answered";
+        const resp = disp === "declined" ? "declined" : "answered";
+        await settleCoordItem(ctx.store, {
+          space: ctx.store.space,
+          id: answers,
+          recipient: me(ctx),
+          response: resp,
+          settledBy: agentRef(me(ctx)),
+          settledAt: entry.ts,
+          settlementTrail: entry.trail,
+          disposition: disp,
+        });
+      }
+
+      // 4. If explicit recipients `to` are specified for huddle or memo, create one seat/item per recipient
+      const itemsCreated = [];
+      if (to && (kind === "huddle" || kind === "memo" || kind === "request")) {
+        const recipients = Array.isArray(to) ? to : [to];
+        for (const rawTo of recipients) {
+          const normTo = String(rawTo || "").replace(/^agent:/, "");
+          const itemType = kind === "huddle" ? "seat" : "request";
+          const res = await createCoordItem(ctx.store, {
+            space: ctx.store.space,
+            type: itemType,
+            requestTrail: entry.trail,
+            from: agentRef(me(ctx)),
+            to: agentRef(normTo),
+            where: `${ns}:${id}`,
+            summary,
+            createdAt: entry.ts,
+          });
+          if (res && res.id) itemsCreated.push(res.id);
+        }
+      }
+
+      return {
+        ok: true,
+        where: `${ns}:${id}`,
+        entry,
+        ...(itemsCreated.length ? { items: itemsCreated } : {}),
+        ...(answeredItem ? { answered_item: answers } : {}),
+      };
     },
   },
   {
@@ -486,7 +598,21 @@ export const TOOLS = [
         await ctx.store.follow(receiver, `${where.ns}:${where.id}`, { role: "owner", joined_at: t, via: "handoff", trail: tr });
         if (where.ns === "job") await ctx.store.setNow("job", where.id, { owner: agentRef(receiver), handoff_trail: tr });
       }
-      return { ok: true, trail: tr, to: agentRef(receiver), entries };
+      let itemId = null;
+      try {
+        const coordRes = await createCoordItem(ctx.store, {
+          space: ctx.store.space,
+          type: "handoff",
+          requestTrail: tr,
+          from: agentRef(me(ctx)),
+          to: agentRef(receiver),
+          where: where ? `${where.ns}:${where.id}` : "",
+          summary,
+          createdAt: t,
+        });
+        if (coordRes && coordRes.id) itemId = coordRes.id;
+      } catch (_) {}
+      return { ok: true, trail: tr, to: agentRef(receiver), item_id: itemId || undefined, entries };
     },
   },
   {
@@ -530,7 +656,21 @@ export const TOOLS = [
         seenLogs.add(`${ns}:${id}`);
         entries.push(await write(ctx, ns, id, { ...one, settle: true }));
       }
-      return { ok: true, trail: tr, origin: trail, declined: !!decline, where: where ? `${where.ns}:${where.id}` : null, entries };
+      let itemId = null;
+      try {
+        itemId = computeItemId(ctx.store.space, "handoff", trail, a);
+        await settleCoordItem(ctx.store, {
+          space: ctx.store.space,
+          id: itemId,
+          recipient: a,
+          response: decline ? "declined" : "answered",
+          settledBy: agentRef(a),
+          settledAt: t,
+          settlementTrail: tr,
+          disposition: decline ? (reason || "declined") : "accepted",
+        });
+      } catch (_) {}
+      return { ok: true, trail: tr, origin: trail, item_id: itemId || undefined, declined: !!decline, where: where ? `${where.ns}:${where.id}` : null, entries };
     },
   },
   {
