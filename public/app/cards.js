@@ -61,7 +61,7 @@ export function taskCard(i) {
     ${steps.length ? html`<div class="lmx-acts"><a class="lm-btn lm-btn--secondary" href=${'#/walk/' + encodeURIComponent(state.space || '') + '/' + encodeURIComponent(b.trail)}>Open the walkthrough</a></div>` : nothing}
     ${w.done_when ? html`<div class="lmx-why"><b>Done when:</b> ${w.done_when}</div>` : nothing}
     ${w.reply ? html`<div class="lmx-acts"><span class="lmx-meta">Message for the agent:</span>${btn('Copy message', 'ghost', () => copy(w.reply))}</div>` : nothing}
-    <div class="lmx-acts">${noteBox(`task:${b.trail}`, 'Note, or why you can’t do it')}${btn('Done', 'primary', (e) => doTask(e, 'done', b.trail))}${btn('Can’t do', 'danger', (e) => doTask(e, 'cant_do', b.trail))}</div></article>`;
+    <div class="lmx-acts">${noteBox(`task:${b.trail}`, 'Note, or why you can’t do it')}${btn('Comments and actions','ghost',()=>{location.hash='#/discussion/task/'+encodeURIComponent(b.trail);})}${btn('Done', 'primary', (e) => doTask(e, 'done', b.trail))}${btn('Can’t do', 'danger', (e) => doTask(e, 'cant_do', b.trail))}</div></article>`;
 }
 export function copy(text) { navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast('Could not copy. Select the text and copy it.', true)); }
 
@@ -76,7 +76,7 @@ export function askCard(a, { select } = {}) {
       <p class="lmx-meta">${approvalProblem || 'Approval permits this action. Completion needs separate evidence.'}</p><details><summary>Request details and source</summary><dl class="lm-kv"><dt>Where</dt><dd>${a.where}</dd><dt>Asked</dt><dd>${ago(a.ts)} via ${a.via || ''}</dd><dt>Reversible</dt><dd>${rev}</dd>${a.to ? html`<dt>For</dt><dd>${agentName(a.to)}</dd>` : nothing}<dt>trail</dt><dd class="mono">${a.trail}</dd>
       ${a.deferred ? html`<dt>Deferred</dt><dd>${ago(a.deferred.at)} by ${agentName(a.deferred.by)}${a.deferred.note ? ': ' + a.deferred.note : ''} (still open, original age retained)</dd>` : nothing}</dl></details></div>
     <div class="lm-approval-foot"><input class="lm-input" data-note-for=${'ask:' + a.trail} maxlength="1000" autocomplete="off" placeholder="Note, required when requesting changes" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">
-      ${btn('Approve', 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
+      ${btn('Comments','ghost',()=>{location.hash='#/discussion/decision/'+encodeURIComponent(a.trail);})}${btn('Approve', 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
 }
 /** A "looks done?" suggestion from the reconciler: the evidence, then Close it or Still open. */
 export function suggestionCard(i) {

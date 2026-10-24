@@ -80,7 +80,7 @@ export function createHandler({ env = process.env, redis, now } = {}) {
       if (!b) return res.status(400).json({ error: "JSON body required" });
       if (typeof b.space !== "string" || !viewSpaces(env).includes(b.space)) return res.status(403).json({ error: "space is not shown here" });
       const store = webStore(runner, b.space, env);
-      const opts = { by: person, ...(now ? { now } : {}) };
+      const opts = { by: person, operator: true, ...(now ? { now } : {}) };
       if (b.action === "step") {
         const blocker = await setStep(store, String(b.trail || ""), { ...opts, step: Number(b.step), checked: b.checked === true, ...(Number.isInteger(b.rev) ? { rev: b.rev } : {}) });
         return res.status(200).json({ ok: true, blocker });

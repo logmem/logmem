@@ -319,3 +319,6 @@
 .lmx-account-settings .lm-input{width:100%;box-sizing:border-box}
 .lmx-account-switch{display:grid;gap:8px;padding:4px}
 @media(max-width:600px){.lmx-account-start{margin:24px auto;padding:20px}.lmx-account-actions>*{max-width:100%}.lmx-account-switch-head{max-width:135px}.lmx-account-switch-head select{max-width:135px}}
+
+/* Record discussions use the existing LogMem type and color tokens. */
+.lmx-discussion form{display:grid;gap:12px;margin:16px 0}.lmx-discussion textarea{min-height:96px;resize:vertical}.lmx-discussion-entry{padding:14px 0;border-top:1px solid var(--border)}.lmx-discussion-entry p{white-space:pre-wrap;overflow-wrap:anywhere}.lmx-discussion details{margin:20px 0}.lmx-discussion [role=alert]{color:var(--danger)}

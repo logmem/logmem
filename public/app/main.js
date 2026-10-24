@@ -1,5 +1,6 @@
 // main.js — the LogMem web app: hash routes, sign-in, the live pulse and keyboard shortcuts.
 // Every view renders through lit-html (escaped templates); no file in public/app writes raw HTML.
+import {clearInteractions} from './interactions.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { state, live, getJSON, invalidateLoads, setSignedOutHook } from './core.js';
@@ -47,7 +48,7 @@ setOkHook(ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 setShellHooks({
-  space: (s) => { if(state.customer)return chooseSpace(s); if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
+  space: (s) => { clearInteractions();if(state.customer)return chooseSpace(s); if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
   createSpace: showCreateSpace, account:()=>{location.hash='#/account';showAccount();},
   signOut: () => state.customer?signOutCustomer():fetch('/api/logout', { method: 'POST' }).then(() => location.reload()),
 });

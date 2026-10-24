@@ -159,13 +159,14 @@ function whereOf(rec) {
 /** The walkthrough revision: 1 when written, plus one per edit. Agent handoffs have none (0). */
 export const revOf = (rec) => (Number.isInteger(rec?.rev) ? rec.rev : 0);
 
-export async function setStep(store, trail, { step, checked, by, rev, now = Date.now }) {
+export async function setStep(store, trail, { step, checked, by, rev, operator = false, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can tick a step");
   let steps = [];
   // A tick is bound to the instructions the person saw: the revision the player sent, or the
   // one this call first read. A retry after an edit never ticks the replacement instructions.
   let seen = Number.isInteger(rev) ? rev : null;
   const { rec: next } = await updateRecord(store, trail, (rec) => {
+    if (!operator && rec.to !== by) throw new BlockerError("this task belongs to another person");
     if (rec.done) throw new BlockerError("this blocker is already done");
     if (seen == null) seen = revOf(rec);
     if (revOf(rec) !== seen) throw new BlockerError("the walkthrough changed since you opened it. Reload to see the new steps");
@@ -186,9 +187,12 @@ export async function setStep(store, trail, { step, checked, by, rev, now = Date
 }
 
 /** A person marks the blocker done. Writes a Done entry by that person and closes it. */
-export async function markDone(store, trail, { by, note, now = Date.now }) {
+export async function markDone(store, trail, { by, note, operator = false, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can mark a blocker done");
-  const out = await updateRecord(store, trail, (rec) => (rec.done ? rec : { ...rec, done: true, done_at: now(), done_by: by, ...(note ? { note: String(note).slice(0, 1000) } : {}) }));
+  const out = await updateRecord(store, trail, (rec) => {
+    if (!operator && rec.to !== by) throw new BlockerError("this task belongs to another person");
+    return rec.done ? rec : { ...rec, done: true, done_at: now(), done_by: by, ...(note ? { note: String(note).slice(0, 1000) } : {}) };
+  });
   if (!out.changed) return out.rec;
   const rec = out.prev, next = out.rec;
   await store.redis("SREM", K.open(store.space), trail);
@@ -199,11 +203,12 @@ export async function markDone(store, trail, { by, note, now = Date.now }) {
 }
 
 /** A person says they can't do the task, with a reason. Closes it and tells the agent on the job's log. */
-export async function cantDo(store, trail, { by, reason, now = Date.now }) {
+export async function cantDo(store, trail, { by, reason, operator = false, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new BlockerError("only a person can say a task can't be done");
   if (typeof reason !== "string" || !reason.trim()) throw new BlockerError("say why it can't be done, in one line");
   const why = reason.trim().slice(0, 1000);
   const { prev: rec, rec: next } = await updateRecord(store, trail, (r) => {
+    if (!operator && r.to !== by) throw new BlockerError("this task belongs to another person");
     if (r.done) throw new BlockerError("this task is already closed");
     return { ...r, done: true, done_at: now(), done_by: by, outcome: "cant_do", reason: why };
   });
