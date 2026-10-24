@@ -45,6 +45,17 @@ export function tenantSpace(tenantId) {
  */
 export function createJail(redis, tenantId, limits = {}) {
   const space = tenantSpace(tenantId);
+  return jailForSpace(redis, space, limits);
+}
+
+/** Server-only: namespace comes from verified workspace metadata. */
+export function createSpaceJail(redis, { tenantId, namespace }, limits = {}) {
+  const legacy = tenantSpace(tenantId);
+  if (namespace !== legacy && !/^s-[a-f0-9]{24}$/.test(namespace)) throw new JailError(403);
+  return jailForSpace(redis, namespace, limits);
+}
+
+function jailForSpace(redis, space, limits) {
   const prefixes = [`lm:${space}:`];
   const run = async (...cmd) => {
     const args = cmd.map((a) => (typeof a === "number" ? String(a) : a));
