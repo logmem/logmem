@@ -26,28 +26,28 @@
 ### Task 1: Atomic interaction service
 
 Files: src/http/interactions.mjs, test/interactions.test.mjs.
-- [ ] Add failing tests for target validation, comments, pagination, CAS reassignment, request replay, cooldown, and source delivery failures.
-- [ ] Run the tests and confirm missing module failures.
-- [ ] Implement the service and jail-safe registered transaction.
-- [ ] Run interaction and existing work tests, then commit.
+- [x] Add failing tests for target validation, comments, pagination, CAS reassignment, request replay, cooldown, and source delivery failures.
+- [x] Run the tests and confirm missing module failures.
+- [x] Implement the service and jail-safe registered transaction.
+- [x] Run interaction and existing work tests, then commit.
 
 ### Task 2: Authenticated API
 
 Files: api/interactions.mjs, scripts/dev-site.mjs, test/interaction-handlers.test.mjs.
-- [ ] Add failing operator and customer authorization tests.
-- [ ] Implement GET discussion/queue and POST comment/reassign/nudge with existing auth helpers.
-- [ ] Verify foreign spaces, viewers, stale ownership, invalid recipients, and intent checks, then commit.
+- [x] Add failing operator and customer authorization tests.
+- [x] Implement GET discussion/queue and POST comment/reassign/nudge with existing auth helpers.
+- [x] Verify foreign spaces, viewers, stale ownership, invalid recipients, and intent checks, then commit.
 
 ### Task 3: Dashboard controls
 
 Files: public/app/interactions.js, public/app/drawer.js, public/app/cards.js, public/app/views.js, public/app.css, e2e/interactions.spec.mjs.
-- [ ] Add failing browser checks for comments, reassignment, queue nudges, retry, and space changes.
-- [ ] Implement shared discussion controls and a canonical queue view in existing navigation.
-- [ ] Run browser checks on laptop and phone, then commit.
+- [x] Add failing browser checks for comments, reassignment, queue nudges, retry, and space changes.
+- [x] Implement shared discussion controls and a canonical queue view in existing navigation.
+- [x] Run browser checks on laptop and phone, then commit.
 
 ### Task 4: Delivery verification
 
 Files: docs/runbooks/dashboard-interactions-verification-2026-10-24.md.
-- [ ] Run full CI, browser checks, real Redis probes, and whitespace checks.
-- [ ] Conduct one independent final review and address important findings with regression checks.
-- [ ] Record dependency and coverage limits. Publish a draft PR based on PR 121.
+- [x] Run full CI, browser checks, real Redis probes, and whitespace checks.
+- [x] Conduct one independent final review and address important findings with regression checks.
+- [x] Record dependency and coverage limits. Publish a draft PR based on PR 121.
