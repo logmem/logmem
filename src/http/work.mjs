@@ -57,7 +57,7 @@ export class WorkError extends Error {
   }
 }
 
-const PERSON_RE = /^human:[a-z0-9][a-z0-9_.-]{0,63}$/;
+const PERSON_RE = /^human:(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|user_[A-Za-z0-9]{60,64})$/;
 const JOB_RE = /^[A-Za-z0-9_.:-]{1,200}$/;
 
 function personEntry(by, kind, summary, extra, payload, now) {

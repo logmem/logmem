@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // /api/blockers — a person works through what agents handed to them.
 //
 // Spec: docs/superpowers/specs/2026-10-19-logmem-blockers-plans-design.md.
@@ -112,4 +113,4 @@ export function createHandler({ env = process.env, redis, now } = {}) {
   };
 }
 
-export default createHandler();
+export default withCustomerDashboard(createHandler());

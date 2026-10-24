@@ -1,3 +1,4 @@
+import { listWorkspaces, listSpaces, authorizeSpace } from '../../src/http/workspaces.mjs';
 // OAuth 2.1 authorization endpoint with PKCE.
 //
 // GET  /api/oauth/authorize?response_type=code&client_id=...&redirect_uri=...
@@ -33,7 +34,7 @@ import { getClient, saveAuthCode, assertKekReady, csrfKey, hmacHex, safeEqual, r
 import { restEndpoint } from "../../src/lib/redis-rest.mjs";
 import { validateKeySegments } from "../../src/lib/helpers.mjs";
 import { assertPublicTarget } from "../../src/http/net-guard.mjs";
-import { clerkSession, clerkConfigured } from "../../src/http/clerk.mjs";
+import { clerkSession, customerSession, clerkConfigured } from "../../src/http/clerk.mjs";
 import { accountFor } from "../../src/http/accounts.mjs";
 import { customerRedis } from "../../src/http/jail.mjs";
 import { serverRedis } from "../../src/http/onboarding.mjs";
@@ -334,7 +335,7 @@ function deps() {
   if (managedDeps) return managedDeps;
   return {
     ready: () => clerkConfigured(),
-    session: (req, url) => clerkSession(req, { url }),
+    session: (req, url) => (process.env.LOGMEM_CUSTOMER_DASHBOARD === '1' ? customerSession : clerkSession)(req, { url }),
     redis: () => customerRedis(),
     waitlistRedis: () => serverRedis(),
   };
@@ -355,7 +356,7 @@ function infoPage(res, status, title, detail) {
   res.end(renderErrorPage(title, detail));
 }
 
-function renderManagedConsent({ params, appName, agent, email, error, scope }) {
+function renderManagedConsent({ params, appName, agent, email, error, scope, spaces = [] }) {
   const verbs = String(scope || "").split(" ").includes(SCOPE_WRITE) ? "read and write" : "read";
   const hidden = [...BOUND_PARAMS, "csrf_token"].map((k) => `<input type="hidden" name="${k}" value="${htmlEscape(params[k] || "")}">`).join("");
   return `<!doctype html>
@@ -372,6 +373,7 @@ details{font-size:13px;color:#666}input[type=text]{width:100%;padding:8px 10px;m
 <p>Signed in as ${htmlEscape(email)}. ${htmlEscape(appName)} will ${verbs} your LogMem memory as the agent <b>${htmlEscape(agent)}</b>.</p>
 ${error ? `<p class="err" role="alert">${htmlEscape(error)}</p>` : ""}
 ${hidden}
+${spaces.length ? `<label for="spaceChoice">Workspace and space</label><select id="spaceChoice" name="spaceChoice">${spaces.map(s=>`<option value="${htmlEscape(s.workspaceId)}/${htmlEscape(s.id)}">${htmlEscape(s.workspaceName)} / ${htmlEscape(s.name)}</option>`).join('')}</select>` : ''}
 <button class="go" type="submit" name="action" value="approve">Allow ${htmlEscape(appName)} to use your LogMem memory</button>
 <details><summary>Use a different agent name</summary><input type="text" name="agent" placeholder="${htmlEscape(agent)}" maxlength="64" autocomplete="off" spellcheck="false" aria-label="Agent name"></details>
 <button class="no" type="submit" name="action" value="deny">Cancel</button>
@@ -489,6 +491,14 @@ async function managedAccount(req, res, url, { onSignedOut }) {
     onSignedOut(s);
     return null;
   }
+  if (process.env.LOGMEM_CUSTOMER_DASHBOARD === '1') {
+    const workspaces = await listWorkspaces({userId:s.userId},{redis}), spaces=[];
+    for (const w of workspaces) for (const space of await listSpaces({userId:s.userId,workspaceId:w.id},{redis})) {
+      try { await authorizeSpace({userId:s.userId,workspaceId:w.id,spaceId:space.id,action:'manage-connections'},{redis}); spaces.push({...space,workspaceName:w.name}); } catch {}
+    }
+    if (!spaces.length) { infoPage(res,403,'Create a LogMem workspace first','Open logmem.si/app, create a workspace and space, then connect this app again.'); return null; }
+    return {session:s, spaces, redis};
+  }
   const acct = await accountFor({ clerkUserId: s.userId, email: s.email }, { redis, waitlistRedis: d.waitlistRedis ? d.waitlistRedis() : null });
   if (acct.waitlist) {
     infoPage(res, 200, "You're on the list", "LogMem is in a private beta. We'll email your invite. Nothing was shared.");
@@ -515,7 +525,7 @@ async function managedGet(req, res, query, v) {
   const nonce = randomToken(16);
   res.setHeader("Set-Cookie", `${CSRF_COOKIE}=${nonce}; Path=/api/oauth/authorize; Max-Age=${CSRF_TTL_S}; HttpOnly; Secure; SameSite=Strict`);
   const appName = v.client.client_name || "This app";
-  return sendManagedConsent(res, 200, params, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email, scope: v.scope });
+  return sendManagedConsent(res, 200, params, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email, scope: v.scope, spaces:got.spaces });
 }
 
 async function managedApprove(req, res, body, v) {
@@ -535,6 +545,13 @@ async function managedApprove(req, res, body, v) {
       return sendManagedConsent(res, 400, { ...body, client_name: v.client.client_name }, nonce, { appName, agent: defaultAgentFor(v.client.client_name), email: got.session.email, scope: v.scope, error: `Agent name: ${e.message}` });
     }
   }
+  let target = got.acct;
+  if (got.spaces) {
+    const selected = got.spaces.find(s=>`${s.workspaceId}/${s.id}` === body.spaceChoice);
+    if (!selected) return infoPage(res,400,'Choose an authorized space','Go back and select a workspace and space. Nothing was shared.');
+    const granted = await authorizeSpace({userId:got.session.userId,workspaceId:selected.workspaceId,spaceId:selected.id,action:'manage-connections'},{redis:got.redis});
+    target = {tenant:granted.workspace.tenantId,space:granted.space.namespace,workspaceId:selected.workspaceId,spaceId:selected.id};
+  }
   const code = await saveAuthCode({
     client_id: body.client_id,
     redirect_uri: body.redirect_uri,
@@ -544,9 +561,9 @@ async function managedApprove(req, res, body, v) {
     resource: v.resource,
     upstash_url: null,
     upstash_token: null,
-    backend: { kind: "managed", tenant: got.acct.tenant, agent },
+    backend: { kind: "managed", tenant: target.tenant, agent, ...(target.workspaceId ? {workspaceId:target.workspaceId,spaceId:target.spaceId,issuedBy:got.session.userId} : {}) },
     sub: `clerk:${got.session.userId}`,
-    space: got.acct.space,
+    space: target.space,
   });
   redirectTo(res, req, body.redirect_uri, { code }, body.state);
 }

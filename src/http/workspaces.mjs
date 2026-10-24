@@ -95,7 +95,7 @@ export function visibleSpaces(w,u) {
  const m=membership(w,u);
  return Object.values(w.spaces).filter(s=>s.status==='active' && (['owner','admin'].includes(m.role) || m.spaces?.[s.id]));
 }
-export function summary(w) {const {members,spaces,audit,...out}=w; return out;}
+export function summary(w) {const {id,tenantId,name,status,createdAt,version}=w; return {id,tenantId,name,status,createdAt,version};}
 export async function commitWorkspace({before,after,userId,requestId,operation,fingerprint,result,legacyUser},deps) {
   const users=[...new Set([...Object.keys(before?.members||{}),...Object.keys(after.members)])];
   const keys=[workspaceKey(after.id),userKey(userId),ownedKey(userId),requestKey(userId,operation,requestId),`acmi:cloud:tenant:${after.tenantId}`,'acmi:cloud:tenants',`lm:account:tenant:${after.tenantId}`];
@@ -150,7 +150,7 @@ export async function listWorkspaces({userId},deps) {
  return out;
 }
 export async function listSpaces({userId,workspaceId},deps) {
- checkUser(userId); const {w}=await readWorkspace(deps.redis,workspaceId); return visibleSpaces(w,userId);
+ checkUser(userId); const {w}=await readWorkspace(deps.redis,workspaceId); return visibleSpaces(w,userId).map(s=>({...s,permissions:accessPolicy(w,userId,s.id,'read').permissions}));
 }
 
 export function accessPolicy(w,userId,spaceId,action) {

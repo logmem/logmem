@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // GET /api/scorecard?space=madez — the dogfood scorecard.
 //
 // Source, in order:
@@ -106,7 +107,7 @@ export async function buildScorecard(redis, space) {
   return card;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!mayRead(req)) return res.status(401).json({ error: "sign in required" });
   try {
@@ -120,3 +121,5 @@ export default async function handler(req, res) {
     sendServerError(res, "/api/scorecard", e);
   }
 }
+
+export default withCustomerDashboard(handler);

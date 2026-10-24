@@ -1,3 +1,4 @@
+import { workspaceGrantActive } from '../../src/http/workspace-agent-keys.mjs';
 // OAuth token endpoint. Handles two grants:
 //   - authorization_code (with PKCE code_verifier)
 //   - refresh_token
@@ -110,6 +111,7 @@ export default async function handler(req, res) {
       const resource = codeRecord.resource || bindResource(undefined, req).resource;
       if (body.resource && asked.resource !== resource) return bad(res, 400, "invalid_target", "resource does not match the authorization");
 
+      if (!await workspaceGrantActive(codeRecord)) return bad(res, 400, "invalid_grant", "workspace access was revoked");
       const tokens = await mintTokens({
         client_id,
         scope: normalizeScope(codeRecord.scope),
@@ -150,6 +152,7 @@ export default async function handler(req, res) {
       const resource = rec.resource || bindResource(undefined, req).resource;
       if (body.resource && asked.resource !== resource) return bad(res, 400, "invalid_target", "resource does not match the grant");
 
+      if (!await workspaceGrantActive(rec)) return bad(res, 400, "invalid_grant", "workspace access was revoked");
       const tokens = await mintTokens({
         client_id,
         scope: normalizeScope(rec.scope),

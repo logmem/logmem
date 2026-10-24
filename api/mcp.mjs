@@ -1,3 +1,5 @@
+import { resolveViewer } from '../src/http/viewer.mjs';
+import { readWorkspace } from '../src/http/workspaces.mjs';
 // api/mcp.mjs — LogMem over Streamable HTTP (POST request/reply), Vercel Node runtime.
 //
 // One hand-rolled JSON-RPC dispatcher serves both client styles:
@@ -76,7 +78,7 @@ export async function buildManaged({ redis, auth, sessionId, now = Date.now }) {
   const t = await getTenant(redis, auth.tenant);
   if (!t || t.status !== "active") throw new Error("This LogMem account is paused.");
   return createLogmem({
-    redis: createJail(redis, auth.tenant),
+    redis: auth.workspaceId ? await workspaceRunner(redis,auth) : createJail(redis, auth.tenant),
     backend: "native",
     space: auth.space,
     spaces: [auth.space],
@@ -217,4 +219,15 @@ export default async function handler(req, res) {
   } catch (e) {
     sendServerError(res, "/api/mcp", e);
   }
+}
+
+async function workspaceRunner(redis, auth) {
+  const context = await resolveViewer({headers:{}}, {workspaceId:auth.workspaceId,spaceId:auth.spaceId,action:'manage-connections'}, {redis, session:async()=>({status:'signed-in',userId:auth.issuedBy})});
+  return async (...cmd) => {
+    if(auth.connectionId) {
+      const {w}=await readWorkspace(redis,auth.workspaceId),c=w.connections?.[auth.connectionId];
+      if(!c||c.revoked||c.issuedBy!==auth.issuedBy||c.spaceId!==auth.spaceId||c.agent!==auth.agent)throw new Error('Connection revoked');
+    }
+    return context.redis(...cmd);
+  };
 }

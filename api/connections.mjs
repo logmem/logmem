@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // /api/connections — a managed account owner sees and disconnects their apps.
 //
 // Spec: docs/superpowers/specs/2026-10-19-logmem-one-click-connect-design.md, 4.7.
@@ -110,4 +111,4 @@ export function createHandler(getDeps = defaultDeps) {
   };
 }
 
-export default createHandler();
+export default withCustomerDashboard(createHandler());
