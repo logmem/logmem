@@ -12,7 +12,7 @@ test('business preview: decisions work only in isolated sample spaces and preser
   await new Promise(resolve => slot.close(resolve));
   const child = spawn(process.execPath, ['scripts/dev-site.mjs','--business-demos','--port',String(port)], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, VERCEL_ENV:'development', LOGMEM_ADMIN_PASSWORD:'', LOGMEM_ADMIN_SECRET:'', LOGMEM_DECIDE_SECRET:'' },
+    env: { ...process.env, VERCEL_ENV:'development', LOGMEM_ADMIN_PASSWORD:'', LOGMEM_ADMIN_SECRET:'', LOGMEM_DECIDE_SECRET:'', LOGMEM_CUSTOMER_REDIS_URI:'redis://127.0.0.1:1', LOGMEM_REDIS_URI:'redis://127.0.0.1:1' },
     stdio:['ignore','pipe','pipe'],
   });
   t.after(async()=>{ if(child.exitCode == null){ child.kill(); await once(child,'exit'); } });
@@ -22,6 +22,9 @@ test('business preview: decisions work only in isolated sample spaces and preser
     child.once('error',e=>{clearTimeout(timer);reject(e);});
   });
   const base = 'http://127.0.0.1:'+port;
+  const invites = await fetch(base+'/api/invites',{method:'POST',headers:{'content-type':'application/json','x-logmem-intent':'invites',origin:base},body:JSON.stringify({emails:['sample@example.com']}),signal:AbortSignal.timeout(2000)});
+  assert.equal(invites.status,404);
+  assert.match((await invites.json()).error,/unavailable in the sample preview/);
   const needs = await (await fetch(base+'/api/needs?space=demo-solo')).json();
   assert.equal(needs.count,1);
   const body = {space:'demo-solo',trail:needs.items[0].trail,verdict:'defer',note:'Sample review only'};

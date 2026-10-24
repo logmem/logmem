@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seedBusinessDemos } from '../scripts/seed-business-demos.mjs';
 import { createMemoryRedis } from '../src/lib/memory-redis.mjs';
-import { buildView } from '../src/http/view.mjs';
+import { buildView, homeView } from '../src/http/view.mjs';
+import { createStore } from '../src/core/store.mjs';
 import { createHandler } from '../api/work.mjs';
 import { mockReq, mockRes } from './oauth-helpers.mjs';
 import { execFileSync } from 'node:child_process';
@@ -148,4 +149,39 @@ test('dashboard: saved decision receipts stay in their source space', () => {
   assert.equal(model.receiptForSpace(receipt,'demo-solo'),receipt);
   assert.equal(model.receiptForSpace(receipt,'demo-sales'),null);
   assert.equal(model.receiptForSpace(null,'demo-solo'),null);
+});
+
+test('dashboard: an unreadable decision claim cannot become zero pending requests', async () => {
+  const redis = createMemoryRedis();
+  await seedBusinessDemos(redis);
+  const failing = (cmd, ...args) => {
+    if (String(cmd).toUpperCase() === 'GET' && String(args[0]).startsWith('lm:demo-restaurant:decision:')) throw new Error('claim storage offline');
+    return redis(cmd, ...args);
+  };
+  await assert.rejects(buildView(failing, 'demo-restaurant', 'home'), /claim storage offline/);
+});
+
+for (const [label, fail] of [
+  ['canonical ask', (cmd,key) => cmd === 'GET' && key.startsWith('lm:demo-restaurant:ask:')],
+  ['later agent log', (cmd,key) => cmd.startsWith('ZRANGE') && key === 'lm:demo-restaurant:agent:claude:log'],
+  ['completion suggestions', (cmd,key) => cmd === 'GET' && key === 'lm:demo-restaurant:reconcile:report'],
+]) test('dashboard: failed '+label+' reads cannot hide pending work', async () => {
+  const redis = createMemoryRedis();
+  await seedBusinessDemos(redis);
+  const failing = (cmd,...args) => {
+    if (fail(String(cmd).toUpperCase(),String(args[0]))) throw new Error('required read offline');
+    return redis(cmd,...args);
+  };
+  await assert.rejects(homeView(createStore(failing,{space:'demo-restaurant'}),failing,'demo-restaurant'),/required read offline/);
+});
+
+test('dashboard: failed agent reads appear in Home coverage', async () => {
+  const redis = createMemoryRedis();
+  await seedBusinessDemos(redis);
+  const failing = (cmd,...args) => {
+    if (String(cmd).toUpperCase() === 'HGETALL' && String(args[0]) === 'lm:demo-restaurant:agent:gemini:now') throw new Error('agent offline');
+    return redis(cmd,...args);
+  };
+  const home = await homeView(createStore(failing,{space:'demo-restaurant'}),failing,'demo-restaurant');
+  assert.ok(home.coverage.errors.some(e=>e.source==='agent:gemini'));
 });

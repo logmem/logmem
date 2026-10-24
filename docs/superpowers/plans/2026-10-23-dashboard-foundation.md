@@ -1,6 +1,6 @@
 # Dashboard Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the approved dashboard foundation with truthful current capabilities.
 
@@ -77,7 +77,7 @@ The baseline content equals production main `dcef3b8`; its full CI already passe
 - Export `prioritizeWork(jobs, now)`, `briefFor(home)`, `isSampleSpace(space)`, and `decisionProblem(ask, verdict, note)`.
 - GET needs and pulse use mayRead. POST remains isAdmin plus intent and origin checks.
 
-- [ ] Write behavioral tests before changing production code.
+- [x] Write behavioral tests before changing production code.
   - Seed five actual business spaces; Home returns the pending decision and source-linked job updates.
   - Fail one job read; coverage reports that source failure and never claims complete coverage.
   - GET needs works in password-free development, but production and configured-password preview require authentication.
@@ -86,15 +86,15 @@ The baseline content equals production main `dcef3b8`; its full CI already passe
   - Unknown stages and missing owners remain visible. Stable ties use job ID.
   - Missing exact action prevents approval; change requests need a reason.
   - Sample detection includes all five seeded spaces.
-- [ ] Run `node --test test/dashboard-foundation.test.mjs`.
+- [x] Run `node --test test/dashboard-foundation.test.mjs`.
   Expected: assertions fail because the new fields, preview read policy, and helpers are absent.
-- [ ] Add bounded job-update reads with error collection to Home.
+- [x] Add bounded job-update reads with error collection to Home.
   Use existing needs results rather than recomputing their count independently.
   Keep observation limits explicit.
-- [ ] Implement pure helpers and the GET-only read policy.
-- [ ] Run `node --test test/dashboard-foundation.test.mjs test/live-app.test.mjs test/business-demos.test.mjs`.
+- [x] Implement pure helpers and the GET-only read policy.
+- [x] Run `node --test test/dashboard-foundation.test.mjs test/live-app.test.mjs test/business-demos.test.mjs`.
   Expected: all pass.
-- [ ] Commit the data and model changes.
+- [x] Commit the data and model changes.
 
 ### Task 2: Today, Work, navigation, and truthful status
 
@@ -112,30 +112,30 @@ The baseline content equals production main `dcef3b8`; its full CI already passe
 - Board and list share the same filtered data.
 - Existing plan and lane views remain accessible inside Work.
 
-- [ ] Add failing tests for space-specific work preferences and local timestamp formatting.
+- [x] Add failing tests for space-specific work preferences and local timestamp formatting.
   Name the helper `workFilterKey(space)`; different spaces must produce different keys.
   `hhmm(ts)` must format the viewer's local time rather than slice UTC.
-- [ ] Run the targeted tests and confirm the expected failures.
-- [ ] Render Today in the approved order.
+- [x] Run the targeted tests and confirm the expected failures.
+- [x] Render Today in the approved order.
   Use deterministic source-linked brief text, actual decisions and tasks, waits, bounded recent job updates, and compact priorities.
   Show an explicit pending-index coverage limitation.
-- [ ] Replace primary navigation and move administration behind Settings.
+- [x] Replace primary navigation and move administration behind Settings.
   Use Data connected for transport state.
   Use Sample space for fixtures.
   Keep old routes working and make agent freshness distinct from runtime presence.
-- [ ] Add prioritized Work list and persistent per-space board toggle.
+- [x] Add prioritized Work list and persistent per-space board toggle.
   Keep the existing filters and shared detail panel.
   List stages outside the standard board visibly.
-- [ ] Add Activity alias and preserve full log access.
+- [x] Add Activity alias and preserve full log access.
   State the current read window. Do not imply complete history.
-- [ ] Show unavailable schedule and run capabilities honestly on Agents.
+- [x] Show unavailable schedule and run capabilities honestly on Agents.
   Do not invent provider limits, schedule slots, or Run now handlers.
-- [ ] Run targeted tests and `node --test test/live-shell.test.mjs`.
+- [x] Run targeted tests and `node --test test/live-shell.test.mjs`.
   Expected: all pass after justified label updates.
-- [ ] Start isolated seeded preview on port 4330.
+- [x] Start isolated seeded preview on port 4330.
   Use CUA to check Today, decision access, Work list/board, legacy routes, Settings, and space changes.
   Verify 390, 768, and 1280-pixel layouts.
-- [ ] Commit the dashboard views.
+- [x] Commit the dashboard views.
 
 ### Task 3: Decision context, receipts, and joined verification
 
@@ -151,24 +151,24 @@ The baseline content equals production main `dcef3b8`; its full CI already passe
 - Server verdicts remain approve, reject, and defer.
 - Request changes uses reject plus a required reason.
 
-- [ ] Add failing receipt-scope tests before implementing the helper.
+- [x] Add failing receipt-scope tests before implementing the helper.
   Export `receiptForSpace(receipt, space)`: return the receipt only for an exact matching space.
-- [ ] Run the test file; confirm the expected failure.
-- [ ] Improve decision cards with the exact action and collapsed provenance.
+- [x] Run the test file; confirm the expected failure.
+- [x] Improve decision cards with the exact action and collapsed provenance.
   Disable approval for a missing action and show the reason.
   Label Request changes and Decide later clearly.
   Keep existing irreversible confirmation and signed decision binding.
-- [ ] Enforce change reasons before submission.
+- [x] Enforce change reasons before submission.
   Only save receipts after a successful server response.
   Show Approval saved. Completion not verified.
   Keep failed-action notes intact.
-- [ ] Run full CI with local test-server permissions.
+- [x] Run full CI with local test-server permissions.
   Command: `npm run ci`.
   Expected: all tests, schema, and 30 conformance cases pass.
-- [ ] Use CUA with synthetic sample data to verify decision review, a safe defer, receipt text, and space isolation.
+- [x] Use CUA with synthetic sample data to verify decision review, a safe defer, receipt text, and space isolation.
   Record screenshots and actual limitations.
-- [ ] Commit the verified result and request a fresh whole-branch review.
-- [ ] Resolve important findings with a reproduced failing test.
+- [x] Commit the verified result and request a fresh whole-branch review.
+- [x] Resolve important findings with a reproduced failing test.
 - [ ] Prepare a draft PR and attach it to the chat.
   Do not enable paid Vercel agent reviews.
   Keep runtime-dependent phases listed as follow-up work.
