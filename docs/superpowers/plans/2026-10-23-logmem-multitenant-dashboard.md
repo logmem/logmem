@@ -81,15 +81,15 @@ Do not change another agent's pending-index work.
 - Idempotency binds authenticated user, operation, and input digest. A reused key with changed input returns 409.
 - Start with 3 owned workspaces per user and 10 spaces per workspace. Enforce atomically and allow server configuration.
 
-- [ ] Step 1: Write tests for two owners, multiple spaces, foreign IDs, stale indexes, concurrent creation, quota races, and lost-response retries.
+- [x] Step 1: Write tests for two owners, multiple spaces, foreign IDs, stale indexes, concurrent creation, quota races, and lost-response retries.
   Assert one committed workspace, one first space, owner membership, and one audit event for concurrent identical requests.
   Assert changed-input retry returns 409 and lists never expose another tenant.
-- [ ] Step 2: Run `node --test test/workspaces.test.mjs`. Expected: failure because the module does not exist.
-- [ ] Step 3: Implement atomic registered scripts for records, indexes, quotas, and idempotency. Validate every script key explicitly.
+- [x] Step 2: Run `node --test test/workspaces.test.mjs`. Expected: failure because the module does not exist.
+- [x] Step 3: Implement atomic registered scripts for records, indexes, quotas, and idempotency. Validate every script key explicitly.
   Write metadata to a new `lm:workspace:*` control-plane namespace outside all customer data jails.
   Keep workspace tenant records compatible with existing plan and status checks.
-- [ ] Step 4: Run `node --test test/workspaces.test.mjs test/cloud-tenants.test.mjs`. Expected: all pass.
-- [ ] Step 5: Commit the registry and its tests with `feat: add workspace and space registry`.
+- [x] Step 4: Run `node --test test/workspaces.test.mjs test/cloud-tenants.test.mjs`. Expected: all pass.
+- [x] Step 5: Commit the registry and its tests with `feat: add workspace and space registry`.
 
 ### Task 2: Membership Policy and Legacy Mapping
 
@@ -107,14 +107,14 @@ Do not change another agent's pending-index work.
 - Initial creator receives approval rights in the first space. Admin role alone does not confer approval rights.
 - Suspended or deleted tenants, workspaces, spaces, and memberships fail closed.
 
-- [ ] Step 1: Write role-matrix tests, sibling-space rejection, forged ownership, migration retry, downgrade, and concurrent last-owner removal tests.
+- [x] Step 1: Write role-matrix tests, sibling-space rejection, forged ownership, migration retry, downgrade, and concurrent last-owner removal tests.
   Assert exactly one owner remains after concurrent removal attempts.
   Assert migration changes no existing data keys or app grants.
-- [ ] Step 2: Run `node --test test/workspace-membership.test.mjs test/workspace-migration.test.mjs`. Expected: missing-interface failures.
-- [ ] Step 3: Implement authoritative membership checks, atomic role updates, ownership protection, and idempotent legacy mapping.
-- [ ] Step 4: Run those tests plus `test/workspaces.test.mjs` and existing account tests found with `rg --files test | rg 'account|managed'`.
+- [x] Step 2: Run `node --test test/workspace-membership.test.mjs test/workspace-migration.test.mjs`. Expected: missing-interface failures.
+- [x] Step 3: Implement authoritative membership checks, atomic role updates, ownership protection, and idempotent legacy mapping.
+- [x] Step 4: Run those tests plus `test/workspaces.test.mjs` and existing account tests found with `rg --files test | rg 'account|managed'`.
   Expected: all pass. Record the resolved test names in the execution ledger.
-- [ ] Step 5: Commit with `feat: enforce workspace and space memberships`.
+- [x] Step 5: Commit with `feat: enforce workspace and space memberships`.
 
 ### Task 3: Authorized Storage Context
 
@@ -130,14 +130,14 @@ Do not change another agent's pending-index work.
 - Browser APIs use customer Redis for customer records. Never fall back to operator storage when customer configuration fails.
 - Signed-out context returns 401. An unavailable configuration returns 503. Missing and foreign spaces return the same fixed 404.
 
-- [ ] Step 1: Write tests that deny foreign keys, scripts, sibling-space commands, forged request identities, missing configuration, and revoked memberships.
+- [x] Step 1: Write tests that deny foreign keys, scripts, sibling-space commands, forged request identities, missing configuration, and revoked memberships.
   Assert existing single-space agent tokens cannot access a newly created sibling space.
   Assert a membership removed between resolve and revalidate prevents mutation.
-- [ ] Step 2: Run `node --test test/workspace-jail.test.mjs test/viewer-context.test.mjs`. Expected: missing-interface failures.
-- [ ] Step 3: Implement viewer resolution and guarded storage without broadening legacy token permissions.
+- [x] Step 2: Run `node --test test/workspace-jail.test.mjs test/viewer-context.test.mjs`. Expected: missing-interface failures.
+- [x] Step 3: Implement viewer resolution and guarded storage without broadening legacy token permissions.
   Retain registered-script restrictions and declared-key checks.
-- [ ] Step 4: Run these tests plus `test/two-tenant-isolation.test.mjs` and `test/jail-scripts.test.mjs`. Expected: all pass.
-- [ ] Step 5: Commit with `feat: resolve authorized dashboard storage contexts`.
+- [x] Step 4: Run these tests plus `test/two-tenant-isolation.test.mjs` and `test/jail-scripts.test.mjs`. Expected: all pass.
+- [x] Step 5: Commit with `feat: resolve authorized dashboard storage contexts`.
 
 ### Task 4: Customer Sessions and Management API
 
@@ -155,13 +155,13 @@ Modify `src/http/clerk.mjs`, `api/logout.mjs`, `vercel.json` only where required
 - Check the installed Clerk API and official documentation before implementing provider-session revocation.
 - Keep `/api/login` and existing fleet operator behavior explicit and separate.
 
-- [ ] Step 1: Write tests for signed-out, handshake, verified account, invitation-only gate, first workspace, returning membership, malicious redirects, CSRF, and signout.
+- [x] Step 1: Write tests for signed-out, handshake, verified account, invitation-only gate, first workspace, returning membership, malicious redirects, CSRF, and signout.
   Assert accepting a membership does not provision a second personal workspace.
-- [ ] Step 2: Run `node --test test/customer-session.test.mjs test/workspace-handlers.test.mjs`. Expected: missing-handler failures.
-- [ ] Step 3: Implement dependency-injected handlers using Tasks 1–3 and existing Clerk authentication.
+- [x] Step 2: Run `node --test test/customer-session.test.mjs test/workspace-handlers.test.mjs`. Expected: missing-handler failures.
+- [x] Step 3: Implement dependency-injected handlers using Tasks 1–3 and existing Clerk authentication.
   Return no-store responses and bounded validation errors without foreign identifiers.
-- [ ] Step 4: Run those tests plus existing Clerk and connection handler tests. Expected: all pass.
-- [ ] Step 5: Commit with `feat: add customer dashboard sessions and workspace creation`.
+- [x] Step 4: Run those tests plus existing Clerk and connection handler tests. Expected: all pass.
+- [x] Step 5: Commit with `feat: add customer dashboard sessions and workspace creation`.
 
 ### Task 5: Convert Every Dashboard Data Path
 
@@ -181,16 +181,16 @@ Create `test/customer-dashboard-isolation.test.mjs`, `test/workspace-oauth.test.
 - `/api/waitlist`, `/api/invites`, verification tools, and cron routes remain operator-only.
 - Public health and OAuth discovery return no customer data.
 
-- [ ] Step 1: Write an endpoint matrix covering anonymous, foreign tenant, sibling space, viewer, editor, approver, revoked member, and operator requests.
+- [x] Step 1: Write an endpoint matrix covering anonymous, foreign tenant, sibling space, viewer, editor, approver, revoked member, and operator requests.
   Include pulse, needs, search, inbox, scorecard, walkthrough writes, blockers, decisions, keys, and connections.
   Assert 401 for signed-out and uniform 404 for missing or foreign resources.
   Assert customer-supplied identity never appears as the audit author.
   Assert refreshed legacy tokens cannot read sibling spaces, and removed issuer membership revokes new grants.
-- [ ] Step 2: Run `node --test test/customer-dashboard-isolation.test.mjs test/workspace-oauth.test.mjs`. Expected: current operator-only behavior fails customer cases.
-- [ ] Step 3: Convert handlers through the shared viewer and extend grants with explicit authorization.
+- [x] Step 2: Run `node --test test/customer-dashboard-isolation.test.mjs test/workspace-oauth.test.mjs`. Expected: current operator-only behavior fails customer cases.
+- [x] Step 3: Convert handlers through the shared viewer and extend grants with explicit authorization.
   Keep operator tools inaccessible to customer roles, including workspace owners.
-- [ ] Step 4: Run new tests plus `npm run ci`. Expected: all tests, schema, and conformance pass.
-- [ ] Step 5: Commit with `feat: authorize customer dashboard and agent access by space`.
+- [x] Step 4: Run new tests plus `npm run ci`. Expected: all tests, schema, and conformance pass.
+- [x] Step 5: Commit with `feat: authorize customer dashboard and agent access by space`.
 
 ### Task 6: Signup and Named Space Dashboard
 
@@ -210,16 +210,16 @@ Modify `public/app/core.js`, `main.js`, `shell.js`, `views.js`, `actions.js`, `s
 - Samples use existing business-space seed definitions. No sample can send messages, connect an account, or schedule work.
 - Keep Today, Work, Agents, and Activity and the existing design tokens, fonts, and logos.
 
-- [ ] Step 1: Write browser tests for signup to first space, create second space, switching, account changes, mobile controls, lost creation response, and useful empty states.
+- [x] Step 1: Write browser tests for signup to first space, create second space, switching, account changes, mobile controls, lost creation response, and useful empty states.
   Delay a response from space A, switch to B, then release A. Assert A never renders.
   Test signout across tabs and revoked membership during a drawer request.
   Verify text entered in names renders as text, keyboard focus survives validation, and failed creation retains the form.
-- [ ] Step 2: Run the new model and browser tests with mocked local APIs. Expected: current dashboard lacks the customer flows.
-- [ ] Step 3: Implement session bootstrap, forms, authorized navigation, context reset, and permission-aware actions.
+- [x] Step 2: Run the new model and browser tests with mocked local APIs. Expected: current dashboard lacks the customer flows.
+- [x] Step 3: Implement session bootstrap, forms, authorized navigation, context reset, and permission-aware actions.
   Keep sample data and actual customer state visibly distinct.
-- [ ] Step 4: Run `node --test test/dashboard-account.test.mjs` and the new Playwright file.
+- [x] Step 4: Run `node --test test/dashboard-account.test.mjs` and the new Playwright file.
   Expected: all pass at desktop and phone viewport sizes.
-- [ ] Step 5: Commit with `feat: add customer signup and workspace dashboard flows`.
+- [x] Step 5: Commit with `feat: add customer signup and workspace dashboard flows`.
 
 ### Task 7: Invitations and Team Administration
 
@@ -237,13 +237,13 @@ Modify `public/app/account.js` and Task 6 browser tests.
 - Provide Copy invitation link initially. Email delivery requires explicit configuration and can follow separately.
 - Removal or downgrade revokes old access and stops unauthorized actions. Recheck the actor inside atomic mutation handling.
 
-- [ ] Step 1: Write tests for wrong verified email, expiry boundary, revocation, token secrecy, role tampering, quota races, repeat acceptance, and concurrent owner removal.
+- [x] Step 1: Write tests for wrong verified email, expiry boundary, revocation, token secrecy, role tampering, quota races, repeat acceptance, and concurrent owner removal.
   Test an invite accepted while revoked and a membership changed while an action is pending.
-- [ ] Step 2: Run `node --test test/workspace-invites.test.mjs test/membership-handlers.test.mjs`. Expected: missing-module failures.
-- [ ] Step 3: Implement invitation storage, acceptance, role endpoints, member settings, and copy-link flow.
+- [x] Step 2: Run `node --test test/workspace-invites.test.mjs test/membership-handlers.test.mjs`. Expected: missing-module failures.
+- [x] Step 3: Implement invitation storage, acceptance, role endpoints, member settings, and copy-link flow.
   Integrate Task 2 last-owner protections and audit events.
-- [ ] Step 4: Run new tests and customer onboarding browser tests. Expected: all pass.
-- [ ] Step 5: Commit with `feat: add scoped workspace invitations and team roles`.
+- [x] Step 4: Run new tests and customer onboarding browser tests. Expected: all pass.
+- [x] Step 5: Commit with `feat: add scoped workspace invitations and team roles`.
 
 ### Task 8: Migration, Preview Verification, and Rollout
 
@@ -257,16 +257,16 @@ Modify the new tests where complete browser flows need additional assertions.
 - Rollback disables new creation and customer dashboard entry without deleting workspaces, grants, or user data.
 - No automatic provider fallback, model execution, or agent schedule starts during onboarding.
 
-- [ ] Step 1: Write migration and rollback tests for legacy accounts, partial records, repeated execution, suspended tenants, and unrelated fleet namespaces.
-- [ ] Step 2: Run `node --test test/workspace-rollout.test.mjs`. Expected: missing-script failure.
-- [ ] Step 3: Implement dry-run migration and the rollout runbook with exact environment controls and recovery steps.
-- [ ] Step 4: Run `npm run ci`, new Playwright flows, `git diff --check`, and dependency/license checks for any changed packages.
+- [x] Step 1: Write migration and rollback tests for legacy accounts, partial records, repeated execution, suspended tenants, and unrelated fleet namespaces.
+- [x] Step 2: Run `node --test test/workspace-rollout.test.mjs`. Expected: missing-script failure.
+- [x] Step 3: Implement dry-run migration and the rollout runbook with exact environment controls and recovery steps.
+- [x] Step 4: Run `npm run ci`, new Playwright flows, `git diff --check`, and dependency/license checks for any changed packages.
   Expected: all pass. Record actual counts and failures without treating blocked GitHub Actions as a pass.
-- [ ] Step 5: Conduct one independent whole-branch review focused on isolation, identity, quotas, and browser races.
+- [x] Step 5: Conduct one independent whole-branch review focused on isolation, identity, quotas, and browser races.
   Fix material findings with regression tests, then repeat the affected checks.
 - [ ] Step 6: Verify preview with two real test identities, separate workspaces, sibling spaces, role changes, invitations, and OAuth reconnect.
   If test identities or provider configuration are unavailable, record the missing evidence and keep rollout closed.
-- [ ] Step 7: Commit the runbook and verification evidence with `test: verify multitenant dashboard rollout`.
+- [x] Step 7: Commit the runbook and verification evidence with `test: verify multitenant dashboard rollout`.
 
 ## Execution Choice
 

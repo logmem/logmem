@@ -287,7 +287,8 @@ test("needs you: a Looks done? card shows the evidence; Close it and Still open 
   }
   await page.reload();
   await expect(page.locator(".lmx")).toBeVisible();
-  await page.locator(".lmx-needs:visible, .lmx-tabs button:visible").filter({ hasText: "Needs you" }).first().click();
+  const needs=page.locator(".lmx-needs:visible, .lmx-tabs button:visible").filter({hasText:"Needs you"}).first();
+  if(await needs.isVisible())await needs.click();else {await page.goto("/app#/decisions");await page.getByRole("tab",{name:/All/}).click();}
   const card = page.locator('.lmx-drawer [data-key="suggestion:i15-lead"]');
   await expect(card).toContainText("Looks done?");
   await expect(card).toContainText("PR #93 in this job's evidence merged.");

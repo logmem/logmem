@@ -21,3 +21,9 @@ test('customer requests carry verified-context selectors, never previous selecto
  await postJSON('/api/nudge','work',{job:'job'});assert.equal(JSON.parse(captured.opts.body).spaceId,'a');
  }finally{globalThis.fetch=before;}
 });
+test('a denied customer mutation clears revoked content before callbacks run',async()=>{
+ const {setSignedOutHook}=await import('../public/app/core.js');setSignedOutHook(()=>{});
+ state.customer=true;state.user={id:'user_a'};state.spaceRecords=[{id:'a',workspaceId:'w1',namespace:'s-a'}];switchContext({workspaceId:'w1',spaceId:'a'});live.home={private:'old records'};
+ const before=globalThis.fetch;globalThis.fetch=async()=>({status:404,json:async()=>({error:'not_found'})});
+ try{await assert.rejects(postJSON('/api/nudge','work',{job:'job'}));assert.equal(state.space,null);assert.equal(live.home,null);assert.equal(live.signedOut,true);}finally{globalThis.fetch=before;}
+});

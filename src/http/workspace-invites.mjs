@@ -1,5 +1,5 @@
 import {randomBytes} from 'node:crypto';
-import {readWorkspace,membership,canManage,accessPolicy,commitWorkspace,digest,failWorkspace,checkUser} from './workspaces.mjs';
+import {readWorkspace,membership,canManage,accessPolicy,commitWorkspace,digest,failWorkspace,checkUser,requestKey,replay} from './workspaces.mjs';
 const emailHash=email=>{if(typeof email!=='string'||email.length>254||!/^\S+@\S+\.\S+$/.test(email.trim()))failWorkspace('invalid_email');return digest(email.trim().toLowerCase());};
 const tokenHash=token=>{if(typeof token!=='string'||!/^lmi_[A-Za-z0-9_-]{43}$/.test(token))failWorkspace('not_found',404);return digest(token);};
 function validateGrant(w,actorId,role,spaces){
@@ -15,12 +15,13 @@ export async function createInvitation({actorId,workspaceId,email,role,spaces,re
  for(let i=0;i<20;i++) {
   const {w}=await readWorkspace(deps.redis,workspaceId);validateGrant(w,actorId,role,spaces);const at=(deps.now||Date.now)();
   if(Object.values(w.invitations||{}).filter(x=>x.status==='pending'&&x.expiresAt>at).length>=(deps.limits?.pendingInvitations??50))failWorkspace('invitation_limit',429);
+  if(Object.values(w.invitations||{}).filter(x=>x.expiresAt>at).length>=100)failWorkspace('invitation_history_limit',429);
   const attempts=(w.inviteAttempts?.[actorId]||[]).filter(t=>t>at-3600000);if(attempts.length>=20)failWorkspace('invitation_rate_limit',429);
   const token='lmi_'+randomBytes(32).toString('base64url'),id=randomBytes(12).toString('hex'),hash=tokenHash(token);
   const rec={id,hash,emailDigest,role,spaces,by:actorId,status:'pending',createdAt:at,expiresAt:at+7*86400000};
-  const next=structuredClone(w);next.version++;next.invitations={...next.invitations,[id]:rec};next.inviteAttempts={...next.inviteAttempts,[actorId]:[...attempts,at]};next.audit.push({kind:'invitation-created',id,by:`human:${actorId}`,at});
+  const next=structuredClone(w);next.version++;next.invitations={...Object.fromEntries(Object.entries(next.invitations||{}).filter(([,i])=>i.expiresAt>at)),[id]:rec};next.inviteAttempts={...next.inviteAttempts,[actorId]:[...attempts,at]};next.audit.push({kind:'invitation-created',id,by:`human:${actorId}`,at});
   const r=await commitWorkspace({before:w,after:next,userId:actorId,requestId,operation:'invite',fingerprint,result:{id,expiresAt:rec.expiresAt}},deps);
-  if(r){if(r.created){await deps.redis('SET',`lm:workspace:invite:${hash}`,JSON.stringify({workspaceId,id}));return {...r,token};}return r;}
+  if(r){if(r.created){await deps.redis('SET',`lm:workspace:invite:${hash}`,JSON.stringify({workspaceId,id}),'EX','604800');return {...r,token};}return r;}
  }
  failWorkspace('update_conflict',409);
 }
@@ -52,8 +53,9 @@ export async function acceptInvitation({userId,verifiedEmail,token},deps) {
 export async function revokeInvitation({actorId,workspaceId,invitationId,requestId},deps) {
  for(let i=0;i<20;i++){
   const {w}=await readWorkspace(deps.redis,workspaceId);if(!canManage(w,actorId))failWorkspace('forbidden',403);
+  const previous=await replay(deps.redis,requestKey(actorId,'revoke-invite',requestId),digest({workspaceId,invitationId}));if(previous)return previous;
   const invite=w.invitations?.[invitationId];if(!invite||invite.status!=='pending')failWorkspace('not_found',404);
-  const next=structuredClone(w);next.version++;next.invitations[invitationId].status='revoked';next.audit.push({kind:'invitation-revoked',id:invitationId,by:`human:${actorId}`,at:(deps.now||Date.now)()});
+  const next=structuredClone(w);next.version++;delete next.invitations[invitationId];next.audit.push({kind:'invitation-revoked',id:invitationId,by:`human:${actorId}`,at:(deps.now||Date.now)()});
   const r=await commitWorkspace({before:w,after:next,userId:actorId,requestId,operation:'revoke-invite',fingerprint:digest({workspaceId,invitationId}),result:{revoked:true}},deps);if(r)return r;
  }
  failWorkspace('update_conflict',409);

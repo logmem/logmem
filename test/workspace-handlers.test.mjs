@@ -20,3 +20,10 @@ test('optional business samples use the new private namespace and seed only once
  const second=mockRes();await h(mockReq(request),second);assert.equal(second.statusCode,200);assert.equal(await redis('ZCARD',`lm:${r.space.namespace}:job:${r.sampleJobs[0]}:log`),before);
  assert.equal(await redis('EXISTS','lm:demo-trades:agents'),0);
 });
+test('an invited workspace member can create a space while public signup stays closed',async()=>{
+ const {createWorkspace,setMembership}=await import('../src/http/workspaces.mjs');const redis=createMemoryRedis(),member='user_teammate00001';
+ const {workspace:w}=await createWorkspace({userId,name:'Business',firstSpaceName:'Ops',requestId:'create-001'},{redis});await setMembership({actorId:userId,workspaceId:w.id,userId:member,role:'member',spaces:{},requestId:'member-001'},{redis});
+ const handler=createHandler({redis,env:{LOGMEM_CUSTOMER_DASHBOARD:'1'},session:async()=>({status:'signed-in',userId:member,email:'member@example.com'})}),res=mockRes();
+ await handler(mockReq({method:'POST',url:'/api/workspaces',headers:{origin:'https://logmem.test','x-logmem-intent':'workspace'},body:{action:'create-space',workspaceId:w.id,name:'Team work',requestId:'new-space-01'}}),res);
+ assert.equal(res.statusCode,200,res.body);
+});

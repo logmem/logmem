@@ -3,6 +3,8 @@
 
 export const state = { space: null, spaces: [], customer:false, user:null, workspaceId:null, spaceId:null, workspaces:[], spaceRecords:[] };
 let epoch=0,viewEpoch=0;
+const contextResetHooks=new Set();
+export function onContextReset(fn){contextResetHooks.add(fn);return ()=>contextResetHooks.delete(fn);}
 let pendingController=new AbortController();
 try { state.space = localStorage.getItem('lm-space'); } catch (e) { /* storage blocked */ }
 
@@ -37,14 +39,14 @@ export function invalidateLoads() {viewEpoch++;}
 export function switchContext({workspaceId,spaceId}) {
   const selected=state.spaceRecords.find(s=>s.id===spaceId&&s.workspaceId===workspaceId);
   if(!selected)throw new Error('That space is unavailable.');
-  pendingController.abort(); pendingController=new AbortController();epoch++;
+  pendingController.abort(); pendingController=new AbortController();epoch++;for(const reset of contextResetHooks)reset();
   Object.assign(state,{workspaceId,spaceId,space:selected.namespace,permissions:selected.permissions||{},spaces:state.spaceRecords.filter(s=>s.workspaceId===workspaceId).map(s=>s.namespace)});
   Object.assign(live,{home:null,jobs:null,log:null,recall:null,needs:null,stale:[],rev:null,decisionReceipt:null,fails:0,storageDown:false,signedOut:false});
   FILTERS={};seen.clear();
   try{localStorage.setItem('lm-context-'+state.user.id,JSON.stringify({workspaceId,spaceId}));sessionStorage.removeItem('lm-filters');}catch{}
 }
 export function clearCustomerContext() {
-  pendingController.abort();pendingController=new AbortController();epoch++;
+  pendingController.abort();pendingController=new AbortController();epoch++;for(const reset of contextResetHooks)reset();
   Object.assign(state,{space:null,spaces:[],workspaceId:null,spaceId:null,user:null,workspaces:[],spaceRecords:[]});
   Object.assign(live,{home:null,jobs:null,log:null,recall:null,needs:null,stale:[],rev:null,decisionReceipt:null,signedOut:true});
   FILTERS={};seen.clear();
@@ -76,7 +78,8 @@ export async function postJSON(url, intent, body) {
   const r = await fetch(customerUrl(url), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent, ...(state.customer?{'X-LogMem-Viewer':'customer'}:{}) }, body: JSON.stringify(Object.assign({ space: state.space }, body, state.customer?{workspaceId:state.workspaceId,spaceId:state.spaceId}:{})) });
   const j = await asJSON(r);
   if(requestedEpoch!==epoch){const e=new Error('Space changed. Check the original space before retrying.');e.stale=true;throw e;}
-  if (r.status === 401) {if(state.customer)clearCustomerContext();onSignedOut(j.error);}
+  if(state.customer&&[401,403,404].includes(r.status)){clearCustomerContext();onSignedOut(j.error);const e=new Error(j.error||'Access changed.');e.status=r.status;e.stale=true;throw e;}
+  if(r.status===401)onSignedOut(j.error);
   if (r.status >= 300) { const e = new Error(j.error || 'status ' + r.status); e.status = r.status; throw e; }
   return j;
 }

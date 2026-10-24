@@ -37,6 +37,7 @@ test('customer creates workspace and spaces, adds work, and signs out',async({pa
  await page.getByLabel('Space name', {exact:true}).fill('Sales');
  await page.getByRole('button',{name:'Create space',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
+ await page.screenshot({path:'/private/tmp/logmem-customer-'+test.info().project.name+'.png',fullPage:true});
  const picker=page.getByRole('combobox',{name:'Space',exact:true}).filter({visible:true}).first();
  await picker.selectOption({label:'Operations'});
  await expect(page.getByText('Confirm Friday appointments').first()).toBeVisible();
@@ -64,4 +65,20 @@ test('invited teammate sees only the granted space and can accept without an ext
  await expect(invited.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
  await expect(invited.getByRole('combobox',{name:'Workspace',exact:true}).filter({visible:true}).first()).toHaveValue(/^w/);
  await expect(invited.getByRole('heading',{name:'Create your workspace'})).toHaveCount(0);
+});
+test('walkthrough drafts accept verified identities and stay private after a pending save crosses spaces',async({page,context})=>{
+ const f=await fixture(context),userId='user_Customer00001';
+ const {createWorkspace,createSpace}=await import('../src/http/workspaces.mjs'),{createStore}=await import('../src/core/store.mjs');
+ const {workspace:w,space:a}=await createWorkspace({userId,name:'Business',firstSpaceName:'Operations',requestId:'create-001'},{redis:f.redis});
+ await createSpace({userId,workspaceId:w.id,name:'Sales',requestId:'space-002'},{redis:f.redis});await createStore(f.redis,{space:a.namespace}).setWho('job','private-job',{title:'Private operations work'});
+ await page.goto('/app#/write/private-job');await page.getByLabel('Title *').fill('Private operations draft');await page.getByLabel('What to do *').fill('Read the private result');
+ await page.getByRole('button',{name:'Preview',exact:true}).click();await expect(page.locator('.lmw-preview')).toBeVisible();await page.getByRole('link',{name:'Back to the writer'}).click();
+ let release,arrived;const held=new Promise(r=>release=r),seen=new Promise(r=>arrived=r);
+ await page.route('**/api/tasks**',async route=>{if(route.request().method()==='POST'){arrived();await held;}await route.fallback();});
+ await page.getByRole('button',{name:'Save walkthrough'}).click();await seen;
+ await page.getByRole('combobox',{name:'Space',exact:true}).filter({visible:true}).first().selectOption({label:'Sales'});
+ await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
+ const response=page.waitForResponse(r=>r.url().includes('/api/tasks')&&r.request().method()==='POST');release();await response;
+ await expect(page.getByText('Private operations draft',{exact:true})).toHaveCount(0);
+ await page.goto('/app#/walk/preview');await expect(page.getByText('Nothing to preview.',{exact:true})).toBeVisible();
 });

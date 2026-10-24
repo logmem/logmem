@@ -48,7 +48,11 @@ Reopening the customer dashboard reuses the same IDs and data.
 ## Operational limits
 
 Initial limits are three owned workspaces, ten spaces per workspace, one hundred membership records, and twenty active agent keys.
+Agent key creation allows twenty keys per actor per hour. Revocation removes the key from active metadata and deletes its lookup.
 Invitation creation allows twenty requests per actor per hour and fifty pending invitations per workspace.
+Invitation metadata keeps at most one hundred unexpired records.
+Control audit storage keeps the latest five thousand events. The workspace record keeps the latest one hundred events.
+Idempotency records expire after seven days.
 Invitations expire after seven days.
 No signup flow starts paid model calls, computer services, or recurring agent runs.
 

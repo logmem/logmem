@@ -64,3 +64,10 @@ test('OAuth exchange and refresh policy refuses grants after issuer removal',asy
  assert.equal(await workspaceGrantActive(rec,deps),false);
  assert.equal(await workspaceGrantActive({space:'t-legacy',backend:{kind:'managed',tenant:'legacy'}},deps),true);
 });
+test('key churn is rate limited and revoked keys leave no hot record or lookup',async()=>{
+ const redis=createMemoryRedis(),deps={redis};const {workspace:w,space:s}=await createWorkspace({userId,name:'Business',firstSpaceName:'Ops',requestId:'create-001'},deps);
+ for(let i=0;i<20;i++){const k=await createWorkspaceAgentKey({userId,workspaceId:w.id,spaceId:s.id,agent:'codex',requestId:`key-create-${i}`},deps);await revokeWorkspaceAgentKey({userId,workspaceId:w.id,spaceId:s.id,id:k.id,requestId:`key-revoke-${i}`},deps);}
+ await assert.rejects(createWorkspaceAgentKey({userId,workspaceId:w.id,spaceId:s.id,agent:'codex',requestId:'key-create-999'},deps),{status:429});
+ const record=JSON.parse(await redis('GET',`lm:workspace:record:${w.id}`));assert.equal(Object.keys(record.connections).length,0);
+ assert.equal([...redis._data.keys()].filter(k=>k.startsWith('lm:workspace:key:')).length,0);
+});

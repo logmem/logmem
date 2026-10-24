@@ -47,14 +47,15 @@ if fresh then
 end
 redis.call('SET', KEYS[1], ARGV[2])
 redis.call('SET', KEYS[9], tostring(cjson.decode(ARGV[2]).version))
-if ARGV[9] ~= '' then redis.call('RPUSH', KEYS[8], ARGV[9]) end
+if ARGV[9] ~= '' then redis.call('RPUSH', KEYS[8], ARGV[9]); redis.call('LTRIM', KEYS[8], -tonumber(ARGV[10]), -1) end
 local flags = cjson.decode(ARGV[6])
 for i, f in ipairs(flags) do
  local k = 9 + (i-1)*2
  if f.member then redis.call('SADD', KEYS[k+1], ARGV[7]) else redis.call('SREM', KEYS[k+1], ARGV[7]) end
  if f.owner then redis.call('SADD', KEYS[k+2], ARGV[7]) else redis.call('SREM', KEYS[k+2], ARGV[7]) end
 end
-redis.call('SET', KEYS[4], cjson.encode({digest=ARGV[3],result=ARGV[4]}))
+for j=10+(#flags*2),#KEYS do redis.call('DEL',KEYS[j]) end
+redis.call('SET', KEYS[4], cjson.encode({digest=ARGV[3],result=ARGV[4]}), 'EX', 604800)
 return {'ok', ARGV[4]}
 `;
 registerEvalScript(COMMIT,(call,keys,a)=>{
@@ -72,12 +73,13 @@ registerEvalScript(COMMIT,(call,keys,a)=>{
   }
   call('SET',keys[0],a[1]);
   call('SET',keys[8],String(JSON.parse(a[1]).version));
-  if(a[8])call('RPUSH',keys[7],a[8]);
+  if(a[8]){call('RPUSH',keys[7],a[8]);call('LTRIM',keys[7],-Number(a[9]),-1);}
   JSON.parse(a[5]).forEach((f,i)=>{
     call(f.member?'SADD':'SREM',keys[9+i*2],a[6]);
     call(f.owner?'SADD':'SREM',keys[10+i*2],a[6]);
   });
-  call('SET',keys[3],JSON.stringify({digest:a[2],result:a[3]}));
+  for(const key of keys.slice(9+JSON.parse(a[5]).length*2))call('DEL',key);
+  call('SET',keys[3],JSON.stringify({digest:a[2],result:a[3]}),'EX','604800');
   return ['ok',a[3]];
 });
 
@@ -107,7 +109,8 @@ export async function commitWorkspace({before,after,userId,requestId,operation,f
   const users=[...new Set([...Object.keys(before?.members||{}),...Object.keys(after.members)])];
   const keys=[workspaceKey(after.id),userKey(userId),ownedKey(userId),requestKey(userId,operation,requestId),`acmi:cloud:tenant:${after.tenantId}`,'acmi:cloud:tenants',`lm:account:tenant:${after.tenantId}`,`lm:workspace:audit:${after.id}`,workspaceVersionKey(after.id)];
   const flags=users.map(u=>{keys.push(userKey(u),ownedKey(u)); const m=after.members[u]; return {member:m?.status==='active',owner:m?.status==='active'&&m.role==='owner'};});
-  const response=await deps.redis('EVAL',COMMIT,keys.length,...keys,before?JSON.stringify(before):'',JSON.stringify(after),fingerprint,JSON.stringify(result),String(deps.limits?.ownedWorkspaces??3),JSON.stringify(flags),after.id,legacyUser||'',event?JSON.stringify(event):'');
+  for(const collection of ['connections','invitations'])for(const old of Object.values(before?.[collection]||{}))if(!after[collection]?.[old.id]&&old.hash)keys.push(`lm:workspace:${collection==='connections'?'key':'invite'}:${old.hash}`);
+  const response=await deps.redis('EVAL',COMMIT,keys.length,...keys,before?JSON.stringify(before):'',JSON.stringify(after),fingerprint,JSON.stringify(result),String(deps.limits?.ownedWorkspaces??3),JSON.stringify(flags),after.id,legacyUser||'',event?JSON.stringify(event):'',String(deps.limits?.auditEntries??5000));
   const [status,payload]=response;
   if(status==='conflict') failWorkspace('idempotency_conflict',409);
   if(status==='quota') failWorkspace('workspace_limit',429);
@@ -115,7 +118,7 @@ export async function commitWorkspace({before,after,userId,requestId,operation,f
   if(status==='retry'||status==='collision') return null;
   return {...JSON.parse(payload),created:status==='ok'};
 }
-async function replay(redis,key,fingerprint) {
+export async function replay(redis,key,fingerprint) {
  const raw=await redis('GET',key); if(!raw) return null;
  const r=JSON.parse(raw); if(r.digest!==fingerprint) failWorkspace('idempotency_conflict',409);
  return {...JSON.parse(r.result),created:false};

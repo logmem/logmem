@@ -10,7 +10,7 @@ export function createHandler(deps={}){return async(req,res)=>{
   const {session:s,redis,env}=await customerIdentity(req,deps);
   if(req.method!=='POST')return res.status(405).json({error:'method_not_allowed'});
   requireIntent(req,'workspace');const b=jsonBody(req);
-  if(!await isInvited(s.email,{redis,env}))throw new WorkspaceError('signup_closed',403);
+  if(b.action==='create-workspace'&&!await isInvited(s.email,{redis,env}))throw new WorkspaceError('signup_closed',403);
   const options={redis,limits:deps.limits};
   let result;
   if(b.action==='create-workspace')result=await createWorkspace({userId:s.userId,name:b.name,firstSpaceName:b.firstSpaceName,requestId:b.requestId,businessType:b.businessType||'',withSample:b.withSample===true,userLabel:s.email},options);

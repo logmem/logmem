@@ -1,15 +1,17 @@
 import {randomBytes} from 'node:crypto';
 import {customerRedis} from './jail.mjs';
 import {checkAgentId} from '../core/keys.mjs';
-import {readWorkspace,accessPolicy,commitWorkspace,digest,failWorkspace,WorkspaceError} from './workspaces.mjs';
+import {readWorkspace,accessPolicy,commitWorkspace,digest,failWorkspace,WorkspaceError,requestKey,replay} from './workspaces.mjs';
 export async function createWorkspaceAgentKey({userId,workspaceId,spaceId,agent,label='',requestId},deps) {
  agent=checkAgentId(agent);if(typeof label!=='string'||label.length>80)failWorkspace('invalid_label');
  for(let i=0;i<12;i++) {
   const {w}=await readWorkspace(deps.redis,workspaceId);accessPolicy(w,userId,spaceId,'manage-connections');
   if(Object.values(w.connections||{}).filter(x=>!x.revoked).length>=20)failWorkspace('connection_limit',429);
+  const at=(deps.now||Date.now)(),attempts=(w.keyAttempts?.[userId]||[]).filter(t=>t>at-3600000);
+  if(attempts.length>=20)failWorkspace('connection_rate_limit',429);
   const key=`lmw_${randomBytes(32).toString('base64url')}`,hash=digest(key),id=`wk_${randomBytes(12).toString('hex')}`;
   const rec={id,spaceId,namespace:w.spaces[spaceId].namespace,agent,label,issuedBy:userId,created_at:(deps.now||Date.now)(),hash};
-  const next=structuredClone(w);next.version++;next.connections={...next.connections,[id]:rec};next.audit.push({kind:'agent-key-created',id,by:`human:${userId}`,at:rec.created_at});
+  const next=structuredClone(w);next.version++;next.keyAttempts={...next.keyAttempts,[userId]:[...attempts,at]};next.connections={...next.connections,[id]:rec};next.audit.push({kind:'agent-key-created',id,by:`human:${userId}`,at:rec.created_at});
   const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'agent-key',fingerprint:digest({workspaceId,spaceId,agent,label}),result:{id,space:rec.namespace,spaceId,agent,label,created_at:rec.created_at}},deps);
   if(r){if(r.created) {await deps.redis('SET',`lm:workspace:key:${hash}`,JSON.stringify({workspaceId,id}));return {...r,key};}return r;}
  }
@@ -29,8 +31,9 @@ export async function lookupWorkspaceAgentKey(key,deps={}) {
 export async function revokeWorkspaceAgentKey({userId,workspaceId,spaceId,id,requestId},deps) {
  for(let i=0;i<12;i++) {
   const {w}=await readWorkspace(deps.redis,workspaceId);accessPolicy(w,userId,spaceId,'manage-connections');
+  const previous=await replay(deps.redis,requestKey(userId,'revoke-key',requestId),digest({workspaceId,spaceId,id}));if(previous)return previous;
   const c=w.connections?.[id];if(!c||c.spaceId!==spaceId)failWorkspace('not_found',404);
-  const next=structuredClone(w);next.version++;next.connections[id].revoked=true;next.audit.push({kind:'agent-key-revoked',id,by:`human:${userId}`,at:(deps.now||Date.now)()});
+  const next=structuredClone(w);next.version++;delete next.connections[id];next.audit.push({kind:'agent-key-revoked',id,by:`human:${userId}`,at:(deps.now||Date.now)()});
   const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'revoke-key',fingerprint:digest({workspaceId,spaceId,id}),result:{revoked:true}},deps);if(r)return r;
  }
  failWorkspace('update_conflict',409);
