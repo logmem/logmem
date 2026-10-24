@@ -40,12 +40,12 @@ jobs:
         space: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.space)) || fromJSON('["madez","fieldnotes"]') }}
     steps:
       - name: Code (LogMem dogfood branch)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: feat/dogfood-phase0
           path: code
       - name: Scorecard branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: dogfood/scorecard
           path: card
