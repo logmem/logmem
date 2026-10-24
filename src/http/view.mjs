@@ -13,6 +13,7 @@ import { lmDecisionKey } from "../core/keys.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
+import { listCoordItemsForTrail } from "../core/coord.mjs";
 
 const MAX_LOGS = 300;
 const GROUP = Object.fromEntries(Object.entries(KINDS).map(([k, d]) => [k, d.group]));
@@ -318,16 +319,53 @@ export async function huddleView(store, trail, where) {
   const replies = log.filter((e) => e.origin === trail && e.ts >= h.ts).sort((a, b) => a.ts - b.ts);
   const mentioned = [...new Set([...String(h.summary || "").matchAll(/@([a-z0-9][a-z0-9_.-]{0,63})/gi)].map((x) => x[1].toLowerCase()))].filter((x) => !["fleet", "all", "grok-bot"].includes(x));
   const author = String(h.by || "").replace(/^agent:/, "");
-  const names = [...new Set([...mentioned, ...replies.map((e) => String(e.by || "").replace(/^(agent|human):/, ""))])].filter((x) => x && x !== author);
-  const participants = names.map((name) => {
-    const mine = replies.filter((e) => String(e.by || "").replace(/^(agent|human):/, "") === name);
-    const last = mine.at(-1);
-    const status = !last ? "pending" : mine.some((e) => e.kind === "accepted") ? "acked" : mine.some((e) => e.kind === "feedback" && isDeclined(e.payload)) ? "declined" : "replied";
-    return { agent: name, status, reply: last ? slim(last, where) : null };
-  });
+
+  let seatItems = [];
+  try {
+    seatItems = await listCoordItemsForTrail(store, store.space, trail);
+  } catch (_) {}
+
+  let participants = [];
+  let recipient_unclear = [];
+
+  if (seatItems && seatItems.length > 0) {
+    const seatRecipients = new Set(seatItems.map((s) => String(s.to).replace(/^agent:/, "")));
+    recipient_unclear = mentioned.filter((m) => !seatRecipients.has(m) && m !== author);
+
+    participants = seatItems.map((seat) => {
+      const name = String(seat.to || "").replace(/^agent:/, "");
+      const mine = replies.filter((e) => String(e.by || "").replace(/^(agent|human):/, "") === name);
+      const last = mine.at(-1);
+      const status = seat.response === "open"
+        ? (!last ? "pending" : "replied")
+        : (seat.response === "declined" ? "declined" : "acked");
+      return {
+        agent: name,
+        status,
+        item_id: seat.id,
+        deadline: seat.deadline,
+        reply: last ? slim(last, where) : null,
+      };
+    });
+  } else {
+    recipient_unclear = [...mentioned.filter((m) => m !== author)];
+    const repliers = [...new Set(replies.map((e) => String(e.by || "").replace(/^(agent|human):/, "")))].filter((x) => x && x !== author);
+    participants = repliers.map((name) => {
+      const mine = replies.filter((e) => String(e.by || "").replace(/^(agent|human):/, "") === name);
+      const last = mine.at(-1);
+      const status = mine.some((e) => e.kind === "accepted") ? "acked" : mine.some((e) => e.kind === "feedback" && isDeclined(e.payload)) ? "declined" : "replied";
+      return { agent: name, status, reply: last ? slim(last, where) : null };
+    });
+  }
+
   const rank = { pending: 0, declined: 1, replied: 2, acked: 3 };
   participants.sort((a, b) => rank[a.status] - rank[b.status] || a.agent.localeCompare(b.agent));
-  return { huddle: slim(h, `${m[1]}:${m[2]}`), participants, replies: replies.map((e) => slim(e, `${m[1]}:${m[2]}`)) };
+  return {
+    huddle: slim(h, `${m[1]}:${m[2]}`),
+    participants,
+    ...(recipient_unclear.length ? { recipient_unclear } : {}),
+    replies: replies.map((e) => slim(e, `${m[1]}:${m[2]}`)),
+  };
 }
 
 export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {

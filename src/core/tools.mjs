@@ -23,7 +23,15 @@ import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
 import { appendLogWarnings, readWarning } from "../lib/redact.mjs";
-import { computeItemId, createCoordItem, settleCoordItem, listOpenCoordItemsForAgent } from "./coord.mjs";
+import {
+  computeItemId,
+  createCoordItem,
+  settleCoordItem,
+  getCoordItem,
+  listOpenCoordItemsForAgent,
+  listCoordItemsForTrail,
+  getCoordItemsByTrail,
+} from "./coord.mjs";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -451,12 +459,97 @@ export const TOOLS = [
       trail: { type: "string", desc: "Trail id shared by every entry about this piece of work (auto if omitted)", optional: true },
       origin: { type: "string", desc: "Trail id of the entry this one follows from", optional: true },
       payload: { type: "object", desc: "Optional structured details", optional: true },
+      to: { type: "strings", desc: "Explicit recipient agents for huddles or directed memos (creates one obligation seat per recipient)", optional: true },
+      answers: { type: "string", desc: "Item ID this note answers, e.g. 'ci_...'", optional: true },
+      disposition: { type: "string", desc: "Disposition when answering an item: 'answered' (default), 'declined', or 'blocked'", optional: true },
     }),
     annotations: WRITE,
-    async run({ where, summary, kind, trail, origin, payload }, ctx) {
+    async run({ where, summary, kind, trail, origin, payload, to, answers, disposition }, ctx) {
       const { ns, id } = parseRef(where);
-      const entry = await write(ctx, ns, id, { kind, summary, trail, origin, payload });
-      return { ok: true, where: `${ns}:${id}`, entry };
+
+      // 1. If this note answers a specific coordination item:
+      let answeredItem = null;
+      if (answers) {
+        capText("answers", answers, LIMITS.trail);
+        answeredItem = await getCoordItem(ctx.store, ctx.store.space, answers);
+        if (!answeredItem) {
+          return { ok: false, error: `coordination item '${answers}' not found` };
+        }
+        const normRecipient = String(answeredItem.to || "").replace(/^agent:/, "");
+        if (me(ctx) !== normRecipient) {
+          return {
+            ok: false,
+            error: `only the designated recipient ('${normRecipient}') can answer item '${answers}' (you are ${me(ctx)})`,
+          };
+        }
+        if (answeredItem.response !== "open") {
+          return {
+            ok: false,
+            error: `item '${answers}' is already settled (${answeredItem.response})`,
+          };
+        }
+      }
+
+      // 2. Check roundtable closing invariants if kind === "done"
+      if (kind === "done" && origin) {
+        const seats = await listCoordItemsForTrail(ctx.store, ctx.store.space, origin);
+        const openSeats = seats.filter((s) => s.response === "open");
+        if (openSeats.length > 0) {
+          return {
+            ok: false,
+            error: `roundtable '${origin}' has ${openSeats.length} open seat(s) pending response; missing seats keep it open`,
+            open_seats: openSeats.map((s) => ({ id: s.id, to: s.to, deadline: s.deadline })),
+          };
+        }
+      }
+
+      const extra = to ? { to: Array.isArray(to) ? to.map(agentRef) : [agentRef(to)] } : {};
+      const entry = await write(ctx, ns, id, { kind, summary, trail, origin, payload, extra: Object.keys(extra).length ? extra : undefined });
+
+      // 3. If answering an item, execute atomic CAS settlement
+      if (answeredItem) {
+        const disp = disposition || "answered";
+        const resp = disp === "declined" ? "declined" : "answered";
+        await settleCoordItem(ctx.store, {
+          space: ctx.store.space,
+          id: answers,
+          recipient: me(ctx),
+          response: resp,
+          settledBy: agentRef(me(ctx)),
+          settledAt: entry.ts,
+          settlementTrail: entry.trail,
+          disposition: disp,
+        });
+      }
+
+      // 4. If explicit recipients `to` are specified for huddle or memo, create one seat/item per recipient
+      const itemsCreated = [];
+      if (to && (kind === "huddle" || kind === "memo" || kind === "request")) {
+        const recipients = Array.isArray(to) ? to : [to];
+        for (const rawTo of recipients) {
+          const normTo = String(rawTo || "").replace(/^agent:/, "");
+          const itemType = kind === "huddle" ? "seat" : "request";
+          const res = await createCoordItem(ctx.store, {
+            space: ctx.store.space,
+            type: itemType,
+            requestTrail: entry.trail,
+            from: agentRef(me(ctx)),
+            to: agentRef(normTo),
+            where: `${ns}:${id}`,
+            summary,
+            createdAt: entry.ts,
+          });
+          if (res && res.id) itemsCreated.push(res.id);
+        }
+      }
+
+      return {
+        ok: true,
+        where: `${ns}:${id}`,
+        entry,
+        ...(itemsCreated.length ? { items: itemsCreated } : {}),
+        ...(answeredItem ? { answered_item: answers } : {}),
+      };
     },
   },
   {
