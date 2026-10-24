@@ -85,7 +85,7 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 | `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
 | `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
 | `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
-| `src/core/tools.mjs` | The 23 `logmem_*` tools |
+| `src/core/tools.mjs` | The 24 `logmem_*` tools |
 | `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
 | `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
 | `api/mcp.mjs` | Streamable HTTP route (Vercel) |
@@ -97,7 +97,7 @@ The stdio server (`src/stdio/index.mjs` and the modules it loads) reads the vari
 
 Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
 Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
-Remove, Spaces, Connection: 23 tools, all as `logmem_<word>`. Names follow the Action Map.
+Remove, Spaces, Connection, Sync: 24 tools, all as `logmem_<word>`. Names follow the Action Map.
 Schemas are a **draft** until the tool-contract spec (claude-engineer, Oct 14).
 Recall matches keywords in summaries and payloads.
 
