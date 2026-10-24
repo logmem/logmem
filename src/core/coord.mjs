@@ -218,17 +218,15 @@ registerEvalScript(
  * Creates a coordination item atomically in Redis.
  */
 export async function createCoordItem(store, item) {
-  const {
-    space = store.space,
-    type = "handoff",
-    requestTrail,
-    from,
-    to,
-    where = "",
-    summary = "",
-    expects = "accept_or_decline",
-    createdAt = Date.now(),
-  } = item;
+  const space = item.space || store.space;
+  const type = item.type || "handoff";
+  const requestTrail = item.requestTrail || item.request_trail;
+  const from = item.from;
+  const to = item.to;
+  const where = item.where || "";
+  const summary = item.summary || "";
+  const expects = item.expects || "accept_or_decline";
+  const createdAt = Number(item.createdAt ?? item.created_at ?? Date.now());
 
   const normTo = String(to || "").replace(/^agent:/, "");
   const id = computeItemId(space, type, requestTrail, normTo);

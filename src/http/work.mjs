@@ -8,6 +8,7 @@
 import { makeTrail } from "../core/tools.mjs";
 import { registerEvalScript } from "../lib/lua-scripts.mjs";
 import { lmKey } from "../core/keys.mjs";
+import { getCoordItem, getCoordItemsByTrail, coordItemKey } from "../core/coord.mjs";
 
 // Unblock as one conditional transition (codex re-reviews of PR 85 and 86). In one atomic step it
 // checks that the job is still blocked and that stage_at, blocked_on and waits are exactly what
@@ -79,25 +80,138 @@ const cleanNote = (note) => {
   return note.trim().slice(0, 300) || undefined;
 };
 
-/** A ping from a person to an agent about a job. The agent defaults to the job owner. */
-export async function nudge(store, { job, agent, note, by, now = Date.now }) {
+/** A ping from a person to an agent about a job or a coordination item. */
+export async function nudge(store, { job, item, trail, agent, note, by, request_id, now = Date.now }) {
   if (!PERSON_RE.test(String(by))) throw new WorkError(403, "only a person can nudge");
-  const j = await jobOrThrow(store, job);
-  const owner = String(j.now.owner || j.who.owner || "").replace(/^agent:/, "");
-  let to;
-  try {
-    to = checkAgentId(agent || owner, "agent");
-  } catch {
-    throw new WorkError(400, agent ? "agent must be an agent id" : "this job has no owner; name the agent to nudge");
+
+  let targetItem = item;
+  if (!job && !targetItem && trail) {
+    const items = await getCoordItemsByTrail(store, store.space, trail);
+    if (items.length === 1) {
+      targetItem = items[0].id;
+    } else if (items.length > 1) {
+      throw new WorkError(409, `trail matches multiple coordination items: ${items.map((i) => i.id).join(", ")}`);
+    } else {
+      throw new WorkError(404, `no coordination item found for trail ${trail}`);
+    }
   }
-  const text = cleanNote(note);
+
+  if ((job && targetItem) || (!job && !targetItem)) {
+    throw new WorkError(400, "provide either job or item, not both");
+  }
+
+  const nowFn = typeof now === "function" ? now : () => now;
+
+  // ─── Case 1: Job Nudge ──────────────────────────────────────────
+  if (job) {
+    const j = await jobOrThrow(store, job);
+    const owner = String(j.now.owner || j.who.owner || "").replace(/^agent:/, "");
+    let to;
+    try {
+      to = checkAgentId(agent || owner, "agent");
+    } catch {
+      throw new WorkError(400, agent ? "agent must be an agent id" : "this job has no owner; name the agent to nudge");
+    }
+    const text = cleanNote(note);
+    const name = by.replace(/^human:/, "");
+    const reason = j.now.stage === "blocked" && !j.now.blocked_on ? " It is blocked with no reason: say what it waits on." : "";
+    const summary = `Nudge from ${name} on ${j.who.title || job}: ${text || "Can you move this job?"}${reason}`;
+    const entry = personEntry(by, "ping", summary, { job: `job:${job}`, to: `agent:${to}` }, { nudge: true, ...(text ? { note: text } : {}) }, nowFn);
+    await store.append("job", job, entry);
+    await store.append("agent", to, entry);
+    return { ok: true, job, to, entry };
+  }
+
+  // ─── Case 2: Coordination Item Nudge ────────────────────────────
+  if (request_id && store.redis) {
+    const reqKey = `lm:${store.space}:coord:nudge:req:${request_id}`;
+    const prev = await store.redis("GET", reqKey);
+    if (prev) {
+      try {
+        return JSON.parse(prev);
+      } catch (_) {}
+    }
+  }
+
+  const rec = await getCoordItem(store, store.space, targetItem);
+  if (!rec) {
+    throw new WorkError(404, `coordination item '${targetItem}' not found`);
+  }
+
+  // If already settled, return settlement state without writing or failing
+  if (rec.response && rec.response !== "open") {
+    return {
+      ok: true,
+      item: rec.id,
+      settled: true,
+      response: rec.response,
+      disposition: rec.disposition || null,
+      settled_at: rec.settled_at ? Number(rec.settled_at) : null,
+      settled_by: rec.settled_by || null,
+    };
+  }
+
+  // 1-hour cooldown per item
+  if (store.redis) {
+    const nudgeKey = `lm:${store.space}:coord:nudge:${rec.id}`;
+    const acquired = await store.redis("SET", nudgeKey, "1", "NX", "EX", 3600);
+    if (!acquired) {
+      throw new WorkError(429, "this item was nudged recently; try again in an hour");
+    }
+  }
+
+  // Resolve recipient and source from canonical item
+  const toAgent = String(rec.to || "").replace(/^agent:/, "");
   const name = by.replace(/^human:/, "");
-  const reason = j.now.stage === "blocked" && !j.now.blocked_on ? " It is blocked with no reason: say what it waits on." : "";
-  const summary = `Nudge from ${name} on ${j.who.title || job}: ${text || "Can you move this job?"}${reason}`;
-  const entry = personEntry(by, "ping", summary, { job: `job:${job}`, to: `agent:${to}` }, { nudge: true, ...(text ? { note: text } : {}) }, now);
-  await store.append("job", job, entry);
-  await store.append("agent", to, entry);
-  return { ok: true, job, to, entry };
+  const text = cleanNote(note);
+  const summary = `Nudge from ${name} on ${rec.type || "coordination item"}: ${text || rec.summary || "Please attend to this item"}`;
+
+  const entry = personEntry(
+    by,
+    "ping",
+    summary,
+    {
+      to: `agent:${toAgent}`,
+      coord_item: rec.id,
+      trail: rec.request_trail || rec.trail,
+      ...(rec.where ? { where: rec.where } : {}),
+    },
+    {
+      nudge: true,
+      coord_item: rec.id,
+      request_trail: rec.request_trail,
+      ...(text ? { note: text } : {}),
+    },
+    nowFn
+  );
+
+  // Append to recipient's log
+  await store.append("agent", toAgent, entry);
+
+  // Append to source log if valid
+  if (rec.where) {
+    const m = String(rec.where).match(/^(job|channel|agent):([A-Za-z0-9_.:-]+)$/);
+    if (m && (m[1] !== "agent" || m[2] !== toAgent)) {
+      try {
+        await store.append(m[1], m[2], entry);
+      } catch (_) {}
+    }
+  }
+
+  // Update last_nudge_at on item
+  if (store.redis) {
+    await store.redis("HSET", coordItemKey(store.space, rec.id), "last_nudge_at", String(entry.ts));
+  }
+
+  const resObj = { ok: true, item: rec.id, to: toAgent, entry };
+
+  // Store request receipt for deduplication
+  if (request_id && store.redis) {
+    const reqKey = `lm:${store.space}:coord:nudge:req:${request_id}`;
+    await store.redis("SET", reqKey, JSON.stringify(resObj), "EX", 3600);
+  }
+
+  return resObj;
 }
 
 /** Stages a "looks done?" suggestion can come from (src/core/reconcile.mjs). */

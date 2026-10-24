@@ -75,7 +75,7 @@ export function createHandler({ env = process.env, redis, now } = {}) {
       if (typeof b.space !== "string" || !viewSpaces(env).includes(b.space)) return res.status(403).json({ error: "space is not shown here" });
       const store = webStore(runner, b.space, env);
       const opts = { by: person, ...(now ? { now } : {}) };
-      if (op === "nudge") return res.status(200).json(await nudge(store, { ...opts, job: b.job, agent: b.agent, note: b.note }));
+      if (op === "nudge") return res.status(200).json(await nudge(store, { ...opts, job: b.job, item: b.item, trail: b.trail, agent: b.agent, note: b.note, request_id: b.request_id }));
       if (op === "unblock") return res.status(200).json(await unblock(store, { ...opts, job: b.job, note: b.note }));
       if (op === "confirm_done") return res.status(200).json(await confirmDone(store, { ...opts, job: b.job, note: b.note }));
       if (op === "keep_open") return res.status(200).json(await keepOpen(store, { ...opts, job: b.job, note: b.note }));

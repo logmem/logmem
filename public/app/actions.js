@@ -153,4 +153,25 @@ export async function invite(ev, emails) {
   const b = ev.currentTarget; busy(b, true);
   try { await postJSON('/api/invites', 'invites', { emails }); toast(`Invited ${emails.length}.`); onChanged(); } catch (e) { busy(b, false); toast('Not sent: ' + e.message, true); }
 }
+
+export async function doCoordNudge(ev, item, note) {
+  const b = ev?.currentTarget;
+  if (b) busy(b, true);
+  try {
+    const res = await postJSON('/api/nudge', 'work', {
+      space: state.space,
+      item,
+      note: note || undefined,
+      request_id: 'nudge-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    });
+    toast(res.settled ? `Item already settled (${res.response})` : `Nudged ${agentName(res.to)}`);
+    if (onChanged) await onChanged();
+    return res;
+  } catch (e) {
+    toast(e.message || 'Nudge failed', true);
+  } finally {
+    if (b) busy(b, false);
+  }
+}
+
 export const currentSpace = () => state.space;
