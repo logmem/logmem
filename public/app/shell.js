@@ -5,11 +5,12 @@ import { state, live, num, markSeen } from './core.js';
 import { icon } from './ui.js';
 import { openDrawer } from './drawer.js';
 import { openSearch } from './search.js';
+import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
 
-export const NAV = [['home', 'Home', 'overview'], ['lanes', 'Lanes', 'work'], ['jobs', 'Jobs', 'work'], ['agents', 'Agents', 'agents'], ['log', 'Log', 'timeline']];
+export const NAV = [['home', 'Today', 'overview'], ['work', 'Work', 'work'], ['agents', 'Agents', 'agents'], ['activity', 'Activity', 'timeline']];
 export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
-const ROUTE_NAV = { plan: 'lanes', overview: 'home', agent: 'agents', job: 'jobs', channels: 'log', recall: 'log', decisions: 'home', blockers: 'home' };
-export const LIVE_LABEL = { live: 'Live', reconnecting: 'Reconnecting…', paused: 'Paused' };
+const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home' };
+export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting…', paused: 'Updates paused' };
 
 // lit-html adds to a container; the first render clears the static "Loading…" placeholder.
 const root = () => { const el = document.getElementById('root'); if (!el._$litPart$) el.replaceChildren(); return el; };
@@ -27,23 +28,24 @@ function navItem(n, route) {
   const cur = n[0] === (ROUTE_NAV[route] || route);
   return html`<a href=${n[3] || '#/' + n[0]} class="lm-nav-item" aria-current=${cur ? 'page' : nothing} style=${cur ? 'background:var(--brand-subtle);color:var(--brand)' : ''} title=${n[1]}>${icon(n[2])}<span>${n[1]}</span></a>`;
 }
-const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${`Needs you: ${num(live.needs)} items`}>Needs you <b>${num(live.needs)}</b></button>`;
+const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
 const banner = () => live.storageDown ? html`<div class="lm-alert lm-alert--danger lmx-banner" role="alert">${icon('alert')}<div><strong>LogMem can’t reach its storage.</strong> What you see may be out of date, and nothing you do will save until it is back. The app keeps trying.</div></div>` : nothing;
 
 function frame(route, crumbs, body) {
-  const demo = state.space === 'fieldnotes';
+  const demo = isSampleSpace(state.space);
+  const receipt = receiptForSpace(live.decisionReceipt, state.space);
   const tab = (id, label, ic) => { const cur = id === (ROUTE_NAV[route] || route); return html`<a href=${'#/' + id} aria-current=${cur ? 'page' : nothing}>${icon(ic)}${label}</a>`; };
   return html`<div class="lmx"><nav class="lmx-rail" aria-label="LogMem">
       <div class="lm-rail-brand"><a href="/" style="display:flex"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height:26px;width:auto"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height:26px;width:auto"></a></div>
       <label class="lm-field" style="margin:4px 4px 12px"><span class="lm-label">Space</span><select class="lm-select" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select></label>
-      ${NAV.map((n) => navItem(n, route))}<div class="lmx-sep">Admin</div>${ADMIN.map((n) => navItem(n, route))}
-      <div class="lm-rail-foot" style="margin-top:auto">${demo ? html`<span class="lm-badge lm-badge--warning lmx-railtext">Sandbox space</span>` : html`<span style="font-size:12px" class="subtle lmx-railtext">Live space</span>`}<button type="button" class="lm-btn lm-btn--ghost lmx-railtext" @click=${onSignOut} style="justify-content:flex-start">Sign out</button></div></nav>
+      ${NAV.map((n) => navItem(n, route))}
+      <div class="lm-rail-foot" style="margin-top:auto">${navItem(ADMIN[0], route)}${demo ? html`<span class="lm-badge lm-badge--warning lmx-railtext">Sample space</span>` : html`<span style="font-size:12px" class="subtle lmx-railtext">Workspace</span>`}<button type="button" class="lm-btn lm-btn--ghost lmx-railtext" @click=${onSignOut} style="justify-content:flex-start">Sign out</button></div></nav>
     <div class="lmx-col"><header class="lmx-head"><ol class="lm-crumbs">${crumbs.map((c, i) => html`${i ? html`<li aria-hidden="true">/</li>` : nothing}<li aria-current=${i === crumbs.length - 1 ? 'page' : nothing} style=${i === crumbs.length - 1 ? 'color:var(--text)' : ''}>${c}</li>`)}</ol>
       ${headSpace()}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
-      ${needsBtn()}</header>
-      <main class="lmx-main" id="main">${banner()}${body}</main></div>
-    <nav class="lmx-tabs" aria-label="LogMem">${tab('home', 'Home', 'overview')}<button type="button" @click=${() => openDrawer('needs', 'all')}>${icon('decisions')}Needs you${live.needs ? html`<b>${num(live.needs)}</b>` : nothing}</button>${tab('lanes', 'Lanes', 'work')}${tab('jobs', 'Jobs', 'work')}${tab('more', 'More', 'settings')}</nav></div>`;
+      ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href="#/settings" aria-label="Settings">${icon('settings')}</a></header>
+      <main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main></div>
+    <nav class="lmx-tabs" aria-label="LogMem">${tab('home', 'Today', 'overview')}${tab('work', 'Work', 'work')}${tab('agents', 'Agents', 'agents')}${tab('activity', 'Activity', 'timeline')}</nav></div>`;
 }
 
 let last = { route: null, crumbs: [], body: nothing };

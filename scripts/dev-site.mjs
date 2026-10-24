@@ -7,6 +7,8 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
+import { issueCookie } from "../src/http/admin-auth.mjs";
 
 const here = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
@@ -22,9 +24,16 @@ if (argv.includes("--business-demos")) {
   globalThis.__lmDevRedis = redis;
   delete process.env.LOGMEM_REDIS_URI;
   delete process.env.ACMI_REDIS_URI;
+  delete process.env.LOGMEM_CUSTOMER_REDIS_URI;
   process.env.LOGMEM_REST_URL = "memory://business-demos";
   process.env.LOGMEM_REST_TOKEN = "local-synthetic-demo";
   process.env.LOGMEM_VIEW_SPACES = BUSINESS_DEMOS.map(d => d.id).join(",");
+  // A disposable person session for this loopback-only, in-memory fixture.
+  // No production password or decision key is reused or exposed to the browser.
+  process.env.LOGMEM_ADMIN_PASSWORD = randomBytes(32).toString("hex");
+  process.env.LOGMEM_ADMIN_SECRET = randomBytes(32).toString("hex");
+  process.env.LOGMEM_DECIDE_SECRET = randomBytes(32).toString("hex");
+  process.env.LOGMEM_ADMIN_ID = "admin";
 }
 
 if (argv.includes("--seed") && !argv.includes("--business-demos")) {
@@ -97,6 +106,13 @@ http.createServer(async (req, res) => {
   }
   try {
     if (url.pathname.startsWith("/api/")) {
+      if (argv.includes("--business-demos")) {
+        // Only these handlers use the isolated sample store. Never authorize
+        // account, customer, integration, or deployment APIs from this session.
+        const sampleRoutes = new Set(["/api/view", "/api/work", "/api/decide", "/api/blockers", "/api/logout"]);
+        if (!sampleRoutes.has(url.pathname)) return res.status(404).json({ error: "This API is unavailable in the sample preview." });
+        req.headers.cookie = issueCookie().split(";")[0];
+      }
       const name = url.pathname.slice(5).replace(/\/$/, "");
       const mod = await import(join(here, "api", `${name}.mjs`));
       req.query = Object.fromEntries(url.searchParams);

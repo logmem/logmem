@@ -1430,7 +1430,7 @@ async function findAskTwins(store, trail, ts) {
  *
  * Throws DecisionError: bad_request, misconfigured, forbidden, confirm_required, not_found, not_pending, ambiguous.
  */
-export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, reclaim = false, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, reclaim = false, expectedHash, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
   if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
   if (typeof askTrail !== "string" || !askTrail || askTrail.length > LIMITS.trail) throw new DecisionError("bad_request", `trail must be a string of 1..${LIMITS.trail} characters`);
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);
@@ -1443,6 +1443,7 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   const found = await findAsk(store, askTrail, { secret });
   if (!found) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
   const { ask, hash: askHash, asker, where } = found;
+  if (expectedHash !== undefined && expectedHash !== askHash) throw new DecisionError("stale_ask", "The proposed action changed. Reload and review it before answering.");
   // Only the receiver settles: the person the ask was sent to (when it names
   // one), and never the asker itself under a human-looking name.
   if (by.replace(/^human:/, "") === asker || by === ask.by) throw new DecisionError("forbidden", "the asker can't answer its own ask; a different person must decide");

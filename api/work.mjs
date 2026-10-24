@@ -17,7 +17,7 @@ import { needsView } from "../src/http/view.mjs";
 import { nudge, unblock, lane, confirmDone, keepOpen, WorkError } from "../src/http/work.mjs";
 import { createStore, revKey } from "../src/core/store.mjs";
 import { readOnly } from "../src/lib/read-only.mjs";
-import { isAdmin, viewSpaces } from "../src/http/admin-auth.mjs";
+import { isAdmin, mayRead, viewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 15 };
@@ -46,7 +46,8 @@ function body(req) {
 export function createHandler({ env = process.env, redis, now } = {}) {
   return async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
-    if (!isAdmin(req, env)) return res.status(401).json({ error: "sign in required" });
+    const allowed = req.method === "GET" ? mayRead(req, env) : isAdmin(req, env);
+    if (!allowed) return res.status(401).json({ error: "sign in required" });
     let runner = redis;
     if (!runner) {
       const d = descriptorFromEnv(env);

@@ -6,7 +6,7 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk, verifyDecision } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
 import { listBlockers } from "../core/blockers.mjs";
 import { listPlans, getPlan, getPlans } from "../core/plans.mjs";
 import { lmDecisionKey } from "../core/keys.mjs";
@@ -115,8 +115,8 @@ export async function pendingDecisions(store, r, space, { secret } = {}) {
       if (raw == null) return t;
       const reg = JSON.parse((await r("GET", `${prefix}${t}`)) || "null");
       return settledBy(raw, reg?.hash) ? null : t;
-    } catch {
-      return null;
+    } catch (e) {
+      throw e; // A failed claim read is unknown, never a settled request.
     }
   })).filter(Boolean);
   const rows = (await inBatches(open, 10, async (t) => {
@@ -126,8 +126,9 @@ export async function pendingDecisions(store, r, space, { secret } = {}) {
       const where = f.ask.where || `agent:${f.asker}`;
       const later = (await store.readLog("agent", f.asker, { sinceMs: f.ask.ts, limit: 200 })).filter((e) => e.origin === t);
       return [slim(f.ask, where), ...later.map((e) => slim(e, `agent:${f.asker}`))];
-    } catch {
-      return [];
+    } catch (e) {
+      if (e instanceof DecisionError) return []; // Conflicting asks remain unanswerable.
+      throw e;
     }
   })).flat();
   return decisionsFrom(rows, { secret, space, ...(await askState(store, rows)) }).waiting;
@@ -170,24 +171,26 @@ export async function needsView(store, r, space, { secret, person = "human:admin
   return { person, count: items.length, items, stale: rep.stale.map((x) => x.job), reconciled_at: rep.at ?? null };
 }
 
-/** The reconciler's last report (src/core/reconcile.mjs reportKey). Missing or broken: empty. */
+/** The reconciler's last report. Missing is empty. Backend failures propagate. */
 async function readReport(r, space) {
   try {
     const j = JSON.parse((await r("GET", `lm:${space}:reconcile:report`)) || "null");
     return { at: j?.at ?? null, suggestions: Array.isArray(j?.suggestions) ? j.suggestions : [], stale: Array.isArray(j?.stale) ? j.stale : [] };
-  } catch {
-    return { at: null, suggestions: [], stale: [] };
+  } catch (e) {
+    throw e; // Missing is empty. A backend failure is not.
   }
 }
 
 /** Mission control (live app spec, Home): plans, blocked jobs with their reasons, agents' Now. */
 export async function homeView(store, r, space, { secret, person, now = Date.now() } = {}) {
+  const errors = [];
   const ids = await store.list("job");
   const jobs = (await inBatches(ids, 25, async (id) => {
     try {
       const [who, n] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
       return who ? { id, who, now: n || {} } : null;
     } catch {
+      errors.push({ source: `job:${id}`, message: "Could not read this job." });
       return null;
     }
   })).filter(Boolean);
@@ -228,13 +231,36 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
       const [n, last] = await Promise.all([store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 })]);
       return { id, doing: n?.doing ?? null, job: n?.job ?? null, blocked: n?.blocked ?? null, next: n?.next ?? null, seen: seen(last[0]?.ts, now) };
     } catch {
+      errors.push({ source: `agent:${id}`, message: "Could not read this agent." });
       return null;
     }
   })).filter(Boolean);
   const order = { active: 0, idle: 1, offline: 2, unknown: 3 };
   agents.sort((a, b) => (order[a.seen.state] ?? 9) - (order[b.seen.state] ?? 9) || a.id.localeCompare(b.id));
   const needs = await needsView(store, r, space, { secret, person });
-  return { plans, blocked, parked_count: jobs.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length, agents, needs_count: needs.count };
+  const updates = await inBatches(jobs.slice(0, 100), 20, async (j) => {
+    try {
+      return (await store.readLog("job", j.id, { reverse: true, limit: 3 })).map(e => slim(e, `job:${j.id}`));
+    } catch {
+      errors.push({ source: `job:${j.id}:log`, message: "Could not read recent updates." });
+      return [];
+    }
+  });
+  const recent = updates.flat().filter(e => {
+    if (!Number.isFinite(e.ts) || e.ts > now) {
+      errors.push({ source: e.where, message: "An update has an invalid or future timestamp." });
+      return false;
+    }
+    return true;
+  }).sort((a, b) => b.ts - a.ts).slice(0, 12);
+  return {
+    plans, blocked, parked_count: jobs.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length,
+    agents, needs_count: needs.count, needs_items: needs.items, recent,
+    coverage: {
+      complete: false, errors,
+      notes: ["The full coordination backlog is not indexed in this view yet.", "Recent updates cover up to 100 job logs, with three entries per job."],
+    },
+  };
 }
 
 /**

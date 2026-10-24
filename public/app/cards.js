@@ -4,6 +4,7 @@ import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
+import { decisionProblem } from './dashboard-model.js';
 import { openDrawer } from './drawer.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
@@ -67,14 +68,15 @@ export function copy(text) { navigator.clipboard.writeText(text).then(() => toas
 /** A decision: the exact action, Approve / Reject / Defer. `select` adds a batch checkbox. */
 export function askCard(a, { select } = {}) {
   const p = a.payload || {};
+  const approvalProblem = decisionProblem(a, 'approve') || (!a.ask_digest ? 'Reload to verify the action version.' : null);
   const rev = p.reversible === true ? 'Yes' : p.reversible === false ? 'No' : 'Not stated (treated as no)';
   return html`<section class="lm-approval" aria-label="Decision" data-key=${'decision:' + a.trail}>
     <div class="lm-approval-head">${select ? html`<input type="checkbox" .checked=${select.checked} @change=${(e) => select.onChange(a, e.target.checked)} aria-label="Select for a batch answer">` : nothing}${icon('decisions')}<strong>${agentName(a.by)} asks: ${a.summary}</strong><span style="margin-left:auto">${a.deferred ? decision('deferred') : decision('pending')}</span></div>
     <div class="lm-approval-body"><div class="lm-eyebrow">Exact proposed action</div><pre class="lm-action">${p.action || '(not given)'}</pre>
-      <dl class="lm-kv"><dt>Where</dt><dd>${a.where}</dd><dt>Asked</dt><dd>${ago(a.ts)} via ${a.via || ''}</dd><dt>Reversible</dt><dd>${rev}</dd>${a.to ? html`<dt>For</dt><dd>${agentName(a.to)}</dd>` : nothing}<dt>trail</dt><dd class="mono">${a.trail}</dd>
-      ${a.deferred ? html`<dt>Deferred</dt><dd>${ago(a.deferred.at)} by ${agentName(a.deferred.by)}${a.deferred.note ? ': ' + a.deferred.note : ''} (still open)</dd>` : nothing}</dl></div>
-    <div class="lm-approval-foot"><input class="lm-input" data-note-for=${'ask:' + a.trail} maxlength="1000" autocomplete="off" placeholder="Note for the agent (optional)" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">
-      ${btn('Approve', 'primary', (e) => decide(e, a, 'approve'))}${btn('Reject', 'danger', (e) => decide(e, a, 'reject'))}${btn('Defer', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
+      <p class="lmx-meta">${approvalProblem || 'Approval permits this action. Completion needs separate evidence.'}</p><details><summary>Request details and source</summary><dl class="lm-kv"><dt>Where</dt><dd>${a.where}</dd><dt>Asked</dt><dd>${ago(a.ts)} via ${a.via || ''}</dd><dt>Reversible</dt><dd>${rev}</dd>${a.to ? html`<dt>For</dt><dd>${agentName(a.to)}</dd>` : nothing}<dt>trail</dt><dd class="mono">${a.trail}</dd>
+      ${a.deferred ? html`<dt>Deferred</dt><dd>${ago(a.deferred.at)} by ${agentName(a.deferred.by)}${a.deferred.note ? ': ' + a.deferred.note : ''} (still open, original age retained)</dd>` : nothing}</dl></details></div>
+    <div class="lm-approval-foot"><input class="lm-input" data-note-for=${'ask:' + a.trail} maxlength="1000" autocomplete="off" placeholder="Note, required when requesting changes" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">
+      ${btn('Approve', 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
 }
 /** A "looks done?" suggestion from the reconciler: the evidence, then Close it or Still open. */
 export function suggestionCard(i) {

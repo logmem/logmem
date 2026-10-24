@@ -12,6 +12,7 @@ import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 
 // ─── responses, sign-in ──────────────────────────────────────────────
 function ok(d) {
+  if (d.__stale) return false;
   if (d.__status === 401) { login(d.error); return false; }
   if (d.spaces) { state.spaces = d.spaces; if (!state.space || d.spaces.indexOf(state.space) < 0) state.space = d.space; }
   if (d.__status === 503) { live.storageDown = true; refreshFrame(); }
@@ -43,7 +44,7 @@ setOkHook(ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 setShellHooks({
-  space: (s) => { state.space = s; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
+  space: (s) => { if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
   signOut: () => fetch('/api/logout', { method: 'POST' }).then(() => location.reload()),
 });
 
@@ -67,6 +68,7 @@ async function pulse() {
   if (!state.space || live.signedOut) return schedule();
   try {
     const j = await getJSON('/api/pulse?space=' + encodeURIComponent(state.space));
+    if (j.__stale) return schedule(0);
     if (j.__status === 401) { live.signedOut = true; return; }
     if (j.__status !== 200) throw new Error('pulse ' + j.__status);
     live.fails = 0;
@@ -91,7 +93,9 @@ function changed() {
 setChangedHook(changed);
 async function refreshNeeds() {
   const n = await getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''));
+  if (n.__stale) return;
   if (n.__status === 200) { live.needs = n.count; live.stale = Array.isArray(n.stale) ? n.stale : []; syncCount(); }
+  else { live.needs = null; syncCount(); }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(0); });
 window.addEventListener('online', () => { live.fails = 0; schedule(0); });
