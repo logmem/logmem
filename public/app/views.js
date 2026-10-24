@@ -207,18 +207,22 @@ pages.audit = async () => {
   // The coordination queue: open handoffs, seats and directed requests, sorted by how overdue they are.
   const q = d.pending || { items: [], total: 0, counts: {} };
   const c = q.counts || {};
-  const late = (i) => i.deadline && Date.now() > i.deadline;
+  const late = (i) => Number.isFinite(Number(i.deadline)) && Number(i.deadline) > 0 && Date.now() > Number(i.deadline);
+  const deadline = (i) => { const n=Number(i.deadline); return Number.isFinite(n)&&n>0 ? new Date(n).toLocaleString() : 'Timestamp unavailable'; };
   const qrows = (q.items || []).map((i) => html`<tr style="font-variant-numeric:tabular-nums">
     <td><span class=${'lm-badge lm-badge--' + (late(i) ? 'danger' : 'neutral')}>${i.type || 'handoff'}</span></td>
     <td>${i.summary || '—'}</td>
     <td class="mono">${agentName(i.from) || '—'} → ${agentName(i.to) || '—'}</td>
     <td>${i.created_at ? ago(i.created_at) : '—'}</td>
-    <td>${i.deadline ? (late(i) ? 'overdue ' + ago(i.deadline) : 'due in ' + ago(i.deadline)) : '—'}</td>
+    <td>${deadline(i)}${late(i) ? ' · overdue' : ''}</td>
     <td class="mono" style="font-size:12px">${i.where || ''}</td></tr>`);
   const queue = html`<section class="lmx-stack">
     <h2 class="lmx-section-title">Open coordination queue <span>${num(q.total)}</span></h2>
     <p class="muted" style="font-size:13px">${num(c.handoffs)} handoffs · ${num(c.seats)} seats · ${num(c.directed)} directed · ${num(c.overdue)} overdue · coverage ${d.coverage || 'partial'}. Sorted by how overdue they are.</p>
-    ${qrows.length ? table(['Type', 'Summary', 'From → To', 'Age', 'Deadline', 'Where'], qrows) : emptyState('Nothing open.', 'No unanswered handoffs, seats or directed requests in this space.')}
+    ${d.coverage !== 'full' ? html`<div class="lm-alert lm-alert--warning"><p>Coverage is incomplete. These results do not describe the full coordination backlog.</p></div>` : nothing}
+    <p class="lmx-meta">Showing ${num(qrows.length)} of ${num(q.total)} returned records.</p>
+    ${qrows.length ? table(['Type', 'Summary', 'From → To', 'Age', 'Deadline', 'Where'], qrows) : emptyState('No open records were returned.', d.coverage === 'full' ? 'No unanswered handoffs, seats or directed requests were found.' : 'Check coverage before treating this as an empty backlog.')}
+    <a class="lm-btn lm-btn--secondary" href="#/queue">Open full queue and nudge</a>
     ${(d.data_errors || []).length ? html`<p class="muted" style="font-size:12px">${d.data_errors.length} data error(s) flagged: ${d.data_errors.slice(0, 3).map((e) => e.type).join(', ')}</p>` : nothing}</section>`;
   renderView('audit', ['Audit'], html`${queue}${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}
     <section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span></div>
