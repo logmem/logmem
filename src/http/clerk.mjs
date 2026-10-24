@@ -49,9 +49,9 @@ export async function clerkSession(req, { env = process.env, url } = {}) {
   if (state.status === AuthStatus.Handshake) return { status: "handshake", headers: [...state.headers.entries()] };
 
   if (state.status === AuthStatus.SignedIn) {
-    const { userId } = state.toAuth();
+    const { userId, sessionId } = state.toAuth();
     const email = userId ? primaryEmail(await clerk.users.getUser(userId)) : null;
-    if (userId && email) return { status: "signed-in", userId, email };
+    if (userId && email) return { status: "signed-in", userId, email, sessionId };
   }
 
   const { redirectToSignIn } = createRedirect({
@@ -60,4 +60,19 @@ export async function clerkSession(req, { env = process.env, url } = {}) {
     redirectAdapter: (to) => to,
   });
   return { status: "signed-out", signInUrl: String(redirectToSignIn({ returnBackUrl: url })) };
+}
+
+/** Customer routes also check provider revocation, rather than trusting a cached JWT. */
+export async function customerSession(req, options = {}) {
+  const session = await clerkSession(req, options);
+  if (session.status !== "signed-in") return session;
+  const env = options.env || process.env;
+  const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  const current = session.sessionId ? await clerk.sessions.getSession(session.sessionId) : null;
+  if (!current || current.status !== "active" || current.userId !== session.userId) return { status: "signed-out" };
+  return session;
+}
+export async function revokeCustomerSession(sessionId, env = process.env) {
+  const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  return clerk.sessions.revokeSession(sessionId);
 }

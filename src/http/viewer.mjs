@@ -1,5 +1,5 @@
 // Customer browser identity, permissions and atomic storage authorization.
-import {clerkSession} from './clerk.mjs';
+import {customerSession} from './clerk.mjs';
 import {customerRedis,createSpaceJail} from './jail.mjs';
 import {readOnly} from '../lib/read-only.mjs';
 import {evalScriptFor,registerEvalScript} from '../lib/lua-scripts.mjs';
@@ -28,7 +28,7 @@ export async function resolveViewer(req,{workspaceId,spaceId,action='read'},deps
  const env=deps.env||process.env;
  if(env.LOGMEM_CUSTOMER_DASHBOARD!=='1'&&!deps.redis)throw new WorkspaceError('customer_dashboard_disabled',503);
  const origin=deps.origin||`https://${req.headers?.host||'logmem.si'}`;
- const session=await (deps.session||clerkSession)(req,{env,url:new URL('/api/session',origin).toString()});
+ const session=await (deps.session||customerSession)(req,{env,url:new URL('/api/session',origin).toString()});
  if(session.status!=='signed-in')throw new WorkspaceError('sign_in_required',401);
  const redis=deps.redis||customerRedis(env),userId=session.userId;
  const options={userId,workspaceId,spaceId,action};
