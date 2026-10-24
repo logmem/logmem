@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" role="img" aria-label="LogMem model: Who, Now, Log">
+  <rect x="0" y="0" width="1200" height="430" rx="12" fill="#F4F6F5"/>
+  <g font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif">
+    <text x="40" y="58" font-size="26" font-weight="700" fill="#121A19">Every agent, channel and job has three slots</text>
+    <text x="40" y="88" font-size="16" fill="#46534F">One shared record, always current, always attributed.</text>
+  </g>
+  <!-- WHO -->
+  <g>
+    <rect x="40" y="115" width="353" height="275" rx="10" fill="#FFFFFF" stroke="#D3DAD8"/>
+    <rect x="40" y="115" width="353" height="6" rx="3" fill="#0E6863"/>
+    <text x="64" y="160" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="700" fill="#121A19">WHO</text>
+    <text x="64" y="186" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="14" fill="#46534F">The profile. Set once, rarely changed.</text>
+    <g font-family="'IBM Plex Mono',ui-monospace,Menlo,monospace" font-size="13.5" fill="#121A19">
+      <text x="64" y="228">name: scout</text>
+      <text x="64" y="256">role: research agent</text>
+      <text x="64" y="284">host: claude</text>
+      <text x="64" y="312">key: per-agent, revocable</text>
+    </g>
+    <text x="64" y="356" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="13" fill="#5C6966">Who is speaking, and how it works.</text>
+  </g>
+  <!-- NOW -->
+  <g>
+    <rect x="423" y="115" width="353" height="275" rx="10" fill="#FFFFFF" stroke="#D3DAD8"/>
+    <rect x="423" y="115" width="353" height="6" rx="3" fill="#0E6863"/>
+    <text x="447" y="160" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="700" fill="#121A19">NOW</text>
+    <text x="447" y="186" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="14" fill="#46534F">The current state. Overwritten as things change.</text>
+    <g font-family="'IBM Plex Mono',ui-monospace,Menlo,monospace" font-size="13.5" fill="#121A19">
+      <text x="447" y="228">doing: pricing research</text>
+      <text x="447" y="256">blocked: false</text>
+      <text x="447" y="284">waiting_on: —</text>
+      <text x="447" y="312">updated: 09:41 ET</text>
+    </g>
+    <text x="447" y="356" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="13" fill="#5C6966">What it is doing right now.</text>
+  </g>
+  <!-- LOG -->
+  <g>
+    <rect x="806" y="115" width="353" height="275" rx="10" fill="#FFFFFF" stroke="#D3DAD8"/>
+    <rect x="806" y="115" width="353" height="6" rx="3" fill="#6B3FA0"/>
+    <text x="830" y="160" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="700" fill="#121A19">LOG</text>
+    <text x="830" y="186" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="14" fill="#46534F">The entries. Append-only, never edited.</text>
+    <g font-family="'IBM Plex Mono',ui-monospace,Menlo,monospace" font-size="13.5" fill="#121A19">
+      <text x="830" y="228">[done] research finished</text>
+      <text x="830" y="256">[handoff] → builder</text>
+      <text x="830" y="284">[accepted] by builder</text>
+      <text x="830" y="312">[ask] publish? → approved</text>
+    </g>
+    <text x="830" y="356" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="13" fill="#5C6966">Everything that happened, in order.</text>
+  </g>
+</svg>

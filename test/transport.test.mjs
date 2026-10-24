@@ -21,7 +21,7 @@ test("stdio clean room: a fresh MCP client runs logmem start quill, notes, hands
   try {
     assert.match(client.getInstructions() || "", /logmem start \[agent\]/);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    assert.equal(names.length, 23);
+    assert.equal(names.length, 24);
     assert.ok(names.every((n) => n.startsWith("logmem_")));
 
     const sc = async (name, args) => (await client.callTool({ name, arguments: args })).structuredContent;

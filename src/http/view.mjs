@@ -14,6 +14,7 @@ import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
 import { listCoordItemsForTrail, getCoordItem, coordOpenKey, coordAgentOpenKey, coordCoverageKey } from "../core/coord.mjs";
+import { getAgentSlotsView, getLocalSlotDate } from "../core/sync.mjs";
 
 const MAX_LOGS = 300;
 const GROUP = Object.fromEntries(Object.entries(KINDS).map(([k, d]) => [k, d.group]));
@@ -468,8 +469,15 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
     total: allItems.length,
   };
 
-  // 6. Slots (three-run state per roster agent; PR D fills the rest)
-  const slots = [];
+  // 6. Slots (three-run state per roster agent)
+  let slots = [];
+  try {
+    const targetDate = params.date || getLocalSlotDate(nowTs);
+    const agentList = await store.list("agent");
+    for (const a of agentList) {
+      slots.push(await getAgentSlotsView(store, space, a, targetDate, nowTs));
+    }
+  } catch (_) {}
 
   // 7. History (scorecard as today)
   let history = null;
@@ -599,6 +607,16 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   }
 
   if (what === "audit") return auditView(store, r, space, params, now);
+
+  if (what === "slots") {
+    const targetDate = params.date || getLocalSlotDate(now);
+    const agentList = await store.list("agent");
+    const agents = [];
+    for (const a of agentList) {
+      agents.push(await getAgentSlotsView(store, space, a, targetDate, now));
+    }
+    return { space, date: targetDate, agents };
+  }
 
   if (what === "settings") {
     const keys = await scanKeys(r, `lm:${space}:*`);
