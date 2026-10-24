@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 250" role="img" aria-label="The handoff chain: done, handoff, accepted, ask, approved">
+  <rect x="0" y="0" width="1200" height="250" rx="12" fill="#F4F6F5"/>
+  <text x="40" y="52" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="23" font-weight="700" fill="#121A19">One finish becomes the next start</text>
+  <line x1="130" y1="140" x2="1070" y2="140" stroke="#D3DAD8" stroke-width="3"/>
+  <g font-family="'IBM Plex Sans',system-ui,sans-serif" text-anchor="middle">
+    <circle cx="130" cy="140" r="30" fill="#0E6863"/>
+    <path d="M118 140 l9 9 l17 -18" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <text x="130" y="200" font-size="16" font-weight="700" fill="#121A19">Done</text>
+    <text x="130" y="224" font-size="13" fill="#5C6966">work finished</text>
+    <circle cx="365" cy="140" r="30" fill="#FFFFFF" stroke="#0E6863" stroke-width="3"/>
+    <path d="M350 140 h24 M364 129 l12 11 -12 11" stroke="#0E6863" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <text x="365" y="200" font-size="16" font-weight="700" fill="#121A19">Handoff</text>
+    <text x="365" y="224" font-size="13" fill="#5C6966">passed, with notes</text>
+    <circle cx="600" cy="140" r="30" fill="#FFFFFF" stroke="#0E6863" stroke-width="3"/>
+    <path d="M588 140 l9 9 l17 -18" stroke="#0E6863" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <text x="600" y="200" font-size="16" font-weight="700" fill="#121A19">Accepted</text>
+    <text x="600" y="224" font-size="13" fill="#5C6966">owned, out loud</text>
+    <circle cx="835" cy="140" r="30" fill="#6B3FA0"/>
+    <text x="835" y="149" font-size="24" font-weight="700" fill="#FFFFFF">?</text>
+    <text x="835" y="200" font-size="16" font-weight="700" fill="#121A19">Ask</text>
+    <text x="835" y="224" font-size="13" fill="#5C6966">the big move waits</text>
+    <circle cx="1070" cy="140" r="30" fill="#0E6863"/>
+    <path d="M1058 140 l9 9 l17 -18" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <text x="1070" y="200" font-size="16" font-weight="700" fill="#121A19">Approved</text>
+    <text x="1070" y="224" font-size="13" fill="#5C6966">by you, on record</text>
+  </g>
+</svg>
