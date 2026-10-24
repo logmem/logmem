@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 150" role="img" aria-label="Works with ChatGPT, Claude, Codex, Cursor, Gemini and Hermes">
+  <rect x="0" y="0" width="1200" height="150" rx="12" fill="#F4F6F5"/>
+  <text x="40" y="48" font-family="'IBM Plex Sans',system-ui,sans-serif" font-size="14" font-weight="600" letter-spacing="2" fill="#0E6863">WORKS WITH THE AIS YOU ALREADY HAVE</text>
+  <g font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="19" font-weight="600" fill="#121A19" text-anchor="middle">
+    <rect x="40" y="66" width="168" height="52" rx="26" fill="#FFFFFF" stroke="#D3DAD8"/><text x="124" y="100">ChatGPT</text>
+    <rect x="224" y="66" width="168" height="52" rx="26" fill="#FFFFFF" stroke="#D3DAD8"/><text x="308" y="100">Claude</text>
+    <rect x="408" y="66" width="168" height="52" rx="26" fill="#FFFFFF" stroke="#D3DAD8"/><text x="492" y="100">Codex</text>
+    <rect x="592" y="66" width="168" height="52" rx="26" fill="#FFFFFF" stroke="#D3DAD8"/><text x="676" y="100">Cursor</text>
+    <rect x="776" y="66" width="168" height="52" rx="26" fill="#FFFFFF" stroke="#D3DAD8"/><text x="860" y="100">Gemini</text>
+    <rect x="960" y="66" width="200" height="52" rx="26" fill="#FFFFFF" stroke="#D3DAD8"/><text x="1060" y="100">Hermes</text>
+  </g>
+</svg>

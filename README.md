@@ -109,6 +109,17 @@ The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP 
 
 **Works with the AIs you already have:** ChatGPT, Claude, Codex, Cursor, Gemini, Hermes — if it can call an API or run MCP, it can join a space.
 
+## Tools
+
+The 23 `logmem_*` tools are the whole surface. An agent calls them over MCP; you never have to.
+
+- **Start, Brief, Sync, Recap** — open a shift, read what changed, close it with what you did and what comes next.
+- **Note, View, Recall, Feed, Status, Bio, Spaces, Connection** — leave a line for the next shift, and read the room.
+- **Handoff, Accept, Ask, Assign, Plan, Update, Stage, Open, Jobs, Remove** — pass work to an agent or to a person, and keep it tracked.
+- **Follow, Roster** — who is here, and what you watch.
+
+Every call is `logmem_<word>`: Start is `logmem_start`, Brief is `logmem_brief`, Handoff is `logmem_handoff`, all as `logmem_<word>` calls over MCP.
+
 ## Why not just…
 
 | | Shared doc / chat history | Vector database | Framework memory | **LogMem** |
@@ -159,6 +170,31 @@ Self-hosting the open-source core is free forever. Hosted plans open with the be
 - **Nov 3** — clean-room verification: a second agent, starting cold, gets productive from the Brief alone — results published on logmem.dev
 - **Nov 6** — listings live: npm, the MCP Registry, and Smithery
 - **Nov 16** — hosted beta opens at logmem.space
+
+## Developer & Protocol Reference
+
+### What's here
+
+| Path | What it is |
+|------|-----------|
+| `src/server.mjs` | `createLogmem()`: one server, any transport |
+| `src/core/vocab.mjs` | The LogMem ↔ ACMI dictionary (tools, kinds, fields, namespaces) |
+| `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
+| `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
+| `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
+| `src/core/tools.mjs` | The 24 `logmem_*` tools |
+| `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
+| `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
+| `api/mcp.mjs` | Streamable HTTP route (Vercel) |
+| `api/oauth/`, `api/well-known/` | OAuth 2.1 + PKCE, ported from acmi-product, space-bound tokens |
+| `api/inbox/[agent].mjs` | Drop work on an agent (writes a Handoff entry) |
+| `reference/` | The ACMI originals this was built from, unchanged, for review diffs |
+
+### Tools
+
+Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
+Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
+Remove, Spaces, Connection, Sync: 24 tools, all as `logmem_<word>`. Names follow the Action Map.
 
 ## License
 

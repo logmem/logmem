@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="How LogMem works in three steps">
+  <rect x="0" y="0" width="1200" height="400" rx="12" fill="#F4F6F5"/>
+  <text x="40" y="56" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="25" font-weight="700" fill="#121A19">From first prompt to flowing work</text>
+  <g font-family="'IBM Plex Sans',system-ui,sans-serif">
+    <!-- step 1 -->
+    <rect x="40" y="86" width="340" height="262" rx="12" fill="#FFFFFF" stroke="#D3DAD8"/>
+    <circle cx="86" cy="132" r="21" fill="#0E6863"/>
+    <text x="86" y="141" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+    <text x="64" y="192" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="700" fill="#121A19">Copy the starting prompt</text>
+    <text x="64" y="226" font-size="15" fill="#46534F">Paste it into the AI you</text>
+    <text x="64" y="250" font-size="15" fill="#46534F">already use. That one prompt</text>
+    <text x="64" y="274" font-size="15" fill="#46534F">connects it to your space.</text>
+    <rect x="64" y="296" width="150" height="30" rx="15" fill="#DDF1EE"/>
+    <text x="139" y="317" font-size="13.5" font-weight="600" fill="#0A524E" text-anchor="middle">about a minute</text>
+    <!-- arrow -->
+    <path d="M392 217 h44" stroke="#0E6863" stroke-width="3" fill="none"/>
+    <path d="M428 206 l16 11 -16 11 z" fill="#0E6863"/>
+    <!-- step 2 -->
+    <rect x="452" y="86" width="340" height="262" rx="12" fill="#FFFFFF" stroke="#D3DAD8"/>
+    <circle cx="498" cy="132" r="21" fill="#0E6863"/>
+    <text x="498" y="141" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+    <text x="476" y="192" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="700" fill="#121A19">It reads its Brief</text>
+    <text x="476" y="226" font-size="15" fill="#46534F">Who it is, what is happening,</text>
+    <text x="476" y="250" font-size="15" fill="#46534F">what is waiting — one short</text>
+    <text x="476" y="274" font-size="15" fill="#46534F">read, and it is caught up.</text>
+    <rect x="476" y="296" width="150" height="30" rx="15" fill="#DDF1EE"/>
+    <text x="551" y="317" font-size="13.5" font-weight="600" fill="#0A524E" text-anchor="middle">seconds, not setup</text>
+    <!-- arrow -->
+    <path d="M804 217 h44" stroke="#0E6863" stroke-width="3" fill="none"/>
+    <path d="M840 206 l16 11 -16 11 z" fill="#0E6863"/>
+    <!-- step 3 -->
+    <rect x="864" y="86" width="296" height="262" rx="12" fill="#FFFFFF" stroke="#D3DAD8"/>
+    <circle cx="910" cy="132" r="21" fill="#0E6863"/>
+    <text x="910" y="141" font-size="19" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+    <text x="888" y="192" font-family="'Schibsted Grotesk','Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="700" fill="#121A19">Work flows</text>
+    <text x="888" y="226" font-size="15" fill="#46534F">Agents hand work to each</text>
+    <text x="888" y="250" font-size="15" fill="#46534F">other — and anything big</text>
+    <text x="888" y="274" font-size="15" fill="#46534F">asks you first.</text>
+    <rect x="888" y="296" width="168" height="30" rx="15" fill="#F1EAF8"/>
+    <text x="972" y="317" font-size="13.5" font-weight="600" fill="#6B3FA0" text-anchor="middle">you stay in charge</text>
+  </g>
+</svg>

@@ -112,6 +112,33 @@ logmem_recap { "notes": "<what got done>", "next": ["<the next step>"] }
 
 After 30 minutes idle, LogMem writes an automatic recap. A recap you write yourself is better.
 
+## 7. Coordination sync (three daily runs)
+
+Every roster agent participates in three daily coordination runs:
+- **Morning (09:00 ET):** Confirm active work, pick up new handoffs, identify blockers.
+- **Midday (13:00 ET):** Check progress, answer urgent seats, resolve directed requests.
+- **Closeout (17:30 ET):** Settle finished work, decline what cannot be done, record owned carryovers.
+
+### The Sync sequence
+
+1. **Read pending coordination:**
+   ```json
+   { "tool": "logmem_sync", "args": {} }
+   ```
+   Reads open handoffs, huddle seats, and directed requests owed by you, with deadlines and overdue duration. Starts no shift and writes nothing.
+
+2. **Answer your obligations:**
+   Use your existing authorized tools to answer each item:
+   - Accept or decline handoffs with `logmem_accept`.
+   - Answer huddle seats with `logmem_note` (`answers: "ci_...", disposition: "answered" | "declined"`).
+   - Update your state with `logmem_status`.
+
+3. **Record verified receipt:**
+   ```json
+   { "tool": "logmem_sync", "args": { "receipt": true, "slot": "morning" } }
+   ```
+   Writes an immutable attempt record (`lm:{space}:sync:run:{agent}:{run_id}`) and passes your slot once verified. Duplicate calls with the same `run_id` return the existing receipt without rewriting.
+
 ## Compatibility
 
 Older skills use `acmi_*` tools. Through the LogMem server those calls still work, and LogMem mirrors every entry to ACMI. Prefer the `logmem_*` tools above. They write the LogMem log the team reads first.
