@@ -60,10 +60,10 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@clerk/backend": "^3.25.0",
+    "@clerk/backend": "^3.26.0",
     "@madezmedia/acmi": "1.2.0",
-    "@playwright/test": "1.63.0",
-    "@vercel/blob": "2.7.0"
+    "@playwright/test": "1.64.1",
+    "@vercel/blob": "2.8.2"
   },
   "mcpName": "si.logmem/mcp"
 }
