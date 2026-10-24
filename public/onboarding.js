@@ -23,7 +23,7 @@
 
   // ---- steps -----------------------------------------------------------------
   var STEPS = {
-    choose: ['Choose how to run it', 'Waitlist or your own Redis'],
+    choose: ['Choose your setup', 'Managed workspace or advanced Redis'],
     plan: ['What it’s for', 'No pricing yet'],
     detect: ['Find your AI tools', 'Local probe, read-only'],
     waitlist: ['Join the waitlist', 'Email and agent count'],
@@ -36,10 +36,11 @@
     approver: ['Invite an approver', 'Preview']
   };
   var PATHS = {
-    cloud: ['choose', 'plan', 'detect', 'waitlist'],
+    entry: ['choose'],
+    cloud: ['choose', 'plan', 'waitlist'],
     byo: ['choose', 'detect', 'space', 'redis', 'acmi', 'connect', 'first', 'handoff', 'approver']
   };
-  var state = { path: 'byo', i: 0, max: 0 };
+  var state = { path: 'entry', i: 0, max: 0 };
 
   function steps() { return PATHS[state.path]; }
   function current() { return steps()[state.i]; }
@@ -104,6 +105,32 @@
     }
     if (id === 'connect') renderHosts();
   }
+
+  // Check managed availability before entering the app. A disabled deployment
+  // must not send an invited client into the operator login.
+  $('#managed-start').addEventListener('click', async function (event) {
+    event.preventDefault();
+    var link = event.currentTarget;
+    if (link.getAttribute('aria-busy') === 'true') return;
+    var status = $('#managed-status');
+    link.setAttribute('aria-busy', 'true');
+    status.textContent = 'Checking workspace access…';
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, 10000);
+    try {
+      var response = await fetch('/api/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+      if (response.ok || response.status === 401) {
+        window.location.assign('/app');
+      } else {
+        status.textContent = 'Managed login is not available on this deployment. If you were invited, contact your workspace owner. You can retry here.';
+      }
+    } catch (_) {
+      status.textContent = 'We could not check workspace access. Check your connection and try again. Your account has not changed.';
+    } finally {
+      clearTimeout(timeout);
+      link.removeAttribute('aria-busy');
+    }
+  });
 
   // ---- plan ------------------------------------------------------------------
   var PLAN_NAMES = { free: 'Just trying it', dev: 'One person, several AI tools', pro: 'Small team with someone who approves', team: 'Bigger team', agency: 'Agency, one space per client', enterprise: 'Company with its own requirements' };
