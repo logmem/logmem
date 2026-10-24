@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // /api/agent-keys — a person creates, lists and revokes per-agent LogMem keys.
 //
 //   GET                         -> { keys: [{ id, space, agent, label, created_at, created_by }] }
@@ -68,4 +69,4 @@ export function createHandler({ env = process.env, redis = () => deployRedis(), 
   };
 }
 
-export default createHandler();
+export default withCustomerDashboard(createHandler());

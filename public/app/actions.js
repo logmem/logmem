@@ -5,6 +5,8 @@ import { postJSON, toast, state, live } from './core.js';
 import { decisionProblem } from './dashboard-model.js';
 import { LANE_LABEL } from './ui.js';
 
+const dialogs=new Set();
+export function cancelDialogs(){for(const close of [...dialogs])close(false);}
 let onChanged = () => {};
 export function setChangedHook(fn) { onChanged = fn; }
 
@@ -76,7 +78,7 @@ export function confirmIrreversible(asks) {
     const host = document.createElement('div');
     document.body.appendChild(host);
     let typed = false;
-    const close = (ok) => { document.removeEventListener('keydown', onKey); render(html``, host); host.remove(); resolve(ok); };
+    const close = (ok) => { dialogs.delete(close); document.removeEventListener('keydown', onKey); render(html``, host); host.remove(); resolve(ok); };
     const onKey = (e) => { if (e.key === 'Escape') close(false); };
     const draw = () => render(html`<div class="lm-scrim" style="position:fixed;inset:0;z-index:var(--z-dialog,510)" @click=${(e) => { if (e.target === e.currentTarget) close(false); }}>
       <div class="lm-dialog" role="dialog" aria-modal="true" aria-labelledby="lm-dlg-t">
@@ -87,6 +89,7 @@ export function confirmIrreversible(asks) {
         </div>
         <div class="lm-dialog-foot"><button type="button" class="lm-btn lm-btn--secondary" @click=${() => close(false)}>Cancel</button><button type="button" class="lm-btn lm-btn--primary" ?disabled=${!typed} @click=${() => close(true)}>Approve</button></div>
       </div></div>`, host);
+    dialogs.add(close);
     draw();
     document.addEventListener('keydown', onKey);
     const input = host.querySelector('input'); if (input) input.focus();

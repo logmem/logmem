@@ -119,7 +119,7 @@ export function isHandoffKind(kind) {
 }
 export const isHuman = (by) => /^human:/.test(String(by || ""));
 /** A person's ref: human:<1-64 of [A-Za-z0-9_.-]>. */
-export const HUMAN_RE = /^human:[A-Za-z0-9_.-]{1,64}$/;
+export const HUMAN_RE = /^human:(?:[A-Za-z0-9_.-]{1,64}|user_[A-Za-z0-9]{60,64})$/;
 
 /** Edit distance, for "did you mean" on agent ids. */
 export function levenshtein(a, b) {

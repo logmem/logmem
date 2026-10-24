@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../../src/http/customer-dashboard.mjs';
 // POST /api/inbox/:agent — a person (or system) drops work on an agent.
 //
 // LogMem port of the ACMI inbox: instead of a side ZSET, the item is a
@@ -22,7 +23,7 @@ export const config = { runtime: "nodejs", maxDuration: 30 };
 
 const PRIORITY = new Set(["P0", "P1", "P2", "P3"]);
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
@@ -84,3 +85,5 @@ export default async function handler(req, res) {
     return sendServerError(res, "/api/inbox", e);
   }
 }
+
+export default withCustomerDashboard(handler);

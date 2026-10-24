@@ -28,7 +28,7 @@ registerEvalScript(CAS_LUA, (call, keys, argv) => {
   return "ok";
 }, { jail: true });
 
-export const PERSON_RE = /^human:[a-z0-9][a-z0-9_.-]{0,63}$/;
+export const PERSON_RE = /^human:(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|user_[A-Za-z0-9]{60,64})$/;
 export const WALKTHROUGH_LIMITS = { steps: 20, title: 120, detail: 1000, cmd: 500, field: 300 };
 /** A walkthrough a person writes in the web app is shorter: at most 7 steps (walkthrough spec). */
 export const WRITER_STEPS = 7;

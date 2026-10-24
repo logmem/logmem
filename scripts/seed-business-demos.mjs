@@ -120,9 +120,9 @@ export const BUSINESS_DEMOS = [
   },
 ];
 
-export async function seedBusinessDemos(redis) {
+export async function seedBusinessDemos(redis, { demos = BUSINESS_DEMOS } = {}) {
   const results = [];
-  for (const demo of BUSINESS_DEMOS) {
+  for (const demo of demos) {
     const identities = ["chatgpt", "claude", "gemini", "codex", "cursor"];
     const clients = Object.fromEntries(
       identities.map((id) => [

@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // GET /api/view?space=fieldnotes&what=home|needs|overview|log|agents|agent|jobs|job|channels|decisions|recall|audit|settings[&id=…][&q=…][&where=…]
 // Read-only data for the web app. Production requires the admin cookie.
 
@@ -8,7 +9,7 @@ import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!mayRead(req)) return res.status(401).json({ error: adminEnabled() ? "sign in required" : "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
   const q = req.query || {};
@@ -25,3 +26,5 @@ export default async function handler(req, res) {
     sendServerError(res, "/api/view", e);
   }
 }
+
+export default withCustomerDashboard(handler);

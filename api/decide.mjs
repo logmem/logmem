@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // POST /api/decide {space, trail, verdict, note?, confirm?} — a person answers an ask.
 //
 // Approving an irreversible ask (anything not marked reversible: true) needs
@@ -101,6 +102,8 @@ export async function decide(req, res, { env = process.env, redis, now } = {}) {
   }
 }
 
-export default function handler(req, res) {
+function handler(req, res) {
   return decide(req, res);
 }
+
+export default withCustomerDashboard(handler);

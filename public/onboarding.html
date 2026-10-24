@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Set up LogMem</title>
-<meta name="description" content="Set up LogMem: join the waitlist for the hosted version, or run it on your own Redis and connect your AI tools today.">
+<meta name="description" content="Open your LogMem workspace, create a private space, and connect your AI tools. Advanced users can bring their own Redis.">
 <link rel="canonical" href="https://logmem.si/onboarding">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="LogMem">
 <meta property="og:url" content="https://logmem.si/onboarding">
-<meta property="og:title" content="Join the LogMem waitlist">
-<meta property="og:description" content="Give Claude, Cursor and Claude Code one shared memory. Leave your email and we’ll write once, when you can try it.">
+<meta property="og:title" content="Open your LogMem workspace">
+<meta property="og:description" content="Sign in to your business workspace, choose a private space, and connect an agent. Managed access is invite only.">
 <meta property="og:image" content="https://logmem.si/og/logmem-og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="LogMem: a shared log where Claude, Cursor and Claude Code hand work to each other, and an agent waits for a person before a merge.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Join the LogMem waitlist">
-<meta name="twitter:description" content="Give Claude, Cursor and Claude Code one shared memory. Leave your email and we’ll write once, when you can try it.">
+<meta name="twitter:title" content="Open your LogMem workspace">
+<meta name="twitter:description" content="Sign in to your business workspace, choose a private space, and connect an agent. Managed access is invite only.">
 <meta name="twitter:image" content="https://logmem.si/og/logmem-og.png">
 <meta name="twitter:image:alt" content="LogMem: a shared log where Claude, Cursor and Claude Code hand work to each other, and an agent waits for a person before a merge.">
 <script defer src="/_vercel/insights/script.js"></script>
@@ -36,7 +36,7 @@
   "@id": "https://logmem.si/onboarding#webpage",
   "url": "https://logmem.si/onboarding",
   "name": "Set up LogMem",
-  "description": "Set up LogMem: join the waitlist for the hosted version, or run it on your own Redis and connect your AI tools today.",
+  "description": "Open your LogMem workspace, create a private space, and connect your AI tools. Advanced users can bring their own Redis.",
   "isPartOf": { "@id": "https://logmem.si/#website" }
 }
 </script>
@@ -62,21 +62,24 @@
   <main class="ob-main" id="ob-main">
     <noscript><div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="alert" aria-hidden="true"></i><div>This setup flow needs JavaScript. You can still <a href="/probe.sh">read the probe script</a> or go back to the <a href="/">home page</a>.</div></div></noscript>
 
-    <!-- 1. Choose how to run it -->
+    <!-- Managed clients start here. BYO remains an explicit advanced path. -->
     <section class="lm-panel ob-card" data-step="choose" aria-labelledby="h-choose">
-      <div><h1 id="h-choose" tabindex="-1">Choose how to run LogMem.</h1><p class="ob-lede">LogMem gives your AI tools one shared memory. They remember what already happened, hand work to each other, and ask you first before anything that can’t be undone. Join the waitlist for the hosted version, or run it today on a Redis you control.</p></div>
+      <div><h1 id="h-choose" tabindex="-1">A shared space for your business.</h1><p class="ob-lede">Keep customer work, tasks, decisions and agent handoffs together. Start with your business workspace, then choose who can join each space.</p></div>
       <div class="ob-grid2">
-        <div class="lm-panel ob-choice">
-          <div class="lm-row"><h2 class="lm-title-2">Hosted LogMem</h2><span class="lm-badge lm-badge--warning">Waitlist</span></div>
-          <p class="ob-note ob-note--muted">We’d run it for you, so there’s nothing to set up. It isn’t open yet.</p>
-          <ul class="ob-list"><li>Hosted spaces don’t exist yet.</li><li>This path ends on a waitlist: your email and how many agents you plan to run.</li><li>We’ll write once, when you can try it.</li></ul>
-          <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-choose="cloud">Join the waitlist</button></div>
-        </div>
         <div class="lm-panel ob-choice ob-choice--rec">
-          <div class="lm-row"><h2 class="lm-title-2">Run it on your own Redis</h2><span class="lm-badge">Self-hosted</span></div>
-          <p class="ob-note ob-note--muted">Run the LogMem server against a Redis you own: the official Redis server over rediss://, or an HTTP REST bridge. Your data stays there.</p>
-          <ul class="ob-list"><li>Find the AI tools on this machine.</li><li>Name a space, test your Redis, and choose whether to bring existing ACMI history.</li><li>Get a snippet for each tool, then try a first handoff.</li></ul>
-          <div class="lm-row"><button type="button" class="lm-btn lm-btn--primary" data-choose="byo">Set it up on my Redis</button></div>
+          <div class="lm-row"><h2 class="lm-title-2">Use managed LogMem</h2><span class="lm-badge lm-badge--brand">Invite only</span></div>
+          <p class="ob-note ob-note--muted">For solo operators and small teams. We manage storage. You do not need a Redis account or connection URL.</p>
+          <ol class="ob-list"><li>Sign in with the email that received access.</li><li>Create your business workspace, or join your team through its invitation link.</li><li>Choose a private space and connect one agent.</li><li>Add a real task and check its first update.</li></ol>
+          <p class="ob-note">Already have a team invitation link? Open that link to join the right workspace.</p>
+          <div class="lm-row"><a class="lm-btn lm-btn--primary" href="/app" id="managed-start" aria-describedby="managed-status">Open your workspace</a></div>
+          <p class="ob-note" id="managed-status" role="status" aria-live="polite">Managed access is invite only. Public signup is not open.</p>
+          <p class="ob-note">No invitation yet? <button type="button" class="ob-linkbtn" data-choose="cloud">Request access</button>.</p>
+        </div>
+        <div class="lm-panel ob-choice">
+          <div class="lm-row"><h2 class="lm-title-2">Bring your own Redis</h2><span class="lm-badge">Advanced</span></div>
+          <p class="ob-note ob-note--muted">For developers who manage their own storage and agent configuration.</p>
+          <ul class="ob-list"><li>Use a TLS Redis endpoint or a compatible HTTPS REST bridge.</li><li>Name your space and test your connection.</li><li>Configure each agent on your own machine.</li></ul>
+          <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-choose="byo">Set up my own Redis</button></div>
         </div>
       </div>
     </section>
@@ -86,7 +89,7 @@
       <div>
         <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">No pricing yet</span></div>
         <h1 id="h-plan" tabindex="-1">What would you use it for?</h1>
-        <p class="ob-lede">Pick the one closest to you. It goes on the waitlist with your email, so we know who to write to first. There’s no pricing or checkout yet.</p>
+        <p class="ob-lede">Pick the one closest to you. Include this with your access request. This form does not create an account or workspace.</p>
       </div>
       <fieldset class="ob-plans" id="plans-main">
         <legend class="lm-sr">What you’d use it for</legend>
@@ -129,7 +132,7 @@
       <div>
         <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">Waitlist</span></div>
         <h1 id="h-waitlist" tabindex="-1">Join the waitlist.</h1>
-        <p class="ob-lede">The hosted version isn’t open yet. Leave your email and we’ll write once, when you can try it. That’s the only thing we use it for.</p>
+        <p class="ob-lede">Managed access is invite only. Leave your email to request access. Already invited? Go back and open your workspace with your approved email.</p>
       </div>
       <form id="wl-form" novalidate class="lm-stack ob-form">
         <div class="ob-grid2">
@@ -147,8 +150,8 @@
     <section class="lm-panel ob-card" data-step="space" aria-labelledby="h-space" hidden>
       <div><h1 id="h-space" tabindex="-1">Name your space.</h1><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
       <div class="ob-grid2">
-        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Field Notes Co." required autocomplete="organization" aria-describedby="ws-err"><span class="lm-error" id="ws-err" hidden></span></div>
-        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" placeholder="fieldnotes" required maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:…:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
+        <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Northside Repairs" required autocomplete="organization" aria-describedby="ws-err"><span class="lm-error" id="ws-err" hidden></span></div>
+        <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" placeholder="northside" required maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:…:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
       </div>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next id="sp-next">Continue</button></div>
     </section>

@@ -525,7 +525,7 @@ export async function mintTokens({ client_id, scope, upstash_url, upstash_token,
   await r("SET", KEY.refresh(hRt), JSON.stringify(refreshRecord), "EX", String(TTL.refresh));
   await r("SADD", KEY.family(family), `at:${hAt}`, `rt:${hRt}`);
   await r("EXPIRE", KEY.family(family), String(TTL.refresh));
-  if (backend?.kind === "managed") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend });
+  if (backend?.kind === "managed") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend, space });
   // Fleet sign-ins (an admin connected a web client to a deploy space) go in the
   // same index under FLEET_OWNER, so the admin can see and disconnect them.
   if (backend?.kind === "fleet") await recordManagedApp(r, { family, isNew: !isFid(fid), client_id, backend: { tenant: FLEET_OWNER, agent: backend.agent }, space });
@@ -557,7 +557,7 @@ async function recordManagedApp(r, { family, isNew, client_id, backend, space })
   } catch {
     // name is cosmetic
   }
-  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now, ...(space ? { space } : {}) };
+  const rec = { fid: family, tenant: backend.tenant, agent: backend.agent, client_id, client_name, created_at: now, last_used: now, ...(space ? { space } : {}), ...(backend.workspaceId ? {workspaceId:backend.workspaceId,spaceId:backend.spaceId,issuedBy:backend.issuedBy} : {}) };
   // Keep token-free metadata until disconnect and customer cleanup finish.
   await r("SET", APP_KEY.app(family), JSON.stringify(rec));
   await r("SADD", APP_KEY.apps(backend.tenant), family);

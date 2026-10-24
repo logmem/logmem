@@ -2,7 +2,7 @@
 // The password and decide secret are test-only values for this local server; they guard no real data.
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 4399;
+const PORT = Number(process.env.PW_PORT || 4399);
 export default defineConfig({
   testDir: "e2e",
   timeout: 30_000,

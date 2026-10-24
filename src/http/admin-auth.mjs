@@ -63,7 +63,7 @@ export function isAdmin(req, env = process.env, now = Date.now()) {
  * gates the whole deployment, so allow.
  */
 export function mayRead(req, env = process.env) {
-  if (env.VERCEL_ENV === "production") return isAdmin(req, env);
+  if (env.VERCEL_ENV === "production" || env.LOGMEM_CUSTOMER_DASHBOARD === "1") return isAdmin(req, env);
   return adminEnabled(env) ? isAdmin(req, env) : true;
 }
 

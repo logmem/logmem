@@ -7,7 +7,7 @@
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { live as liveDir } from '/vendor/lit-html-3.2.1/directives/live.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
-import { getJSON, postJSON, toast, state, agentName } from './core.js';
+import { getJSON, postJSON, toast, state, onContextReset, agentName } from './core.js';
 import { icon, emptyState, head, btn } from './ui.js';
 import { renderView, renderBare } from './shell.js';
 import { closeDrawer, drawerOpen } from './drawer.js';
@@ -100,7 +100,7 @@ function drawWriter() {
     ${head(d.trail ? 'Edit walkthrough' : 'Write a walkthrough', html`For job <a href=${'#/job/' + encodeURIComponent(d.job)}>${d.jobTitle}</a>. One step on screen at a time, ${MAX_STEPS} steps at most. Never paste a secret value: say where it lives.`)}
     <form class="lmw-writer" @submit=${(e) => { e.preventDefault(); save(); }}>
       <div class="lmw-grid2">${field('Title', d, 'summary', LIMITS.title, { req: true, ph: 'Set up the npm token', data: 'summary' })}
-        ${field('For whom', d, 'to', 64, { req: true, ph: 'human:mikey', help: 'A person, as human:<id>. They find it in Needs you.' })}</div>
+        ${field('For whom', d, 'to', 75, { req: true, ph: 'human:mikey', help: 'A person, as human:<id>. They find it in Needs you.' })}</div>
       ${repeat(d.steps, (s) => s.k, stepTpl)}
       <div class="lmx-acts">${btn(`Add a step (${d.steps.length} of ${MAX_STEPS})`, 'secondary', add, { disabled: d.steps.length >= MAX_STEPS })}</div>
       <div class="lmw-grid2">${field('Done when', d, 'done_when', LIMITS.field, { ph: 'The token shows in Infisical and the publish job can read it' })}
@@ -112,7 +112,7 @@ function drawWriter() {
 
 function check(d) {
   if (!d.summary.trim()) return ['Give the walkthrough a title.', 'summary'];
-  if (!/^human:[a-z0-9][a-z0-9_.-]{0,63}$/.test(d.to.trim())) return ['Say who it is for, as human:<id>.', null];
+  if (!/^human:(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|user_[A-Za-z0-9]{60,64})$/.test(d.to.trim())) return ['Say who it is for, as human:<id>.', null];
   const i = d.steps.findIndex((s) => !s.title.trim());
   if (i >= 0) return [`Step ${i + 1} needs “What to do”.`, 'title', i];
   return null;
@@ -138,7 +138,7 @@ async function save() {
     draft = null;
     toast(d.trail ? 'Walkthrough saved.' : `Saved. ${agentName(j.blocker.to)} sees it in Needs you. Copy the player link from the job page.`);
     location.hash = '#/job/' + encodeURIComponent(job);
-  } catch (e) { d.saving = false; drawWriter(); toast('Not saved: ' + e.message, true); }
+  } catch (e) { if(e.stale||d!==draft||d.space!==state.space)return;d.saving = false; drawWriter(); toast('Not saved: ' + e.message, true); }
 }
 
 // ─── player ──────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ export async function playerPage(arg) {
   // Every player load takes a number first, preview included, so a held reply can't replace it.
   const seq = ++playerSeq;
   if (raw === 'preview') {
-    if (!draft) { renderBare(bare(emptyState('Nothing to preview.', 'Open the writer on a job page, then press Preview.'))); return; }
+    if (!draft||draft.space!==state.space) { renderBare(bare(emptyState('Nothing to preview.', 'Open the writer on a job page, then press Preview.'))); return; }
     if (!play || play.key !== 'preview') play = { key: 'preview', space: state.space, i: 0, localDone: [] };
     const rec = { trail: 'preview', summary: draft.summary, to: draft.to, by: '', walkthrough: toWalkthrough(draft), steps_done: play.localDone, done: false };
     return drawPlayer(rec, true);
@@ -278,3 +278,5 @@ export function jobWalkthroughs(jobId, tasks) {
         ${t.steps_done === 0 && /^human:/.test(t.by || '') ? html`<a class="lm-btn lm-btn--ghost" href=${'#/write/' + encodeURIComponent(jobId) + '/' + encodeURIComponent(t.trail)}>Edit</a>` : nothing}</div></div>`)}
     <div class="lmx-acts"><a class="lm-btn lm-btn--primary" href=${'#/write/' + encodeURIComponent(jobId)}>Write a walkthrough</a></div></div>`;
 }
+
+onContextReset(()=>{draft=null;play=null;cancelWalkLoads();});

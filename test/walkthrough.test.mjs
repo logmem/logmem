@@ -254,7 +254,8 @@ function loadWalk(getJSON) {
   let src = readFileSync(new URL("../public/app/walk.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "").replace(/export /g, "");
   src += "\ndrawPlayer = (rec) => { this.shown = rec.summary }; drawWriter = () => { this.drafted = draft && draft.key }; this.api = { playerPage, writerPage, cancelWalkLoads, getPlay: () => play, getDraft: () => draft, setDraft: (d) => { draft = d } };";
   const state = { space: "space-a" };
-  const ctx = { URL, URLSearchParams, state, drawerOpen: () => false, closeDrawer: () => {}, okHook: () => true, getJSON, location: { replace() {} }, blankStep: undefined };
+  const resetHooks = [];
+  const ctx = { URL, URLSearchParams, state, onContextReset: (fn) => { resetHooks.push(fn); }, resetContext: () => { for (const fn of resetHooks) fn(); }, drawerOpen: () => false, closeDrawer: () => {}, okHook: () => true, getJSON, location: { replace() {} }, blankStep: undefined };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   return ctx;
@@ -321,4 +322,19 @@ test("PR 88 re-review 4: a route change drops pending player and writer loads", 
 test("PR 88 re-review 4: the router cancels walkthrough loads on every route", () => {
   const main = readFileSync(new URL("../public/app/main.js", import.meta.url), "utf8");
   assert.match(main, /function route\(\) \{\n  cancelWalkLoads\(\);/);
+});
+
+
+test("a context reset clears walkthrough drafts and pending replies", async () => {
+  const h = held();
+  const ctx = loadWalk(h.getJSON);
+  ctx.api.setDraft({ summary: "Private draft", space: "space-a" });
+  const pending = ctx.api.playerPage("space-a/same-task");
+  ctx.state.space = "space-b";
+  ctx.resetContext();
+  await h.release("space-a");
+  await pending;
+  assert.equal(ctx.api.getDraft(), null);
+  assert.equal(ctx.api.getPlay(), null);
+  assert.equal(ctx.shown, undefined);
 });

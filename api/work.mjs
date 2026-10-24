@@ -1,3 +1,4 @@
+import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // /api/work — the live app's person endpoints, one function behind rewrites:
 //   GET  /api/pulse?space=            -> { rev }                 the change counter
 //   GET  /api/needs?space=            -> { person, count, items } open tasks and decisions
@@ -89,4 +90,4 @@ export function createHandler({ env = process.env, redis, now } = {}) {
   };
 }
 
-export default createHandler();
+export default withCustomerDashboard(createHandler());

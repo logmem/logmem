@@ -178,6 +178,11 @@ export function createMemoryRedis() {
       const e = get(k, "list");
       return e ? sliceRange(e.value, start, stop) : [];
     },
+    LTRIM: (k, start, stop) => {
+      const e = get(k, "list");
+      if (e) { e.value = sliceRange(e.value, start, stop); if (!e.value.length) data.delete(k); }
+      return "OK";
+    },
     RPUSH: (k, ...vals) => {
       let e = get(k, "list");
       if (!e) {
