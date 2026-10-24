@@ -352,3 +352,17 @@ export async function getCoordItemsByTrail(store, space, trail) {
   const ids = await store.redis("SMEMBERS", key);
   return Array.isArray(ids) ? ids : [];
 }
+
+/**
+ * Lists all coordination item records associated with a trail.
+ */
+export async function listCoordItemsForTrail(store, space, trail) {
+  const ids = await getCoordItemsByTrail(store, space, trail);
+  if (!ids || ids.length === 0) return [];
+  const items = [];
+  for (const id of ids) {
+    const item = await getCoordItem(store, space, id);
+    if (item) items.push(item);
+  }
+  return items;
+}
