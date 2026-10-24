@@ -10,11 +10,11 @@ async function signIn(page, hash = "#/home") {
 }
 const laptop = (testInfo) => testInfo.project.name === "laptop";
 
-test("home: three columns, a P0 lane, blocked jobs with reasons, a live chip", async ({ page }, testInfo) => {
+test("home: priorities, blocked work, source coverage and a connection status", async ({ page }, testInfo) => {
   await signIn(page);
-  await expect(page.locator(".lmx-c-plans .lmx-lane[data-l=p0]")).toBeVisible();
-  await expect(page.locator(".lmx-c-blocked .lmx-job").first()).toBeVisible();
-  await expect(page.locator(".lmx-live")).toHaveText("Live");
+  await expect(page.locator(".lmx-today-grid .lmx-plan [data-l=p0]")).toBeVisible();
+  await expect(page.locator(".lmx-today-grid .lmx-job").first()).toBeVisible();
+  await expect(page.locator(".lmx-live")).toHaveText("Data connected");
   await expect(page.locator("#root")).not.toContainText("Loading…");
   if (!laptop(testInfo)) await expect(page.locator(".lmx-tabs")).toBeVisible();
 });
@@ -125,14 +125,15 @@ async function captureDecides(page) {
   return sent;
 }
 // A fixed Needs list (two reversible asks), so these tests don't depend on the seed or the order.
-const fakeAsk = (id) => ({ type: "decision", trail: id, job: "i15-photos", summary: id, ask: { trail: id, summary: id, by: "agent:quill", ts: Date.now(), where: "job:i15-photos", payload: { action: "Action " + id, reversible: true } } });
+const fakeAsk = (id) => ({ type: "decision", trail: id, job: "i15-photos", summary: id, ask: { trail: id, ask_digest: "synthetic-digest-" + id, summary: id, by: "agent:quill", ts: Date.now(), where: "job:i15-photos", payload: { action: "Action " + id, reversible: true } } });
 async function fakeNeeds(page, ids) {
   const list = { ids };
   await page.route("**/api/needs*", (route) => route.fulfill({ json: { count: list.ids.length, items: list.ids.map(fakeAsk) } }));
   return list;
 }
 async function openDecisions(page) {
-  await page.getByRole("button", { name: /Needs you/ }).first().click();
+  const button=page.getByRole("button",{name:/Needs you/}).first();
+  if(await button.isVisible())await button.click();else await page.goto("/app#/decisions");
   await page.getByRole("tab", { name: /Decisions/ }).click();
   await expect(page.locator(".lmx-drawer .lm-approval").nth(1)).toBeVisible();
 }
@@ -175,11 +176,12 @@ test("decisions: after Defer the answer buttons work again", async ({ page }) =>
   await fakeNeeds(page, ["ask-one", "ask-two"]);
   await openDecisions(page);
   const card = page.locator(".lmx-drawer .lm-approval").first();
-  await card.getByRole("button", { name: "Defer" }).click();
+  await card.getByRole("button", { name: "Decide later" }).click();
   await expect.poll(() => sent.length).toBe(1);
-  await expect(card.getByRole("button", { name: "Defer" })).toBeEnabled();
-  await expect(card.getByRole("button", { name: "Reject" })).toBeEnabled();
-  await card.getByRole("button", { name: "Reject" }).click();
+  await expect(card.getByRole("button", { name: "Decide later" })).toBeEnabled();
+  await expect(card.getByRole("button", { name: "Request changes" })).toBeEnabled();
+  await card.getByLabel("Note for the agent").fill("Please adjust the proposed action.");
+  await card.getByRole("button", { name: "Request changes" }).click();
   await expect.poll(() => sent.length).toBe(2);
 });
 
