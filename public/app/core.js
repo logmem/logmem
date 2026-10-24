@@ -1,7 +1,9 @@
 // core.js — shared state, data access, formatting and toasts for the LogMem web app.
 // Every page is a lit-html template: values are escaped by lit, never concatenated into HTML.
 
-export const state = { space: null, spaces: [] };
+export const state = { space: null, spaces: [], customer:false, user:null, workspaceId:null, spaceId:null, workspaces:[], spaceRecords:[] };
+let epoch=0,viewEpoch=0;
+let pendingController=new AbortController();
 try { state.space = localStorage.getItem('lm-space'); } catch (e) { /* storage blocked */ }
 
 // Live app state: the last rev seen, the Needs you count, pulse status, cached view data.
@@ -31,21 +33,50 @@ async function asJSON(r) {
   j.__status = r.status;
   return j;
 }
+export function invalidateLoads() {viewEpoch++;}
+export function switchContext({workspaceId,spaceId}) {
+  const selected=state.spaceRecords.find(s=>s.id===spaceId&&s.workspaceId===workspaceId);
+  if(!selected)throw new Error('That space is unavailable.');
+  pendingController.abort(); pendingController=new AbortController();epoch++;
+  Object.assign(state,{workspaceId,spaceId,space:selected.namespace,permissions:selected.permissions||{},spaces:state.spaceRecords.filter(s=>s.workspaceId===workspaceId).map(s=>s.namespace)});
+  Object.assign(live,{home:null,jobs:null,log:null,recall:null,needs:null,stale:[],rev:null,decisionReceipt:null,fails:0,storageDown:false,signedOut:false});
+  FILTERS={};seen.clear();
+  try{localStorage.setItem('lm-context-'+state.user.id,JSON.stringify({workspaceId,spaceId}));sessionStorage.removeItem('lm-filters');}catch{}
+}
+export function clearCustomerContext() {
+  pendingController.abort();pendingController=new AbortController();epoch++;
+  Object.assign(state,{space:null,spaces:[],workspaceId:null,spaceId:null,user:null,workspaces:[],spaceRecords:[]});
+  Object.assign(live,{home:null,jobs:null,log:null,recall:null,needs:null,stale:[],rev:null,decisionReceipt:null,signedOut:true});
+  FILTERS={};seen.clear();
+}
+function customerUrl(url) {
+  if(!state.customer)return url;
+  const u=new URL(url,'https://logmem.invalid');
+  if(state.workspaceId)u.searchParams.set('workspaceId',state.workspaceId);
+  if(state.spaceId)u.searchParams.set('spaceId',state.spaceId);
+  return u.pathname+u.search;
+}
 export async function getJSON(url) {
-  const requestedSpace = state.space;
-  const value = await fetch(url, { credentials: 'same-origin' }).then(asJSON);
-  if (requestedSpace !== state.space) value.__stale = true;
+  const requestedSpace=state.space,requestedEpoch=epoch;
+  let value;
+  try{value=await fetch(customerUrl(url), {credentials:'same-origin',headers:state.customer?{'X-LogMem-Viewer':'customer'}:{},signal:pendingController.signal}).then(asJSON);}
+  catch(e){if(requestedEpoch!==epoch||e.name==='AbortError')return {__stale:true,__status:0};throw e;}
+  if(requestedSpace!==state.space||requestedEpoch!==epoch){value.__stale=true;return value;}
+  if(state.customer&&[401,403,404].includes(value.__status)){clearCustomerContext();onSignedOut('Your access changed. Sign in or choose an available space.');value.__stale=true;}
   return value;
 }
 export function api(what, extra) {
   const q = new URLSearchParams(Object.assign({ what }, state.space ? { space: state.space } : {}, extra || {}));
-  return getJSON('/api/view?' + q);
+  const requestedView=viewEpoch;
+  return getJSON('/api/view?' + q).then(value=>{if(requestedView!==viewEpoch)value.__stale=true;return value;});
 }
 /** POST with the intent header; resolves the JSON on 2xx, throws the server's message otherwise. */
 export async function postJSON(url, intent, body) {
-  const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent }, body: JSON.stringify(Object.assign({ space: state.space }, body)) });
+  const requestedEpoch=epoch;
+  const r = await fetch(customerUrl(url), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent, ...(state.customer?{'X-LogMem-Viewer':'customer'}:{}) }, body: JSON.stringify(Object.assign({ space: state.space }, body, state.customer?{workspaceId:state.workspaceId,spaceId:state.spaceId}:{})) });
   const j = await asJSON(r);
-  if (r.status === 401) onSignedOut(j.error);
+  if(requestedEpoch!==epoch){const e=new Error('Space changed. Check the original space before retrying.');e.stale=true;throw e;}
+  if (r.status === 401) {if(state.customer)clearCustomerContext();onSignedOut(j.error);}
   if (r.status >= 300) { const e = new Error(j.error || 'status ' + r.status); e.status = r.status; throw e; }
   return j;
 }

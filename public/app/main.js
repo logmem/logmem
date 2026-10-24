@@ -1,9 +1,10 @@
 // main.js — the LogMem web app: hash routes, sign-in, the live pulse and keyboard shortcuts.
 // Every view renders through lit-html (escaped templates); no file in public/app writes raw HTML.
+import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { state, live, getJSON, setSignedOutHook } from './core.js';
+import { state, live, getJSON, invalidateLoads, setSignedOutHook } from './core.js';
 import { icon } from './ui.js';
-import { setChangedHook } from './actions.js';
+import { setChangedHook, cancelDialogs } from './actions.js';
 import { drawRender, drawerOpen, closeDrawer, setSyncHook } from './drawer.js';
 import { renderView, refreshFrame, renderBare, setShellHooks, currentRoute, setTitle, LIVE_LABEL } from './shell.js';
 import { pages, setOkHook } from './views.js';
@@ -14,7 +15,8 @@ import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 function ok(d) {
   if (d.__stale) return false;
   if (d.__status === 401) { login(d.error); return false; }
-  if (d.spaces) { state.spaces = d.spaces; if (!state.space || d.spaces.indexOf(state.space) < 0) state.space = d.space; }
+  if(d.permissions)state.permissions=d.permissions;
+  if (d.spaces&&!state.customer) { state.spaces = d.spaces; if (!state.space || d.spaces.indexOf(state.space) < 0) state.space = d.space; }
   if (d.__status === 503) { live.storageDown = true; refreshFrame(); }
   if (d.__status !== 200) {
     renderBare(html`<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">${icon('alert')}<div><strong>Couldn’t load this page.</strong> The server said: ${d.error || d.__status}. Nothing on screen was changed. Try again.</div></div></div>`);
@@ -24,6 +26,7 @@ function ok(d) {
   return true;
 }
 function login(msg) {
+  if(state.customer){closeDrawer();closeSearch();cancelDialogs();return showCustomerLogin(msg);}
   live.signedOut = true;
   let err = msg && msg !== 'sign in required' ? msg : '';
   const submit = async (e) => {
@@ -44,13 +47,18 @@ setOkHook(ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 setShellHooks({
-  space: (s) => { if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
-  signOut: () => fetch('/api/logout', { method: 'POST' }).then(() => location.reload()),
+  space: (s) => { if(state.customer)return chooseSpace(s); if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
+  createSpace: showCreateSpace, account:()=>{location.hash='#/account';showAccount();},
+  signOut: () => state.customer?signOutCustomer():fetch('/api/logout', { method: 'POST' }).then(() => location.reload()),
 });
 
 // ─── router ──────────────────────────────────────────────────────────
 function route() {
   cancelWalkLoads();
+  invalidateLoads();
+  if(state.customer&&!state.spaceId)return;
+  if(state.customer&&location.hash==='#/account')return showAccount();
+  if(state.customer&&location.hash==='#/new-task')return showNewTask();
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
   return Promise.resolve(page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined)).catch((e) => {
@@ -122,8 +130,9 @@ document.addEventListener('click', (e) => {
   import('./drawer.js').then((m) => m.openDrawer('huddle', b.getAttribute('data-open-huddle'), b.getAttribute('data-where')));
 });
 
-window.addEventListener('hashchange', route);
-route();
-if (location.hash && !/^#\/?(home|overview)?$/.test(location.hash)) refreshNeeds();
-schedule(4000);
+configureAccount({ready:()=>{route();refreshNeeds();schedule(0);},closePanels:()=>{closeDrawer();closeSearch();cancelDialogs();cancelWalkLoads();}});
+window.addEventListener('hashchange',route);
+window.addEventListener('storage',e=>{if(state.customer&&e.key==='lm-account-event')login('You signed out in another tab.');});
+(async()=>{const handled=await bootstrapAccount();if(!handled){route();if(state.space)refreshNeeds();schedule(4000);}})().catch(e=>login('Could not connect. Please retry.'));
+
 export { setTitle, renderView, LIVE_LABEL };

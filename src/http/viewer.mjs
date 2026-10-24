@@ -3,7 +3,7 @@ import {customerSession} from './clerk.mjs';
 import {customerRedis,createSpaceJail} from './jail.mjs';
 import {readOnly} from '../lib/read-only.mjs';
 import {evalScriptFor,registerEvalScript} from '../lib/lua-scripts.mjs';
-import {authorizeSpace,readWorkspace,workspaceKey,WorkspaceError} from './workspaces.mjs';
+import {authorizeSpace,workspaceVersionKey,WorkspaceError} from './workspaces.mjs';
 const scripts=new Map();
 function guardedScript(original) {
  if(scripts.has(original))return scripts.get(original);
@@ -32,20 +32,14 @@ export async function resolveViewer(req,{workspaceId,spaceId,action='read'},deps
  if(session.status!=='signed-in')throw new WorkspaceError('sign_in_required',401);
  const redis=deps.redis||customerRedis(env),userId=session.userId;
  const options={userId,workspaceId,spaceId,action};
- const revalidate=()=>authorizeSpace(options,{redis});
- const context=await revalidate();
+ const context=await authorizeSpace(options,{redis});
+ const revalidate=async()=>{const fresh=await authorizeSpace(options,{redis});if(fresh.version!==context.version)throw new WorkspaceError('not_found',404);return fresh;};
  const run=async(...cmd)=>{
-  await revalidate();
-  const {raw}=await readWorkspace(redis,workspaceId);
-  // Bind the checked record exactly. A concurrent policy change aborts the command.
-  // Recheck the same snapshot because it may have changed between the preceding awaits.
-  const current=await authorizeSpace(options,{redis});
-  if(current.version!==JSON.parse(raw).version)throw new WorkspaceError('not_found',404);
   let keys,args,source;
   if(String(cmd[0]).toUpperCase()==='EVAL') {
    const n=Number(cmd[2]);keys=cmd.slice(3,3+n);args=cmd.slice(3+n);source=guardedScript(cmd[1]);
   } else {keys=[];args=cmd;source=guardedScript('');}
-  try {return await redis('EVAL',source,keys.length+2,...keys,workspaceKey(workspaceId),`acmi:cloud:tenant:${context.workspace.tenantId}`,...args,raw);}
+  try {return await redis('EVAL',source,keys.length+2,...keys,workspaceVersionKey(workspaceId),`acmi:cloud:tenant:${context.workspace.tenantId}`,...args,String(context.version));}
   catch(e){if(String(e.message).includes('space access changed'))throw new WorkspaceError('not_found',404);throw e;}
  };
  const jailed=createSpaceJail(run,{tenantId:context.workspace.tenantId,namespace:context.space.namespace});

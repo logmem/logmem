@@ -308,3 +308,14 @@
 .lmx-main .lmx-acts .lm-btn,.lmx-head .lm-btn,.lmx-tabsbar button,.lmx-needs{min-height:44px}
 @media (max-width:1023px){.lmx-today-grid{grid-template-columns:minmax(0,1fr)}.lmx-today-grid>aside{display:grid;grid-template-columns:1fr 1fr;align-items:start}.lmx-work-row{grid-template-columns:minmax(160px,1fr) minmax(90px,.5fr)}.lmx-brief{flex-wrap:wrap;gap:10px}}
 @media (max-width:639px){.lmx-today-heading{gap:12px}.lmx-today-heading h1{font-size:29px}.lmx-brief{padding:17px}.lmx-today-grid>aside{display:flex}.lmx-work-row{grid-template-columns:minmax(0,1fr);gap:10px;padding:16px}.lmx-mobile-settings{display:inline-flex;padding:0 9px}.lmx-head{gap:7px}.lmx-head .lm-crumbs{flex-basis:100%}.lmx-live{font-size:11px}.lmx-work-toolbar{align-items:stretch}.lmx-work-toolbar>a{font-size:12px}.lmx-today-grid{gap:24px}.lmx-brief>.lmx-meta{white-space:normal}.lmx-tabs{grid-template-columns:repeat(4,1fr)}}
+
+/* Customer setup follows the same LogMem tokens as the dashboard. */
+.lmx-account-start{max-width:520px;margin:64px auto;padding:24px;display:grid;gap:20px}
+.lmx-account-start h1{font-family:var(--font-heading);font-size:28px;line-height:1.2;margin:0}
+.lmx-account-form{padding:20px;display:grid;gap:16px;max-width:640px}
+.lmx-account-form form{display:grid;gap:12px}
+.lmx-account-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.lmx-account-settings{display:grid;gap:20px}
+.lmx-account-settings .lm-input{width:100%;box-sizing:border-box}
+.lmx-account-switch{display:grid;gap:8px;padding:4px}
+@media(max-width:600px){.lmx-account-start{margin:24px auto;padding:20px}.lmx-account-actions>*{max-width:100%}.lmx-account-switch-head{max-width:135px}.lmx-account-switch-head select{max-width:135px}}

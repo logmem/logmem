@@ -69,8 +69,9 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
   if(op==='create_job') {
    if(!JOB_ID_RE.test(b.job||'')||typeof b.title!=='string'||!b.title.trim()||b.title.length>120)throw new WorkspaceError('invalid_job');
    if(await store.getWho('job',b.job))throw new WorkspaceError('job_exists',409);
-   await store.setWho('job',b.job,{title:b.title.trim(),created_by:v.person,created_at:Date.now()});
+   await store.setWho('job',b.job,{title:b.title.trim(),plan:'general',created_by:v.person,created_at:Date.now()});
    await store.setNow('job',b.job,{stage:'open',owner:v.person});
+   await store.append('job',b.job,{ts:Date.now(),kind:'progress',by:v.person,via:'web',trail:'created-'+b.job,summary:'Task created: '+b.title.trim()});
    return result({ok:true,job:b.job});
   }
   throw new WorkspaceError('not_found',404);

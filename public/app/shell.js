@@ -16,13 +16,15 @@ export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting�
 const root = () => { const el = document.getElementById('root'); if (!el._$litPart$) el.replaceChildren(); return el; };
 let lastRoute = null;
 export const currentRoute = () => lastRoute;
-let onSpace = () => {}, onSignOut = () => {};
-export function setShellHooks({ space, signOut }) { onSpace = space; onSignOut = signOut; }
+let onSpace = () => {}, onSignOut = () => {}, onCreateSpace=()=>{}, onAccount=()=>{};
+export function setShellHooks({ space, signOut, createSpace, account }) { onSpace=space;onSignOut=signOut;onCreateSpace=createSpace;onAccount=account; }
 /** Sign out from anywhere (the phone has no rail, so More offers it too). */
 export function signOut() { onSignOut(); }
-const spaceOptions = () => state.spaces.map((s) => html`<option ?selected=${s === state.space}>${s}</option>`);
+const spaceOptions = () => state.spaces.map((s) => html`<option value=${s} ?selected=${s === state.space}>${state.customer?state.spaceRecords.find(x=>x.namespace===s)?.name||s:s}</option>`);
 /** The header space picker: shown only below 1024px, where the rail hides its own. */
-const headSpace = () => state.spaces.length > 1 ? html`<select class="lm-select lmx-headspace" aria-label="Space" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select>` : nothing;
+const workspaceOptions=()=>state.workspaces.filter(w=>state.spaceRecords.some(s=>s.workspaceId===w.id)).map(w=>html`<option value=${w.id} ?selected=${w.id===state.workspaceId}>${w.name}</option>`);
+const workspaceSelect=()=>html`<select class="lm-select" aria-label="Workspace" @change=${e=>onSpace(state.spaceRecords.find(s=>s.workspaceId===e.target.value)?.namespace)}>${workspaceOptions()}</select>`;
+const headSpace = () => state.customer?html`<div class="lmx-headspace lmx-account-switch-head">${workspaceSelect()}<select class="lm-select" aria-label="Space" @change=${e=>onSpace(e.target.value)}>${spaceOptions()}</select></div>`:state.spaces.length > 1 ? html`<select class="lm-select lmx-headspace" aria-label="Space" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select>` : nothing;
 
 function navItem(n, route) {
   const cur = n[0] === (ROUTE_NAV[route] || route);
@@ -32,18 +34,20 @@ const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${liv
 const banner = () => live.storageDown ? html`<div class="lm-alert lm-alert--danger lmx-banner" role="alert">${icon('alert')}<div><strong>LogMem can’t reach its storage.</strong> What you see may be out of date, and nothing you do will save until it is back. The app keeps trying.</div></div>` : nothing;
 
 function frame(route, crumbs, body) {
-  const demo = isSampleSpace(state.space);
+  const demo = isSampleSpace(state.space)||Boolean(state.spaceRecords.find(s=>s.id===state.spaceId)?.sampleTemplate);
   const receipt = receiptForSpace(live.decisionReceipt, state.space);
   const tab = (id, label, ic) => { const cur = id === (ROUTE_NAV[route] || route); return html`<a href=${'#/' + id} aria-current=${cur ? 'page' : nothing}>${icon(ic)}${label}</a>`; };
   return html`<div class="lmx"><nav class="lmx-rail" aria-label="LogMem">
       <div class="lm-rail-brand"><a href="/" style="display:flex"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height:26px;width:auto"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height:26px;width:auto"></a></div>
-      <label class="lm-field" style="margin:4px 4px 12px"><span class="lm-label">Space</span><select class="lm-select" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select></label>
+      ${state.customer?html`<div class="lmx-account-switch">${workspaceSelect()}</div>`:nothing}
+      <label class="lm-field" style="margin:4px 4px 12px"><span class="lm-label">Space</span><select class="lm-select" aria-label="Space" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select></label>
+      ${state.customer?html`${state.workspaces.find(w=>w.id===state.workspaceId)?.role!=='viewer'?html`<button class="lm-btn lm-btn--ghost" @click=${onCreateSpace}>Create space</button>`:nothing}<button class="lm-btn lm-btn--ghost" @click=${onAccount}>Workspace settings</button>`:nothing}
       ${NAV.map((n) => navItem(n, route))}
       <div class="lm-rail-foot" style="margin-top:auto">${navItem(ADMIN[0], route)}${demo ? html`<span class="lm-badge lm-badge--warning lmx-railtext">Sample space</span>` : html`<span style="font-size:12px" class="subtle lmx-railtext">Workspace</span>`}<button type="button" class="lm-btn lm-btn--ghost lmx-railtext" @click=${onSignOut} style="justify-content:flex-start">Sign out</button></div></nav>
     <div class="lmx-col"><header class="lmx-head"><ol class="lm-crumbs">${crumbs.map((c, i) => html`${i ? html`<li aria-hidden="true">/</li>` : nothing}<li aria-current=${i === crumbs.length - 1 ? 'page' : nothing} style=${i === crumbs.length - 1 ? 'color:var(--text)' : ''}>${c}</li>`)}</ol>
-      ${headSpace()}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
+      ${headSpace()}${demo?html`<span class="lm-badge lm-badge--warning">Contains sample content</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
-      ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href="#/settings" aria-label="Settings">${icon('settings')}</a></header>
+      ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
       <main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main></div>
     <nav class="lmx-tabs" aria-label="LogMem">${tab('home', 'Today', 'overview')}${tab('work', 'Work', 'work')}${tab('agents', 'Agents', 'agents')}${tab('activity', 'Activity', 'timeline')}</nav></div>`;
 }

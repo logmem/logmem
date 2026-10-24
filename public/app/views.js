@@ -28,12 +28,13 @@ pages.home = async () => {
   const b = briefFor(d), needs = d.needs_items || [];
   const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
   const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work, in view.';
+  if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Today'],html`<section class="lm-panel lmx-account-form"><span class="lm-eyebrow">${state.spaceRecords.find(s=>s.id===state.spaceId)?.name}</span><h1>Your space is ready.</h1><p>Add your first task. Connect an agent or invite a teammate when you need them.</p><div class="lmx-account-actions">${state.permissions?.write?html`<a class="lm-btn lm-btn--primary" href="#/new-task">Add a task</a>`:nothing}${state.permissions?.manage?html`<a class="lm-btn" href="#/account">Connect an agent</a><a class="lm-btn" href="#/account">Invite a person</a>`:nothing}</div></section>`);
   const attention = i => html`<article class="lmx-card lmx-attention" data-key=${state.space + ':' + i.type + ':' + i.trail}>
     <span class="lm-eyebrow">${i.type === 'decision' ? 'Your decision' : i.type === 'task' ? 'Your task' : 'Review completion'}</span>
     <h3>${i.summary || i.ask?.summary}</h3><div class="lmx-meta">${i.by ? 'From ' + agentName(i.by) : ''}${i.plan ? ' · ' + i.plan : ''}${i.created_at ? ' · asked ' + ago(i.created_at) : ''}</div>
     ${btn(i.type === 'decision' ? 'Review decision' : i.type === 'task' ? 'Review task' : 'Review evidence', 'primary', () => i.job ? openDrawer('job', i.job) : openDrawer('needs', 'all'))}</article>`;
   renderView('home', ['Today'], html`
-    <div class="lmx-today-heading"><div><span class="lm-eyebrow">Your workspace · ${state.space}</span><h1>${heading}</h1><p>Decide what needs you. Keep the next step in view.</p></div>
+    <div class="lmx-today-heading"><div><span class="lm-eyebrow">Your workspace · ${state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name:state.space}</span><h1>${heading}</h1><p>Decide what needs you. Keep the next step in view.</p></div>
       <a class="lm-btn lm-btn--secondary" href="#/audit">Coordination audit</a></div>
     <section class="lmx-brief" aria-label="Your brief"><div><span class="lm-eyebrow">Your brief</span>
       <p>${b.decisions == null ? 'Decision count is unavailable.' : `${b.decisions} ${b.decisions === 1 ? 'decision' : 'decisions'} and ${b.tasks} ${b.tasks === 1 ? 'task' : 'tasks'} for you to review.`}

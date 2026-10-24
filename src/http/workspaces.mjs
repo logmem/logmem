@@ -7,6 +7,7 @@ export class WorkspaceError extends Error {
 }
 export const failWorkspace = (code, status=400) => { throw new WorkspaceError(code,status); };
 export const workspaceKey = id => `lm:workspace:record:${id}`;
+export const workspaceVersionKey = id => `lm:workspace:version:${id}`;
 export const validUser = id => typeof id==='string' && /^user_[A-Za-z0-9]{10,64}$/.test(id);
 export const validWorkspace = id => typeof id==='string' && /^[a-z][a-z0-9-]{2,30}$/.test(id);
 const id = () => randomBytes(12).toString('hex');
@@ -45,9 +46,11 @@ if fresh then
  redis.call('SADD', KEYS[6], w.tenantId)
 end
 redis.call('SET', KEYS[1], ARGV[2])
+redis.call('SET', KEYS[9], tostring(cjson.decode(ARGV[2]).version))
+if ARGV[9] ~= '' then redis.call('RPUSH', KEYS[8], ARGV[9]) end
 local flags = cjson.decode(ARGV[6])
 for i, f in ipairs(flags) do
- local k = 7 + (i-1)*2
+ local k = 9 + (i-1)*2
  if f.member then redis.call('SADD', KEYS[k+1], ARGV[7]) else redis.call('SREM', KEYS[k+1], ARGV[7]) end
  if f.owner then redis.call('SADD', KEYS[k+2], ARGV[7]) else redis.call('SREM', KEYS[k+2], ARGV[7]) end
 end
@@ -68,9 +71,11 @@ registerEvalScript(COMMIT,(call,keys,a)=>{
     call('SADD',keys[5],w.tenantId);
   }
   call('SET',keys[0],a[1]);
+  call('SET',keys[8],String(JSON.parse(a[1]).version));
+  if(a[8])call('RPUSH',keys[7],a[8]);
   JSON.parse(a[5]).forEach((f,i)=>{
-    call(f.member?'SADD':'SREM',keys[7+i*2],a[6]);
-    call(f.owner?'SADD':'SREM',keys[8+i*2],a[6]);
+    call(f.member?'SADD':'SREM',keys[9+i*2],a[6]);
+    call(f.owner?'SADD':'SREM',keys[10+i*2],a[6]);
   });
   call('SET',keys[3],JSON.stringify({digest:a[2],result:a[3]}));
   return ['ok',a[3]];
@@ -95,12 +100,14 @@ export function visibleSpaces(w,u) {
  const m=membership(w,u);
  return Object.values(w.spaces).filter(s=>s.status==='active' && (['owner','admin'].includes(m.role) || m.spaces?.[s.id]));
 }
-export function summary(w) {const {id,tenantId,name,status,createdAt,version}=w; return {id,tenantId,name,status,createdAt,version};}
+export function summary(w) {const {id,tenantId,name,status,createdAt,version,businessType}=w; return {id,tenantId,name,status,createdAt,version,businessType};}
 export async function commitWorkspace({before,after,userId,requestId,operation,fingerprint,result,legacyUser},deps) {
+  const event=after.audit.at(-1);
+  after={...after,audit:after.audit.slice(-100)};
   const users=[...new Set([...Object.keys(before?.members||{}),...Object.keys(after.members)])];
-  const keys=[workspaceKey(after.id),userKey(userId),ownedKey(userId),requestKey(userId,operation,requestId),`acmi:cloud:tenant:${after.tenantId}`,'acmi:cloud:tenants',`lm:account:tenant:${after.tenantId}`];
+  const keys=[workspaceKey(after.id),userKey(userId),ownedKey(userId),requestKey(userId,operation,requestId),`acmi:cloud:tenant:${after.tenantId}`,'acmi:cloud:tenants',`lm:account:tenant:${after.tenantId}`,`lm:workspace:audit:${after.id}`,workspaceVersionKey(after.id)];
   const flags=users.map(u=>{keys.push(userKey(u),ownedKey(u)); const m=after.members[u]; return {member:m?.status==='active',owner:m?.status==='active'&&m.role==='owner'};});
-  const response=await deps.redis('EVAL',COMMIT,keys.length,...keys,before?JSON.stringify(before):'',JSON.stringify(after),fingerprint,JSON.stringify(result),String(deps.limits?.ownedWorkspaces??3),JSON.stringify(flags),after.id,legacyUser||'');
+  const response=await deps.redis('EVAL',COMMIT,keys.length,...keys,before?JSON.stringify(before):'',JSON.stringify(after),fingerprint,JSON.stringify(result),String(deps.limits?.ownedWorkspaces??3),JSON.stringify(flags),after.id,legacyUser||'',event?JSON.stringify(event):'');
   const [status,payload]=response;
   if(status==='conflict') failWorkspace('idempotency_conflict',409);
   if(status==='quota') failWorkspace('workspace_limit',429);
@@ -113,14 +120,15 @@ async function replay(redis,key,fingerprint) {
  const r=JSON.parse(raw); if(r.digest!==fingerprint) failWorkspace('idempotency_conflict',409);
  return {...JSON.parse(r.result),created:false};
 }
-export async function createWorkspace({userId,name,firstSpaceName,requestId},deps) {
+export async function createWorkspace({userId,name,firstSpaceName,requestId,businessType='',withSample=false,userLabel},deps) {
  checkUser(userId); name=cleanName(name); firstSpaceName=cleanName(firstSpaceName);
- const key=requestKey(userId,'create',requestId), fingerprint=digest({name,firstSpaceName});
- const prior=await replay(deps.redis,key,fingerprint); if(prior) {await readWorkspace(deps.redis,prior.workspace.id); return prior;}
+ if(!['','solo','development','trades','restaurant','sales'].includes(businessType)||typeof withSample!=='boolean'||(withSample&&!businessType))failWorkspace('invalid_business_type');
+ const key=requestKey(userId,'create',requestId), fingerprint=digest({name,firstSpaceName,businessType,withSample});
+ const prior=await replay(deps.redis,key,fingerprint); if(prior) {const {w}=await readWorkspace(deps.redis,prior.workspace.id);membership(w,userId);return prior;}
  for(let retry=0;retry<12;retry++) {
   const newId=deps.newId||id, workspaceId=`w${newId()}`, spaceId=newId(), now=(deps.now||Date.now)();
-  const space={id:spaceId,workspaceId,namespace:`s-${spaceId}`,name:firstSpaceName,status:'active',createdAt:now};
-  const w={id:workspaceId,tenantId:workspaceId,name,status:'active',createdAt:now,version:1,members:{[userId]:{role:'owner',status:'active',spaces:{[spaceId]:{role:'editor',canApprove:true}}}},spaces:{[spaceId]:space},audit:[{kind:'workspace-created',by:`human:${userId}`,at:now}]};
+  const space={id:spaceId,workspaceId,namespace:`s-${spaceId}`,name:firstSpaceName,sampleTemplate:withSample?businessType:null,status:'active',createdAt:now};
+  const w={id:workspaceId,tenantId:workspaceId,name,businessType,status:'active',createdAt:now,version:1,members:{[userId]:{role:'owner',status:'active',...(typeof userLabel==='string'?{label:userLabel.slice(0,254)}:{}),spaces:{[spaceId]:{role:'editor',canApprove:true}}}},spaces:{[spaceId]:space},audit:[{kind:'workspace-created',by:`human:${userId}`,at:now}]};
   const r=await commitWorkspace({after:w,userId,requestId,operation:'create',fingerprint,result:{workspace:w,space}},deps); if(r) return r;
  }
  failWorkspace('creation_conflict',409);
@@ -181,7 +189,7 @@ export async function setMembership({actorId,workspaceId,userId,role,spaces={},r
   if(actor.role!=='owner'&&Object.entries(old?.spaces||{}).some(([sid,g])=>g.canApprove&&!spaces[sid]?.canApprove))failWorkspace('forbidden',403);
   if(old?.role==='owner'&&role!=='owner'&&Object.values(w.members).filter(m=>m.status==='active'&&m.role==='owner').length===1)failWorkspace('last_owner',409);
   if(!old&&Object.keys(w.members).length>=100)failWorkspace('member_limit',429);
-  const next=structuredClone(w);next.version++; next.members[userId]={role,spaces,status:'active'};
+  const next=structuredClone(w);next.version++; next.members[userId]={role,spaces,status:'active',...(old?.label?{label:old.label}:{})};
   next.audit.push({kind:'membership-changed',userId,role,by:`human:${actorId}`,at:(deps.now||Date.now)()});
   const r=await commitWorkspace({before:w,after:next,userId:actorId,requestId,operation:'membership',fingerprint,result:{ok:true}},deps);if(r)return r;
  }
