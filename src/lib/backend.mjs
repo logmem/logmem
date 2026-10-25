@@ -34,23 +34,6 @@ export function descriptorFromEnv(env = process.env) {
   return null;
 }
 
-/** Resolve and verify with PING; fall back to memory so stdio never hard-exits. */
-export async function backendFromEnv(env = process.env, log = () => {}) {
-  const d = descriptorFromEnv(env);
-  const b = d && fromDescriptor(d);
-  if (b) {
-    try {
-      await b.redis("PING");
-      return b;
-    } catch (e) {
-      log(`backend ${b.kind} unreachable (${e.message}); using in-memory (degraded)`);
-    }
-  } else {
-    log("no backend configured; using in-memory (degraded)");
-  }
-  return { kind: "memory", redis: createMemoryRedis() };
-}
-
 // ---- stdio degraded mode ----------------------------------------------------
 //
 // When the configured backend is unreachable at startup, stdio falls back to an

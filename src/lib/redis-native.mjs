@@ -240,10 +240,6 @@ export async function translate(client, command, args) {
   }
 }
 
-export function isRedisUri(s) {
-  return /^rediss?:\/\//i.test(String(s || ""));
-}
-
 /**
  * One-shot rediss:// client dialed at the pinned address. Not cached: the
  * URI's password must not sit in the warm-instance client map. Reconnect is

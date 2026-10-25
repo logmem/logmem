@@ -11,30 +11,6 @@
 
 import { sanitizeWarningMessage } from "./redact.mjs";
 
-export function resolveInstance(req) {
-  const url = new URL(req.url);
-  const queryId = url.searchParams.get("instance");
-  const cookieHeader = req.headers.get("cookie") || "";
-  const cookieMatch = cookieHeader.match(/acmi-instance=([^;]+)/);
-  const cookieId = cookieMatch?.[1];
-  const id = (queryId || cookieId || "default").trim();
-
-  if (id === "default") {
-    return {
-      id: "default",
-      url: process.env.UPSTASH_REDIS_REST_URL || "",
-      token: process.env.UPSTASH_REDIS_REST_TOKEN || "",
-    };
-  }
-
-  const slug = id.toUpperCase().replace(/-/g, "_");
-  return {
-    id,
-    url: process.env[`UPSTASH_URL_${slug}`] || process.env.UPSTASH_REDIS_REST_URL || "",
-    token: process.env[`UPSTASH_TOKEN_${slug}`] || process.env.UPSTASH_REDIS_REST_TOKEN || "",
-  };
-}
-
 /** Polar HTTPS exec is `/bridge/exec` with no trailing slash (slash → 404). */
 export function isBridgeUrl(url) {
   return /\/bridge\/exec(?:\/|$|\?)/.test(String(url || ""));
@@ -79,10 +55,6 @@ export const DEFAULT_REDIS_TIMEOUT_MS = 5000;
 export function redisTimeoutMs(env = process.env) {
   const n = Number(env?.LOGMEM_REDIS_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_REDIS_TIMEOUT_MS;
-}
-
-export function isReadCommand(cmd) {
-  return READ_COMMANDS.has(String(cmd ?? "").toUpperCase());
 }
 
 /** Low-level socket error code (ECONNREFUSED, ENOTFOUND, ...) only; never the message, which can carry the host. */
