@@ -26,7 +26,7 @@ async function handler(req, res) {
       recipient: q.recipient, type: q.type, plan: q.plan,
       overdue: bool(q.overdue), cursor: q.cursor, limit: q.limit, date: q.date,
     });
-    res.status(200).json({ ok: true, space, spaces: viewSpaces(), generated_at: Date.now(), ...data });
+    res.status(200).json({ ok: true, space, person, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
     if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });
     sendServerError(res, "/api/view", e);

@@ -52,3 +52,8 @@ export function decisionProblem(ask, verdict, note = '') {
 }
 
 export const receiptForSpace = (receipt, space) => receipt?.space === space ? receipt : null;
+
+/** Show answer controls only when the viewer can act on this request. Server checks still apply. */
+export function canAnswerDecision(ask, {person, canApprove}) {
+  return Boolean(person?.startsWith('human:') && canApprove && (!ask.to || ask.to === person));
+}
