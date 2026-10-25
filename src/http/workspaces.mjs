@@ -97,7 +97,6 @@ export function membership(w,u) {
   return m;
 }
 export function canManage(w,u) {return ['owner','admin'].includes(membership(w,u).role);}
-export function spaceSummary(w,s) {return {...s, permissions:undefined};}
 export function visibleSpaces(w,u) {
  const m=membership(w,u);
  return Object.values(w.spaces).filter(s=>s.status==='active' && (['owner','admin'].includes(m.role) || m.spaces?.[s.id]));
