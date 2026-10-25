@@ -70,5 +70,5 @@ test("slots view: the date param survives the route and each agent's runs are re
   const quill = onOther.data.agents.find((a) => a.agent === "quill");
   assert.equal(quill.slots.morning.state, "pass", "a receipt is a pass");
   assert.equal(quill.slots.midday.state, "failed", "the last outcome wins");
-  assert.equal(quill.slots.closeout.state, "pending", "an empty slot that has not passed its window is pending");
+  assert.equal(quill.slots.closeout.state, "missed", "an empty slot on a past day is missed");
 });

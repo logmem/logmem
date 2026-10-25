@@ -210,8 +210,9 @@ pages.slots = async (date) => {
   const d = await api('slots', date ? { date } : {});
   if (!ok(d)) return;
   const rows = (d.agents || []).map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td>${SLOT_ORDER.map((s) => slotCell(a.slots && a.slots[s]))}</tr>`);
-  renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Who ran their scheduled shifts, by day. A slot reads Pass only on a verified receipt; an empty slot past its window reads Missed.')}
-    <div class="lmx-filters"><span class="lmx-meta">${d.date || ''} · ${(d.agents || []).length} agents · three scheduled runs a day</span><span class="lm-spacer"></span><a href="#/agents" class="lm-btn lm-btn--secondary">Agents</a></div>
+  renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Review coordination receipts by day. An empty slot past its window reads Missed.')}
+    <div class="lmx-filters"><label>Run date <input type="date" class="lm-input" .value=${d.date || ''} @change=${(e) => { if (e.target.value && e.target.validity.valid) location.hash = '#/slots/' + encodeURIComponent(e.target.value); }}></label><span class="lmx-meta">${(d.agents || []).length} agents · America/New_York</span><span class="lm-spacer"></span><a href="#/audit" class="lm-btn lm-btn--secondary">Coordination audit</a><a href="#/agents" class="lm-btn lm-btn--secondary">Agents</a></div>
+    <p class="muted">Receipts do not prove an active runner or a configured schedule.</p>
     ${rows.length ? table(['Agent', 'Morning', 'Midday', 'Closeout'], rows) : emptyState('No agents yet.', 'Slots appear once agents are in this space.')}`);
 };
 pages.audit = async () => {
