@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LogMem Docs — Architecture, Tools Reference & Developer Walkthrough</title>
+<meta name="description" content="Technical documentation and multi-agent walkthrough for LogMem. Connect Claude Code, Codex, Muse, and Grok into one shared, append-only memory.">
+<link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/docs.css">
+<script src="/docs.js" defer></script>
+</head>
+<body class="lm">
+<a class="skip" href="#docs-content">Skip to content</a>
+
+<div class="docs-shell">
+  <!-- Left Navigation Rail -->
+  <aside class="docs-rail">
+    <div class="docs-rail-header">
+      <a href="/" aria-label="LogMem Home" class="h-logo">
+        <img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="130" height="28">
+        <img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" width="130" height="28">
+      </a>
+      <span class="lm-badge lm-badge--neutral">dev</span>
+    </div>
+
+    <div class="docs-search">
+      <input type="text" id="tool-search" placeholder="Search 24 tools & docs..." aria-label="Search tools">
+    </div>
+
+    <nav class="docs-rail-nav">
+      <div class="docs-nav-group">
+        <div class="docs-nav-title">Overview</div>
+        <a href="#architecture" class="docs-nav-link">The Model: Who · Now · Log</a>
+        <a href="#quickstart" class="docs-nav-link">5-Minute Quickstart</a>
+      </div>
+
+      <div class="docs-nav-group">
+        <div class="docs-nav-title">Multi-Agent Walkthrough</div>
+        <a href="#step-1" class="docs-nav-link">1. Connect 4 Personas</a>
+        <a href="#step-2" class="docs-nav-link">2. Zero-Cold Brief</a>
+        <a href="#step-3" class="docs-nav-link">3. Attributed Entries</a>
+        <a href="#step-4" class="docs-nav-link">4. Formal Handoffs</a>
+        <a href="#step-5" class="docs-nav-link">5. Human Gate (HITL)</a>
+        <a href="#step-6" class="docs-nav-link">6. Three Daily Syncs</a>
+      </div>
+
+      <div class="docs-nav-group">
+        <div class="docs-nav-title">Deep Dive: 24 Tools</div>
+        <a href="#tools-shift" class="docs-nav-link">Shifts & Sessions <span class="docs-nav-badge">3</span></a>
+        <a href="#tools-work" class="docs-nav-link">Work & Jobs <span class="docs-nav-badge">5</span></a>
+        <a href="#tools-decisions" class="docs-nav-link">Human Decisions <span class="docs-nav-badge">2</span></a>
+        <a href="#tools-handoff" class="docs-nav-link">Handoffs & Huddles <span class="docs-nav-badge">2</span></a>
+        <a href="#tools-sync" class="docs-nav-link">Daily Sync & Slots <span class="docs-nav-badge">2</span></a>
+        <a href="#tools-readers" class="docs-nav-link">Pure Readers <span class="docs-nav-badge">10</span></a>
+      </div>
+
+      <div class="docs-nav-group">
+        <div class="docs-nav-title">Infrastructure</div>
+        <a href="#self-hosting" class="docs-nav-link">Self-Hosting & Redis</a>
+        <a href="#conformance" class="docs-nav-link">Test & Conformance</a>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main class="docs-main" id="docs-content">
+    <header class="docs-header">
+      <span class="lm-eyebrow">Protocol & Implementation Manual</span>
+      <h1 class="lm-display" style="font-size: 38px; margin: 8px 0 12px;">Shared Memory for AI Fleets</h1>
+      <p class="docs-prose lm-muted">A technical guide to coordinating multiple autonomous AI agents (Claude Code, OpenAI Codex, Muse, Grok) with append-only attribution, formal handoff contracts, and human-in-the-loop safety gates.</p>
+    </header>
+
+    <!-- 1. Architecture -->
+    <section id="architecture" class="docs-section">
+      <h2 class="lm-title-1">The Model: Who · Now · Log</h2>
+      <div class="docs-prose">
+        <p>Every actor (agent, human), channel, and job in a LogMem space is structured around exactly three slots:</p>
+        <ul>
+          <li><strong>Who (Profile):</strong> The immutable identity, role, system prompt, and authorized tools. Set once upon registration.</li>
+          <li><strong>Now (Current State):</strong> What the actor or job is doing <em>right now</em>. Fast atomic writes, overwritten as conditions change. Exposes <code>doing</code>, <code>blocked</code>, and <code>waiting_on</code>.</li>
+          <li><strong>Log (Attributed History):</strong> The append-only, tamper-evident timeline. Every entry records who wrote it, when, its trail, and its origin. Nothing is ever edited or deleted.</li>
+        </ul>
+      </div>
+
+      <div class="docs-callout">
+        <div class="docs-callout-title"><i class="lm-i" data-i="check-circle"></i> The Zero-Cold-Start Guarantee</div>
+        <p class="docs-prose" style="font-size: 13.5px; margin: 0;">When an agent wakes up in a brand new chat, it does not scan megabytes of raw conversational scrollback. It calls <code>logmem_start</code> and receives one compact <strong>Brief</strong> assembled from these three slots in under 50ms.</p>
+      </div>
+    </section>
+
+    <!-- 2. Technical Walkthrough: 4 Personas -->
+    <section id="walkthrough" class="docs-section">
+      <h2 class="lm-title-1">Technical Walkthrough: The 4-Agent Fleet</h2>
+      <p class="docs-prose">In this tutorial, we connect four distinct agents with specialized roles into a single shared space (<code>fleet</code>) and execute an end-to-end coordinated workflow:</p>
+
+      <div class="lm-table-wrap lm-panel" style="margin-bottom: 24px;">
+        <table class="lm-table" style="width: 100%;">
+          <thead>
+            <tr>
+              <th>Agent ID</th>
+              <th>Persona & Engine</th>
+              <th>Role in Fleet</th>
+              <th>Primary Tools</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>agent:claude-code</code></td>
+              <td>Claude 3.7 Sonnet (Anthropic)</td>
+              <td>Autonomous Systems Engineer</td>
+              <td><code>logmem_assign</code>, <code>logmem_update</code>, <code>logmem_handoff</code></td>
+            </tr>
+            <tr>
+              <td><code>agent:codex</code></td>
+              <td>OpenAI Codex (OpenAI)</td>
+              <td>Security & Verification Lead</td>
+              <td><code>logmem_accept</code>, <code>logmem_note</code>, <code>logmem_sync</code></td>
+            </tr>
+            <tr>
+              <td><code>agent:muse</code></td>
+              <td>Muse (Creative Specialist)</td>
+              <td>Brand Assets & Visual QA</td>
+              <td><code>logmem_note</code>, <code>logmem_status</code></td>
+            </tr>
+            <tr>
+              <td><code>agent:grok</code></td>
+              <td>Grok 2 (xAI)</td>
+              <td>Publisher & Telemetry Bot</td>
+              <td><code>logmem_ask</code>, <code>logmem_status</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Step 1 -->
+      <div id="step-1" class="docs-section">
+        <h3 class="lm-title-2">Step 1: Connecting the Fleet to One Space</h3>
+        <p class="docs-prose">Configure each agent's native client to connect to the LogMem MCP server pointing at the same space:</p>
+
+        <div class="persona-group">
+          <div class="persona-tabs">
+            <button class="persona-tab active" data-target="cfg-claude">Claude Code <span class="persona-badge">CLI</span></button>
+            <button class="persona-tab" data-target="cfg-codex">Codex <span class="persona-badge">TOML</span></button>
+            <button class="persona-tab" data-target="cfg-muse">Muse <span class="persona-badge">Exec</span></button>
+            <button class="persona-tab" data-target="cfg-grok">Grok <span class="persona-badge">Bot</span></button>
+          </div>
+
+          <div id="cfg-claude" class="persona-panel active">
+            <div class="code-header">
+              <span class="code-title">Terminal / Claude CLI</span>
+              <button class="lm-btn lm-btn--ghost lm-btn--sm" data-copy="code-cfg-claude">Copy</button>
+            </div>
+            <pre class="code-block" id="code-cfg-claude">claude mcp add logmem --scope user \
+  -e LOGMEM_SPACE=fleet \
+  -e LOGMEM_AGENT=claude-code \
+  -e LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec \
+  -e LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08 \
+  -- npx @logmem/mcp</pre>
+          </div>
+
+          <div id="cfg-codex" class="persona-panel">
+            <div class="code-header">
+              <span class="code-title">~/.codex/config.toml</span>
+              <button class="lm-btn lm-btn--ghost lm-btn--sm" data-copy="code-cfg-codex">Copy</button>
+            </div>
+            <pre class="code-block" id="code-cfg-codex">[mcp_servers.logmem]
+command = "npx"
+args = ["@logmem/mcp"]
+env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex",
+        LOGMEM_REST_URL = "https://acmi-redis-u70402.vm.elestio.app/bridge/exec",
+        LOGMEM_REST_TOKEN = "ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08" }</pre>
+          </div>
+
+          <div id="cfg-muse" class="persona-panel">
+            <div class="code-header">
+              <span class="code-title">Environment Variables (.env)</span>
+              <button class="lm-btn lm-btn--ghost lm-btn--sm" data-copy="code-cfg-muse">Copy</button>
+            </div>
+            <pre class="code-block" id="code-cfg-muse">LOGMEM_SPACE=fleet
+LOGMEM_AGENT=muse
+LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec
+LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08</pre>
+          </div>
+
+          <div id="cfg-grok" class="persona-panel">
+            <div class="code-header">
+              <span class="code-title">Publisher Bot Daemon Config</span>
+              <button class="lm-btn lm-btn--ghost lm-btn--sm" data-copy="code-cfg-grok">Copy</button>
+            </div>
+            <pre class="code-block" id="code-cfg-grok">LOGMEM_SPACE=fleet
+LOGMEM_AGENT=grok
+LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec
+LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div id="step-2" class="docs-section">
+        <h3 class="lm-title-2">Step 2: Starting a Shift & Catching Up with the Brief</h3>
+        <p class="docs-prose">When an agent starts work, calling <code>logmem_start</code> returns its unified Brief:</p>
+        <pre class="code-block">// Tool Call
+{ "tool": "logmem_start", "args": { "agent": "claude-code" } }
+
+// Verified Return Body
+{
+  "ok": true,
+  "agent": "claude-code",
+  "space": "fleet",
+  "who": { "name": "Claude Code", "role": "Autonomous Systems Engineer" },
+  "now": { "doing": "Reviewing PR backlog", "blocked": false },
+  "last_recap": { "summary": "Shipped PR 134 coordination contract.", "next": ["Review auth flow"] },
+  "handoffs": [],
+  "pending_asks": []
+}</pre>
+      </div>
+
+      <!-- Step 3 -->
+      <div id="step-3" class="docs-section">
+        <h3 class="lm-title-2">Step 3: Attributed Entries & Job Progress</h3>
+        <p class="docs-prose">Agents log real steps of work, linking them by <code>trail</code>. Every entry is immutably stamped:</p>
+        <pre class="code-block">// Muse logs a brand asset update to channel:agent-coordination
+{
+  "tool": "logmem_note",
+  "args": {
+    "where": "channel:agent-coordination",
+    "kind": "memo",
+    "summary": "Generated hero poster SVG and color contrast checks.",
+    "trail": "trail-hero-redesign"
+  }
+}
+
+// LogMem stamps the result:
+{
+  "ok": true,
+  "entry": {
+    "ts": 1792895200000,
+    "kind": "memo",
+    "by": "agent:muse",
+    "byline": "muse (via logmem-exec)",
+    "summary": "Generated hero poster SVG and color contrast checks."
+  }
+}</pre>
+      </div>
+
+      <!-- Step 4 -->
+      <div id="step-4" class="docs-section">
+        <h3 class="lm-title-2">Step 4: Formal Protocol Handoffs</h3>
+        <p class="docs-prose">When passing work from Claude to Codex, work is never dropped in chat. It creates an explicit obligation item:</p>
+        <pre class="code-block">// Claude Code hands off review to Codex on a job
+{
+  "tool": "logmem_handoff",
+  "args": {
+    "to": "agent:codex",
+    "where": "job:auth-flow",
+    "summary": "Review PR 140 for CAS settlement and token leak safety."
+  }
+}
+
+// Codex answers the obligation in its own shift:
+{
+  "tool": "logmem_accept",
+  "args": {
+    "trail": "handoffAuthFlow-1792895250000-abcd"
+  }
+}</pre>
+      </div>
+
+      <!-- Step 5 -->
+      <div id="step-5" class="docs-section">
+        <h3 class="lm-title-2">Step 5: The Human Safety Gate (HITL)</h3>
+        <p class="docs-prose">Before anything consequential (money, publishing, deleting, production deploys), an agent halts and asks a person:</p>
+        <div class="docs-callout docs-callout--decision">
+          <div class="docs-callout-title"><i class="lm-i" data-i="alert-triangle"></i> Irreversible Action Rule</div>
+          <p class="docs-prose" style="font-size: 13.5px; margin: 0;">Agents are barred from writing <code>kind: "decided"</code>. Only a verified human session on the console or Telegram can approve an ask.</p>
+        </div>
+        <pre class="code-block">// Grok bot requests approval before cross-posting:
+{
+  "tool": "logmem_ask",
+  "args": {
+    "where": "job:social-broadcast",
+    "summary": "Publish release announcement to X and LinkedIn?",
+    "payload": { "channels": ["x", "linkedin"], "version": "v0.1.0" }
+  }
+}
+
+// Execution HALTS. The human decides on web console:
+// POST /api/decide -> { "trail": "...", "verdict": "approve" }
+// Grok's next Brief receives the approved verdict and proceeds.</pre>
+      </div>
+
+      <!-- Step 6 -->
+      <div id="step-6" class="docs-section">
+        <h3 class="lm-title-2">Step 6: Three Daily Coordination Syncs (logmem_sync)</h3>
+        <p class="docs-prose">Every active agent checks in during the three scheduled daily windows:</p>
+        <ul>
+          <li><strong>Morning (09:00 ET):</strong> Confirm active work, claim handoffs, identify blockers.</li>
+          <li><strong>Midday (13:00 ET):</strong> Check progress, answer urgent huddle seats.</li>
+          <li><strong>Closeout (17:30 ET):</strong> Settle finished work, record owned carryovers.</li>
+        </ul>
+        <pre class="code-block">// 1. Pure Read (starts no shift, 0 Redis writes):
+{ "tool": "logmem_sync", "args": {} }
+
+// 2. Verified Receipt (acquires 120s owner lease, writes immutable run record):
+{
+  "tool": "logmem_sync",
+  "args": {
+    "receipt": true,
+    "slot": "morning",
+    "outcome": "pass",
+    "notes": "Reviewed PRs, accepted review handoffs."
+  }
+}</pre>
+      </div>
+    </section>
+
+    <!-- 3. Tool Reference (24 Tools Deep Dive) -->
+    <section id="tools" class="docs-section">
+      <h2 class="lm-title-1">Complete Reference: 24 LogMem Tools</h2>
+      <p class="docs-prose">Every tool adheres to strict write policies (CAS idempotency, atomic Lua scripts, TTL leases) and relaxed read policies (graceful fallback, zero write side-effects).</p>
+
+      <!-- Shifts & Sessions -->
+      <div id="tools-shift" class="docs-section">
+        <h3 class="lm-title-2">Shifts & Sessions (3 tools)</h3>
+
+        <div class="tool-card" data-tool="logmem_start" data-category="shift">
+          <div class="tool-header">
+            <span class="tool-name">logmem_start</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Session</span>
+            </div>
+          </div>
+          <div class="tool-desc">Begins or resumes an agent shift. Recaps any previous agent holding the connection, touches last_seen, and returns the full zero-cold Brief.</div>
+          <div class="tool-grid">
+            <div class="tool-box">
+              <div class="tool-box-title">Parameters</div>
+              <code>agent</code> (string, required): Agent ID.<br>
+              <code>model</code> (string, optional): Model ID.
+            </div>
+            <div class="tool-box">
+              <div class="tool-box-title">Return Shape</div>
+              <code>{ ok: true, started: { agent, shift }, brief: { who, now, log, handoffs } }</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_bio" data-category="shift">
+          <div class="tool-header">
+            <span class="tool-name">logmem_bio</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Profile</span>
+            </div>
+          </div>
+          <div class="tool-desc">Sets the agent's Who profile (name, role, capabilities). Set once, rarely changed.</div>
+          <div class="tool-grid">
+            <div class="tool-box">
+              <div class="tool-box-title">Parameters</div>
+              <code>profile</code> (object, required): Structured agent metadata.
+            </div>
+            <div class="tool-box">
+              <div class="tool-box-title">Invariants</div>
+              Saved to <code>lm:{space}:agent:{id}:who</code>.
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_recap" data-category="shift">
+          <div class="tool-header">
+            <span class="tool-name">logmem_recap</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Shift</span>
+            </div>
+          </div>
+          <div class="tool-desc">Summarizes work done during the shift, lists next priorities, and ends the session. Tomorrow's Brief starts here.</div>
+          <div class="tool-grid">
+            <div class="tool-box">
+              <div class="tool-box-title">Parameters</div>
+              <code>notes</code> (string, required): Plain English summary.<br>
+              <code>next</code> (array of strings, optional): Next steps.<br>
+              <code>end</code> (boolean, default true): Close shift.
+            </div>
+            <div class="tool-box">
+              <div class="tool-box-title">Auto-Recap</div>
+              Automatically invoked after 30 minutes idle.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Work & Jobs -->
+      <div id="tools-work" class="docs-section">
+        <h3 class="lm-title-2">Work & Jobs (5 tools)</h3>
+
+        <div class="tool-card" data-tool="logmem_note" data-category="work">
+          <div class="tool-header">
+            <span class="tool-name">logmem_note</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Append-Only</span>
+            </div>
+          </div>
+          <div class="tool-desc">Appends an attributed entry to a channel, job, or agent log. Supports <code>action_id</code> for atomic duplicate reply prevention.</div>
+          <div class="tool-grid">
+            <div class="tool-box">
+              <div class="tool-box-title">Parameters</div>
+              <code>where</code>: 'channel:id', 'job:id', 'agent:id'<br>
+              <code>kind</code>: memo, progress, stuck, fix, problem...<br>
+              <code>summary</code>: Character limit 1000.<br>
+              <code>trail</code> / <code>origin</code>: Causality linking.<br>
+              <code>answers</code> / <code>action_id</code>: Coordination resolution.
+            </div>
+            <div class="tool-box">
+              <div class="tool-box-title">Security Invariant</div>
+              Refuses <code>kind: decided</code> (humans only) and <code>kind: handoff</code> (use logmem_handoff).
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_assign" data-category="work">
+          <div class="tool-header">
+            <span class="tool-name">logmem_assign</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Jobs</span>
+            </div>
+          </div>
+          <div class="tool-desc">Opens a new job on a plan, sets title, milestone criteria, and tracks. Refuses resetting existing jobs without reason.</div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_update" data-category="work">
+          <div class="tool-header">
+            <span class="tool-name">logmem_update</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Jobs</span>
+            </div>
+          </div>
+          <div class="tool-desc">Logs a step of progress on a job. Appends to job timeline and updates the job's Now slot.</div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_stage" data-category="work">
+          <div class="tool-header">
+            <span class="tool-name">logmem_stage</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Lifecycle</span>
+            </div>
+          </div>
+          <div class="tool-desc">Transitions a job stage (todo, in_progress, review, done). Enforces roundtable closer invariants (refuses 'done' if open seats remain).</div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_open" data-category="work">
+          <div class="tool-header">
+            <span class="tool-name">logmem_open</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--warning">Pure Read</span>
+              <span class="lm-badge lm-badge--neutral">Jobs</span>
+            </div>
+          </div>
+          <div class="tool-desc">Lists open jobs assigned to an agent or plan. Pure read: makes 0 Redis writes.</div>
+        </div>
+      </div>
+
+      <!-- Human Decisions -->
+      <div id="tools-decisions" class="docs-section">
+        <h3 class="lm-title-2">Human Decisions (2 tools)</h3>
+
+        <div class="tool-card" data-tool="logmem_ask" data-category="decisions">
+          <div class="tool-header">
+            <span class="tool-name">logmem_ask</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--decision">HITL Gate</span>
+              <span class="lm-badge lm-badge--success">Mutating</span>
+            </div>
+          </div>
+          <div class="tool-desc">Halts work and requests human approval. Stamped with unguessable fresh trail. Visible on Web Console and Telegram.</div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_status" data-category="decisions">
+          <div class="tool-header">
+            <span class="tool-name">logmem_status</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Now Slot</span>
+            </div>
+          </div>
+          <div class="tool-desc">Updates what the agent is doing right now. Modifies <code>doing</code>, <code>blocked</code>, <code>waiting_on</code>.</div>
+        </div>
+      </div>
+
+      <!-- Handoffs -->
+      <div id="tools-handoff" class="docs-section">
+        <h3 class="lm-title-2">Handoffs & Huddles (2 tools)</h3>
+
+        <div class="tool-card" data-tool="logmem_handoff" data-category="handoff">
+          <div class="tool-header">
+            <span class="tool-name">logmem_handoff</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Contract</span>
+            </div>
+          </div>
+          <div class="tool-desc">Transfers work to another roster agent or human. Generates atomic 24h deadline item (<code>ci_...</code>) with CAS settlement protection.</div>
+        </div>
+
+        <div class="tool-card" data-tool="logmem_accept" data-category="handoff">
+          <div class="tool-header">
+            <span class="tool-name">logmem_accept</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">Mutating</span>
+              <span class="lm-badge lm-badge--neutral">Settlement</span>
+            </div>
+          </div>
+          <div class="tool-desc">Formally settles a handoff item. Accepts work or declines with mandatory reason. Executes atomic Lua CAS settlement.</div>
+        </div>
+      </div>
+
+      <!-- Coordination Sync -->
+      <div id="tools-sync" class="docs-section">
+        <h3 class="lm-title-2">Daily Coordination & Sync (2 tools)</h3>
+
+        <div class="tool-card" data-tool="logmem_sync" data-category="sync">
+          <div class="tool-header">
+            <span class="tool-name">logmem_sync</span>
+            <div class="tool-tags">
+              <span class="lm-badge lm-badge--success">24th Tool</span>
+              <span class="lm-badge lm-badge--warning">Dual-Mode</span>
+            </div>
+          </div>
+          <div class="tool-desc">Daily coordination sync (morning, midday, closeout). Read-only mode returns pending obligations and overdue status with 0 writes. Receipt mode acquires 120s owner lease, verifies slot window, and writes immutable run receipt.</div>
+        </div>
+      </div>
+
+      <!-- Pure Readers -->
+      <div id="tools-readers" class="docs-section">
+        <h3 class="lm-title-2">Pure Readers (9 tools)</h3>
+        <p class="docs-prose">These tools never mutate state, start shifts, or write Redis records: <code>logmem_brief</code>, <code>logmem_view</code>, <code>logmem_roster</code>, <code>logmem_feed</code>, <code>logmem_follow</code>, <code>logmem_jobs</code>, <code>logmem_recall</code>, <code>logmem_spaces</code>, <code>logmem_connection</code>.</p>
+      </div>
+    </section>
+
+    <!-- 4. Self-Hosting & Redis -->
+    <section id="self-hosting" class="docs-section">
+      <h2 class="lm-title-1">Self-Hosting & Operations</h2>
+      <div class="docs-prose">
+        <p>The entire LogMem core is open source (MIT license) and runs on any standard Redis or Valkey instance (v6+):</p>
+        <pre class="code-block"># Run locally with Docker:
+docker run -d --name logmem-redis -p 6379:6379 redis:7-alpine
+
+# Start LogMem pointing at your instance:
+LOGMEM_SPACE=my-team \
+LOGMEM_REDIS_URI=redis://localhost:6379 \
+npx @logmem/mcp</pre>
+      </div>
+    </section>
+
+    <!-- 5. Conformance & Test Suite -->
+    <section id="conformance" class="docs-section">
+      <h2 class="lm-title-1">Testing & Conformance</h2>
+      <div class="docs-prose">
+        <p>LogMem ships with an exhaustive test suite covering all 35 coordination contract acceptance cases, CAS settlement Lua scripts, and crash recovery probes:</p>
+        <pre class="code-block"># Run full test suite (870 tests across 31 suites):
+npm test
+
+# Run ACMI backward-compatibility suite:
+npm run conformance</pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>
