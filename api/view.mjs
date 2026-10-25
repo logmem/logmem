@@ -24,7 +24,7 @@ async function handler(req, res) {
     const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), {
       id: q.id, q: q.q, where: q.where, trail: q.trail, person,
       recipient: q.recipient, type: q.type, plan: q.plan,
-      overdue: bool(q.overdue), cursor: q.cursor, limit: q.limit,
+      overdue: bool(q.overdue), cursor: q.cursor, limit: q.limit, date: q.date,
     });
     res.status(200).json({ ok: true, space, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {

@@ -4,7 +4,7 @@ import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { live as liveDir } from '/vendor/lit-html-3.2.1/directives/live.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
 import { api, getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
-import { icon, agent, seenTag, fresh, stage, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
+import { icon, agent, seenTag, fresh, stage, decision, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
 import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink } from './cards.js';
 import { invite } from './actions.js';
 import { renderView } from './shell.js';
@@ -150,7 +150,7 @@ pages.agents = async () => {
   const d = await api('agents');
   if (!ok(d)) return;
   const liveN = d.agents.filter((a) => a.seen.state === 'active').length;
-  renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
+  renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="#/slots" class="lm-btn lm-btn--secondary">Daily slots</a><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
     <section class="lmx-capability-note"><strong>Run and schedule receipts are not connected yet.</strong><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits.</p></section><div class="lmx-grid">${keyed(d.agents, (a) => a.id, agentCard)}</div>`);
 };
 pages.agent = async (id) => {
@@ -197,6 +197,22 @@ pages.settings = async () => {
   renderView('settings', ['Settings'], html`${head('Settings', 'Connections and administration for this space.')}<div class="lmx-settings-links">${ADMIN.filter(n=>n[0]!=='settings').map(n=>html`<a class="lm-btn lm-btn--secondary" href=${n[3] || '#/'+n[0]}>${n[1]}</a>`)}${btn('Sign out', 'secondary', signOut)}</div>${panel('Space', kv({ space: d.space, keys: d.keys }))}
     ${panel('Storage', html`<div style="display:flex;flex-direction:column;gap:10px">${fresh('fresh', 'PING ' + d.ping_ms + ' ms')}<span style="font-size:13px" class="muted">Your Redis, over the deploy’s bridge connection.</span></div>`)}
     ${panel('ACMI compatibility', kv({ 'compatibility mode': d.compat ? 'on' : 'off', 'mirror to ACMI': d.mirror ? 'on for ' + d.mirror_spaces.join(', ') : 'off' }))}`);
+};
+// ─── Daily slots: who ran their scheduled shifts, by day ───
+const SLOT_STATE = { pass: ['completed', 'Pass'], partial: ['in-progress', 'Partial'], failed: ['failed', 'Failed'], missed: ['blocked', 'Missed'], pending: ['pending', 'Pending'], disabled: ['deferred', 'Disabled'] };
+const SLOT_ORDER = ['morning', 'midday', 'closeout'];
+const slotCell = (cell) => {
+  const [ic, label] = SLOT_STATE[cell?.state] || ['unknown', cell?.state || 'Unknown'];
+  const n = (cell?.attempts || []).length;
+  return html`<td>${decision(ic, label)}${n ? html` <span class="muted mono" style="font-size:12px">${n} ${n === 1 ? 'run' : 'runs'}</span>` : nothing}</td>`;
+};
+pages.slots = async (date) => {
+  const d = await api('slots', date ? { date } : {});
+  if (!ok(d)) return;
+  const rows = (d.agents || []).map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td>${SLOT_ORDER.map((s) => slotCell(a.slots && a.slots[s]))}</tr>`);
+  renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Who ran their scheduled shifts, by day. A slot reads Pass only on a verified receipt; an empty slot past its window reads Missed.')}
+    <div class="lmx-filters"><span class="lmx-meta">${d.date || ''} · ${(d.agents || []).length} agents · three scheduled runs a day</span><span class="lm-spacer"></span><a href="#/agents" class="lm-btn lm-btn--secondary">Agents</a></div>
+    ${rows.length ? table(['Agent', 'Morning', 'Midday', 'Closeout'], rows) : emptyState('No agents yet.', 'Slots appear once agents are in this space.')}`);
 };
 pages.audit = async () => {
   const d = await api('audit');

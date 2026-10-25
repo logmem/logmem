@@ -9,7 +9,7 @@ import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
 
 export const NAV = [['home', 'Today', 'overview'], ['work', 'Work', 'work'], ['agents', 'Agents', 'agents'], ['activity', 'Activity', 'timeline']];
 export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
-const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home' };
+const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
 export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting…', paused: 'Updates paused' };
 
 // lit-html adds to a container; the first render clears the static "Loading…" placeholder.
