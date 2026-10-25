@@ -368,11 +368,18 @@ export async function getAgentSlotsView(store, space, agent, date, nowTs = Date.
     // Evaluate state: pass (verified receipt), partial, failed, missed, disabled, etc.
     let state = "unknown";
     if (attempts.length === 0) {
-      // If time has passed the slot window and no attempts made, marked missed
+      // Compare the requested local day before checking today's slot windows.
+      const today = getLocalSlotDate(nowTs);
       const currentSlot = getSlotForTime(nowTs);
-      const isPast =
+      const hour = Number(new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York", hour: "numeric", hourCycle: "h23",
+      }).format(new Date(nowTs)));
+      const afterCloseout = currentSlot === "manual" && hour >= 22;
+      const isPast = localDate < today || (localDate === today && (
+        afterCloseout ||
         (s === "morning" && (currentSlot === "midday" || currentSlot === "closeout")) ||
-        (s === "midday" && currentSlot === "closeout");
+        (s === "midday" && currentSlot === "closeout")
+      ));
       state = isPast ? "missed" : "pending";
     } else {
       const last = attempts[attempts.length - 1];

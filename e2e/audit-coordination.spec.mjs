@@ -35,3 +35,15 @@ test('audit marks missing daily receipts as unknown coverage',async({page})=>{
  await expect(page.getByText('No daily run records were returned.',{exact:true})).toBeVisible();
  await expect(page.getByText('Schedule coverage is unknown.',{exact:false})).toBeVisible();
 });
+test('daily slots lets a person select a date and reach Audit',async({page})=>{
+ await page.route('**/api/view?*',async route=>{
+  const u=new URL(route.request().url());if(u.searchParams.get('what')!=='slots')return route.fallback();
+  await route.fulfill({json:{ok:true,space:'fieldnotes',spaces:['fieldnotes'],date:u.searchParams.get('date')||'2026-10-24',agents:[]}});
+ });
+ await page.request.post('/api/login',{data:{password:'e2e-only-password'}});await page.goto('/app#/slots');
+ await page.getByLabel('Run date').fill('2026-10-23');await page.getByLabel('Run date').press('Tab');
+ await expect(page).toHaveURL(/#\/slots\/2026-10-23$/);
+ await expect(page.getByLabel('Run date')).toHaveValue('2026-10-23');
+ await expect(page.getByText('Receipts do not prove an active runner or a configured schedule.',{exact:true})).toBeVisible();
+ await expect(page.getByRole('link',{name:'Coordination audit',exact:true})).toHaveAttribute('href','#/audit');
+});
