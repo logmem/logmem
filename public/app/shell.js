@@ -6,10 +6,11 @@ import { icon } from './ui.js';
 import { openDrawer } from './drawer.js';
 import { openSearch } from './search.js';
 import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
+import { THEMES, readTheme, writeTheme } from './theme.js';
 
-export const NAV = [['home', 'Today', 'overview'], ['work', 'Work', 'work'], ['agents', 'Agents', 'agents'], ['activity', 'Activity', 'timeline']];
-export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
-const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home' };
+export const NAV = [['home', 'Today', 'overview'], ['queue', 'Inbox', 'handoff'], ['work', 'Work', 'work'], ['agents', 'Team', 'agents'], ['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye']];
+export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['activity', 'Activity', 'timeline', '#/activity'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
+const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
 export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting…', paused: 'Updates paused' };
 
 // lit-html adds to a container; the first render clears the static "Loading…" placeholder.
@@ -27,10 +28,15 @@ const workspaceSelect=()=>html`<select class="lm-select" aria-label="Workspace" 
 const headSpace = () => state.customer?html`<div class="lmx-headspace lmx-account-switch-head">${workspaceSelect()}<select class="lm-select" aria-label="Space" @change=${e=>onSpace(e.target.value)}>${spaceOptions()}</select></div>`:state.spaces.length > 1 ? html`<select class="lm-select lmx-headspace" aria-label="Space" @change=${(e) => onSpace(e.target.value)}>${spaceOptions()}</select>` : nothing;
 
 function navItem(n, route) {
-  const cur = n[0] === (['queue','discussion'].includes(route)?'work':ROUTE_NAV[route] || route);
+  const cur = n[0] === (route === 'discussion' ? 'queue' : ROUTE_NAV[route] || route);
   return html`<a href=${n[3] || '#/' + n[0]} class="lm-nav-item" aria-current=${cur ? 'page' : nothing} style=${cur ? 'background:var(--brand-subtle);color:var(--brand)' : ''} title=${n[1]}>${icon(n[2])}<span>${n[1]}</span></a>`;
 }
 const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
+const themePicker = () => html`<label class="lmx-theme-picker"><span>Theme</span><select class="lm-select" aria-label="Theme" @change=${e=>{writeTheme(e.target.value);refreshFrame();}}>${THEMES.map(t=>html`<option value=${t} ?selected=${(document.documentElement.dataset.appTheme||readTheme())===t}>${t[0].toUpperCase()+t.slice(1)}</option>`)}</select></label>`;
+function assistant(route) {
+  const context = route === 'queue' || route === 'discussion' ? 'Coordination inbox' : route === 'health' || route === 'audit' ? 'Workspace health' : route === 'job' ? 'Selected work' : 'Current space';
+  return html`<aside class="lmx-assistant" aria-label="Workspace assistant"><h2>${icon('recall')}Workspace assistant</h2><p class="lmx-assistant-context">${context} · ${state.space}</p><div class="lmx-assistant-card"><span class="lm-eyebrow">Start with the source</span><h3>Keep the next step clear.</h3><p>Review unanswered requests, check ownership and open the original discussion before changing work.</p><a class="lm-btn lm-btn--primary" href="#/queue">Review your inbox</a></div><div class="lmx-assistant-links"><a href="#/knowledge">Find decisions and shared context</a><a href="#/health">Check receipts and coverage</a><a href="#/activity">Read source activity</a></div><div class="lmx-assistant-card"><h3>AI execution is not connected.</h3><p>These links use your existing workspace. No model calls or agent runs start when you open this page.</p><a href=${state.customer?'#/account':'/connections'}>Manage connections</a></div></aside>`;
+}
 const banner = () => live.storageDown ? html`<div class="lm-alert lm-alert--danger lmx-banner" role="alert">${icon('alert')}<div><strong>LogMem can’t reach its storage.</strong> What you see may be out of date, and nothing you do will save until it is back. The app keeps trying.</div></div>` : nothing;
 
 function frame(route, crumbs, body) {
@@ -45,11 +51,11 @@ function frame(route, crumbs, body) {
       ${NAV.map((n) => navItem(n, route))}
       <div class="lm-rail-foot" style="margin-top:auto">${navItem(ADMIN[0], route)}${demo ? html`<span class="lm-badge lm-badge--warning lmx-railtext">Sample space</span>` : html`<span style="font-size:12px" class="subtle lmx-railtext">Workspace</span>`}<button type="button" class="lm-btn lm-btn--ghost lmx-railtext" @click=${onSignOut} style="justify-content:flex-start">Sign out</button></div></nav>
     <div class="lmx-col"><header class="lmx-head"><ol class="lm-crumbs">${crumbs.map((c, i) => html`${i ? html`<li aria-hidden="true">/</li>` : nothing}<li aria-current=${i === crumbs.length - 1 ? 'page' : nothing} style=${i === crumbs.length - 1 ? 'color:var(--text)' : ''}>${c}</li>`)}</ol>
-      ${headSpace()}${demo?html`<span class="lm-badge lm-badge--warning">Contains sample content</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
+      ${headSpace()}${themePicker()}${demo?html`<span class="lm-badge lm-badge--warning">Contains sample content</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
-      <main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main></div>
-    <nav class="lmx-tabs" aria-label="LogMem">${tab('home', 'Today', 'overview')}${tab('work', 'Work', 'work')}${tab('agents', 'Agents', 'agents')}${tab('activity', 'Activity', 'timeline')}</nav></div>`;
+      <div class="lmx-workarea"><main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main>${assistant(route)}</div></div>
+    <nav class="lmx-tabs" aria-label="LogMem">${NAV.map(n=>tab(n[0],n[1],n[2]))}</nav></div>`;
 }
 
 let last = { route: null, crumbs: [], body: nothing };

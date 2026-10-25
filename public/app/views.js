@@ -4,13 +4,13 @@ import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { live as liveDir } from '/vendor/lit-html-3.2.1/directives/live.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
 import { api, getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
-import { icon, agent, seenTag, fresh, stage, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
-import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink } from './cards.js';
+import { icon, agent, seenTag, fresh, stage, decision, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
+import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink, askCard } from './cards.js';
 import { invite } from './actions.js';
 import { renderView } from './shell.js';
 import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN, signOut } from './shell.js';
-import { briefFor, prioritizeWork, workFilterKey, groupUpdates } from './dashboard-model.js';
+import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 
 import {queuePage} from './interactions.js';
@@ -38,18 +38,20 @@ pages.home = async () => {
     ${btn(i.type === 'decision' ? 'Review decision' : i.type === 'task' ? 'Review task' : 'Review evidence', 'primary', () => i.job ? openDrawer('job', i.job) : openDrawer('needs', 'all'))}</article>`;
   renderView('home', ['Today'], html`
     <div class="lmx-today-heading"><div><span class="lm-eyebrow">Your workspace · ${state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name:state.space}</span><h1>${heading}</h1><p>Decide what needs you. Keep the next step in view.</p></div>
-      <a class="lm-btn lm-btn--secondary" href="#/audit">Coordination audit</a></div>
+      <a class="lm-btn lm-btn--secondary" href="#/queue">Open Inbox</a></div>
+    <div class="lmx-cockpit-metrics" aria-label="Workspace snapshot">${[[b.decisions, 'Decisions for you', '#/knowledge'], [b.tasks, 'Tasks for you', '#/blockers'], [b.blocked, 'Blocked work', '#/work'], [b.done + ' / ' + b.total, 'Work completed', '#/work']].map(([value, label, href]) => html`<a class="lmx-card" href=${href}><span class="lmx-meta">${label}</span><strong>${value == null ? 'Unknown' : value}</strong></a>`)}</div>
     <section class="lmx-brief" aria-label="Your brief"><div><span class="lm-eyebrow">Your brief</span>
       <p>${b.decisions == null ? 'Decision count is unavailable.' : `${b.decisions} ${b.decisions === 1 ? 'decision' : 'decisions'} and ${b.tasks} ${b.tasks === 1 ? 'task' : 'tasks'} for you to review.`}
       ${b.blocked} ${b.blocked === 1 ? 'job is' : 'jobs are'} waiting. ${b.done} of ${b.total} work items are done.</p>
       <button type="button" class="lm-btn lm-btn--ghost" @click=${()=>document.getElementById('today-updates')?.scrollIntoView()}>Read the source updates ↓</button></div><span class="lmx-meta">Updated ${d.generated_at ? ago(d.generated_at) : 'on this read'} · partial coverage</span></section>
-    <details class="lmx-coverage"><summary>What this view covers</summary><p>The full unanswered coordination queue is not available here yet. Counts describe the records this view read.</p>
+    <details class="lmx-coverage"><summary>What this view covers</summary><p>This summary reads a bounded set of records. Open Inbox for unanswered coordination and Health for receipt coverage. Counts describe this view only.</p>
       ${(d.coverage?.notes || []).map(n => html`<p>${n}</p>`)}${(d.coverage?.errors || []).map(e => html`<p role="alert">${e.source}: ${e.message}</p>`)}</details>
     <div class="lmx-today-grid"><div class="lmx-stack">
       <section><h2 class="lmx-section-title">Needs your attention <span>${needs.length}</span></h2><div class="lmx-attention-grid">${needs.length ? keyed(needs, i => state.space + ':' + i.type + ':' + i.trail, attention) : emptyState('No personal requests were returned.', 'The coordination backlog may contain other unanswered requests. See coverage above.')}</div></section>
       <section><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-stack">${waits.length ? keyed(waits, j => j.id, j => jobCard(j, {route:'home'})) : emptyState('No other blocked jobs were returned.', 'This is not a complete handoff backlog.')}</div></section>
       <section id="today-updates"><h2 class="lmx-section-title">Recent job updates</h2><div class="lmx-card lmx-update-list">${groupUpdates(d.recent || []).groups.slice(0,6).map(g => g.entries[0]).map(e => html`<div class="lmx-update"><div class="lmx-meta">${hhmm(e.ts)} · ${agentName(e.by)} · ${e.kind}</div><p>${e.summary}</p><a href=${'#/job/' + encodeURIComponent(e.where.replace(/^job:/,''))}>Open work →</a></div>`)}${!d.recent?.length ? html`<p class="lmx-meta">No recent job updates were returned. See coverage above.</p>` : nothing}</div><a href="#/activity" class="lmx-text-link">View Activity →</a></section>
     </div><aside class="lmx-stack"><section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(d.plans, p => p.id, p => planCard(p, 'home'))}</div><a href="#/work" class="lmx-text-link">Open all work →</a></section>
+      <section class="lmx-card"><h3>Keep work moving</h3><p class="lmx-why">Review unanswered requests, check shared decisions, or inspect missing receipts.</p><div class="lmx-cockpit-links"><a href="#/queue">Open Inbox →</a><a href="#/knowledge">Shared knowledge →</a><a href="#/health">Workspace health →</a></div></section>
       <section class="lmx-card"><h3>Your team</h3><p class="lmx-why">${d.agents.length} agents have records in this space. Recent entries show reporting activity, not whether an agent is running.</p><a href="#/agents" class="lmx-text-link">Review agents →</a></section></aside></div>`);
 };
 pages.overview = pages.home;
@@ -150,7 +152,7 @@ pages.agents = async () => {
   const d = await api('agents');
   if (!ok(d)) return;
   const liveN = d.agents.filter((a) => a.seen.state === 'active').length;
-  renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
+  renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="#/slots" class="lm-btn lm-btn--secondary">Daily slots</a><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
     <section class="lmx-capability-note"><strong>Run and schedule receipts are not connected yet.</strong><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits.</p></section><div class="lmx-grid">${keyed(d.agents, (a) => a.id, agentCard)}</div>`);
 };
 pages.agent = async (id) => {
@@ -190,6 +192,22 @@ pages.recall = async (q) => {
 };
 pages.channels = async (id) => { filt('log').where = id ? 'channel:' + id : 'channel'; saveFilt(); return pages.log(); };
 
+// Knowledge keeps decisions and discussions attached to their existing sources.
+pages.knowledge = async () => {
+  const [d, c] = await Promise.all([api('decisions'), api('channels')]);
+  if (!ok(d) || !ok(c)) return;
+  const waiting = d.waiting || [], decided = d.decided || [];
+  renderView('knowledge', ['Knowledge'], html`${head('Knowledge', 'Find the reason behind the work. Decisions and discussions stay linked to their sources.')}
+    <div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" href="#/activity">Browse Activity</a><a class="lm-btn lm-btn--secondary" href="#/lanes">Plans and milestones</a><a class="lm-btn lm-btn--secondary" href="#/recall">Search shared memory</a></div>
+    <p class="lmx-meta">Decisions come from a bounded source window. An empty result does not prove there are no older decisions.</p>
+    <section class="lmx-stack" aria-label="Waiting decisions"><h2 class="lmx-section-title">Waiting decisions <span>${waiting.length}</span></h2>
+      ${waiting.length ? keyed(waiting, a => a.trail, a => canAnswerDecision(a, {person:d.person,canApprove:!state.customer||Boolean(d.permissions?.approve)}) ? askCard(a) : html`<article class="lmx-card"><h3>${a.summary}</h3><p class="lmx-meta">${a.to ? 'Requested from '+agentName(a.to) : 'Approval permission required'}. This request is read-only here.</p><p>${a.payload?.action || 'Open the source for details.'}</p><a href=${'#/discussion/decision/'+encodeURIComponent(a.trail)}>Source comments</a></article>`) : emptyState('No waiting decisions were returned.', 'Open Inbox for other requests and coordination.')}</section>
+    <section class="lmx-stack" aria-label="Decision history"><h2 class="lmx-section-title">Decision history <span>${decided.length}</span></h2>
+      ${decided.length ? decided.map(({ask:a, answer}) => html`<article class="lmx-card"><h3>${a.summary}</h3><div class="lmx-meta">${agentName(answer.by)} · ${answer.ts ? ago(answer.ts) : 'Timestamp unavailable'}</div>${entries([answer])}<a href=${'#/discussion/decision/'+encodeURIComponent(a.trail)}>Source comments</a></article>`) : emptyState('No settled decisions were returned.', 'Settled decisions appear when a verified answer matches the original request.')}</section>
+    <section class="lmx-stack" aria-label="Shared discussions"><h2 class="lmx-section-title">Shared discussions</h2>
+      ${(c.channels || []).length ? (c.channels || []).map(ch => html`<article class="lmx-card"><h3><a href=${'#/channels/'+encodeURIComponent(ch.id)}>${ch.id}</a></h3><p>${ch.last?.summary || 'No recent entry was returned.'}</p><div class="lmx-meta">${ch.last?.by ? agentName(ch.last.by) : 'Author unavailable'}${ch.last?.ts ? ' · '+ago(ch.last.ts) : ''}</div><a href=${'#/channels/'+encodeURIComponent(ch.id)}>Read source entries →</a></article>`) : emptyState('No discussion channels were returned.', 'Source discussions appear here when they exist in this space.')}</section>`);
+};
+
 // ─── Admin pages ─────────────────────────────────────────────────────
 pages.settings = async () => {
   const d = await api('settings');
@@ -198,17 +216,66 @@ pages.settings = async () => {
     ${panel('Storage', html`<div style="display:flex;flex-direction:column;gap:10px">${fresh('fresh', 'PING ' + d.ping_ms + ' ms')}<span style="font-size:13px" class="muted">Your Redis, over the deploy’s bridge connection.</span></div>`)}
     ${panel('ACMI compatibility', kv({ 'compatibility mode': d.compat ? 'on' : 'off', 'mirror to ACMI': d.mirror ? 'on for ' + d.mirror_spaces.join(', ') : 'off' }))}`);
 };
-pages.audit = async () => {
+// ─── Daily slots: who ran their scheduled shifts, by day ───
+const SLOT_STATE = { pass: ['completed', 'Pass'], partial: ['in-progress', 'Partial'], failed: ['failed', 'Failed'], missed: ['blocked', 'Missed'], pending: ['pending', 'Pending'], disabled: ['deferred', 'Disabled'] };
+const SLOT_ORDER = ['morning', 'midday', 'closeout'];
+const slotCell = (cell) => {
+  const [ic, label] = SLOT_STATE[cell?.state] || ['unknown', cell?.state || 'Unknown'];
+  const n = (cell?.attempts || []).length;
+  return html`<td>${decision(ic, label)}${n ? html` <span class="muted mono" style="font-size:12px">${n} ${n === 1 ? 'run' : 'runs'}</span>` : nothing}</td>`;
+};
+pages.slots = async (date) => {
+  const d = await api('slots', date ? { date } : {});
+  if (!ok(d)) return;
+  const rows = (d.agents || []).map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td>${SLOT_ORDER.map((s) => slotCell(a.slots && a.slots[s]))}</tr>`);
+  renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Review coordination receipts by day. An empty slot past its window reads Missed.')}
+    <div class="lmx-filters"><label>Run date <input type="date" class="lm-input" .value=${d.date || ''} @change=${(e) => { if (e.target.value && e.target.validity.valid) location.hash = '#/slots/' + encodeURIComponent(e.target.value); }}></label><span class="lmx-meta">${(d.agents || []).length} agents · America/New_York</span><span class="lm-spacer"></span><a href="#/audit" class="lm-btn lm-btn--secondary">Coordination audit</a><a href="#/agents" class="lm-btn lm-btn--secondary">Agents</a></div>
+    <p class="muted">Receipts do not prove an active runner or a configured schedule.</p>
+    ${rows.length ? table(['Agent', 'Morning', 'Midday', 'Closeout'], rows) : emptyState('No agents yet.', 'Slots appear once agents are in this space.')}`);
+};
+async function auditPage(route = 'audit') {
   const d = await api('audit');
   if (!ok(d)) return;
   const g = d.gate || {}, last7 = (d.days || []).slice(-7);
   const strip = Array.from({ length: 7 }, (_, i) => { const x = last7[i - (7 - last7.length)]; const st = !x ? 'background:var(--surface-sunken);color:var(--text-subtle)' : x.pass ? 'background:var(--success-subtle);color:var(--success)' : 'background:var(--danger-subtle);color:var(--danger)'; return html`<div style=${'display:flex;flex-direction:column;align-items:center;padding:10px 4px;border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;' + st}><span>${x ? x.date.slice(5) : '—'}</span><span>${x ? (x.pass ? 'PASS' : 'FAIL') : '—'}</span></div>`; });
   const rows = (d.days || []).slice().reverse().map((x) => html`<tr style="font-variant-numeric:tabular-nums"><td>${x.date}</td><td><span class=${'lm-badge lm-badge--' + (x.pass ? 'success' : 'danger')}>${x.pass ? 'Pass' : x.health_pass ? 'Low volume' : 'Fail'}</span></td><td>${num((x.agents || []).length)}</td><td>${num(x.entries)}</td><td>${num(x.accepted)} / ${num(x.handoffs)}</td><td>${x.mirror_checked ? num(x.mirror_mismatches) : 'n/a'}</td><td>${num(x.unanswered_24h)}</td><td>${num(x.degraded_sessions)}</td></tr>`);
-  renderView('audit', ['Audit'], html`${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}
+  // The coordination queue: open handoffs, seats and directed requests, sorted by how overdue they are.
+  const q = d.pending || { items: [], total: 0, counts: {} };
+  const c = q.counts || {};
+  const late = (i) => Number.isFinite(Number(i.deadline)) && Number(i.deadline) > 0 && Date.now() > Number(i.deadline);
+  const deadline = (i) => { const n=Number(i.deadline); return Number.isFinite(n)&&n>0 ? new Date(n).toLocaleString() : 'Timestamp unavailable'; };
+  const qrows = (q.items || []).map((i) => html`<tr style="font-variant-numeric:tabular-nums">
+    <td><span class=${'lm-badge lm-badge--' + (late(i) ? 'danger' : 'neutral')}>${i.type || 'handoff'}</span></td>
+    <td>${i.summary || '—'}</td>
+    <td class="mono">${agentName(i.from) || '—'} → ${agentName(i.to) || '—'}</td>
+    <td>${i.created_at ? ago(i.created_at) : '—'}</td>
+    <td>${deadline(i)}${late(i) ? ' · overdue' : ''}</td>
+    <td class="mono" style="font-size:12px">${i.where || ''}</td></tr>`);
+  const queue = html`<section class="lmx-stack">
+    <h2 class="lmx-section-title">Open coordination queue <span>${num(q.total)}</span></h2>
+    <p class="muted" style="font-size:13px">${num(c.handoffs)} handoffs · ${num(c.seats)} seats · ${num(c.directed)} directed · ${num(c.overdue)} overdue · coverage ${d.coverage || 'partial'}. Sorted by how overdue they are.</p>
+    ${d.coverage !== 'full' ? html`<div class="lm-alert lm-alert--warning"><p>Coverage is incomplete. These results do not describe the full coordination backlog.</p></div>` : nothing}
+    <p class="lmx-meta">Showing ${num(qrows.length)} of ${num(q.total)} returned records.</p>
+    ${qrows.length ? table(['Type', 'Summary', 'From → To', 'Age', 'Deadline', 'Where'], qrows) : emptyState('No open records were returned.', d.coverage === 'full' ? 'No unanswered handoffs, seats or directed requests were found.' : 'Check coverage before treating this as an empty backlog.')}
+    <a class="lm-btn lm-btn--secondary" href="#/queue">Open full queue and nudge</a>
+    ${(d.data_errors || []).length ? html`<p class="muted" style="font-size:12px">${d.data_errors.length} data error(s) flagged: ${d.data_errors.slice(0, 3).map((e) => e.type).join(', ')}</p>` : nothing}</section>`;
+  const runs = d.slots || [];
+  const runState = (slot) => {
+    const value = slot?.state || 'unknown';
+    const tone = value === 'pass' ? 'success' : ['failed', 'missed'].includes(value) ? 'danger' : 'neutral';
+    return html`<span class=${'lm-badge lm-badge--' + tone}>${value}</span><span class="lmx-meta"> · ${num(slot?.attempts?.length || 0)} attempts</span>`;
+  };
+  const runRows = runs.map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td><td>${a.date || 'Unknown date'}</td>${['morning', 'midday', 'closeout'].map((slot) => html`<td>${runState(a.slots?.[slot])}</td>`)}</tr>`);
+  const dailyRuns = html`<section class="lmx-stack" aria-label="Daily coordination runs"><h2 class="lmx-section-title">Daily coordination runs</h2>
+    <p class="muted">Morning, midday and closeout receipts show coordination checks. They do not prove an active runner or a configured schedule.</p>
+    ${runRows.length ? table(['Agent', 'Date', 'Morning', 'Midday', 'Closeout'], runRows) : emptyState('No daily run records were returned.', 'Schedule coverage is unknown. An empty list does not prove that every agent completed its runs.')}</section>`;
+  renderView(route, [route === 'health' ? 'Health' : 'Audit'], html`${route === 'health' ? html`${head('Health', 'See missing receipts and unresolved coordination before work falls through.')}<div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" href="#/slots">Daily receipt calendar</a><a class="lm-btn lm-btn--secondary" href="#/activity">Source Activity</a><a class="lm-btn lm-btn--secondary" href="#/agents">Team records</a></div><section class="lmx-cockpit-metrics" aria-label="Runtime and usage coverage">${[['Runner', 'Unverified'], ['Provider usage', 'Not connected'], ['Spend and rate limits', 'Unknown'], ['Schedule enforcement', 'Unverified']].map(([label, value]) => html`<article class="lmx-card"><span class="lmx-meta">${label}</span><strong>${value}</strong></article>`)}</section><p class="lmx-meta">Receipts describe recorded checks. They do not verify runtime status, billing, remaining limits or schedule enforcement.</p>` : nothing}${queue}${dailyRuns}${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}
     <section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span></div>
       <div style="flex:2 1 420px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${strip}</div><div style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">Deliverable</span>${stage((d.deliverable || {}).stage)}<span class="mono subtle" style="font-size:12px">job:${(d.deliverable || {}).job || ''}</span></div></section>
     ${rows.length ? table(['Day', 'Result', 'Agents', 'Entries', 'Handoffs accepted', 'Mirror mismatches', 'Unanswered >24h', 'Degraded'], rows) : emptyState('No checks yet.', 'The first daily check writes its result here.')}`);
-};
+}
+pages.audit = () => auditPage('audit');
+pages.health = () => auditPage('health');
 async function markInvited(rows, inv) {
   if (!inv || !window.crypto || !crypto.subtle) return rows.map(() => false);
   const set = new Set((inv.invites || []).map((x) => x.hash));

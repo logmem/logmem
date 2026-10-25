@@ -19,8 +19,14 @@ async function handler(req, res) {
   if (!d) return res.status(503).json({ error: "storage not configured on this deployment" });
   try {
     const person = `human:${String(process.env.LOGMEM_ADMIN_ID || "admin")}`;
-    const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), { id: q.id, q: q.q, where: q.where, trail: q.trail, person });
-    res.status(200).json({ ok: true, space, spaces: viewSpaces(), generated_at: Date.now(), ...data });
+    // Forward the coordination-queue params too, or the audit view's filters and paging are unreachable.
+    const bool = (v) => (v === "true" ? true : v === "false" ? false : v);
+    const data = await buildView(fromDescriptor(d).redis, space, String(q.what || "overview"), {
+      id: q.id, q: q.q, where: q.where, trail: q.trail, person,
+      recipient: q.recipient, type: q.type, plan: q.plan,
+      overdue: bool(q.overdue), cursor: q.cursor, limit: q.limit, date: q.date,
+    });
+    res.status(200).json({ ok: true, space, person, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
     if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });
     sendServerError(res, "/api/view", e);
