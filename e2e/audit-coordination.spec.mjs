@@ -3,10 +3,10 @@ async function signIn(page){await page.request.post('/api/login',{data:{password
 async function audit(page,data){await page.route('**/api/view?*',async route=>{const u=new URL(route.request().url());if(u.searchParams.get('what')!=='audit')return route.fallback();await route.fulfill({json:{ok:true,space:'fieldnotes',spaces:['fieldnotes'],days:[],gate:{},pending:{items:[],total:0,counts:{}},coverage:'partial',...data}});});}
 test('audit does not present partial empty coverage as an empty backlog',async({page})=>{
  await audit(page,{});await signIn(page);
- await expect(page.getByText('Coverage is incomplete.',{exact:false})).toBeVisible();
+ await expect(page.getByText('Index coverage is incomplete.',{exact:false})).toBeVisible();
  await expect(page.getByText('No open records were returned.',{exact:true})).toBeVisible();
  await expect(page.getByText('Nothing open.',{exact:true})).toHaveCount(0);
- await page.getByRole('link',{name:'Open full queue and nudge'}).click();
+ await page.getByRole('link',{name:'Open indexed queue and nudge'}).click();
  await expect(page.getByRole('heading',{name:'Coordination queue',exact:true})).toBeVisible();
 });
 test('audit shows a real future deadline and links beyond its first page',async({page})=>{
@@ -16,7 +16,7 @@ test('audit shows a real future deadline and links beyond its first page',async(
  await expect(page.getByText('Showing 1 of 51 returned records.',{exact:true})).toBeVisible();
  await expect(page.locator('td').filter({hasText:new Date(deadline).getFullYear().toString()})).toHaveCount(1);
  await expect(page.getByText(/due in .*ago/)).toHaveCount(0);
- await expect(page.getByRole('link',{name:'Open full queue and nudge'})).toHaveAttribute('href','#/queue');
+ await expect(page.getByRole('link',{name:'Open indexed queue and nudge'})).toHaveAttribute('href','#/queue');
 });
 
 test('audit exposes three daily receipts without claiming an active schedule',async({page})=>{
@@ -46,4 +46,16 @@ test('daily slots lets a person select a date and reach Audit',async({page})=>{
  await expect(page.getByLabel('Run date')).toHaveValue('2026-10-23');
  await expect(page.getByText('Receipts do not prove an active runner or a configured schedule.',{exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'Coordination audit',exact:true})).toHaveAttribute('href','#/audit');
+});
+
+
+test('Health shows measured counts and distinguishes historical source handoffs', async ({page}) => {
+ await audit(page,{pending:{items:[{id:'ci_'+'c'.repeat(24),type:'handoff',summary:'Review launch proof',from:'agent:hermes',to:'agent:codex',created_at:Date.now()-172800000,deadline:Date.now()-86400000,read_only:true}],total:1,counts:{handoffs:1,overdue:1}},days:[{date:'2026-10-25',mirror_mismatches:7}],slots:[{agent:'codex',date:'2026-10-25',slots:{morning:{state:'pass',attempts:[{}]}}}]});
+ await signIn(page);await page.getByRole('link',{name:'Health',exact:true}).click();
+ const summary=page.getByRole('region',{name:'Coordination health summary'});
+ await expect(summary).toContainText('Open coordination');
+ await expect(summary).toContainText('1 / 1');
+ await expect(summary).toContainText('7');
+ await expect(page.getByRole('link',{name:'Read source handoff'})).toHaveAttribute('href','#/agent/codex');
+ await expect(page.getByText('Provider usage Not connected',{exact:true})).toHaveCount(0);
 });

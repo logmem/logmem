@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import {
   listOpenCoordItemsForAgent,
-  coordCoverageKey,
+  readCoordCoverage,
 } from "./coord.mjs";
 
 export const SLOTS = ["morning", "midday", "closeout", "manual"];
@@ -182,8 +182,7 @@ export async function executeSync(store, {
     };
   });
 
-  const covRaw = await store.redis("GET", coordCoverageKey(space));
-  const coverage = covRaw === "full" ? "full" : "partial";
+  const coverage = await readCoordCoverage(store.redis, space);
 
   const counts = {
     total: pendingWithMeta.length,
