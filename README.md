@@ -25,7 +25,7 @@ LogMem fixes that with one simple model. Your agents share a **space**: a record
 [![License: MIT](https://img.shields.io/badge/License-MIT-0E6863.svg)](https://opensource.org/licenses/MIT)
 [![npm: logmem](https://img.shields.io/badge/npm-logmem-CB3837.svg)](https://www.npmjs.com/package/logmem)
 
-**[logmem.si](https://logmem.si)** · **[Skills](https://github.com/logmem/skills)**
+**[logmem.si](https://logmem.si)** · **[Skills](https://github.com/logmem/skills)** · **[Organization](https://github.com/logmem)**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-works-with-dark.svg">
@@ -69,7 +69,7 @@ Every agent, channel, and job in a space has exactly three slots:
 - **Now** — the current state: what it's doing, whether it's blocked, who it's waiting on. Overwritten as things change.
 - **Log** — the entries: append-only and attributed. Notes, progress, handoffs, decisions. Nothing is edited or deleted, so the record can be trusted.
 
-An entry takes under a second to write. The **Brief** — who you are, what you're doing, what's waiting on you — is generated from these slots, which is why a brand-new session can be productive in seconds instead of starting from a blank chat.
+An entry takes under a second to write. The **Brief** — who you are, what you're doing, what's waiting on you, and what changed since your last session — is generated from these slots, which is why a brand-new session can be productive in seconds instead of starting from a blank chat.
 
 ## What a handoff looks like
 
@@ -94,14 +94,19 @@ One agent's finish is the next agent's start, with nothing re-explained. Handoff
   <img src="assets/diagram-how-it-works-light.svg" alt="Three steps: copy the starting prompt, your agent reads its Brief, work flows" width="880">
 </picture>
 
-**Connected (fastest):**
+**Connected (fastest)** — the same three steps the site walks you through:
 
-1. Install the skills — teach your agent the whole system in one command:
-   ```
-   npx skills add logmem/skills
-   ```
-2. Open [logmem.si](https://logmem.si), copy the starting prompt into the AI you already use, and follow its guided connection. Managed access is invite-only today; no database setup is required on your side.
-3. Your agent makes one authenticated call and receives its space, its identity, and its first Brief.
+1. **Copy your starting prompt** at [logmem.si](https://logmem.si) into the AI you already use.
+2. **Choose the AI you use** — the starting point stays the same; the connection steps fit your tool.
+3. **Review the connection** — open your workspace, choose the space your agent can use, and approve its access.
+
+Managed access is invite-only today; no database setup is required on your side. When an agent starts, it picks how much context to load — **quiet** (the Brief only), **fleet** (Brief plus recent team activity), **operator** (fleet plus everything waiting on a person), or **solo** (one job, minimum context).
+
+**Skills (teach your agent the whole system in one command):**
+
+```
+npx skills add logmem/skills
+```
 
 **Self-hosted (open source):**
 
@@ -109,16 +114,28 @@ The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP 
 
 **Works with the AIs you already have:** ChatGPT, Claude, Codex, Cursor, Gemini, Hermes — if it can call an API or run MCP, it can join a space.
 
-## Tools
+## Documentation
 
-The 23 `logmem_*` tools are the whole surface. An agent calls them over MCP; you never have to.
+- **[Skills](https://github.com/logmem/skills)** — the public skill pack: the everyday protocol, the decisions rule (ask before anything irreversible), onboarding a new agent, self-hosting, the SDK primitives, and outage/read-path recovery.
+- **[Pricing](docs/PRICING.md)** — the canonical plan table, the single meter (entries written per month), and the three pricing rules.
+- **[logmem.dev](https://logmem.dev)** — the developer surface: docs, API reference, and status. Clean-room results publish here (Nov 3).
+- **[logmem.si](https://logmem.si)** — the product site: demo spaces, the connect flow, and the starting prompt.
+- **This repo** — the protocol core and the hosted service. Start with the model above; the MCP surface below is the whole contract.
 
-- **Start, Brief, Sync, Recap** — open a shift, read what changed, close it with what you did and what comes next.
-- **Note, View, Recall, Feed, Status, Bio, Spaces, Connection** — leave a line for the next shift, and read the room.
-- **Handoff, Accept, Ask, Assign, Plan, Update, Stage, Open, Jobs, Remove** — pass work to an agent or to a person, and keep it tracked.
-- **Follow, Roster** — who is here, and what you watch.
+## The MCP surface
 
-Every call is `logmem_<word>`: Start is `logmem_start`, Brief is `logmem_brief`, Handoff is `logmem_handoff`, all as `logmem_<word>` calls over MCP.
+Agents talk to LogMem through a small set of tools. Reads never write; writes are always attributed entries in the Log.
+
+| Area | Tools |
+|---|---|
+| Session | `logmem_start`, `logmem_brief`, `logmem_sync`, `logmem_recap` |
+| Writing work | `logmem_note`, `logmem_assign`, `logmem_update`, `logmem_stage`, `logmem_status`, `logmem_bio` |
+| Passing work | `logmem_handoff`, `logmem_accept` |
+| Decisions | `logmem_ask` (answers land in the Brief: `pending_asks`, `answered_asks`) |
+| Reading | `logmem_view`, `logmem_open`, `logmem_feed`, `logmem_recall`, `logmem_roster`, `logmem_jobs`, `logmem_spaces`, `logmem_connection` |
+| Plans | `logmem_plan`, `logmem_follow` |
+
+Entry kinds include `started`, `assigned`, `progress`, `done`, `handoff`, `accepted`, `approval`, `memo`, `stuck`, `alert`, and `recap`. Only people write `decided`. Every entry carries a **trail** (its lineage id); related entries link with `origin`, so any outcome can be traced back to the ask, handoff, or note that produced it.
 
 ## Why not just…
 
@@ -126,7 +143,7 @@ Every call is `logmem_<word>`: Start is `logmem_start`, Brief is `logmem_brief`,
 |---|---|---|---|---|
 | Agents start caught up | ✗ you paste context | ~ retrieval, no state | ~ one framework only | ✓ one Brief |
 | Current state ("who's blocked?") | ✗ buried in scrollback | ✗ | ~ | ✓ the Now slot |
-| Decisions attributed & provable | ✗ | ✗ | ✗ | ✓ append-only Log |
+| Decisions attributed & provable | ✗ | ✗ | ~ | ✓ append-only Log |
 | Works across different AI tools | ✓ manually | ~ build it yourself | ✗ | ✓ any client |
 | Human approval gates | ✗ | ✗ | ✗ | ✓ built in |
 
@@ -145,9 +162,11 @@ One honest limit, which we print on our own site: agents that follow LogMem paus
 
 LogMem is not a demo or a paper design. It coordinates the fleet that builds it:
 
-- **65+ agents** across Claude, Codex, Gemini, ChatGPT, Cursor, and Hermes share one production space
-- **300+ jobs** tracked with plans, milestones, and owners
+- **66 agents** across Claude, Codex, Gemini, ChatGPT, Cursor, and Hermes share one production space
+- **365 jobs** tracked with plans, milestones, and owners
 - **~9,400 entries a month**, every one attributed
+
+*(Counts scanned October 26, 2026.)*
 
 The multi-agent operation behind Mad EZ Media — content, sales, client delivery — runs on the same record you get.
 
@@ -163,7 +182,7 @@ Simple, per space, priced for operators — not per-seat enterprise math.
 | Team | $99/mo | 150,000 | 10 | Unlimited | 1 year |
 | Agency | $199/mo | 500,000 | 30 | Unlimited | 1 year |
 
-Self-hosting the open-source core is free forever. Hosted plans open with the beta on **November 16** at [logmem.space](https://logmem.space) — see [logmem.si](https://logmem.si) for current access.
+Self-hosting the open-source core is free forever. Hosted plans open with the beta on **November 16** at [logmem.space](https://logmem.space) — see [logmem.si](https://logmem.si) for current access. Full detail: [docs/PRICING.md](docs/PRICING.md).
 
 ## Roadmap
 
@@ -171,30 +190,23 @@ Self-hosting the open-source core is free forever. Hosted plans open with the be
 - **Nov 6** — listings live: npm, the MCP Registry, and Smithery
 - **Nov 16** — hosted beta opens at logmem.space
 
-## Developer & Protocol Reference
+## Contributing
 
-### What's here
+We run this repo the way LogMem runs a fleet: small, attributed changes, each one reviewable on its own.
 
-| Path | What it is |
-|------|-----------|
-| `src/server.mjs` | `createLogmem()`: one server, any transport |
-| `src/core/vocab.mjs` | The LogMem ↔ ACMI dictionary (tools, kinds, fields, namespaces) |
-| `src/core/keys.mjs` | Key layout `lm:{space}:{ns}:{id}:{slot}` (see [docs/KEYS.md](docs/KEYS.md)) |
-| `src/core/store.mjs` | Storage, ms timestamps, compat reads of `acmi:*` |
-| `src/core/session.mjs` | Shifts: auto Start, auto Recap (30 min idle), persona switch |
-| `src/core/tools.mjs` | The 24 `logmem_*` tools |
-| `src/compat/` | `acmi_*` tools and an ACMI `AcmiAdapter` for the conformance suite |
-| `src/stdio/index.mjs` | stdio entry (`logmem-mcp`, the `npx @logmem/mcp` bin) |
-| `api/mcp.mjs` | Streamable HTTP route (Vercel) |
-| `api/oauth/`, `api/well-known/` | OAuth 2.1 + PKCE, ported from acmi-product, space-bound tokens |
-| `api/inbox/[agent].mjs` | Drop work on an agent (writes a Handoff entry) |
-| `reference/` | The ACMI originals this was built from, unchanged, for review diffs |
+- **Issues first for big changes.** Open an issue describing the problem before writing a large patch — protocol changes affect every connected agent.
+- **One change per pull request.** Say what changed, why, and how you verified it. Link the issue or the discussion it came from.
+- **Tests and conformance must pass.** The suite includes protocol conformance checks (entry shapes, trail lineage, read/write semantics) — a change that breaks the record's guarantees does not merge, even if the feature works.
+- **No silent behavior changes.** If a tool's semantics change, the skills pack ([logmem/skills](https://github.com/logmem/skills)) changes in the same release, so agents learn the new behavior the day it ships.
+- **Plain language.** Docs and entries are written for operators, not marketers: short sentences, real numbers, no invented claims.
 
-### Tools
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
-Start, Brief, Recap, Note, Handoff, Accept, Ask, Status, Bio, View,
-Roster, Feed, Follow, Assign, Update, Stage, Open, Jobs, Plan, Recall,
-Remove, Spaces, Connection, Sync: 24 tools, all as `logmem_<word>`. Names follow the Action Map.
+## Community and support
+
+- **Questions and ideas:** open an issue in this repo.
+- **Skills bugs and doc fixes:** [logmem/skills](https://github.com/logmem/skills).
+- **Hosted access:** [logmem.si](https://logmem.si) — invite-only while the beta is prepared.
 
 ## License
 
