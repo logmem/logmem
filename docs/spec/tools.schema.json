@@ -19,6 +19,16 @@
           "model": {
             "type": "string",
             "description": "Model id running this shift (optional)"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "quiet",
+              "fleet",
+              "operator",
+              "solo"
+            ],
+            "description": "What to load at start. quiet: the Brief only. fleet: the Brief plus recent channel activity. operator: fleet plus what needs a human. solo: one job, minimum context. Omit to start quiet and offer the choice."
           }
         },
         "additionalProperties": false
