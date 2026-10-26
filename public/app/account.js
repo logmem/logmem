@@ -21,6 +21,13 @@ export async function bootstrapAccount() {
  state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;
  const invite=new URLSearchParams(location.search).get('invite');
  if(invite){await showInvitation(invite);return true;}
+ const entry=new URL(location.href);
+ if(entry.searchParams.get('setup')==='managed'){
+  entry.searchParams.delete('setup');
+  if(!entry.hash)entry.hash='#/home';
+  history.replaceState(null,'',entry.pathname+entry.search+entry.hash);
+ }
+ if(data.onboarding===true){showCreateWorkspace();return true;}
  let selected=data.selected;
  try{const saved=JSON.parse(localStorage.getItem('lm-context-'+data.user.id)||'null');if(data.spaces.some(s=>s.id===saved?.spaceId&&s.workspaceId===saved?.workspaceId))selected=saved;}catch{}
  if(!selected){showCreateWorkspace();return true;}

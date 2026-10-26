@@ -40,13 +40,25 @@ export function primaryEmail(user) {
   return String(primary.emailAddress || "") || null;
 }
 
-export async function clerkSession(req, { env = process.env, url } = {}) {
+export async function clerkSession(req, { env = process.env, url, client } = {}) {
   if (!clerkConfigured(env)) throw new ClerkConfigError("Clerk keys are not set on this deploy");
-  const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  const clerk = client || createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
   const origin = new URL(url).origin;
   const state = await clerk.authenticateRequest(webRequest(req, url), { authorizedParties: [origin] });
 
-  if (state.status === AuthStatus.Handshake) return { status: "handshake", headers: [...state.headers.entries()] };
+  // A resolved handshake can already be signed in. Its response directives
+  // still have to reach the browser before another request uses the session.
+  if (state.status === AuthStatus.Handshake || state.headers.has("location") || state.headers.has("set-cookie")) {
+    const headers = [...state.headers.entries()].filter(([name]) => name.toLowerCase() !== "set-cookie");
+    for (const cookie of state.headers.getSetCookie()) headers.push(["set-cookie", cookie]);
+    if (!state.headers.has("location")) {
+      if (!state.headers.has("set-cookie")) throw new ClerkConfigError("Clerk handshake has no redirect or cookies");
+      const destination = new URL(url);
+      for (const name of ["__clerk_handshake", "__clerk_handshake_nonce", "__clerk_db_jwt", "__clerk_help"]) destination.searchParams.delete(name);
+      headers.push(["location", destination.toString()]);
+    }
+    return { status: "handshake", headers };
+  }
 
   if (state.status === AuthStatus.SignedIn) {
     const { userId, sessionId } = state.toAuth();
