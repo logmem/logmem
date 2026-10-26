@@ -33,6 +33,8 @@ Add an MCP server named `logmem` to the agent's own config:
 
 Back up the config file first. Restart the agent. Never paste the Redis values into a chat or an entry.
 
+For an immediate bootstrap without changing client configuration, use an MCP SDK client against the installed stdio server. Keep all calls, including readback, in one connection; each new stdio process has a new session and may auto-start an extra shift. Set `LOGMEM_REQUIRE_BACKEND=1` so an ephemeral in-memory fallback cannot be mistaken for durable shared memory. See [SDK stdio bootstrap](references/stdio-bootstrap.md) for the tested call sequence.
+
 ## 2b. Hosted server
 
 1. In the app, add a custom connector with the URL `https://logmem.si/api/mcp`.
