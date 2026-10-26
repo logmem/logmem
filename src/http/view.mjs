@@ -6,14 +6,14 @@
 
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, isHandoffKind, handoffSettlement, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
 import { listBlockers } from "../core/blockers.mjs";
 import { listPlans, getPlan, getPlans } from "../core/plans.mjs";
 import { lmDecisionKey } from "../core/keys.mjs";
 import { buildScorecard } from "../../api/scorecard.mjs";
 import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
-import { listCoordItemsForTrail, getCoordItem, coordOpenKey, coordAgentOpenKey, coordCoverageKey } from "../core/coord.mjs";
+import { listCoordItemsForTrail, getCoordItem, computeItemId, COORD_DEADLINE_MS, coordOpenKey, coordAgentOpenKey, readCoordCoverage } from "../core/coord.mjs";
 import { getAgentSlotsView, getLocalSlotDate } from "../core/sync.mjs";
 
 const MAX_LOGS = 300;
@@ -373,9 +373,8 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   const r = readOnly(redis);
   const nowTs = typeof now === "function" ? now() : Number(now || Date.now());
 
-  // 1. Coverage: "full" if coordCoverageKey has "full", else "partial"
-  const covRaw = await r("GET", coordCoverageKey(space));
-  const coverage = covRaw === "full" ? "full" : "partial";
+  // Index coverage and historical scorecards describe separate sources.
+  const coverage = await readCoordCoverage(r, space);
 
   // 2. Open coordination items
   let itemIds = [];
@@ -388,6 +387,40 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
 
   const allItems = [];
   const dataErrors = [];
+
+  // Until verified backfill completes, show source handoffs without writing an index.
+  // These rows cannot use item mutations until a canonical item exists.
+  if (coverage !== "full") {
+    const agents = params.recipient ? [String(params.recipient).replace(/^agent:/, "")] : await store.list("agent");
+    const legacy = await inBatches(agents.slice(0, 100), 6, async (agent) => {
+      try {
+        const log = await store.readLog("agent", agent, { reverse: true, limit: 1000 });
+        const settled = new Set(log.filter(e => e.by === `agent:${agent}` && e.origin && handoffSettlement(e.kind, e.payload)).map(e => e.origin));
+        const rows = [];
+        const seen = new Set();
+        for (const e of log) {
+          if (!isHandoffKind(e.kind) || e.to !== `agent:${agent}` || !e.trail || settled.has(e.trail) || seen.has(e.trail)) continue;
+          seen.add(e.trail);
+          const id = computeItemId(space, "handoff", e.trail, agent);
+          // An indexed settlement must never reappear through a source-log fallback.
+          if (await getCoordItem(store, space, id)) continue;
+          const created = Number(e.ts);
+          if (!Number.isFinite(created) || created <= 0 || created > nowTs + 60000) {
+            dataErrors.push({ type: "invalid_handoff_timestamp", id });
+            continue;
+          }
+          rows.push({ id, space, type: "handoff", request_trail: e.trail, from: e.by, to: e.to,
+            where: e.job || e.where || "", summary: e.summary, created_at: created,
+            deadline: created + COORD_DEADLINE_MS, response: "open", source: "agent_log", read_only: true });
+        }
+        return rows;
+      } catch (_) {
+        dataErrors.push({ type: "handoff_log_unavailable", id: `agent:${agent}` });
+        return [];
+      }
+    });
+    allItems.push(...legacy.flat());
+  }
 
   for (const id of itemIds || []) {
     const item = await getCoordItem(store, space, id);
@@ -412,7 +445,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   // Check jobs for missing stages (data errors)
   try {
     const jobIds = await store.list("job");
-    for (const jid of jobIds) {
+    await inBatches(jobIds, 8, async (jid) => {
       const jnow = await store.getNow("job", jid);
       if (!jnow || !jnow.stage) {
         dataErrors.push({
@@ -421,7 +454,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
           error: "job has no stage",
         });
       }
-    }
+    });
   } catch (_) {}
 
   // 3. Filters
@@ -474,9 +507,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   try {
     const targetDate = params.date || getLocalSlotDate(nowTs);
     const agentList = await store.list("agent");
-    for (const a of agentList) {
-      slots.push(await getAgentSlotsView(store, space, a, targetDate, nowTs));
-    }
+    slots = await inBatches(agentList, 8, a => getAgentSlotsView(store, space, a, targetDate, nowTs));
   } catch (_) {}
 
   // 7. History (scorecard as today)
@@ -495,6 +526,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
       counts,
     },
     coverage,
+    pending_source: coverage === "full" ? "coordination_index" : "index_and_bounded_agent_logs",
     slots,
     data_errors: dataErrors,
     history,

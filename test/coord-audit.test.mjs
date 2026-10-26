@@ -310,3 +310,29 @@ test("Case 2: Pure reads stay write-free for buildView with what=audit", async (
   assert.ok(viewResult.history);
   assert.equal(writeCount, 0, "Audit view must perform zero write commands to Redis");
 });
+
+test('audit reads backfill hash coverage without GET WRONGTYPE', async () => {
+  const r = createMemoryRedis(), store = createStore(r, {space:'fleet'});
+  await r('HSET', coordCoverageKey('fleet'), 'status', 'complete');
+  const d = await auditView(store, r, 'fleet');
+  assert.equal(d.coverage, 'full');
+});
+
+test('partial audit includes old handoffs without inventing index records or reviving settlements', async () => {
+  const r = createMemoryRedis(), store = createStore(r, {space:'fleet'});
+  const now = Date.now();
+  await store.setWho('agent','codex',{name:'Codex'});
+  for (const trail of ['waiting','accepted','indexed']) await store.append('agent','codex', {
+    ts:now-2*86400000,kind:'handoff',by:'agent:hermes',to:'agent:codex',trail,job:'job:review',summary:trail
+  });
+  await store.append('agent','codex',{ts:now-86400000,kind:'accepted',by:'agent:codex',origin:'accepted',trail:'ack'});
+  await createCoordItem(store,{type:'handoff',request_trail:'indexed',from:'agent:hermes',to:'codex',where:'job:review',summary:'indexed',created_at:now-2*86400000});
+  const id=computeItemId('fleet','handoff','indexed','codex');
+  await settleCoordItem(store,{id,recipient:'codex',settledBy:'agent:codex'});
+  const d=await auditView(store,r,'fleet',{},now);
+  assert.equal(d.pending.total,1);
+  assert.equal(d.pending.items[0].request_trail,'waiting');
+  assert.equal(d.pending.items[0].read_only,true);
+  assert.equal(d.pending.counts.overdue,1);
+  assert.equal(await getCoordItem(store,'fleet',computeItemId('fleet','handoff','waiting','codex')),null);
+});

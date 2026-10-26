@@ -48,6 +48,19 @@ export function coordCoverageKey(space) {
   return `${PREFIX}:${space}:coord:coverage`;
 }
 
+// Backfill writes a hash. Older deployments stored a plain status string.
+export async function readCoordCoverage(redis, space) {
+  const key = coordCoverageKey(space);
+  const type = await redis("TYPE", key);
+  if (type === "hash") {
+    const raw = await redis("HGETALL", key);
+    const fields = Array.isArray(raw) ? Object.fromEntries(Array.from({ length: raw.length / 2 }, (_, i) => [raw[i * 2], raw[i * 2 + 1]])) : raw;
+    return fields?.status === "complete" ? "full" : "partial";
+  }
+  if (type === "string") return (await redis("GET", key)) === "full" ? "full" : "partial";
+  return "partial";
+}
+
 // ─── Lua Scripts ─────────────────────────────────────────────────────────────
 
 /**
