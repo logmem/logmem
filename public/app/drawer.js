@@ -28,9 +28,16 @@ export function openDrawer(kind, id, where) {
 }
 export function closeDrawer() {
   const back = drawer && drawer.last;
+  const discussion = drawer?.kind === 'discussion' ? drawer.id : null;
   drawer = null;
   document.body.classList.remove('lmx-pinned');
   render(html``, hostEl());
+  // A discussion route has no content behind its panel. Return to its source.
+  if (discussion && location.hash.startsWith('#/discussion/')) {
+    const split = discussion.indexOf('/');
+    const type = discussion.slice(0, split), id = discussion.slice(split + 1);
+    location.hash = type === 'decision' ? '#/knowledge' : type === 'coord' ? '#/queue' : type === 'plan' ? '#/lanes' : type === 'job' ? '#/job/' + encodeURIComponent(id) : '#/work';
+  }
   if (back && back.focus && document.contains(back)) back.focus();
 }
 const togglePin = () => { document.body.classList.toggle('lmx-pinned'); drawRender(); };
