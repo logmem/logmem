@@ -40,11 +40,45 @@ export function primaryEmail(user) {
   return String(primary.emailAddress || "") || null;
 }
 
+/**
+ * Origins a Clerk token may legitimately name as its authorized party (azp).
+ * Dev-instance tokens often carry the instance domain from the publishable key
+ * rather than the application origin, so the gate accepts both forms.
+ */
+export function partyOrigins(publishableKey = "") {
+  try {
+    const domain = Buffer.from(String(publishableKey).replace(/^pk_(test|live)_/, ""), "base64")
+      .toString("utf8").split("$")[0];
+    if (!domain || !domain.includes(".")) return [];
+    const origins = [`https://${domain}`];
+    if (domain.includes(".clerk.")) origins.push(`https://${domain.replace(".clerk.", ".")}`);
+    return origins;
+  } catch {
+    return [];
+  }
+}
+
 export async function clerkSession(req, { env = process.env, url, client } = {}) {
   if (!clerkConfigured(env)) throw new ClerkConfigError("Clerk keys are not set on this deploy");
   const clerk = client || createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
   const origin = new URL(url).origin;
-  const state = await clerk.authenticateRequest(webRequest(req, url), { authorizedParties: [origin] });
+  const parties = [origin];
+  for (const p of partyOrigins(env.CLERK_PUBLISHABLE_KEY)) if (!parties.includes(p)) parties.push(p);
+  let state;
+  try {
+    state = await clerk.authenticateRequest(webRequest(req, url), { authorizedParties: parties });
+  } catch (e) {
+    console.error(`[clerk] authenticateRequest threw: ${e?.message || e}`);
+    throw e;
+  }
+  // A handshake that resolves to a bare signed-out answer strands the browser
+  // in a portal loop. Log the reason so the next report names the check that
+  // failed instead of guessing.
+  if (new URL(url).searchParams.has("__clerk_handshake")
+      && state.status !== AuthStatus.Handshake
+      && !state.headers.has("location") && !state.headers.has("set-cookie")) {
+    console.error(`[clerk] handshake unresolved: ${state.reason || state.message || "signed-out with no directives"}`);
+  }
 
   // A resolved handshake can already be signed in. Its response directives
   // still have to reach the browser before another request uses the session.

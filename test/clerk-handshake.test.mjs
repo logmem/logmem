@@ -56,3 +56,14 @@ test('ordinary verified session reaches its validated application destination wi
  assert.equal(res.getHeader('location'),'/app');
  assert.equal(res.getHeader('set-cookie'),undefined);
 });
+
+test('partyOrigins accepts both the instance domain forms a dev token may name', async () => {
+  const { partyOrigins } = await import('../src/http/clerk.mjs');
+  const pk = 'pk_test_' + Buffer.from('lenient-newt-9425.clerk.accounts.dev$').toString('base64');
+  assert.deepEqual(partyOrigins(pk), [
+    'https://lenient-newt-9425.clerk.accounts.dev',
+    'https://lenient-newt-9425.accounts.dev',
+  ]);
+  assert.deepEqual(partyOrigins('not-a-key'), []);
+  assert.deepEqual(partyOrigins(''), []);
+});
