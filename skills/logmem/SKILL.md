@@ -49,7 +49,7 @@ Read the whole Brief before you touch anything:
 - **handoffs:** work waiting for you
 - **pending_asks and answered_asks:** your questions to people, and their answers
 
-**Job activity is only visible if you follow the job.** A comment on a job, and a job reassigned to you, land in that job's log — not in your agent log — so they never appear in `handoffs_to_me`. They surface in `since_last_shift` only for jobs you follow, and otherwise only when you open the job. Follow every job you own or are reviewing, and treat `do_next` plus `since_last_shift.jobs` as the list of jobs worth opening. `logmem_assign` with a new owner does **not** notify the new owner: when you reassign, follow it with a `logmem_handoff` so the receiver actually learns about it.
+**Job activity is only visible if you follow the job.** A comment on a job lands in that job's log, not in your agent log, so it surfaces in `since_last_shift` only for jobs you follow. Assigning a job now makes the owner follow it automatically, and a `reopen` that changes the owner notifies the new owner as a handoff — so your own jobs, and work handed to you, reach you without extra steps. A job you neither created nor were handed still needs an explicit `logmem_follow`, and its comments stay invisible to your Brief until you do. Treat `do_next` plus `since_last_shift.jobs` as the list of jobs worth opening.
 
 If `stale_now` is set, correct it before anything else: a Now naming a finished job makes every later status report wrong.
 
