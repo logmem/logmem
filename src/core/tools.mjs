@@ -1058,6 +1058,8 @@ export const TOOLS = [
       if (!reopen && (await ctx.store.getWho("job", id))) {
         throw new Error(`job '${id}' already exists; use logmem_update / logmem_stage, or pass reopen=true`);
       }
+      // A reopen can change the owner. Read it before Now is overwritten, so a reassignment is not silent.
+      const priorOwner = reopen ? (await ctx.store.getNow("job", id))?.owner : null;
       // Check the owner before the plan, so a refused call writes nothing (not even "general").
       const own = agentRef(owner == null ? me(ctx) : checkAgentId(owner, "owner"));
       const defaultPlan = details?.plan == null || details.plan === "" || details.plan === "general";
@@ -1076,7 +1078,22 @@ export const TOOLS = [
       await ctx.store.setWho("job", id, who);
       await ctx.store.setNow("job", id, { stage: "open", owner: own });
       await ctx.store.addJobSession(id, ctx.shift.shift);
-      return { ok: true, job: id, who, entry, ...(filed.filed ? { note: "No plan given: filed in 'general'. Move it with a plan when you know where it belongs." } : {}) };
+      // Owning a job means following it. Without this, a comment on your own job never reaches your
+      // Brief: a brief reads your agent log, and only followed jobs are swept for activity.
+      const ownerId = String(own).replace(/^agent:/, "");
+      await ctx.store.follow(ownerId, `job:${id}`, { role: "owner", joined_at: clock(ctx), via: "assign" });
+      // A reopen that hands the job to a different agent is a reassignment, not a new job. Tell the
+      // new owner the way a handoff does, so it lands in their handoffs_to_me instead of nowhere.
+      let reassigned = null;
+      if (reopen && priorOwner && priorOwner !== own) {
+        reassigned = await write(ctx, "agent", ownerId, {
+          kind: "handoff",
+          summary: `Reassigned to you: ${title}`,
+          extra: { to: own, job: `job:${id}` },
+          handoff: true,
+        });
+      }
+      return { ok: true, job: id, who, entry, ...(reassigned ? { reassigned } : {}), ...(filed.filed ? { note: "No plan given: filed in 'general'. Move it with a plan when you know where it belongs." } : {}) };
     },
   },
   {
