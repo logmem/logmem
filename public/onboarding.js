@@ -108,6 +108,18 @@
 
   // Check managed availability before entering the app. A disabled deployment
   // must not send an invited client into the operator login.
+  function managedDestination() {
+    var fallback = '/app?setup=managed';
+    var value = new URLSearchParams(location.search).get('returnTo');
+    if (!value || !/^\/(app|connections)([?#]|$)/.test(value)) return fallback;
+    var decoded = value;
+    try {
+      for (var i = 0; i < 4; i++) decoded = decodeURIComponent(decoded);
+    } catch (_) { return fallback; }
+    if (/[\\\x00-\x20]/.test(decoded) || !/^\/(app|connections)([?#]|$)/.test(decoded)) return fallback;
+    return value;
+  }
+
   $('#managed-start').addEventListener('click', async function (event) {
     event.preventDefault();
     var link = event.currentTarget;
@@ -119,8 +131,10 @@
     var timeout = setTimeout(function () { controller.abort(); }, 10000);
     try {
       var response = await fetch('/api/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
-      if (response.ok || response.status === 401) {
-        window.location.assign('/app');
+      if (response.ok) {
+        window.location.assign(managedDestination());
+      } else if (response.status === 401) {
+        window.location.assign('/api/session?signin=1&returnTo=' + encodeURIComponent(managedDestination()));
       } else {
         status.textContent = 'Managed login is not available on this deployment. If you were invited, contact your workspace owner. You can retry here.';
       }
@@ -563,4 +577,10 @@
 
   renderPicks();
   go(0, { noFocus: true });
+  // Clerk's post-signup fallback can land here with an active session.
+  // Do not interrupt a visitor who has already chosen an advanced setup path.
+  fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })
+    .then(function (response) {
+      if (response.ok && state.path === 'entry') window.location.replace(managedDestination());
+    }).catch(function () { /* Keep the explicit access check and retry available. */ });
 })();

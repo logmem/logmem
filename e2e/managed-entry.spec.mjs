@@ -15,14 +15,16 @@ test('homepage leads invited clients to managed setup without a Redis form',asyn
 
 test('disabled managed login explains the blocker and retries into the customer app',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));let available=false;
- await page.route('**/api/session',route=>route.fulfill({status:available?401:503,contentType:'application/json',body:JSON.stringify({error:available?'sign_in_required':'customer_dashboard_disabled'})}));
+ await page.route('**/api/session*',route=>new URL(route.request().url()).searchParams.has('signin')
+  ?route.fulfill({status:302,headers:{location:'/app?setup=managed'}})
+  :route.fulfill({status:available?401:503,contentType:'application/json',body:JSON.stringify({error:available?'sign_in_required':'customer_dashboard_disabled'})}));
  await page.goto('/onboarding');
  const start=page.getByRole('link',{name:'Open your workspace',exact:true});
  await start.click();
  await expect(page.getByRole('status')).toContainText('Managed login is not available');
  await expect(page).toHaveURL(/\/onboarding$/);
  available=true;await start.click();
- await expect(page).toHaveURL(/\/app$/);
+ await expect(page).toHaveURL(/\/app\?setup=managed$/);
  await expect(page.getByRole('link',{name:'Sign in or create an account'})).toBeVisible();
  expect(errors).toEqual([]);
 });
