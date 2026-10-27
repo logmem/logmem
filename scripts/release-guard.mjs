@@ -70,12 +70,12 @@ function main() {
 
   // 1 — dirty tree
   let porcelain = "";
-  try { porcelain = git(["status", "--porcelain"]); } catch (e) { results.push(fail("dirty tree", `git status failed: ${e.message}`)); }
+  try { porcelain = git(["status", "--porcelain"]); } catch (e) { results.push(fail("dirty tree", "git status failed (stderr withheld: it can carry credential-bearing remote URLs)")); }
   if (porcelain !== undefined && !results.some((r) => r.name === "dirty tree")) results.push(checkDirty(porcelain));
 
   // 2 — branch
   try { results.push(checkBranch(git(["rev-parse", "--abbrev-ref", "HEAD"]))); }
-  catch (e) { results.push(fail("wrong branch", `git failed: ${e.message}`)); }
+  catch (e) { results.push(fail("wrong branch", "git failed (stderr withheld: it can carry credential-bearing remote URLs)")); }
 
   // 3 — freshness against origin/main
   try {
@@ -87,7 +87,7 @@ function main() {
   try {
     const pj = existsSync(".vercel/project.json") ? JSON.parse(readFileSync(".vercel/project.json", "utf8")) : null;
     results.push(checkProject(pj));
-  } catch (e) { results.push(fail("wrong project target", `unreadable: ${e.message}`)); }
+  } catch (e) { results.push(fail("wrong project target", "project file unreadable")); }
 
   for (const r of results) console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.reason ? ` — ${r.reason}` : ""}`);
   const broken = results.filter((r) => !r.ok);
