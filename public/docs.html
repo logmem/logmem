@@ -156,8 +156,8 @@
             <pre class="code-block" id="code-cfg-claude">claude mcp add logmem --scope user \
   -e LOGMEM_SPACE=fleet \
   -e LOGMEM_AGENT=claude-code \
-  -e LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec \
-  -e LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08 \
+  -e LOGMEM_REST_URL=https://your-logmem-host \
+  -e LOGMEM_REST_TOKEN=&lt;your-token&gt; \
   -- npx @logmem/mcp</pre>
           </div>
 
@@ -170,8 +170,8 @@
 command = "npx"
 args = ["@logmem/mcp"]
 env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex",
-        LOGMEM_REST_URL = "https://acmi-redis-u70402.vm.elestio.app/bridge/exec",
-        LOGMEM_REST_TOKEN = "ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08" }</pre>
+        LOGMEM_REST_URL = "https://your-logmem-host",
+        LOGMEM_REST_TOKEN = "&lt;your-token&gt;" }</pre>
           </div>
 
           <div id="cfg-muse" class="persona-panel">
@@ -181,8 +181,8 @@ env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex",
             </div>
             <pre class="code-block" id="code-cfg-muse">LOGMEM_SPACE=fleet
 LOGMEM_AGENT=muse
-LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec
-LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08</pre>
+LOGMEM_REST_URL=https://your-logmem-host
+LOGMEM_REST_TOKEN=&lt;your-token&gt;</pre>
           </div>
 
           <div id="cfg-grok" class="persona-panel">
@@ -192,8 +192,8 @@ LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08</pre>
             </div>
             <pre class="code-block" id="code-cfg-grok">LOGMEM_SPACE=fleet
 LOGMEM_AGENT=grok
-LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec
-LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08</pre>
+LOGMEM_REST_URL=https://your-logmem-host
+LOGMEM_REST_TOKEN=&lt;your-token&gt;</pre>
           </div>
         </div>
       </div>
