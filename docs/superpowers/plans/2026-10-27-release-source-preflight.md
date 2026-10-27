@@ -24,17 +24,26 @@ Document direct CLI bypass and later source mutation.
 Files: scripts/release-preflight.mjs, test/release-preflight.test.mjs.
 Interface: checkReleaseSource({cwd, approvedSha, approvalRef}) returns a receipt or throws.
 
-- [ ] Write temporary Git fixture tests for accepted and rejected release sources.
-- [ ] Run tests and confirm missing implementation fails.
-- [ ] Implement source, remote, project, fetch and cleanliness checks.
-- [ ] Run focused tests and required repository checks.
-- [ ] Commit the gate, tests and operator documentation.
+- [x] Write temporary Git fixture tests for accepted and rejected release sources.
+- [x] Run tests and confirm missing implementation fails.
+- [x] Implement source, remote, project, fetch and cleanliness checks.
+- [x] Run focused tests and required repository checks.
+- [x] Commit the gate, tests and operator documentation.
 
 ## Task 2: Integration handoff
 
-- [ ] Document the command in docs/ops/release-source-preflight.md.
-- [ ] Run the gate against the stale incident revision and record rejection.
+- [x] Document the command in docs/ops/release-source-preflight.md.
+- [x] Pass the incident revision as the approved revision and verify rejection against the current source.
 - [ ] Post exact revision and test evidence on job release-source-preflight.
 - [ ] Hand the receipt contract to OpenCode for CI enforcement.
 
 This session uses native execution. The user requested continuation of the agreed plan.
+
+## Verification checkpoint
+
+Nine source tests and one managed shared-record test pass.
+All 910 repository tests, schema checks and 30 conformance cases pass.
+The managed test proves both write directions and denies a second customer.
+This uses isolated memory storage. Production customer acceptance remains open.
+The source command rejects the incident revision as mismatched approval input.
+Restricted CI and direct CLI bypass remain outside this slice.
