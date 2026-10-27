@@ -14,7 +14,10 @@ test("docs: README and tools.mjs state the real logmem tool count", () => {
 
 test("docs: the README tool list names every logmem tool", () => {
   const readme = read("README.md");
-  const list = readme.slice(readme.indexOf("## Tools"), readme.indexOf("all as `logmem_<word>`"));
-  const words = new Set([...list.matchAll(/[A-Z][a-z]+/g)].map((m) => m[0].toLowerCase()));
-  assert.deepEqual(tools.filter((t) => !words.has(t)), []);
+  const start = readme.indexOf("## The MCP surface");
+  assert.notEqual(start, -1, "README must include the MCP surface section");
+  const end = readme.indexOf("\n## ", start + 1);
+  const list = readme.slice(start, end === -1 ? undefined : end);
+  const words = new Set([...list.matchAll(/`logmem_([a-z_]+)`/g)].map((m) => m[1]));
+  assert.deepEqual([...words].sort(), [...tools].sort());
 });
