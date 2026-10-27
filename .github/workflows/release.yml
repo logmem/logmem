@@ -1,0 +1,44 @@
+name: release
+
+# Restricted release path (direction of the release-guard task, 2026-10-27).
+# Today this workflow ENFORCES the preflight and quality gate for any manual
+# release attempt. It does not deploy: the deploy step stays disabled until
+# Mikey provisions a Vercel token as a GitHub environment secret for the
+# 'production' environment and names one release owner. Until then the
+# remaining bypass is a direct `vercel --prod` with shared CLI credentials —
+# documented in the release-guard proposal.
+#
+# Intended flow: Actions -> Run workflow on main -> green preflight ->
+# (future) staged preview deploy -> visual + onboarding check -> promote.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Release guard (dirty, branch, revision, project target)
+        run: node scripts/release-guard.mjs --no-fetch
+      - name: Quality gate (test + spec + conformance)
+        run: npm run ci
+      # Deploy is intentionally not wired yet.
+      # - name: Deploy to production
+      #   environment: production   # requires Vercel token secret + named owner
+      #   run: npx vercel --prod --yes
