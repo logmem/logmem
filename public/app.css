@@ -480,3 +480,31 @@
 .lmx-parked-plans{font-size:13px;color:var(--text-muted)}
 .lmx-parked-plans summary{cursor:pointer;min-height:36px;display:list-item;padding:4px 2px}
 .lmx-parked-plans .lmx-stack{margin-top:8px}
+
+/* Plan detail: compact header, milestone carousel, quiet done rows */
+.lmx-planhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.lmx-planhead h3{margin:0}
+.lmx-planhead-r{display:flex;align-items:center;gap:10px}
+.lmx-chiplink{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border:1px solid var(--border-strong);border-radius:999px;font:500 12px/1 var(--font-sans);color:var(--text);text-decoration:none;background:var(--surface)}
+.lmx-chiplink:hover{background:var(--surface-sunken)}
+.lmx-ms-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.lmx-ms-head .lmx-section-title{margin:0 0 8px}
+.lmx-ms-nav{display:flex;gap:6px}
+.lmx-ms-nav button{width:32px;height:32px;border-radius:50%;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);cursor:pointer;font-size:18px;line-height:1}
+.lmx-ms-nav button:focus-visible,.lmx-ms:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-ms-wrap{position:relative}
+.lmx-ms-wrap:not([data-few]):not([data-end]) .lmx-rail-ms{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 48px),transparent)}
+.lmx-ms{display:flex;flex-direction:column;justify-content:space-between;gap:8px;min-height:165px;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.lmx-ms-top{display:flex;flex-direction:column;gap:6px;min-width:0}
+.lmx-ms-title{font:600 14px/1.35 var(--font-sans);overflow-wrap:anywhere}
+.lmx-ms-why{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.lmx-ms[aria-pressed="true"]{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+.lmx-hot{border:1.5px solid var(--warning)}
+.lmx-hot[data-tone="late"]{border-color:var(--danger)}
+.lmx-hot h3{display:flex;gap:8px;align-items:baseline}
+.lmx-track--done>summary{display:flex;justify-content:space-between;gap:12px;align-items:baseline;cursor:pointer;list-style:none;min-height:32px}
+.lmx-track--done>summary::-webkit-details-marker{display:none}
+.lmx-track--done h3{margin:0;color:var(--text-muted)}
+.lmx-donejobs{margin-top:6px}
+.lmx-donejobs>summary{cursor:pointer;min-height:32px;display:list-item;font-size:12px;color:var(--text-muted)}
+.lmx-clearms{min-height:32px}
