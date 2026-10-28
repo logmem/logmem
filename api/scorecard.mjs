@@ -24,8 +24,13 @@ export const config = { runtime: "nodejs", maxDuration: 30 };
 
 const N = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 export function cleanDay(p, space) {
+  const window = Array.isArray(p.window) && p.window.length === 2
+    && p.window.every(v => typeof v === "number" && Number.isFinite(v) && v > 0)
+    && p.window[1] >= p.window[0] ? [...p.window] : null;
+  const optOut = Number(p.mirror_opt_out);
   return {
-    date: String(p.date).slice(0, 10), space, ran: true,
+    date: String(p.date).slice(0, 10), space, ran: true, window,
+    mirror_opt_out: Number.isSafeInteger(optOut) && optOut >= 0 ? optOut : 0,
     pass: p.pass === true, health_pass: p.health_pass === true, volume_pass: p.volume_pass === true, mirror_checked: p.mirror_checked === true,
     agents: Array.isArray(p.agents) ? p.agents.map(String).slice(0, 50) : [],
     entries: N(p.entries), handoffs: N(p.handoffs), accepted: N(p.accepted), mirror_mismatches: N(p.mirror_mismatches),

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { acmiKey } from "../src/core/keys.mjs";
+import { computeItemId, getCoordItem } from "../src/core/coord.mjs";
+import { interact } from "../src/http/interactions.mjs";
 import { createLogmem } from "../src/server.mjs";
 import { runCheck, updateScorecard, gate, DAY_MS } from "../scripts/dogfood-check.mjs";
 
@@ -186,4 +188,41 @@ test("sandbox space: no parity check, scorecard upsert + 7-day gate", async () =
   assert.deepEqual(gate(card), { days_passing: 7, consecutive: true, deliverable_done: true, pass: true });
   card.days[3].pass = false;
   assert.equal(gate(card).pass, false);
+});
+
+
+test("manager canonical resolution clears stale audit failure and preserves source attribution", async () => {
+  const redis = createMemoryRedis();
+  const { a } = await team(redis, "madez");
+  const store = createStore(redis, { space: "madez" });
+  const ho = await sc(a, "logmem_handoff", { to: "bentley", where: "channel:agent-coordination", summary: "Old request", create_agent: true });
+  const id = computeItemId("madez", "handoff", ho.trail, "bentley");
+  const later = Date.now() + DAY_MS + 60000;
+  const before = await store.readLog("agent", "bentley");
+  const source = before.find(e => e.trail === ho.trail);
+  assert.ok(source);
+  assert.equal((await runCheck(redis, { space: "madez", now: later, write: false })).day.unanswered_24h, 1);
+  await interact(store, { target: { type: "coord", id }, action: "resolve", text: "Superseded request for an inactive agent.", requestId: "resolve-audit-001", by: "human:mikey", manager: true, expectedOwner: "agent:bentley", now: () => later });
+  const result = await runCheck(redis, { space: "madez", now: later + 1000 });
+  assert.equal(result.day.unanswered_24h, 0);
+  assert.equal(result.day.stuck_written, 0);
+  const item = await getCoordItem(store, "madez", id);
+  assert.equal(item.response, "declined");
+  assert.equal(item.disposition, "manager-resolved");
+  assert.equal(item.settled_by, "human:mikey");
+  const after = await store.readLog("agent", "bentley");
+  assert.deepEqual(after.find(e => e.trail === ho.trail), source);
+  assert.ok(after.some(e => e.by === "human:mikey" && e.payload?.interaction === "resolve"));
+  assert.ok(!after.some(e => e.by === "agent:bentley" && ["accepted", "feedback"].includes(e.kind)));
+});
+
+test("a resolution memo alone cannot clear an unanswered handoff", async () => {
+  const redis = createMemoryRedis();
+  const { a } = await team(redis, "madez");
+  const ho = await sc(a, "logmem_handoff", { to: "bentley", summary: "Still unanswered", create_agent: true });
+  const store = createStore(redis, { space: "madez" });
+  const later = Date.now() + DAY_MS + 60000;
+  await store.append("agent", "bentley", { ts: later, kind: "memo", by: "human:mikey", trail: "fake-resolution", origin: ho.trail, summary: "Resolved", payload: { disposition: "manager-resolved" } });
+  const { day } = await runCheck(redis, { space: "madez", now: later + 1000, write: false });
+  assert.equal(day.unanswered_24h, 1);
 });

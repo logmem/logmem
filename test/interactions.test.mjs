@@ -24,3 +24,128 @@ test('a decision comment preserves the exact approval request and job wait',asyn
 test('settlement racing an item nudge wins without a new ping',async()=>{const{store,redis}=await setup(),id=await seedItem(redis);let once=true;store.redis=async(...c)=>{if(c[0]==='EVAL'&&once){once=false;await redis('HSET','lm:test:coord:item:'+id,'response','answered');}return redis(...c);};await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'nudge'})),e=>e.status===409);assert.equal((await store.readLog('agent','two')).length,0);});
 test('canonical last nudge time enforces cooldown even without a local cooldown key',async()=>{const{store,redis}=await setup(),id=await seedItem(redis);await redis('HSET','lm:test:coord:item:'+id,'last_nudge_at','999999');await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'nudge'})),e=>e.status===429);assert.equal((await store.readLog('agent','two')).length,0);});
 test('invalid coordination timestamps cannot send a nudge',async()=>{const{store,redis}=await setup(),id=await seedItem(redis);await redis('HSET','lm:test:coord:item:'+id,'deadline','-1');await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'nudge'})),e=>e.status===409);});
+
+test('only managers can resolve canonical coordination and must give a reason',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis),target={type:'coord',id};
+ for(const extra of [{manager:false},{text:' '},{expectedOwner:'agent:one'},{target:{type:'job',id:'a'}}]){
+  await assert.rejects(()=>interact(store,input({target,action:'resolve',expectedOwner:'agent:two',...extra})),e=>[400,403,409].includes(e.status));
+ }
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'response'),'open');
+ assert.equal((await discussion(store,target,{manager:false})).canResolve,false);
+ assert.equal((await discussion(store,target,{manager:true})).canResolve,true);
+ assert.equal((await discussion(store,target,{manager:true,canWrite:false})).canResolve,false);
+});
+
+test('manager resolution records the human reason and removes both open indexes without completing the job',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis),target={type:'coord',id};
+ await redis('ZADD','lm:test:coord:open:two',86401000,id);
+ await store.append('job','a',{ts:1000,trail:'handoff-a',kind:'handoff',by:'agent:one',to:'agent:two',summary:'Original handoff'});
+ const before=await store.getNow('job','a');
+ const change=input({target,action:'resolve',text:'This request was superseded by the completed review.',expectedOwner:'agent:two'});
+ const result=await interact(store,change);
+ const raw=await redis('HGETALL','lm:test:coord:item:'+id);
+ const record=Array.isArray(raw)?Object.fromEntries(Array.from({length:raw.length/2},(_,i)=>[raw[i*2],raw[i*2+1]])):raw;
+ assert.equal(record.response,'declined');
+ assert.equal(record.disposition,'manager-resolved');
+ assert.equal(record.settled_by,'human:Mikey');
+ assert.equal(record.settled_at,'1000000');
+ assert.equal(record.settlement_trail,result.entry.trail);
+ assert.deepEqual(await redis('ZRANGE','lm:test:coord:open',0,-1),[]);
+ assert.deepEqual(await redis('ZRANGE','lm:test:coord:open:two',0,-1),[]);
+ assert.deepEqual(await store.getNow('job','a'),before);
+ const logs=await store.readLog('job','a');
+ assert.equal(logs[0].kind,'handoff');
+ assert.equal(logs[1].by,'human:Mikey');
+ assert.equal(logs[1].payload.reason,change.text);
+ assert.equal(logs[1].payload.disposition,'manager-resolved');
+ const d=await discussion(store,target,{manager:true});
+ assert.equal(d.canResolve,false);
+ assert.equal(d.entries.length,1);
+ assert.equal(d.entries[0].kind,'memo');
+ assert.equal((await interact(store,change)).replayed,true);
+ assert.equal((await store.readLog('job','a')).length,2);
+ assert.equal((await store.readLog('agent','two')).length,1);
+ await assert.rejects(()=>interact(store,{...change,text:'Different reason.'}),e=>e.status===409);
+ await assert.rejects(()=>interact(store,{...change,manager:false}),e=>e.status===403);
+});
+
+test('a recipient change between load and resolution prevents closure and audit writes',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis);let once=true;
+ store.redis=async(...c)=>{if(c[0]==='EVAL'&&once){once=false;await redis('HSET','lm:test:coord:item:'+id,'to','agent:one');}return redis(...c);};
+ await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'resolve',expectedOwner:'agent:two'})),e=>e.status===409);
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'response'),'open');
+ assert.equal((await discussion(store,{type:'coord',id},{manager:true})).entries.length,0);
+});
+
+test('an agent answer racing manager resolution wins without manager audit writes',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis);let once=true;
+ store.redis=async(...c)=>{if(c[0]==='EVAL'&&once){once=false;await redis('HSET','lm:test:coord:item:'+id,'response','answered','settled_by','agent:two');}return redis(...c);};
+ await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'resolve',expectedOwner:'agent:two'})),e=>e.status===409);
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'response'),'answered');
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'settled_by'),'agent:two');
+ assert.equal((await discussion(store,{type:'coord',id},{manager:true})).entries.length,0);
+});
+
+test('manager resolution cannot access another space or a forged record namespace',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis);
+ const change=input({target:{type:'coord',id},action:'resolve',expectedOwner:'agent:two'});
+ await assert.rejects(()=>interact(createStore(redis,{space:'other'}),change),e=>e.status===404);
+ await redis('HSET','lm:test:coord:item:'+id,'space','other');
+ await assert.rejects(()=>interact(store,change),e=>e.status===404);
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'response'),'open');
+});
+
+test('a corrupt recipient index prevents every resolution write',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis);
+ await redis('SET','lm:test:coord:open:two','broken');
+ await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'resolve',expectedOwner:'agent:two'})),e=>e.status===503);
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'response'),'open');
+ assert.deepEqual(await redis('ZRANGE','lm:test:coord:open',0,-1),[id]);
+ assert.equal((await discussion(store,{type:'coord',id},{manager:true})).entries.length,0);
+});
+
+test('resolution delivery retries preserve one durable audit entry and the original human identity',async()=>{
+ const{store,redis}=await setup(),id=await seedItem(redis),append=store.append;let offline=true;
+ store.append=async(...args)=>{if(offline)throw new Error('offline');return append(...args);};
+ const change=input({target:{type:'coord',id},action:'resolve',expectedOwner:'agent:two',text:'Duplicate request.'});
+ await assert.rejects(()=>interact(store,change),e=>e.status===503);
+ assert.equal(await redis('HGET','lm:test:coord:item:'+id,'disposition'),'manager-resolved');
+ assert.equal((await discussion(store,change.target,{manager:true})).entries.length,1);
+ offline=false;
+ assert.equal((await interact(store,change)).replayed,true);
+ assert.equal((await store.readLog('job','a')).length,1);
+ assert.equal((await store.readLog('job','a'))[0].by,'human:Mikey');
+});
+
+test('customer resolve requires manage-members permission and preserves verified human identity',async()=>{
+ const{createHandler}=await import('../api/interactions.mjs');
+ const{createWorkspace,setMembership}=await import('../src/http/workspaces.mjs');
+ const{mockReq,mockRes}=await import('./oauth-helpers.mjs');
+ const redis=createMemoryRedis(),owner='user_OwnerResolve01',editor='user_EditorResolve01';
+ const workspace=await createWorkspace({userId:owner,name:'Firm',firstSpaceName:'Ops',requestId:'create-resolve'},{redis});
+ await setMembership({actorId:owner,workspaceId:workspace.workspace.id,userId:editor,role:'member',spaces:{[workspace.space.id]:{role:'editor',canApprove:false}},requestId:'membership-resolve'},{redis});
+ const store=createStore(redis,{space:workspace.space.namespace}),id='ci_'+'b'.repeat(24),key=`lm:${store.space}:coord:item:${id}`;
+ await store.setWho('job','a',{title:'Review'});
+ await redis('HSET',key,'id',id,'space',store.space,'to','agent:retired','where','job:a','request_trail','old-handoff','response','open');
+ await redis('ZADD',`lm:${store.space}:coord:open`,1000,id);
+ await redis('ZADD',`lm:${store.space}:coord:open:retired`,1000,id);
+ const invoke=async(userId)=>{
+  const handler=createHandler({redis,env:{LOGMEM_CUSTOMER_DASHBOARD:'1'},session:async()=>({status:'signed-in',userId})});
+  const res=mockRes();
+  await handler(mockReq({method:'POST',url:'/api/interactions',headers:{host:'logmem.test',origin:'https://logmem.test','x-logmem-intent':'interactions','x-logmem-viewer':'customer'},body:{workspaceId:workspace.workspace.id,spaceId:workspace.space.id,target:{type:'coord',id},action:'resolve',text:'The retired agent no longer owns this request.',expectedOwner:'agent:retired',requestId:'resolve-api-001',by:'human:Forged'}}),res);
+  return {status:res.statusCode,data:JSON.parse(res.body)};
+ };
+ const denied=await invoke(editor);
+ assert.equal(denied.status,403);
+ assert.equal(await redis('HGET',key,'response'),'open');
+ const approved=await invoke(owner);
+ assert.equal(approved.status,200,JSON.stringify(approved));
+ assert.equal(approved.data.entry.by,'human:'+owner);
+ assert.equal(await redis('HGET',key,'settled_by'),'human:'+owner);
+ assert.deepEqual(await redis('ZRANGE',`lm:${store.space}:coord:open:retired`,0,-1),[]);
+});
+
+test('queue accepts legacy scalar coverage without a wrong-type read or stale warning',async()=>{
+ const redis=createMemoryRedis(),store=createStore(redis,{space:'legacy'});await redis('SET','lm:legacy:coord:coverage','full');
+ const result=await coordinationQueue(store);assert.equal(result.coverage.complete,true);assert.deepEqual(result.coverage.notes,[]);
+});

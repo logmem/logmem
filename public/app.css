@@ -580,3 +580,6 @@
 .lmx-verdict{flex:none;font:600 11px var(--font-sans);border-radius:999px;padding:3px 10px;border:1px solid var(--border-strong);color:var(--text-muted)}
 .lmx-verdict[data-v="approve"]{color:var(--success);border-color:var(--success)}
 .lmx-verdict[data-v="reject"]{color:var(--danger);border-color:var(--danger)}
+
+.lmx-coverage-note { border: 1px solid var(--border); border-left: 3px solid var(--brand); border-radius: var(--radius-md); padding: 16px 18px; background: var(--surface); font-size: 13px; line-height: 1.6; }
+.lmx-coverage-note p { margin: 4px 0; }

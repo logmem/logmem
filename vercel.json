@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/sign-in",
+      "destination": "/api/sign-in"
+    },
+    {
       "source": "/.well-known/oauth-authorization-server",
       "destination": "/api/well-known/oauth-authorization-server"
     },
@@ -80,7 +84,7 @@
       ]
     },
     {
-      "source": "/((?!api/oauth/authorize/?$).*)",
+      "source": "/((?!api/oauth/authorize/?$)(?!api/sign-in/?$)(?!sign-in/?$).*)",
       "headers": [
         {
           "key": "Content-Security-Policy",

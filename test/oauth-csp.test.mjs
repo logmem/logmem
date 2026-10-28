@@ -57,7 +57,7 @@ const cspFor = (path) => cspRules.filter((h) => sourceToRegex(h.source).test(pat
 const GLOBAL_CSP = cspRules.find((h) => h.source.startsWith("/((?!")).headers.find((x) => x.key === "Content-Security-Policy").value;
 
 test("csp: vercel.json sends no CSP on /api/oauth/authorize but keeps it everywhere else", () => {
-  for (const p of ["/api/oauth/authorize", "/api/oauth/authorize/"]) {
+  for (const p of ["/api/oauth/authorize", "/api/oauth/authorize/", "/sign-in", "/sign-in/", "/api/sign-in", "/api/sign-in/"]) {
     assert.deepEqual(cspFor(p), [], `${p} must not get a vercel.json CSP`);
   }
   for (const p of ["/", "/docs", "/api/oauth/token", "/api/oauth/register", "/api/oauth/authorizex", "/api/oauth/authorize/x", "/app"]) {
