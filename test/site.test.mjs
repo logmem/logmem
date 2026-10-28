@@ -12,7 +12,7 @@ process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
 const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production" };
 const req = (cookie) => ({ headers: cookie ? { cookie } : {} });
 
-test("admin auth: password check, signed cookie, expiry, tamper, production gate", () => {
+test("admin auth: password check, signed cookie, expiry, tamper, production gate", async () => {
   assert.equal(checkPassword("correct horse", ENV), true);
   assert.equal(checkPassword("wrong", ENV), false);
   assert.equal(checkPassword("anything", {}), false, "no password set = off");
@@ -21,9 +21,9 @@ test("admin auth: password check, signed cookie, expiry, tamper, production gate
   assert.equal(isAdmin(req(c.replace(/.$/, "x")), ENV), false, "tampered");
   assert.equal(isAdmin(req(c), ENV, Date.now() + 13 * 3600e3), false, "expired");
   assert.equal(isAdmin(req(c), { ...ENV, LOGMEM_ADMIN_PASSWORD: "rotated" }), false, "password rotation logs everyone out");
-  assert.equal(mayRead(req(), ENV), false);
-  assert.equal(mayRead(req(), { VERCEL_ENV: "production" }), false, "prod without a password never opens");
-  assert.equal(mayRead(req(), { VERCEL_ENV: "preview" }), true, "preview relies on Vercel SSO");
+  assert.equal(await mayRead(req(), ENV), false);
+  assert.equal(await mayRead(req(), { VERCEL_ENV: "production" }), false, "prod without a password never opens");
+  assert.equal(await mayRead(req(), { VERCEL_ENV: "preview" }), true, "preview relies on Vercel SSO");
 });
 
 test("views over a real sandbox day: overview, log, agents, job, decisions, recall; and no writes", async () => {

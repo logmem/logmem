@@ -3,8 +3,14 @@
 // One password, set by the operator as LOGMEM_ADMIN_PASSWORD in the deploy's
 // env. Never in the repo, never in chat. A correct password gets an HMAC-signed,
 // HttpOnly cookie valid for 12 hours. No password set = the admin app is off.
+//
+// Clerk (managed) sign-in is also accepted: a signed-in Clerk user may read
+// when their email is in LOGMEM_ADMIN_EMAILS or they own a tenant.
 
 import { createHmac, timingSafeEqual, createHash } from "node:crypto";
+import { descriptorFromEnv, fromDescriptor } from "../lib/backend.mjs";
+import { clerkConfigured, clerkSession } from "./clerk.mjs";
+import { accountFor } from "./accounts.mjs";
 
 export const COOKIE = "lm_admin";
 const TTL_S = 12 * 3600;
@@ -57,14 +63,99 @@ export function isAdmin(req, env = process.env, now = Date.now()) {
   return safeEqual(mac, sign(exp, secret(env)));
 }
 
+// ---- Clerk injection (tests) ----
+let adminDeps = null;
+function setAdminDeps(d) { adminDeps = d; }
+export function __setAdminDepsForTests(d) { setAdminDeps(d); }
+export const __setAdminClerkDepsForTests = __setAdminDepsForTests;
+export const __setClerkDepsForTests = __setAdminDepsForTests;
+export const __setClerkSessionForTests = (fn) => setAdminDeps({ session: fn });
+
+function getDeps() {
+  if (adminDeps) return adminDeps;
+  return {};
+}
+
+function reqUrl(req) {
+  const proto = String(req.headers?.["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
+  const host = req.headers?.["x-forwarded-host"] || req.headers?.host || "localhost";
+  return `${proto}://${host}${req.url || "/"}`;
+}
+
+function clerkConfiguredSafe(env) {
+  const deps = getDeps();
+  const fn = deps.ready || deps.clerkConfigured || deps.isConfigured;
+  if (typeof fn === "function") {
+    try { return fn.length === 0 ? Boolean(fn()) : Boolean(fn(env)); } catch { return false; }
+  }
+  try { return clerkConfigured(env); } catch { return false; }
+}
+
+async function callSession(req, env, url) {
+  const deps = getDeps();
+  const fn = deps.session || deps.clerkSession;
+  if (typeof fn === "function") {
+    const attempts = [[], [req], [req, url], [req, { env, url }], [req, env, url]];
+    for (const args of attempts) {
+      try {
+        const r = await fn(...args);
+        if (r && typeof r === "object" && "status" in r) return r;
+      } catch {
+        // try next signature
+      }
+    }
+  }
+  try { return await clerkSession(req, { env, url }); } catch { return null; }
+}
+
+function defaultRedis(env) {
+  const d = descriptorFromEnv(env);
+  const b = d && fromDescriptor(d);
+  return b ? b.redis : null;
+}
+
+async function resolveAccount(session, env) {
+  const deps = getDeps();
+  const redisFactory = deps.redis;
+  const redis = typeof redisFactory === "function" ? redisFactory() : (redisFactory || defaultRedis(env));
+  if (!redis) return null;
+  const af = deps.accountFor || accountFor;
+  try {
+    return await af({ clerkUserId: session.userId, email: session.email }, { redis, env });
+  } catch {
+    return null;
+  }
+}
+
+function adminEmails(env) {
+  return String(env.LOGMEM_ADMIN_EMAILS || "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 /**
- * May this request read space data? Production: only a signed-in admin (and
- * never when no password is set). Preview/dev: Vercel's own login already
- * gates the whole deployment, so allow.
+ * Returns an array of spaces a signed-in Clerk user may view, or null if the
+ * request is not a signed-in Clerk user (fall back to password path).
  */
-export function mayRead(req, env = process.env) {
-  if (env.VERCEL_ENV === "production") return isAdmin(req, env);
-  return adminEnabled(env) ? isAdmin(req, env) : true;
+export async function clerkViewSpaces(req, env = process.env) {
+  if (!clerkConfiguredSafe(env)) return null;
+  const url = reqUrl(req);
+  const session = await callSession(req, env, url);
+  if (!session || session.status !== "signed-in") return null;
+  const emails = adminEmails(env);
+  if (emails.includes(session.email)) return viewSpaces(env);
+  const acct = await resolveAccount(session, env);
+  if (acct && !acct.waitlist) return [acct.space];
+  return [];
+}
+
+export async function mayRead(req, env = process.env) {
+  const passwordAllowed = (env.VERCEL_ENV === "production")
+    ? isAdmin(req, env)
+    : (adminEnabled(env) ? isAdmin(req, env) : true);
+  if (passwordAllowed) return true;
+
+  const spaces = await clerkViewSpaces(req, env);
+  if (spaces === null) return false;
+  return true;
 }
 
 /** Spaces the web app may show. */

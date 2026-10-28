@@ -23,6 +23,7 @@
 
 import { createHash } from "node:crypto";
 import { KEYS, serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, sweepIndex, withStoreLock, StoreLockError, LOCK_BUSY_ERROR, LOCK_RETRY_AFTER_S, UNAVAILABLE } from "../../src/http/onboarding.mjs";
+import { isAdmin } from "../../src/http/admin-auth.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 10 };
@@ -58,6 +59,7 @@ export function createHandler({
   ttlS = WAITLIST_TTL_S,
   lockWaitMs,
   log,
+  env = process.env,
 } = {}) {
   return async function handler(req, res) {
     const t0 = performance.now();
@@ -66,7 +68,19 @@ export function createHandler({
       res.status(status).json(body);
       logRequest({ route: ROUTE, method: req.method, ms: performance.now() - t0, ok: status < 400, status }, log ? { sink: log } : {});
     };
-    if (req.method !== "POST") return methodNotAllowed(res, "POST");
+    if (req.method === "GET") {
+      if (!isAdmin(req, env)) return done(401, { error: "unauthorized" });
+      const redis = getRedis();
+      if (!redis) return done(503, { error: UNAVAILABLE });
+      try {
+        const rows = await listWaitlist(redis);
+        return done(200, rows);
+      } catch (e) {
+        sendServerError(res, ROUTE, e, log ? { sink: log } : {});
+        return;
+      }
+    }
+    if (req.method !== "POST") return methodNotAllowed(res, "GET, POST");
     const redis = getRedis();
     if (!redis) return done(503, { error: UNAVAILABLE });
     try {
@@ -152,6 +166,41 @@ export function createHandler({
       sendServerError(res, ROUTE, e, log ? { sink: log } : {});
     }
   };
+}
+
+export async function listWaitlist(redis) {
+  const keys = [];
+  let cursor = "0";
+  do {
+    const res = await redis("SCAN", cursor, "MATCH", "lm:onboard:waitlist:*", "COUNT", "200");
+    const batch = Array.isArray(res) ? res : [];
+    cursor = String(batch[0] ?? "0");
+    const found = Array.isArray(batch[1]) ? batch[1] : [];
+    for (const k of found) keys.push(String(k));
+  } while (cursor !== "0");
+  const rows = [];
+  for (const key of keys) {
+    if (key === KEYS.waitlistIndex) continue;
+    if (key === KEYS.waitlistLock) continue;
+    if (key.includes(":lock:") || key.includes(":rl:")) continue;
+    let raw;
+    try {
+      raw = await redis("GET", key);
+    } catch {
+      continue;
+    }
+    if (raw == null) continue;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    rows.push(parsed);
+  }
+  rows.sort((a, b) => (Number(b?.ts) || 0) - (Number(a?.ts) || 0));
+  return rows;
 }
 
 export default createHandler();

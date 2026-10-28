@@ -3,17 +3,25 @@
 
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { buildView } from "../src/http/view.mjs";
-import { mayRead, viewSpaces, adminEnabled } from "../src/http/admin-auth.mjs";
+import { mayRead, viewSpaces, adminEnabled, clerkViewSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  if (!mayRead(req)) return res.status(401).json({ error: adminEnabled() ? "sign in required" : "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
+  const env = process.env;
   const q = req.query || {};
-  const space = String(q.space || viewSpaces()[0]);
-  if (!viewSpaces().includes(space)) return res.status(403).json({ error: `space '${space}' is not shown here`, spaces: viewSpaces() });
+  const clerkSpaces = await clerkViewSpaces(req, env);
+  let allowed;
+  if (clerkSpaces !== null) {
+    allowed = clerkSpaces;
+  } else {
+    if (!(await mayRead(req, env))) return res.status(401).json({ error: adminEnabled(env) ? "sign in required" : "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
+    allowed = viewSpaces(env);
+  }
+  const space = String(q.space || (allowed[0] || viewSpaces(env)[0]));
+  if (!allowed.includes(space)) return res.status(403).json({ error: `space '${space}' is not shown here`, spaces: allowed });
   const d = descriptorFromEnv();
   if (!d) return res.status(503).json({ error: "storage not configured on this deployment" });
   try {

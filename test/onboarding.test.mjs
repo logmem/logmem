@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { oauthRedis, mockRes, mockReq, withEnv } from "./oauth-helpers.mjs";
 import { createHandler as probeHandler, cleanAgents, TTL_S, PROBE_POST_LIMIT, PROBE_GET_LIMIT, config as probeConfig } from "../api/onboarding/probe.mjs";
-import { createHandler as waitlistHandler, normalizeEmail, emailKey, WAITLIST_TTL_S, config as waitlistConfig } from "../api/onboarding/waitlist.mjs";
+import { createHandler as waitlistHandler, normalizeEmail, emailKey, WAITLIST_TTL_S, config as waitlistConfig, listWaitlist } from "../api/onboarding/waitlist.mjs";
 import { createHandler as testHandler, runTest, REFUSED, CONNECT_FAILED } from "../api/onboarding/test.mjs";
 import { clientIp, rateLimit, readJsonBody, KEYS, withStoreLock, StoreLockError, LOCK_BUSY_ERROR, LOCK_TTL_S, LOCK_WAIT_MS, ROUTE_MAX_DURATION_S } from "../src/http/onboarding.mjs";
 import { assertPublicTarget } from "../src/http/net-guard.mjs";
+import { issueCookie } from "../src/http/admin-auth.mjs";
 import { pinLookup, pinnedHttpsOptions, pinnedHttpsPost, pinnedNativeOptions, PinError } from "../src/http/pin.mjs";
 
 const quiet = () => {};
@@ -297,7 +298,7 @@ test("waitlist: rate limited to 10 per IP per minute; 503 without a backend", as
   assert.equal(redis.ttls.get("lm:onboard:rl:wl:203.0.113.9"), 60);
   assert.equal((await call(h, { ...req(12), headers: { "x-forwarded-for": "198.51.100.7" } })).status, 200, "other IPs unaffected");
   assert.equal((await call(waitlistHandler({ redis: () => null, log: quiet }), req(1))).status, 503);
-  assert.equal((await call(h, { method: "GET" })).status, 405);
+  assert.equal((await call(h, { method: "GET" })).status, 401);
 });
 
 test("waitlist: size cap, and retention deletes the plaintext email", async () => {
@@ -468,6 +469,36 @@ test("store lock: ttl outlives the route, a landed SET that throws is deleted on
   assert.ok(elapsed >= 220 && elapsed < 800, `deadline ${elapsed}ms`);
   assert.ok(times.length >= 2 && times.length <= 30, `backoff attempts ${times.length}, not 800`);
   assert.ok(times[1] - times[0] >= 5, "the retry waits instead of spinning");
+});
+
+// ---- waitlist admin (Phase D) ------------------------------------------------
+
+test("waitlist: listWaitlist scans entries, skips unparseable, newest first", async () => {
+  const redis = oauthRedis();
+  const f1 = emailKey("old@example.com");
+  const f2 = emailKey("new@example.com");
+  await redis("SET", KEYS.waitlistEntry(f1), JSON.stringify({ email: "old@example.com", ts: 1000 }));
+  await redis("SET", KEYS.waitlistEntry(f2), JSON.stringify({ email: "new@example.com", ts: 2000 }));
+  await redis("SET", KEYS.waitlistEntry("bad"), "{not json");
+  await redis("ZADD", KEYS.waitlistIndex, "1", "idxonly");
+  const rows = await listWaitlist(redis);
+  assert.deepEqual(rows.map((r) => r.email), ["new@example.com", "old@example.com"]);
+});
+
+test("waitlist: admin GET returns list, unauthenticated 401, empty list", async () => {
+  const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production" };
+  const cookie = issueCookie(ENV).split(";")[0];
+  const redis = oauthRedis();
+  const h = waitlistHandler({ redis: () => redis, env: ENV, log: quiet });
+  const empty = await call(h, { method: "GET", headers: { cookie } });
+  assert.equal(empty.status, 200);
+  assert.deepEqual(empty.body, []);
+  const field = emailKey("a@example.com");
+  await redis("SET", KEYS.waitlistEntry(field), JSON.stringify({ email: "a@example.com", ts: 1000 }));
+  const r = await call(h, { method: "GET", headers: { cookie } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.length, 1);
+  assert.equal((await call(h, { method: "GET" })).status, 401);
 });
 
 // ---- connection test ----------------------------------------------------------

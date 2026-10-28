@@ -75,7 +75,7 @@
     </section>
 
     <!-- Detect agents (both paths) -->
-    <section class="lm-panel ob-card" data-step="detect" aria-labelledby="h-detect" hidden>
+    <section class="lm-panel ob-card" data-step="detect" data-optional="true" aria-labelledby="h-detect" hidden>
       <div><h1 id="h-detect" tabindex="-1">Find the AI tools on this machine.</h1><p class="ob-lede">Run this in a terminal. It looks for 9 agent tools on your PATH, prints what it finds, and sends only their names and versions back to this page.</p></div>
       <div class="lm-stack">
         <span class="lm-eyebrow">Run in a terminal</span>
@@ -138,7 +138,7 @@
     </section>
 
     <!-- BYO: ACMI -->
-    <section class="lm-panel ob-card" data-step="acmi" aria-labelledby="h-acmi" hidden>
+    <section class="lm-panel ob-card" data-step="acmi" data-optional="true" aria-labelledby="h-acmi" hidden>
       <div><h1 id="h-acmi" tabindex="-1">Bring your existing agent history?</h1><p class="ob-lede">If your agents already use the ACMI protocol, compatibility mode lets them keep their acmi_* tools and shows their history in LogMem. Turn it off if you’re starting fresh.</p></div>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="compat" checked><span class="ob-toggle-text"><strong class="lm-title-3">ACMI compatibility</strong><span class="muted ob-small">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*. Sets <code class="mono">LOGMEM_ACMI_COMPAT=1</code>.</span></span></label>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="mirror"><span class="ob-toggle-text"><strong class="lm-title-3">Mirror writes back to ACMI</strong><span class="muted ob-small">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it. Sets <code class="mono">LOGMEM_MIRROR_ACMI=1</code> for this space.</span></span></label>
@@ -162,7 +162,7 @@
     </section>
 
     <!-- BYO: first entries -->
-    <section class="lm-panel ob-card" data-step="first" aria-labelledby="h-first" hidden>
+    <section class="lm-panel ob-card" data-step="first" data-optional="true" aria-labelledby="h-first" hidden>
       <div><h1 id="h-first" tabindex="-1">Watch the first notes arrive.</h1><p class="ob-lede">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. As it works, it writes notes on what changed, in order. Below is what that looks like.</p></div>
       <div class="lm-panel lm-demo-frame ob-events">
         <div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div>
@@ -177,7 +177,7 @@
     </section>
 
     <!-- BYO: second agent + handoff -->
-    <section class="lm-panel ob-card" data-step="handoff" aria-labelledby="h-handoff" hidden>
+    <section class="lm-panel ob-card" data-step="handoff" data-optional="true" aria-labelledby="h-handoff" hidden>
       <div><h1 id="h-handoff" tabindex="-1">Add a second agent and hand it work.</h1><p class="ob-lede">Shared memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it. The handoff stays open until the other agent picks it up.</p></div>
       <ol class="ob-list">
         <li>Repeat <button type="button" class="ob-linkbtn" data-goto="connect">Connect agents</button> on another host, with <code class="mono">LOGMEM_AGENT=atlas</code>.</li>
@@ -194,7 +194,7 @@
     </section>
 
     <!-- BYO: invite a human approver -->
-    <section class="lm-panel ob-card" data-step="approver" aria-labelledby="h-approver" hidden>
+    <section class="lm-panel ob-card" data-step="approver" data-optional="true" aria-labelledby="h-approver" hidden>
       <div>
         <div class="lm-row ob-tags"><span class="lm-demo" title="Approver invites aren't built yet">Preview</span></div>
         <h1 id="h-approver" tabindex="-1">Invite a person to approve.</h1>

@@ -36,8 +36,8 @@
     approver: ['Invite an approver', 'Preview']
   };
   var PATHS = {
-    cloud: ['choose', 'plan', 'detect', 'waitlist'],
-    byo: ['choose', 'detect', 'space', 'redis', 'acmi', 'connect', 'first', 'handoff', 'approver']
+    cloud: ['choose', 'plan', 'waitlist'],
+    byo: ['choose', 'space', 'redis', 'connect']
   };
   var state = { path: 'byo', i: 0, max: 0 };
 
@@ -86,7 +86,12 @@
       if (h) h.focus({ preventScroll: true });
     }
   }
-  function goId(id) { var n = steps().indexOf(id); if (n >= 0) { state.max = Math.max(state.max, n); go(n); } }
+  function goId(id) { var n = steps().indexOf(id); if (n >= 0) { state.max = Math.max(state.max, n); go(n); return; }
+    $$('[data-step]').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== id; });
+    onEnter(id);
+    var h = $('#h-' + id);
+    window.scrollTo(0, 0);
+    if (h) h.focus({ preventScroll: true }); }
 
   function choose(path) {
     state.path = path;
