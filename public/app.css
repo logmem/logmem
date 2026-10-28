@@ -940,3 +940,4 @@
 .lmx-plan-tile-meta{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;max-width:100%}
 /* The Activity lane grid shares this legacy name with priority badges. */
 .lmx-plan-tile-heading>.lmx-lane{display:inline-flex;grid-template-columns:none;gap:0;width:auto;min-width:0;white-space:nowrap;align-items:center}
+.lmx-plan-tile-metrics .lmx-bar{position:static;top:auto;background:var(--surface-sunken);border-radius:3px}

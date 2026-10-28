@@ -28,6 +28,8 @@ test('long plan titles stay on one line inside narrow priority rails',async({pag
   const bounds=await heading.boundingBox();expect(bounds.width).toBeGreaterThan(70);expect(bounds.height).toBeLessThan(30);
   expect(await tile.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
   await expect(tile.getByRole('progressbar')).toHaveAttribute('aria-valuenow','40');
+  await expect(tile.getByRole('progressbar')).toHaveCSS('position','static');
+  expect((await tile.getByRole('progressbar').boundingBox()).width).toBeGreaterThan(16);
   await tile.locator('summary').click();await expect(tile.getByRole('link',{name:/Review plan/})).toBeVisible();await tile.locator('summary').click();
  }
  await ops.evaluate(el=>el.style.width='');
