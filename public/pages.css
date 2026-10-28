@@ -1,0 +1,82 @@
+/* LogMem subpages — shared layout for /pricing, /connect, /privacy, /terms.
+   Built on the live design system: /ds/tokens/logmem.css + /ds/components/bundle.css.
+   Page-specific layout only; components (lm-btn, lm-badge, lm-disclosure) come from the bundle. */
+
+.page-wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 72px; }
+.page-main { display: block; }
+
+.page-hero { padding: 56px 0 8px; max-width: 760px; }
+.page-hero h1 { font-family: 'Schibsted Grotesk', sans-serif; font-weight: 800; font-size: clamp(34px, 5vw, 52px); line-height: 1.05; color: var(--text); margin: 0 0 16px; }
+.page-hero p { font-size: 18px; line-height: 1.55; color: var(--text-muted); margin: 0 0 24px; }
+.page-eyebrow { display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--brand); background: var(--brand-subtle); border-radius: 999px; padding: 4px 12px; margin-bottom: 16px; }
+
+.page-section { margin-top: 48px; }
+.page-section > h2 { font-family: 'Schibsted Grotesk', sans-serif; font-weight: 800; font-size: 28px; color: var(--text); margin: 0 0 12px; }
+.page-section > p { font-size: 16px; line-height: 1.6; color: var(--text-muted); max-width: 720px; }
+
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+
+/* Pricing */
+.billing-note { font-size: 14px; color: var(--text-subtle); margin-top: 10px; }
+.compare-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
+table.compare { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 14.5px; }
+table.compare th, table.compare td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+table.compare thead th { font-family: 'Schibsted Grotesk', sans-serif; font-size: 16px; background: var(--surface-sunken); }
+table.compare thead th .price { display: block; font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; font-size: 14px; color: var(--brand); margin-top: 2px; }
+table.compare tbody th { font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+table.compare td.hl { font-weight: 600; }
+.plan-cards { display: none; }
+.rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+.rule-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-1); }
+.rule-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--text); }
+.rule-card p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--text-muted); }
+.callout { background: var(--brand-subtle); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-top: 48px; }
+.callout h2 { font-family: 'Schibsted Grotesk', sans-serif; font-weight: 800; font-size: 24px; margin: 0 0 8px; color: var(--text); }
+.callout p { margin: 0 0 16px; color: var(--text-muted); line-height: 1.6; max-width: 680px; }
+.faq details { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 14px 18px; margin-bottom: 10px; }
+.faq summary { font-weight: 600; cursor: pointer; color: var(--text); }
+.faq details p { color: var(--text-muted); line-height: 1.6; margin: 10px 0 4px; }
+
+/* Connect */
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+.step-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-1); }
+.step-card .num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: var(--on-brand); font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+.step-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--text); }
+.step-card p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--text-muted); }
+.client-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+.client-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-1); text-align: left; width: 100%; cursor: pointer; font: inherit; }
+.client-card[aria-pressed="true"] { border-color: var(--brand); outline: 2px solid var(--brand-subtle); }
+.client-card .client-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.client-card img { width: 28px; height: 28px; }
+.client-card h3 { margin: 0; font-size: 17px; color: var(--text); }
+.client-card p { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--text-muted); }
+.client-card .hint { font-size: 13.5px; color: var(--text-subtle); }
+.prompt-block { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-1); margin-top: 20px; }
+.prompt-block .prompt-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.prompt-block h3 { margin: 0; font-size: 16px; color: var(--text); }
+.prompt-text { font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.65; color: var(--text); background: var(--surface-sunken); border-radius: 12px; padding: 16px; margin: 0; white-space: pre-wrap; }
+.audience-toggle { display: inline-flex; gap: 6px; }
+.audience-toggle button { font: inherit; font-size: 13.5px; font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+.audience-toggle button[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.control-list { max-width: 720px; }
+.control-list li { font-size: 16px; line-height: 1.6; color: var(--text-muted); margin-bottom: 10px; }
+.control-list strong { color: var(--text); }
+
+/* Legal prose */
+.prose { max-width: 760px; }
+.prose h2 { font-family: 'Schibsted Grotesk', sans-serif; font-weight: 800; font-size: 22px; color: var(--text); margin: 36px 0 10px; }
+.prose p, .prose li { font-size: 16px; line-height: 1.65; color: var(--text-muted); }
+.prose ul { padding-left: 22px; }
+.prose .updated { font-size: 14px; color: var(--text-subtle); }
+
+@media (max-width: 720px) {
+  .compare-scroll { display: none; }
+  .plan-cards { display: grid; gap: 14px; }
+  .plan-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-1); }
+  .plan-card h3 { margin: 0; font-size: 19px; color: var(--text); }
+  .plan-card .price { font-weight: 600; color: var(--brand); margin: 2px 0 12px; }
+  .plan-card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14.5px; }
+  .plan-card dt { color: var(--text-subtle); }
+  .plan-card dd { margin: 0; color: var(--text); font-weight: 500; }
+  .plan-card .cta-row { margin-top: 16px; }
+}
