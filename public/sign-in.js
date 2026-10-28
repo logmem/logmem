@@ -23,11 +23,12 @@
     ? '/api/connections?signin=1'
     : '/api/session?signin=1&returnTo=' + encodeURIComponent(root.dataset.returnTo);
   if (window.Clerk.isSignedIn) { location.replace(destination); return; }
+  const tokens=getComputedStyle(document.documentElement),color=name=>tokens.getPropertyValue(name).trim();
   window.Clerk.mountSignIn(root, {
    routing:'hash',forceRedirectUrl:destination,
    signUpForceRedirectUrl:destination,
    appearance:{
-    variables:{colorPrimary:'#0b6c68',colorText:'#172321',colorTextSecondary:'#657570',colorBackground:'#ffffff',colorInputBackground:'#f6f8f7',borderRadius:'12px',fontFamily:'inherit'},
+    variables:{colorPrimary:color('--cockpit-action'),colorText:color('--text'),colorTextSecondary:color('--text-muted'),colorBackground:color('--surface'),colorInputBackground:color('--surface-sunken'),borderRadius:'12px',fontFamily:'inherit'},
     elements:{rootBox:{width:'100%'},cardBox:{width:'100%',boxShadow:'none'},card:{boxShadow:'none',padding:'0',border:'0'},header:{display:'none'},formButtonPrimary:{boxShadow:'none',textTransform:'none'}}
    }
   });
