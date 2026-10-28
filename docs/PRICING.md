@@ -22,7 +22,7 @@ Three rules:
 
 ## Plans
 
-| | Open source (MIT) | Free | **Dev** | **Pro** | **Team** | **Agency** | Enterprise |
+| | Open source (MIT) | Free | **Dev** | **Pro** | **Team** | **Scale** | Enterprise |
 |---|---|---|---|---|---|---|---|
 | Price / month | $0 | $0 | **$19** | **$49** | **$99** | **$199** | Contact sales |
 | Hosting | your Redis | hosted | hosted | hosted | hosted | hosted | hosted, BYOC or on-prem |
@@ -35,7 +35,8 @@ Three rules:
 | Webhooks, Slack / Mattermost approvals | yes | no | no | yes | yes | yes | yes |
 | Export, audit download | yes | no | no | yes | yes | yes | yes |
 | Per-client scorecards, white-label | no | no | no | no | no | yes | yes |
-| Overage | n/a | none | none (upgrade) | ~$2 / 10k | ~$2 / 10k | ~$1.50 / 10k | contract |
+| Overage | n/a | none | none | none | none | none | contract |
+| At the cap | n/a | upgrade | upgrade | stops at 110% | stops at 110% | stops at 110% | contract |
 | Support | community | community | email | email | priority | priority | SLA |
 | SSO, SOC2-ready logs, HIPAA | no | no | no | no | no | no | yes |
 
@@ -56,20 +57,20 @@ annual prices, so we do.
   That fence works without a "non-commercial" rule we couldn't enforce.
 - **Pro → Team ($99).** Many spaces and unlimited agents for a team running several projects. It sits in the empty
   gap between Mem0 $19 and Mem0 $249, and under Zep Flex $125.
-- **Team → Agency ($199).** One space per client, with per-client scorecards and audit export. It is under Mem0 Pro
+- **Team → Scale ($199).** (Named Agency until Michael's 2026-10-27 ruling.) One space per client, with per-client scorecards and audit export. It is under Mem0 Pro
   ($249) and Supermemory Scale ($399).
 - **Enterprise.** Somewhere to put SSO, BYOC/on-prem and compliance deals, as every competitor does.
 
 ## Caps
 
-When a Free or Dev space reaches its monthly entry cap:
+Every hosted plan has a hard cap (Michael's ruling of 2026-10-27: no overage billing). When a space reaches its monthly entry cap:
 
 1. Writes keep landing for a 10% grace margin.
 2. The agent's Brief and the admin app show an "at cap" warning, and the owner gets an email.
 3. Past the grace margin, writes are refused with a clear `upgrade_required` error. Nothing is dropped silently.
 4. Reads, Briefs and recall keep working.
 
-On paid plans the overage is billed and nothing is refused.
+No plan bills overage. The page copy is: warn at 80%, prompt at 100%, stop new writes at 110%. Enterprise caps are set by contract.
 
 ## Open questions for Mikey
 
@@ -77,4 +78,4 @@ On paid plans the overage is billed and nothing is refused.
 2. Sequencing. Decision 4 (2026-10-10) makes hosted the v1 product. The 2026-10-11 design ruling was "bring your own
    Redis first, then hosted". Confirm the order: the open-source tier and a waitlist first, then hosted plans when quotas
    and billing exist.
-3. Whether the Agency tier launches with v1, or after the first agency customer.
+3. Whether the Scale tier launches with v1, or after the first agency customer.

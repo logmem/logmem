@@ -86,7 +86,7 @@ test("createTenant: registry hash + set, defaults, alias plans", async () => {
   assert.equal(d.plan, loadPlans().default);
   assert.equal(d.name, "beta");
   assert.equal((await createTenant(redis, { id: "gamma", plan: "starter" })).plan, "dev", "PRD alias");
-  assert.equal((await createTenant(redis, { id: "delta", plan: "scale" })).plan, "agency", "PRD alias");
+  assert.equal((await createTenant(redis, { id: "delta", plan: "agency" })).plan, "scale", "old name alias");
   await assert.rejects(createTenant(redis, { id: "eps", plan: "platinum" }), { code: "unknown_plan" });
   await assert.rejects(createTenant(redis, { id: "eps", plan: "_note" }), { code: "unknown_plan" });
   await assert.rejects(createTenant(redis, { id: "eps", name: "" }), { code: "invalid_name" });
@@ -175,8 +175,8 @@ test("plans.json: PRICING.md ladder A, recall at 10:1, no placeholders left, ali
   assert.match(raw._note, /ladder A \(Mikey's ruling of 2026-10-21\)/);
   assert.doesNotMatch(raw._note, /Mikey to confirm/);
   const doc = loadPlans();
-  assert.deepEqual(Object.keys(doc.plans), ["free", "dev", "pro", "team", "agency", "enterprise"]);
-  const want = { free: [0, 1000, 7], dev: [19, 10000, 30], pro: [49, 50000, 90], team: [99, 150000, 365], agency: [199, 500000, 365] };
+  assert.deepEqual(Object.keys(doc.plans), ["free", "dev", "pro", "team", "scale", "enterprise"]);
+  const want = { free: [0, 1000, 7], dev: [19, 10000, 30], pro: [49, 50000, 90], team: [99, 150000, 365], scale: [199, 500000, 365] };
   for (const [id, [price, adds, days]] of Object.entries(want)) {
     const p = doc.plans[id];
     assert.equal(p.price_usd_month, price, id);
@@ -197,7 +197,9 @@ test("plans.json: PRICING.md ladder A, recall at 10:1, no placeholders left, ali
   assert.deepEqual(doc.plans.enterprise.limits, { add: null, read: null, recall: null });
   assert.equal(doc.plans.free.overage, null);
   assert.equal(doc.plans.dev.overage, null);
-  for (const id of ["pro", "team", "agency", "enterprise"]) assert.equal(doc.plans[id].overage.billed, true, id);
+  for (const id of ["pro", "team", "scale"]) assert.equal(doc.plans[id].overage, null, `${id}: hard cap, no overage (Mikey, Oct 27)`);
+  assert.equal(doc.plans.enterprise.overage.billed, true, "enterprise bills by contract");
+  assert.equal(doc.plans.scale.name, "Scale");
   assert.ok(Object.isFrozen(doc) && Object.isFrozen(doc.plans.free.limits), "plans are immutable at runtime");
 });
 
@@ -205,7 +207,8 @@ test("planFor: tenant record or name, aliases, unknown fails closed", () => {
   assert.equal(planFor({ id: "acme", plan: "pro" }).limits.add, 50000);
   assert.equal(planFor("pro").id, "pro");
   assert.equal(planFor("starter").id, "dev");
-  assert.equal(planFor("scale").id, "agency");
+  assert.equal(planFor("agency").id, "scale");
+  assert.equal(planFor("scale").id, "scale");
   assert.equal(planFor("free").grace_ratio, 0.1);
   for (const bad of ["nope", "", null, undefined, {}, { plan: "__proto__" }, "constructor", "_note"]) {
     assert.throws(() => planFor(bad), { code: "unknown_plan" });
