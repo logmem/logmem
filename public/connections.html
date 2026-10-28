@@ -2,18 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>LogMem connected apps</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/utility-shell.css">
 </head>
-<body class="lm">
+<body class="lm" data-utility="connections">
 <main id="root" style="max-width:720px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:20px" aria-live="polite">
   <p class="muted">Loading…</p>
 </main>
+<script type="module" src="/utility-shell.js"></script>
 <script src="/connections.js"></script>
 </body>
 </html>
