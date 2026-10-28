@@ -12,6 +12,7 @@ import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN, signOut } from './shell.js';
 import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers, AGENT_MODES, agentMatch, agentCounts, groupDecisions, verdictLabel, agentColor, decisionGraph } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
+import { handoffMap, timeScrubber, fleetPulse, blockerMap } from './flow-views.js';
 
 import {queuePage} from './interactions.js';
 export const pages = {};
@@ -180,7 +181,7 @@ function drawJobs() {
       else out.push(row(j)); }
     return out; };
   const unknown = list.filter(j => !BOARD.some(b => b[0] === j.stage));
-  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><div class="lmx-work-links"><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div></div>
+  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}${blockerMap({ jobs: base, space: state.space, sel: f.blocker || '', pick: k => { f.blocker = k; saveFilt(); drawJobs(); }, copy })}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><div class="lmx-work-links"><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div></div>
     <div class="lmx-filters">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}</div>
     ${layout === 'list' ? html`<div class="lmx-filter" role="group" aria-label="Filter by status">${WORK_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}${shared.size ? html`<button type="button" class="lmx-typepill lmx-typepill--toggle" aria-pressed=${String(f.group === 'blocker')} @click=${toggleGroup}>Group by blocker</button>` : nothing}</div>` : nothing}
     ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? (f.group === 'blocker' && shared.size ? grouped() : keyed(list, j=>j.id, row)) : emptyState('No work matches these filters.', 'Clear a filter or pick another status.')}</div>` : html`
@@ -200,8 +201,9 @@ pages.write = writerPage;
 pages.walk = playerPage;
 
 pages.agents = async () => {
-  const d = await api('agents');
+  const [d, lg] = await Promise.all([api('agents'), api('log').catch(() => null)]);
   if (!ok(d)) return;
+  const pulseEntries = lg && Array.isArray(lg.entries) ? lg.entries : [];
   const liveN = d.agents.filter((a) => a.seen.state === 'active').length;
   const pf = filt('agents:' + state.space), counts = agentCounts(d.agents), open = (pf.open = pf.open || {});
   const draw = () => {
@@ -210,6 +212,7 @@ pages.agents = async () => {
     const setMode = (k) => () => { pf.mode = k; saveFilt(); draw(); };
     const card = (a) => agentCard(a, { open: !!open[a.id], space: state.space, toggle: () => { open[a.id] = !open[a.id]; saveFilt(); draw(); } });
     renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="#/slots" class="lm-btn lm-btn--secondary">Daily slots</a><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
+    ${fleetPulse({ entries: pulseEntries, agents: d.agents.map((a) => a.id), win: pf.win === 6 ? 6 : 24, sel: pf.lane || '', setWin: (h) => { pf.win = h; saveFilt(); draw(); }, pick: (s) => { pf.lane = s; saveFilt(); draw(); } })}
     <div class="lmx-filter" role="group" aria-label="Filter the roster">${AGENT_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}</div>
     <section class="lmx-capability-note"><strong>Run and schedule receipts are not connected yet.</strong><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits. Copy ping puts a ready prompt on your clipboard. It does not start anything.</p></section>
     <div class="lmx-agents-grid">${shown.length ? keyed(shown, (a) => a.id, card) : emptyState('No agents match.', 'Pick another filter.')}</div>
@@ -242,6 +245,7 @@ function drawLog() {
       <label class="lmx-f lmx-f-q"><span>Recall</span><input class="lm-input" name="q" .value=${liveDir(rq)} placeholder="what did we decide about…"></label><button class="lm-btn lm-btn--primary" style="align-self:flex-end">Recall</button></form>
     <div class="lmx-filters">${selectBox('log', 'where', 'Where', places, drawLog)}${selectBox('log', 'agent', 'Who', uniq(all.map((e) => agentName(e.by))), drawLog)}${selectBox('log', 'kind', 'Kind', uniq(all.map((e) => e.group)), drawLog)}${searchBox('log', 'Words in the entry', drawLog)}</div>
     ${rc ? html`<section class="lmx-card"><h3>Recall: “${rc.q}”</h3>${rc.results.length ? rc.results.map((r) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto"><div><span class="lm-kind">${r.kind}</span> ${r.summary}<div class="lmx-meta mono">${r.from} · trail ${r.trail || ''}</div></div><span class="lmx-meta">${ago(r.ts)}</span></div>`) : html`<p class="lmx-meta">No matches. Try fewer or different words.</p>`}</section>` : nothing}
+    ${timeScrubber({ entries: all, t: f.scrubT ?? null, scrub: (t) => { f.scrubT = t; drawLog(); } })}
     <section class="lm-panel" style="padding:8px 16px 16px">${f.allEvents ? entries(list) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${entries(g.entries)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.</p></section>`);
 }
 pages.activity = () => pages.log();
