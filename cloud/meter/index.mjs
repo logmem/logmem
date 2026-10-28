@@ -11,11 +11,11 @@
 //   - limit null = unlimited; a missing limit (undefined) is invalid_plan (fail closed).
 //   - grace_ratio, if given, must be in [0, 1]; default 0.1.
 //   - up to 100% of the limit: ok.
-//   - plans without overage (free, dev): a 10% grace margin, then refuse with
-//     quota_exceeded. The check and the increment are one EVAL, so concurrent
+//   - plans without overage (free, dev, pro, team, scale): a 10% grace margin,
+//     then refuse with quota_exceeded. No plan bills overage (Mikey, Oct 27). The check and the increment are one EVAL, so concurrent
 //     callers cannot both pass the grace cap. A refusal does not increment.
 //     Nothing is dropped silently; the caller surfaces the error.
-//   - plans with billed overage (pro, team, agency, enterprise): never refused;
+//   - plans with billed overage (enterprise only, by contract): never refused;
 //     past the limit checkQuota returns {ok:true, overage:true} for billing
 //     and does not reserve. meter() counts those after the op.
 //   - recall caps and the quota_exceeded code are unchanged (pending a pricing
@@ -194,7 +194,7 @@ async function readUsed(redis, tenant, month, op) {
  * Would `n` more `op`s fit the plan this month?
  *
  * `reserved` says whether this call already counted the op:
- *   - reserved:true  — refusing plan (free/dev: no billed overage), add/recall with a
+ *   - reserved:true  — refusing plan (free, dev, pro, team, scale: no billed overage), add/recall with a
  *     finite limit, and the answer is yes. The check and INCRBY ran as one atomic
  *     reservation. Do NOT also call meter() for this op.
  *   - reserved:false — everything else: reads, unlimited limits, billed-overage

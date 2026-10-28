@@ -131,7 +131,7 @@ function resolvePlanId(name) {
 
 /**
  * Plan object for a tenant record (`{plan}`) or a plan name. Aliases resolve
- * (starter -> dev, scale -> agency). Returns `{id, ...plan, grace_ratio}`.
+ * (starter -> dev, agency -> scale). Returns `{id, ...plan, grace_ratio}`.
  * Throws `unknown_plan` rather than guessing: quotas fail closed.
  */
 export function planFor(tenant) {

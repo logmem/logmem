@@ -1,12 +1,12 @@
 {
-  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Agency/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. Free is one tenth of the fleet's real monthly use (Mikey's ruling of 2026-10-20): 1,000 adds, 2 agents, 100 recalls. Paid plans follow ladder A (Mikey's ruling of 2026-10-21): Dev 10k, Pro 50k, Team 150k, Agency 500k adds, with recall at 10:1. Change numbers here, not in code.",
+  "_note": "ACMI Cloud plans. Follows docs/PRICING.md (Mikey's ruling of 2026-10-13: Free/Dev/Pro/Team/Scale/Enterprise). Limits are per op per calendar month (UTC). null means unlimited. 'read' is counted but never refused. Free is one tenth of the fleet's real monthly use (Mikey's ruling of 2026-10-20): 1,000 adds, 2 agents, 100 recalls. Paid plans follow ladder A (Mikey's ruling of 2026-10-21): Dev 10k, Pro 50k, Team 150k, Scale 500k adds, with recall at 10:1. Hard caps (Mikey's ruling of 2026-10-27): no plan bills overage, and writes stop at 110% of the limit. The $199 plan is Scale. Change numbers here, not in code.",
   "version": 1,
   "default": "free",
   "grace_ratio": 0.1,
   "aliases": {
-    "_note": "PRD names (Starter/Scale) kept only as aliases.",
+    "_note": "Old names kept as aliases: starter is dev, agency is scale.",
     "starter": "dev",
-    "scale": "agency"
+    "agency": "scale"
   },
   "plans": {
     "free": {
@@ -33,31 +33,31 @@
       "name": "Pro",
       "price_usd_month": 49,
       "limits": { "add": 50000, "read": null, "recall": 5000 },
-      "overage": { "billed": true, "usd_per_10k": 2 },
+      "overage": null,
       "history_days": 90,
       "spaces": 3,
       "agents": 25,
-      "_note": "Ladder A (Mikey, Oct 21). The fleet today (about 29k a month) fits Pro. Overage billed (~$2 / 10k), never refused."
+      "_note": "Ladder A (Mikey, Oct 21). The fleet today (about 29k a month) fits Pro. Hard cap (Mikey, Oct 27): no overage billing, writes stop at 110%."
     },
     "team": {
       "name": "Team",
       "price_usd_month": 99,
       "limits": { "add": 150000, "read": null, "recall": 15000 },
-      "overage": { "billed": true, "usd_per_10k": 2 },
+      "overage": null,
       "history_days": 365,
       "spaces": 10,
       "agents": null,
-      "_note": "Ladder A (Mikey, Oct 21). Overage billed (~$2 / 10k), never refused. agents null = unlimited."
+      "_note": "Ladder A (Mikey, Oct 21). Hard cap (Mikey, Oct 27): no overage billing, writes stop at 110%. agents null = unlimited."
     },
-    "agency": {
-      "name": "Agency",
+    "scale": {
+      "name": "Scale",
       "price_usd_month": 199,
       "limits": { "add": 500000, "read": null, "recall": 50000 },
-      "overage": { "billed": true, "usd_per_10k": 1.5 },
+      "overage": null,
       "history_days": 365,
       "spaces": 30,
       "agents": null,
-      "_note": "Ladder A (Mikey, Oct 21). Overage billed (~$1.50 / 10k), never refused. 30 client spaces."
+      "_note": "Ladder A (Mikey, Oct 21). Hard cap (Mikey, Oct 27): no overage billing, writes stop at 110%. 30 client spaces."
     },
     "enterprise": {
       "name": "Enterprise",

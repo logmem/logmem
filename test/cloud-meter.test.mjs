@@ -143,19 +143,16 @@ test("checkQuota: recall follows the same grace rule on no-overage plans", async
   assert.equal((await checkQuota(redis, "acme", "recall", plan, { now: OCT })).code, "quota_exceeded");
 });
 
-test("checkQuota: paid plans bill overage instead of refusing", async () => {
+test("checkQuota: paid plans are hard caps and stop at 110%, with no overage", async () => {
   const redis = createMemoryRedis();
-  for (const name of ["pro", "team", "agency"]) {
+  for (const name of ["pro", "team", "scale"]) {
     const plan = planFor(name);
+    assert.equal(plan.overage, null, `${name} bills no overage`);
     const lim = plan.limits.add;
     await redis("SET", "acmi:cloud:meter:acme:202610:add", String(lim - 1));
-    assert.deepEqual(await checkQuota(redis, "acme", "add", plan, { now: OCT }), { ok: true, used: lim - 1, limit: lim, grace: false, reserved: false });
-    await redis("SET", "acmi:cloud:meter:acme:202610:add", String(lim * 5));
-    assert.deepEqual(
-      await checkQuota(redis, "acme", "add", plan, { now: OCT }),
-      { ok: true, used: lim * 5, limit: lim, grace: false, overage: true, reserved: false },
-      `${name} never refuses`,
-    );
+    assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).ok, true, `${name} is fine under the limit`);
+    await redis("SET", "acmi:cloud:meter:acme:202610:add", String(lim + Math.floor(lim / 10)));
+    assert.equal((await checkQuota(redis, "acme", "add", plan, { now: OCT })).code, "quota_exceeded", `${name} stops at 110%`);
   }
 });
 
@@ -176,7 +173,7 @@ test("checkQuota: refusing plans reserve; paid plans, reads, and bad input do no
   await assert.rejects(checkQuota(redis, "acme", "add", free, { n: 0 }), { code: "invalid_count" });
   assert.equal((await redis("KEYS", "*")).length, 0, "bad input writes nothing");
 
-  const paid = planFor("pro");
+  const paid = { limits: { add: 100, read: null, recall: null }, overage: { billed: true, usd_per_10k: 2 } };
   await redis("SET", "acmi:cloud:meter:acme:202610:add", "10");
   await checkQuota(redis, "acme", "add", paid, { now: OCT });
   await checkQuota(redis, "acme", "read", free, { now: OCT, n: 5 });
@@ -268,8 +265,8 @@ test("checkQuota.reserved: true exactly when the call already counted the op", a
     [planFor("free"), "add", true, 3],
     [planFor("dev"), "recall", true, 3],
     [planFor("free"), "read", false, 0],
-    [planFor("pro"), "add", false, 0],
-    [planFor("agency"), "recall", false, 0],
+    [planFor("pro"), "add", true, 3],
+    [planFor("scale"), "recall", true, 3],
     [planFor("enterprise"), "add", false, 0],
     [{ limits: { add: null, read: null, recall: null }, overage: null }, "add", false, 0],
   ];
@@ -285,9 +282,9 @@ test("checkQuota.reserved: true exactly when the call already counted the op", a
   const r = await checkQuota(redis, "acme", "add", planFor("free"), { now: OCT });
   assert.deepEqual([r.ok, r.reserved], [false, false]);
   assert.equal(await get("add"), 11000);
-  // Billed overage past the limit: not reserved; the caller meters after the op.
+  // A plan with billed overage (contract only) past the limit: not reserved; the caller meters after the op.
   await redis("SET", "acmi:cloud:meter:acme:202610:add", "999999999");
-  const o = await checkQuota(redis, "acme", "add", planFor("pro"), { now: OCT });
+  const o = await checkQuota(redis, "acme", "add", { limits: { add: 10, read: null, recall: null }, overage: { billed: true, usd_per_10k: 2 } }, { now: OCT });
   assert.deepEqual([o.ok, o.overage, o.reserved], [true, true, false]);
 });
 
