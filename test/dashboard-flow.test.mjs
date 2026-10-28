@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ageBand, ageLabel, handoffArcs, arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, unblockPrompt, bubbleLayout } from "../public/app/flow-model.js";
+import { involves, matchHandoff, waitingOn, handoffMatrix, laneCounts, laneView, blockerKind, kindCounts, ageBand, ageLabel, handoffArcs, arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, unblockPrompt, bubbleLayout } from "../public/app/flow-model.js";
 
 const NOW = Date.parse("2026-10-28T12:00:00Z"), H = 3600000, D = 86400000;
 
@@ -16,8 +16,9 @@ test("Handoff map: arcs carry age bands and drop bad rows", () => {
   assert.deepEqual(arcs.map(a => a.trail), ["a", "b"]);
   assert.equal(arcs[0].band, "stale");
   assert.equal(arcs[0].label, "13 d");
-  assert.equal(arcs[1].band, "fresh");
+  assert.equal(arcs[1].band, "slow");
   assert.equal(arcs[1].label, "1 d");
+  assert.equal(handoffArcs([{ from: "agent:a", to: "agent:b", created_at: NOW - 5 * H }], NOW)[0].band, "fresh");
   assert.deepEqual(arcAgents(arcs), ["antigravity", "claude-code", "hermes", "muse"]);
   assert.equal(ageBand(5), "slow");
   assert.equal(ageLabel(90 * 60000), "2 h");
@@ -105,3 +106,66 @@ test('density bins preserve totals and jump only to real matching events',async(
  assert.equal(replayDensity([{ts:100,kind:'done'},{ts:200,kind:'progress'}]).peaks.length,0);
 });
 test('replay excludes blank, nonpositive and future timestamps',()=>{assert.equal(replayEntries([{ts:null},{ts:''},{ts:0},{ts:-1},{ts:150},{ts:100}],100).length,1);});
+
+test("Handoff map: waiting counts, focus and the matrix grid", () => {
+  const arcs = handoffArcs([
+    { id: "1", from: "agent:muse", to: "agent:hermes", created_at: NOW - 2 * D },
+    { id: "2", from: "agent:muse", to: "agent:hermes", created_at: NOW - 2 * H },
+    { id: "3", from: "agent:codex", to: "agent:hermes", created_at: NOW - H },
+    { id: "4", from: "agent:hermes", to: "agent:muse", created_at: NOW - 9 * D },
+  ], NOW);
+  const w = waitingOn(arcs);
+  assert.deepEqual(w.get("hermes"), { count: 3, late: 1 });
+  assert.deepEqual(w.get("muse"), { count: 1, late: 1 });
+  assert.equal(arcs.filter(a => involves(a, "codex")).length, 1);
+  assert.equal(arcs.filter(a => involves(a, "")).length, 4);
+  const m = handoffMatrix(arcs);
+  assert.deepEqual(m.names, ["codex", "hermes", "muse"]);
+  const cell = m.cells.get("muse>hermes");
+  assert.equal(cell.count, 2);
+  assert.equal(cell.band, "slow");
+  assert.equal(m.cells.get("hermes>muse").band, "stale");
+  assert.equal(m.cells.has("codex>muse"), false);
+  const item = { from: "agent:muse", to: "agent:hermes" };
+  assert.equal(matchHandoff(item, "hermes"), true);
+  assert.equal(matchHandoff(item, "codex"), false);
+  assert.equal(matchHandoff(item, "", { from: "muse", to: "hermes" }), true);
+  assert.equal(matchHandoff(item, "muse", { from: "hermes", to: "muse" }), false);
+});
+
+test("Fleet pulse: dot density, status and lane views", () => {
+  const e = (by, ago, kind = "progress") => ({ by: "agent:" + by, ts: NOW - ago * 60000, kind });
+  const lanes = pulseLanes([e("busy", 100), e("busy", 95), e("busy", 90), e("busy", 85), e("busy", 80), e("one", 300), e("live", 3), e("long", 800)], 24, NOW, ["idle"]);
+  const by = Object.fromEntries(lanes.map(l => [l.id, l]));
+  assert.equal(by.busy.bars[0].n, 5);
+  assert.equal(by.busy.bars[0].level, "many");
+  assert.equal(by.one.bars[0].level, "one");
+  assert.equal(by.live.status, "live");
+  assert.equal(by.one.status, "quiet");
+  assert.equal(by.long.status, "long");
+  assert.equal(by.idle.status, "empty");
+  const n = laneCounts(lanes);
+  assert.deepEqual(n, { all: 5, live: 1, quiet: 3, active: 4, empty: 1 });
+  assert.deepEqual(laneView(lanes, "active").map(l => l.id).includes("idle"), false);
+  assert.equal(laneView(lanes, "all").length, 5);
+  assert.deepEqual(laneView(lanes, "live").map(l => l.id), ["live"]);
+  assert.equal(laneView(lanes, "quiet").length, 3);
+});
+
+test("Blocker map: kinds, counts and stalled bubbles", () => {
+  const jobs = [
+    { id: "a", stage: "blocked", since: NOW - 5 * D, blocked_on: { note: "Waits for Mikey to approve the copy." } },
+    { id: "b", stage: "blocked", since: NOW - D, blocked_on: { note: "GitHub Actions billing is locked." } },
+    { id: "c", stage: "blocked", blocked_on: { note: "Infisical REST token expired." } },
+    { id: "d", stage: "blocked", blocked_on: { note: "Waits for codex to land the fix." } },
+    { id: "e", stage: "blocked", blocked_on: { note: "Pick a name.", type: "decision" } },
+    { id: "f", stage: "active" },
+  ];
+  assert.deepEqual(jobs.slice(0, 5).map(blockerKind), ["person", "vendor", "vendor", "agent", "person"]);
+  const cl = blockerClusters(jobs, NOW);
+  const kind = k => cl.find(c => c.kind === k);
+  assert.equal(kind("person").jobs.length, 1);
+  assert.equal(cl.find(c => c.jobs[0].id === "a").late, true);
+  assert.equal(cl.find(c => c.jobs[0].id === "b").late, false);
+  assert.deepEqual(kindCounts(cl), { all: 5, person: 2, vendor: 2, agent: 1 });
+});

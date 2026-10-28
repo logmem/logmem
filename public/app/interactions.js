@@ -3,7 +3,7 @@ import {html,nothing} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {getJSON,postJSON,state,onContextReset,ago,agentName,toast} from './core.js';
 import {renderView} from './shell.js';
 import {handoffMap} from './flow-views.js';
-import {handoffArcs} from './flow-model.js';
+import {handoffArcs,matchHandoff} from './flow-model.js';
 import {terminalTicketCard} from './dispatch-components.js';
 import {observeTelemetry} from './telemetry-state.js';
 import {ticketStatus} from './dispatch-model.js';
@@ -62,19 +62,21 @@ export async function drawDiscussion(want,shell,current){
  model.render=draw;model.reload=load;draw();await load();
 }
 export async function queuePage(){
- const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false,flowSel='',status='all';
+ const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false,flowSel='',flowHover='',flowPair=null,flowView='map',status='all';
  const active=()=>space===state.space&&version===generation&&location.hash===route;
+ const jumpToList=()=>requestAnimationFrame(()=>{const el=document.getElementById('lmx-queue-list');if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});});
  const draw=()=>{
   if(!active())return;
+  const shownItems=data?data.items.filter(i=>(status==='all'||ticketStatus(i)===status)&&matchHandoff(i,flowSel,flowPair)):[];
   renderView('queue',['Work','Coordination queue'],html`<section class="lmx-queue"><div class="lmx-work-toolbar"><h1>Coordination queue</h1><a href="#/work">Back to work</a></div><p>Unanswered requests, ordered by their original deadline.</p>
    ${error?html`<p role="alert">${error}</p>`:nothing}
    <form class="lmx-filters" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();cursor=0;load();}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
    ${data?html`${!data.coverage?.complete?html`<div class="lmx-coverage-note"><p>History indexing is pending. New indexed requests appear below. Older requests remain in their source logs until verified indexing completes.</p></div>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p class="lmx-meta">${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}
-    <div class="lmx-ticket-filters" role="group" aria-label="Request status">${[['all','All'],['overdue','Overdue'],['active','Awaiting response']].map(([value,label])=>html`<button type="button" class="lm-btn" aria-pressed=${String(status===value)} @click=${()=>{status=value;draw();}}>${label} (${data.items.filter(i=>value==='all'||ticketStatus(i)===value).length})</button>`)}</div><p class="lmx-meta">Counts describe this loaded page. Copy prepares a prompt and starts no agent.</p><details class="lmx-queue-map"><summary>Show handoff map</summary>${handoffMap({arcs:handoffArcs(data.items),sel:flowSel,pick:s=>{flowSel=s;draw();}})}</details>
-    <div class="lmx-stack">${data.items.filter(i=>status==='all'||ticketStatus(i)===status).length?data.items.filter(i=>status==='all'||ticketStatus(i)===status).map(item=>{
+    <div class="lmx-ticket-filters" role="group" aria-label="Request status">${[['all','All'],['overdue','Overdue'],['active','Awaiting response']].map(([value,label])=>html`<button type="button" class="lm-btn" aria-pressed=${String(status===value)} @click=${()=>{status=value;draw();}}>${label} (${data.items.filter(i=>value==='all'||ticketStatus(i)===value).length})</button>`)}</div><p class="lmx-meta">Counts describe this loaded page. Copy prepares a prompt and starts no agent.</p><details class="lmx-queue-map"><summary>Show handoff map</summary>${handoffMap({arcs:handoffArcs(data.items),sel:flowSel,hover:flowHover,pair:flowPair,view:flowView,setView:v=>{flowView=v;flowPair=null;draw();},pick:s=>{flowSel=s;flowPair=null;draw();if(s)jumpToList();},peek:h=>{if(h!==flowHover){flowHover=h;draw();}},pickPair:x=>{flowPair=x;flowSel='';draw();if(x)jumpToList();}})}</details>
+    <div class="lmx-stack" id="lmx-queue-list">${shownItems.length?shownItems.map(item=>{
      const next=Number(item.last_nudge_at||0)+300000,invalid=Number(item.created_at)>Date.now()||!Number.isFinite(Number(item.deadline))||Number(item.deadline)<Number(item.created_at)||!Number.isFinite(Number(item.created_at))||Number(item.created_at)<=0,disabled=state.customer&&!state.permissions?.write||next>Date.now()||invalid||pending.has(item.id);
      return terminalTicketCard({item,space,actions:html`<button class="lm-btn lm-btn--secondary" ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>${queueRequests.has(space+':'+item.id)?html`<button class="lm-btn" ?disabled=${pending.has(item.id)} @click=${()=>nudge(item)}>Retry nudge delivery</button>`:nothing}<a href=${link({type:'coord',id:item.id})}>Comments and actions</a>${item.where?.startsWith('job:')?html`<a href=${'#/job/'+encodeURIComponent(item.where.slice(4))}>Open work</a>`:nothing}`,notice:html`${invalid?html`<p role="alert">Check the source timestamps before nudging.</p>`:nothing}${next>Date.now()?html`<p class="lmx-meta">Next nudge available ${stamp(next)}.</p>`:nothing}`});
-    }):html`<p>${data.items.length?'No loaded requests match this status. Choose another filter.':'No pending records were returned for this page. Check the coverage notice above.'}</p>`}</div><div class="lmx-acts">${cursor>0?html`<button class="lm-btn" @click=${()=>{cursor=Math.max(0,cursor-30);load();}}>Previous page</button>`:nothing}${data.nextCursor!=null?html`<button class="lm-btn" @click=${()=>{cursor=data.nextCursor;load();}}>Next page</button>`:nothing}</div>`:html`<p>Loading requests…</p>`}</section>`);
+    }):html`<p>${data.items.length?(flowSel||flowPair)&&data.items.some(i=>status==='all'||ticketStatus(i)===status)?'No handoffs match this map filter. Pick the same agent or cell again to clear it.':'No loaded requests match this status. Choose another filter.':'No pending records were returned for this page. Check the coverage notice above.'}</p>`}</div><div class="lmx-acts">${cursor>0?html`<button class="lm-btn" @click=${()=>{cursor=Math.max(0,cursor-30);load();}}>Previous page</button>`:nothing}${data.nextCursor!=null?html`<button class="lm-btn" @click=${()=>{cursor=data.nextCursor;load();}}>Next page</button>`:nothing}</div>`:html`<p>Loading requests…</p>`}</section>`);
  };
  const nudge=async item=>{
   if(pending.has(item.id))return;
