@@ -14,6 +14,9 @@ import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecisio
 import { writerPage, playerPage } from './walk.js';
 import { handoffMap, timeScrubber, fleetPulse, blockerMap } from './flow-views.js';
 
+import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js';
+import {blockerClusters} from './flow-model.js';
+import {ticketPrompt} from './dispatch-model.js';
 import {queuePage} from './interactions.js';
 export const pages = {};
 pages.queue=queuePage;
@@ -171,17 +174,16 @@ function drawJobs() {
   const pick = f.stage || (list.some(j => j.stage === 'blocked') ? 'blocked' : 'active');
   const setPick = st => () => { f.stage = st; saveFilt(); drawJobs(); };
   const shared = sharedBlockers(list);
+  const clusters = blockerClusters(list).filter(c=>c.jobs.length>=3);
+  if(f.group===undefined&&clusters.length) f.group='blocker';
   const row = j => { const due = dueState(j, lateFn), note = blockerNote(j), why = j.blocked_on?.note || j.last?.summary || 'No next step recorded.';
     return html`<article class="lmx-work-row" data-key=${j.id}><div><h3><a href=${'#/job/' + encodeURIComponent(j.id)}>${j.title}</a></h3><div class="lmx-meta lmx-rowmeta"><span class="lmx-chip lmx-chip--lane">${j.plan || 'No plan'}</span>${j.track ? html`<span>${j.track}</span>` : nothing}<span class="lmx-chip">${j.owner ? agentName(j.owner) : 'Owner not assigned'}</span></div></div>
     <div>${stage(j.stage)}${j.blocked_on?.parked ? html`<span class="lm-badge">Parked</span>` : nothing}${note && shared.has(note) ? html` <span class="lmx-chip" title=${note}>Same blocker ×${shared.get(note)}</span>` : nothing}</div><div class="lmx-why lmx-why-clamp" title=${why}>${why}</div><div class="lmx-due" data-kind=${due.kind}>${due.kind === 'late' ? html`<span class="lmx-flag">${due.text}</span>` : html`<span class="lmx-meta">${due.text}</span>`}</div></article>`; };
-  const grouped = () => { const out = [], seen = new Set();
-    for (const j of list) { const note = blockerNote(j);
-      if (note && shared.has(note)) { if (seen.has(note)) continue; seen.add(note); const mine = list.filter(x => blockerNote(x) === note);
-        out.push(html`<details class="lmx-blockgroup" open><summary><b>${mine.length}</b> jobs wait on: ${note}</summary>${mine.map(row)}</details>`); }
-      else out.push(row(j)); }
-    return out; };
+  const grouped = () => { const groupedIds=new Set(clusters.flatMap(c=>c.jobs.map(j=>j.id)));
+    return html`${clusters.map(c=>clusterBlockerGroup(c,state.space))}${list.filter(j=>!groupedIds.has(j.id)).map(row)}`;
+  };
   const unknown = list.filter(j => !BOARD.some(b => b[0] === j.stage));
-  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}${blockerMap({ jobs: base, space: state.space, sel: f.blocker || '', pick: k => { f.blocker = k; saveFilt(); drawJobs(); }, copy })}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><div class="lmx-work-links"><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div></div>
+  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<details class="lmx-queue-map"><summary>Show blocker map</summary>${blockerMap({ jobs: base, space: state.space, sel: f.blocker || '', pick: k => { f.blocker = k; saveFilt(); drawJobs(); }, copy })}</details><div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><div class="lmx-work-links"><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div></div>
     <div class="lmx-filters">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}</div>
     ${layout === 'list' ? html`<div class="lmx-filter" role="group" aria-label="Filter by status">${WORK_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}${shared.size ? html`<button type="button" class="lmx-typepill lmx-typepill--toggle" aria-pressed=${String(f.group === 'blocker')} @click=${toggleGroup}>Group by blocker</button>` : nothing}</div>` : nothing}
     ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? (f.group === 'blocker' && shared.size ? grouped() : keyed(list, j=>j.id, row)) : emptyState('No work matches these filters.', 'Clear a filter or pick another status.')}</div>` : html`
@@ -214,7 +216,7 @@ pages.agents = async () => {
     renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="#/slots" class="lm-btn lm-btn--secondary">Daily slots</a><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
     ${fleetPulse({ entries: pulseEntries, agents: d.agents.map((a) => a.id), win: pf.win === 6 ? 6 : 24, sel: pf.lane || '', setWin: (h) => { pf.win = h; saveFilt(); draw(); }, pick: (s) => { pf.lane = s; saveFilt(); draw(); } })}
     <div class="lmx-filter" role="group" aria-label="Filter the roster">${AGENT_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}</div>
-    <section class="lmx-capability-note"><strong>Run and schedule receipts are not connected yet.</strong><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits. Copy ping puts a ready prompt on your clipboard. It does not start anything.</p></section>
+    <section class="lmx-capability-note"><strong>Run and schedule receipts are not connected yet.</strong><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits. Copy prompt puts a ready prompt on your clipboard. It does not start anything.</p></section>
     <div class="lmx-agents-grid">${shown.length ? keyed(shown, (a) => a.id, card) : emptyState('No agents match.', 'Pick another filter.')}</div>
     ${tucked.length ? html`<details class="lmx-tucked"><summary>Show ${tucked.length} inactive or retired ${tucked.length === 1 ? 'slot' : 'slots'} ▾</summary><div class="lmx-agents-grid">${keyed(tucked, (a) => a.id, card)}</div></details>` : nothing}`);
   };
@@ -318,7 +320,7 @@ async function auditPage(route = 'audit') {
   const deadline = (i) => { const n=Number(i.deadline); return Number.isFinite(n)&&n>0 ? new Date(n).toLocaleString() : 'Timestamp unavailable'; };
   const qrows = (q.items || []).map((i) => html`<tr style="font-variant-numeric:tabular-nums">
     <td><span class=${'lm-badge lm-badge--' + (late(i) ? 'danger' : 'neutral')}>${i.type || 'handoff'}</span></td>
-    <td>${i.summary || '—'}</td>
+    <td><details class="lmx-health-summary"><summary>${i.summary || '—'}</summary>${agentDispatchButton(ticketPrompt(i,state.space))}</details></td>
     <td class="mono">${agentName(i.from) || '—'} → ${agentName(i.to) || '—'}</td>
     <td>${i.created_at ? ago(i.created_at) : '—'}</td>
     <td>${deadline(i)}${late(i) ? ' · overdue' : ''}</td>

@@ -4,6 +4,8 @@ import {getJSON,postJSON,state,onContextReset,ago,agentName,toast} from './core.
 import {renderView} from './shell.js';
 import {handoffMap} from './flow-views.js';
 import {handoffArcs} from './flow-model.js';
+import {terminalTicketCard} from './dispatch-components.js';
+import {ticketStatus} from './dispatch-model.js';
 const drafts=new Map(),queueRequests=new Map();let generation=0;
 export function clearInteractions(){drafts.clear();queueRequests.clear();generation++;}
 onContextReset(clearInteractions);
@@ -59,20 +61,19 @@ export async function drawDiscussion(want,shell,current){
  model.render=draw;model.reload=load;draw();await load();
 }
 export async function queuePage(){
- const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false,flowSel='';
+ const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false,flowSel='',status='all';
  const active=()=>space===state.space&&version===generation&&location.hash===route;
  const draw=()=>{
   if(!active())return;
-  renderView('queue',['Work','Coordination queue'],html`<div class="lmx-work-toolbar"><h1>Coordination queue</h1><a href="#/work">Back to work</a></div><p>Unanswered requests, ordered by their original deadline.</p>
+  renderView('queue',['Work','Coordination queue'],html`<section class="lmx-queue"><div class="lmx-work-toolbar"><h1>Coordination queue</h1><a href="#/work">Back to work</a></div><p>Unanswered requests, ordered by their original deadline.</p>
    ${error?html`<p role="alert">${error}</p>`:nothing}
    <form class="lmx-filters" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();cursor=0;load();}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
    ${data?html`${!data.coverage?.complete?html`<div class="lmx-coverage-note"><p>History indexing is pending. New indexed requests appear below. Older requests remain in their source logs until verified indexing completes.</p></div>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p class="lmx-meta">${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}
-    ${handoffMap({arcs:handoffArcs(data.items),sel:flowSel,pick:s=>{flowSel=s;draw();}})}
-    <div class="lmx-stack">${data.items.length?data.items.map(item=>{
+    <div class="lmx-ticket-filters" role="group" aria-label="Request status">${[['all','All'],['overdue','Overdue'],['active','Awaiting response']].map(([value,label])=>html`<button type="button" class="lm-btn" aria-pressed=${String(status===value)} @click=${()=>{status=value;draw();}}>${label} (${data.items.filter(i=>value==='all'||ticketStatus(i)===value).length})</button>`)}</div><p class="lmx-meta">Counts describe this loaded page. Copy prepares a prompt and starts no agent.</p><details class="lmx-queue-map"><summary>Show handoff map</summary>${handoffMap({arcs:handoffArcs(data.items),sel:flowSel,pick:s=>{flowSel=s;draw();}})}</details>
+    <div class="lmx-stack">${data.items.filter(i=>status==='all'||ticketStatus(i)===status).length?data.items.filter(i=>status==='all'||ticketStatus(i)===status).map(item=>{
      const next=Number(item.last_nudge_at||0)+300000,invalid=Number(item.created_at)>Date.now()||!Number.isFinite(Number(item.deadline))||Number(item.deadline)<Number(item.created_at)||!Number.isFinite(Number(item.created_at))||Number(item.created_at)<=0,disabled=state.customer&&!state.permissions?.write||next>Date.now()||invalid||pending.has(item.id);
-     return html`<article class="lmx-card"><div class="lmx-meta">${item.type} · ${agentName(item.from)} → ${agentName(item.to)}</div><h3>${item.summary}</h3><dl class="lm-kv"><dt>Created</dt><dd>${stamp(item.created_at)}</dd><dt>Deadline</dt><dd>${stamp(item.deadline)}${Number(item.deadline)<Date.now()?' · overdue':''}</dd><dt>Last nudge</dt><dd>${item.last_nudge_at?stamp(item.last_nudge_at):'No nudge recorded'}</dd><dt>Source</dt><dd>${item.where}</dd></dl>
-      ${invalid?html`<p role="alert">Check the source timestamps before nudging.</p>`:nothing}<div class="lmx-acts"><button class="lm-btn lm-btn--secondary" ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>${queueRequests.has(space+':'+item.id)?html`<button class="lm-btn" ?disabled=${pending.has(item.id)} @click=${()=>nudge(item)}>Retry nudge delivery</button>`:nothing}<a href=${link({type:'coord',id:item.id})}>Comments and actions</a>${item.where?.startsWith('job:')?html`<a href=${'#/job/'+encodeURIComponent(item.where.slice(4))}>Open work</a>`:nothing}</div>${next>Date.now()?html`<p class="lmx-meta">Next nudge available ${stamp(next)}.</p>`:nothing}</article>`;
-    }):html`<p>No pending records were returned for this page. Check the coverage notice above.</p>`}</div><div class="lmx-acts">${cursor>0?html`<button class="lm-btn" @click=${()=>{cursor=Math.max(0,cursor-30);load();}}>Previous page</button>`:nothing}${data.nextCursor!=null?html`<button class="lm-btn" @click=${()=>{cursor=data.nextCursor;load();}}>Next page</button>`:nothing}</div>`:html`<p>Loading requests…</p>`}`);
+     return terminalTicketCard({item,space,actions:html`<button class="lm-btn lm-btn--secondary" ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>${queueRequests.has(space+':'+item.id)?html`<button class="lm-btn" ?disabled=${pending.has(item.id)} @click=${()=>nudge(item)}>Retry nudge delivery</button>`:nothing}<a href=${link({type:'coord',id:item.id})}>Comments and actions</a>${item.where?.startsWith('job:')?html`<a href=${'#/job/'+encodeURIComponent(item.where.slice(4))}>Open work</a>`:nothing}`,notice:html`${invalid?html`<p role="alert">Check the source timestamps before nudging.</p>`:nothing}${next>Date.now()?html`<p class="lmx-meta">Next nudge available ${stamp(next)}.</p>`:nothing}`});
+    }):html`<p>${data.items.length?'No loaded requests match this status. Choose another filter.':'No pending records were returned for this page. Check the coverage notice above.'}</p>`}</div><div class="lmx-acts">${cursor>0?html`<button class="lm-btn" @click=${()=>{cursor=Math.max(0,cursor-30);load();}}>Previous page</button>`:nothing}${data.nextCursor!=null?html`<button class="lm-btn" @click=${()=>{cursor=data.nextCursor;load();}}>Next page</button>`:nothing}</div>`:html`<p>Loading requests…</p>`}</section>`);
  };
  const nudge=async item=>{
   if(pending.has(item.id))return;
