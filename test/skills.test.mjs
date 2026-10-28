@@ -140,3 +140,13 @@ test("skills scripts can be imported from stdin", () => {
     assert.equal(result.stdout.trim(), "imported");
   }
 });
+
+test("skills: the onboarding start prompt and the four checks agree with the canonical reference", () => {
+  const block = (f) => readFileSync(join(SKILLS, "logmem-onboard-agent", f), "utf8").match(/```text\n([\s\S]*?)\n```/)[1];
+  assert.equal(block("references/canonical-onboarding.md"), block("SKILL.md"));
+  const skill = readFileSync(join(SKILLS, "logmem-onboard-agent", "SKILL.md"), "utf8");
+  const ref = readFileSync(join(SKILLS, "logmem-onboard-agent", "references/canonical-onboarding.md"), "utf8");
+  assert.match(skill, /Connection health is good/);
+  assert.match(skill, /canonical-onboarding\.md/);
+  for (const rule of ["Keys live in the vault", "One agent, one space, one key", "Ask before anything that cannot be undone", "No task before the four checks pass"]) assert.match(ref, new RegExp(rule));
+});

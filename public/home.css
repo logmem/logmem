@@ -1152,7 +1152,8 @@ footer > span {
 footer > div {
   margin-left: auto;
   display: flex;
-  gap: 22px;
+  flex-wrap: wrap;
+  gap: 12px 22px;
   font-size: 12px;
   color: var(--text-subtle);
 }

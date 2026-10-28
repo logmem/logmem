@@ -96,10 +96,10 @@
 .ob-av1{background:var(--viz-1)}.ob-av2{background:var(--viz-2)}
 
 /* fork screen: hand-drawn chalkboard look. Colors are scoped here so light mode stays readable. */
-.ob-fork{--ob-teal:#1f8a83;--ob-amber:#a86b12;--ob-ink:var(--text)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ob-fork{--ob-teal:#4ecdc4;--ob-amber:#f7b731}}
-:root[data-theme="dark"] .ob-fork{--ob-teal:#4ecdc4;--ob-amber:#f7b731}
-body[data-ob-step="choose"]::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
+.ob-card,.ob-rail{--ob-teal:#1f8a83;--ob-amber:#a86b12;--ob-ink:var(--text)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ob-card,:root:not([data-theme="light"]) .ob-rail{--ob-teal:#4ecdc4;--ob-amber:#f7b731}}
+:root[data-theme="dark"] .ob-card,:root[data-theme="dark"] .ob-rail{--ob-teal:#4ecdc4;--ob-amber:#f7b731}
+body[data-ob-step]::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
   background:
     linear-gradient(90deg,rgba(128,128,128,.09) 1px,transparent 1px) 100% 0/44px 44px,
     linear-gradient(0deg,rgba(128,128,128,.09) 1px,transparent 1px) 100% 0/44px 44px;
@@ -177,3 +177,37 @@ body[data-ob-step="choose"]::before{content:"";position:fixed;inset:0;z-index:-1
 
 /* optional extras after the 4-step setup */
 .ob-extras{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-md)}
+
+/* A single guide, with a CSS face whenever WebGL is unavailable. */
+.ob-companion{display:flex;align-items:center;gap:16px;padding:0 4px 20px;color:var(--text)}
+.ob-companion p{margin:0}
+.ob-companion .lm-eyebrow{margin-bottom:5px}
+.ob-companion [data-companion-message]{font-size:14px;line-height:1.5;color:var(--text-muted)}
+.ob-orb{position:relative;flex:none;width:76px;height:76px}
+.ob-orb canvas{position:absolute;inset:0;width:100%;height:100%}
+.ob-orb-fallback{position:absolute;inset:3%;border-radius:50%;background:#0f6e68;overflow:hidden}
+.ob-orb-fallback span{position:absolute;top:34%;height:28%;width:13%;border-radius:999px;background:#f4f8f5;left:31%}
+.ob-orb-fallback span+span{left:56%}
+.ob-companion[data-gl="true"] .ob-orb-fallback{visibility:hidden}
+@media(max-width:639px){.ob-orb{width:56px;height:56px}.ob-companion{gap:12px;padding-bottom:16px}}
+
+/* every step: the same hand-drawn look as the first screen */
+.ob-card:not(.ob-fork){position:relative;border:2px solid var(--ob-teal);border-radius:14px 9px 16px 8px / 9px 15px 8px 14px;background:transparent}
+.ob-card:not(.ob-fork)::before{content:"";position:absolute;inset:-6px;border:1.5px solid var(--ob-teal);opacity:.5;border-radius:10px 16px 9px 15px / 15px 9px 16px 10px;transform:rotate(-.5deg);pointer-events:none}
+.ob-card:not(.ob-fork)::after{content:"\2734";position:absolute;top:14px;right:22px;font-size:18px;line-height:1;color:var(--ob-amber);pointer-events:none}
+.ob-card:not(.ob-fork)[data-step="redis"]::after,.ob-card:not(.ob-fork)[data-step="handoff"]::after,.ob-card:not(.ob-fork)[data-step="waitlist"]::after{color:var(--ob-teal)}
+.ob-chip{display:block;width:fit-content;margin:0 0 10px;padding:3px 14px;font-size:13px;line-height:20px;transform:rotate(-2deg)}
+.ob-card h1{position:relative;display:block;width:fit-content;max-width:100%;margin-bottom:12px}
+.ob-card:not(.ob-fork) h1::after{content:"";display:block;height:6px;margin-top:4px;width:min(12ch,60%);background:var(--ob-amber);opacity:.85;border-radius:60% 40% 55% 45% / 100% 100% 0 0;transform:rotate(-1.2deg)}
+.ob-card .lm-btn--primary{position:relative;border-radius:10px 7px 11px 8px / 8px 11px 7px 10px}
+.ob-card .lm-btn--primary::after{content:"";position:absolute;inset:-4px;border:1.5px solid var(--ob-teal);border-radius:12px 9px 13px 9px / 9px 13px 9px 12px;transform:rotate(.6deg);pointer-events:none}
+.ob-plan,.ob-toggle,.ob-agent,.ob-oss,.ob-extras{border-radius:12px 8px 13px 7px / 8px 12px 7px 11px}
+.ob-plan:has(input:checked){border:2px solid var(--ob-teal);box-shadow:3px 3px 0 var(--ob-amber)}
+.ob-agent[data-found]{border:2px solid var(--ob-teal)}
+.ob-toggle:has(input:checked){border:2px solid var(--ob-teal)}
+.ob-dot{border-radius:55% 45% 52% 48% / 62% 58% 42% 38%}
+.ob-dot[data-s="done"]{background:var(--ob-teal);border-color:var(--ob-teal);color:#fff;transform:rotate(-4deg)}
+.ob-card .lm-alert--success{animation:ob-pop .45s cubic-bezier(.3,1.4,.5,1) both}
+@keyframes ob-pop{from{transform:scale(.94) rotate(-1deg);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.ob-card .lm-alert--success{animation:none}}
+@media (max-width:767px){.ob-card:not(.ob-fork)::before{inset:-4px}.ob-card:not(.ob-fork)::after{right:14px}}
