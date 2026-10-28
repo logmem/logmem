@@ -120,3 +120,57 @@ export function mergeTracks(tracks = []) {
     return { title: best.charAt(0).toUpperCase() + best.slice(1), items: g.items, done, percent };
   });
 }
+
+// ---- Work list ----
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 2026-11-10 becomes "Nov 10". Anything else comes back as given. */
+export function fmtDue(due) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(due ?? ''));
+  return m ? `${MONTHS[Number(m[2]) - 1] || m[2]} ${Number(m[3])}` : String(due ?? '');
+}
+/** One label for the due cell: never the date twice. */
+export function dueState(job, late = () => false) {
+  if (!job.due) return { kind: 'none', text: '—' };
+  const text = fmtDue(job.due);
+  if (job.stage !== 'done' && late(job)) return { kind: 'late', text: `Overdue · ${text}` };
+  return { kind: 'due', text: `Due ${text}` };
+}
+export const WORK_MODES = [['live', 'Active & blocked'], ['blocked', 'Blocked'], ['active', 'Active'], ['open', 'Open'], ['late', 'Overdue'], ['parked', 'Parked'], ['done', 'Done'], ['all', 'All']];
+const parked = job => job.stage === 'blocked' && job.blocked_on?.parked === true;
+export function workMatch(job, mode, late = () => false) {
+  switch (mode) {
+    case 'blocked': return job.stage === 'blocked' && !parked(job);
+    case 'active': return job.stage === 'active';
+    case 'open': return job.stage === 'open';
+    case 'late': return job.stage !== 'done' && Boolean(late(job));
+    case 'parked': return parked(job);
+    case 'done': return job.stage === 'done';
+    case 'all': return true;
+    default: return job.stage === 'active' || (job.stage === 'blocked' && !parked(job));
+  }
+}
+export function workCounts(list = [], late = () => false) {
+  const counts = {};
+  for (const [mode] of WORK_MODES) counts[mode] = list.filter(job => workMatch(job, mode, late)).length;
+  return counts;
+}
+export const trackKey = track => String(track ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+/** One label per track, ignoring case and spacing. Prefer a spelling that starts with a capital. */
+export function trackLabels(tracks = []) {
+  const best = new Map();
+  for (const raw of tracks) {
+    const label = String(raw ?? '').trim().replace(/\s+/g, ' ');
+    if (!label) continue;
+    const key = label.toLowerCase(), cur = best.get(key);
+    if (!cur || (/^[A-Z]/.test(label) && !/^[A-Z]/.test(cur))) best.set(key, label);
+  }
+  return [...best.values()].map(l => l.charAt(0).toUpperCase() + l.slice(1)).sort();
+}
+/** The blocker text of a blocked, not parked job. Empty for everything else. */
+export const blockerNote = job => (job.stage === 'blocked' && !parked(job) ? String(job.blocked_on?.note ?? '').trim() : '');
+/** Blocker texts that two or more jobs share. */
+export function sharedBlockers(list = []) {
+  const counts = new Map();
+  for (const job of list) { const note = blockerNote(job); if (note) counts.set(note, (counts.get(note) || 0) + 1); }
+  return new Map([...counts].filter(([, n]) => n >= 2));
+}

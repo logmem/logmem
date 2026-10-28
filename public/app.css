@@ -508,3 +508,15 @@
 .lmx-donejobs{margin-top:6px}
 .lmx-donejobs>summary{cursor:pointer;min-height:32px;display:list-item;font-size:12px;color:var(--text-muted)}
 .lmx-clearms{min-height:32px}
+
+/* Work list: one due label, status pills, clamped notes, grouped blockers */
+.lmx-work-links{display:flex;gap:8px;flex-wrap:wrap}
+.lmx-work-list{margin-top:4px}
+.lmx-rowmeta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lmx-why-clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.lmx-due{display:flex;justify-content:flex-end;white-space:nowrap}
+.lmx-due[data-kind="late"] .lmx-flag{padding:3px 10px;border-radius:999px;background:var(--warning-subtle);color:var(--warning);border:1px solid var(--warning)}
+.lmx-typepill--toggle{border-style:dashed}
+.lmx-blockgroup{border:1px solid var(--border);border-radius:var(--radius-md);margin:8px 0;background:var(--surface)}
+.lmx-blockgroup>summary{cursor:pointer;padding:10px 14px;font-size:13px;color:var(--text-muted);min-height:36px;display:list-item}
+.lmx-blockgroup .lmx-work-row:last-child{border-bottom:0}
