@@ -9,5 +9,10 @@ Disallow: /keys.html
 Disallow: /connections
 Disallow: /connections.html
 Disallow: /api/
+Disallow: /sign-in
+Disallow: /sign-in.html
 
 Sitemap: https://logmem.si/sitemap.xml
+
+# Public agent reading guide: https://logmem.si/llms.txt
+# Skills and client setup pages are public. Workspace data requires authorization.
