@@ -2,6 +2,8 @@
 import {html,nothing} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {getJSON,postJSON,state,onContextReset,ago,agentName,toast} from './core.js';
 import {renderView} from './shell.js';
+import {handoffMap} from './flow-views.js';
+import {handoffArcs} from './flow-model.js';
 const drafts=new Map(),queueRequests=new Map();let generation=0;
 export function clearInteractions(){drafts.clear();queueRequests.clear();generation++;}
 onContextReset(clearInteractions);
@@ -57,7 +59,7 @@ export async function drawDiscussion(want,shell,current){
  model.render=draw;model.reload=load;draw();await load();
 }
 export async function queuePage(){
- const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false;
+ const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false,flowSel='';
  const active=()=>space===state.space&&version===generation&&location.hash===route;
  const draw=()=>{
   if(!active())return;
@@ -65,6 +67,7 @@ export async function queuePage(){
    ${error?html`<p role="alert">${error}</p>`:nothing}
    <form class="lmx-filters" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();cursor=0;load();}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
    ${data?html`${!data.coverage?.complete?html`<div class="lmx-coverage-note"><p>History indexing is pending. New indexed requests appear below. Older requests remain in their source logs until verified indexing completes.</p></div>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p class="lmx-meta">${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}
+    ${handoffMap({arcs:handoffArcs(data.items),sel:flowSel,pick:s=>{flowSel=s;draw();}})}
     <div class="lmx-stack">${data.items.length?data.items.map(item=>{
      const next=Number(item.last_nudge_at||0)+300000,invalid=Number(item.created_at)>Date.now()||!Number.isFinite(Number(item.deadline))||Number(item.deadline)<Number(item.created_at)||!Number.isFinite(Number(item.created_at))||Number(item.created_at)<=0,disabled=state.customer&&!state.permissions?.write||next>Date.now()||invalid||pending.has(item.id);
      return html`<article class="lmx-card"><div class="lmx-meta">${item.type} · ${agentName(item.from)} → ${agentName(item.to)}</div><h3>${item.summary}</h3><dl class="lm-kv"><dt>Created</dt><dd>${stamp(item.created_at)}</dd><dt>Deadline</dt><dd>${stamp(item.deadline)}${Number(item.deadline)<Date.now()?' · overdue':''}</dd><dt>Last nudge</dt><dd>${item.last_nudge_at?stamp(item.last_nudge_at):'No nudge recorded'}</dd><dt>Source</dt><dd>${item.where}</dd></dl>
