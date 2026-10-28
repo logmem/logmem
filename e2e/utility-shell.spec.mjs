@@ -14,6 +14,12 @@ for (const tool of ['keys', 'connections']) {
     const nav = page.getByRole('navigation', { name: test.info().project.name === 'phone' ? 'Page navigation' : 'Dashboard navigation', exact: true });
     await expect(nav).toBeVisible();
     await expect(nav.locator('[aria-current="page"]')).toHaveAccessibleName(tool === 'keys' ? 'Agent keys' : 'Connections');
+    if (test.info().project.name === 'phone') {
+      const bounds = await nav.boundingBox();
+      const active = await nav.locator('[aria-current="page"]').boundingBox();
+      expect(active.x).toBeGreaterThanOrEqual(bounds.x);
+      expect(active.x + active.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+    }
     await expect(page.getByRole('link', { name: 'Back to dashboard', exact: true }).last()).toHaveAttribute('href', '/app?operator=1');
     if (tool === 'keys') await page.getByLabel('Agent id', { exact: true }).fill('sample-agent');
     await page.getByLabel('Theme', { exact: true }).selectOption('midnight');

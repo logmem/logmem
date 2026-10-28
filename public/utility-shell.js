@@ -49,3 +49,7 @@ content.removeAttribute('style');
 content.classList.add('lmx-main', 'lmx-utility-content');
 content.tabIndex = -1;
 shell.querySelector('#utility-content').append(content);
+// Keep the selected tool visible in the phone's scrolling navigation row.
+const mobileNav = shell.querySelector('.lmx-utility-mobile');
+const selectedLink = mobileNav.querySelector('[aria-current="page"]');
+if (selectedLink) mobileNav.scrollLeft = selectedLink.offsetLeft - mobileNav.offsetLeft;
