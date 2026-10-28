@@ -26,10 +26,11 @@ test('customer creates workspace and spaces, adds work, and signs out',async({pa
  await page.getByLabel('First space name').fill('Operations');
  await page.getByRole('button',{name:'Create workspace',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
+ await page.getByRole('button',{name:'First task',exact:true}).click();
  await page.getByLabel('What should your team build or fix?').fill('Confirm Friday appointments');
  await page.getByRole('button',{name:'Save first task',exact:true}).click();
  await expect(page.getByText('1 of 3 steps complete',{exact:false})).toBeVisible();
- await page.getByRole('link',{name:'Open Work',exact:true}).first().click();
+ await page.goto('/app#/work');
  await page.getByRole('button',{name:/^Open \(1\)/}).click();
  await expect(page.getByText('Confirm Friday appointments').first()).toBeVisible();
  // Workspace settings is available on both phone and desktop.
@@ -107,4 +108,21 @@ test('viewer space picker keeps management actions hidden',async({page,context})
  await expect(picker.getByRole('button',{name:'Invite a teammate'})).toHaveCount(0);
  await expect(picker).toContainText('Your workspace owner manages spaces and invitations.');
  await expect(picker.getByRole('button',{name:'Workspace settings'})).toBeVisible();
+});
+test('guided login return preserves client, step and a scoped task draft',async({page,context})=>{
+ await fixture(context);await page.goto('/app');await page.getByLabel('Workspace name').fill('Guided workspace');await page.getByRole('button',{name:'Create workspace',exact:true}).click();
+ await page.goto('/app?setup=guided&client=claude&step=2#/home');
+ await expect(page.getByRole('heading',{name:'Connect · Claude',exact:true})).toBeVisible();
+ await expect(page).toHaveURL(/\/app#\/home$/);
+ await page.getByRole('button',{name:'Continue',exact:true}).click();await expect(page.getByRole('heading',{name:'Verify · Claude'})).toBeVisible();
+ await page.getByRole('button',{name:'Continue to first task'}).click();await page.getByLabel('What should your team build or fix?').fill('Keep this private draft');
+ await page.getByRole('button',{name:'Save and exit',exact:true}).click();await page.reload();await page.getByRole('button',{name:'Resume setup'}).click();
+ await expect(page.getByLabel('What should your team build or fix?')).toHaveValue('Keep this private draft');
+ await page.getByRole('button',{name:'Previous step',exact:true}).click();await expect(page.getByRole('heading',{name:'Verify · Claude'})).toBeVisible();
+ await page.getByRole('button',{name:'Continue to first task'}).click();await page.getByRole('button',{name:'Collaborate',exact:true}).click();await page.getByRole('link',{name:'Invite a teammate',exact:true}).click();
+ await page.getByRole('link',{name:'Return to setup and Today'}).click();await expect(page.getByRole('heading',{name:'Choose how you collaborate'})).toBeVisible();
+ await page.goto('/app#/account');await page.getByRole('button',{name:'Create space',exact:true}).last().click();await page.getByLabel('Space name',{exact:true}).fill('Fresh space');await page.getByRole('button',{name:'Create space',exact:true}).click();
+ await page.getByRole('button',{name:'First task',exact:true}).click();await expect(page.getByLabel('What should your team build or fix?')).toHaveValue('');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:'/private/tmp/logmem-guided-today-'+test.info().project.name+'.png',fullPage:true});
 });

@@ -1,0 +1,29 @@
+/* Shared setup uses the same tokens, type and actions as Today. */
+.setup-guide{color:var(--text);font-family:var(--font-sans);min-width:0}
+.setup-trail{display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:20px}
+.setup-trail button{font:inherit;font-size:12px;border:1px solid var(--border);border-radius:999px;padding:7px 11px;color:var(--text-muted);background:var(--surface);cursor:pointer}
+.setup-trail button[aria-current]{background:var(--brand-subtle);color:var(--brand);border-color:var(--brand)}
+.setup-trail button:disabled{opacity:.5;cursor:default}
+.setup-guide-panel{min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px}
+.setup-guide-panel h3{font:600 24px/1.2 var(--font-display);margin:0 0 16px;letter-spacing:-.025em}
+.setup-guide-panel p,.setup-guide-panel li{font-size:14px;line-height:1.65;color:var(--text-muted)}
+.setup-guide-panel pre{max-width:100%;box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-sunken);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;font:12px/1.65 var(--font-mono)}
+.setup-client-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.setup-client-grid .lm-btn{display:flex;flex-direction:column;gap:6px;padding:16px;align-items:flex-start;white-space:normal;text-align:left;height:auto}
+.setup-client-grid small{color:var(--text-subtle);font-weight:400}
+.setup-skill-links,.setup-guide-actions,.setup-resume{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.setup-guide-actions{margin-top:18px}.setup-guide-actions>.lm-btn:last-child{margin-left:auto}
+.setup-reader{margin-top:20px}.setup-reader pre{max-height:360px;overflow-y:auto}
+.setup-note{font-size:12px!important}.setup-theme-picker{display:flex;gap:8px;flex-shrink:0}
+.setup-theme-picker button{width:23px;height:23px;border:1px solid var(--border-strong);border-radius:50%;cursor:pointer}
+.setup-theme-picker [data-swatch="white"]{background:#fff}.setup-theme-picker [data-swatch="sage"]{background:#b6cbbd}.setup-theme-picker [data-swatch="sand"]{background:#d7c29b}.setup-theme-picker [data-swatch="midnight"]{background:#1b2021}
+.setup-theme-picker [aria-pressed="true"]{outline:2px solid var(--brand);outline-offset:3px}
+.setup-guide button:focus-visible,.setup-guide a:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+:root[data-app-theme] body.lm{background:var(--bg);color:var(--text)}
+:root[data-app-theme] .signin-card{background:var(--surface);border-color:var(--border)}
+:root[data-app-theme] .signin-note,:root[data-app-theme] .signin-access{border-color:var(--border)}
+:root[data-app-theme] .signin-nav a,:root[data-app-theme] .signin-card a,:root[data-app-theme] .signin-story .lm-eyebrow{color:var(--brand)}
+:root[data-app-theme] .signin-intro,:root[data-app-theme] .signin-access,:root[data-app-theme] .signin-note p,:root[data-app-theme] .signin-story>p,:root[data-app-theme] .signin-story h1 span,:root[data-app-theme] .signin-footer,:root[data-app-theme] #signin-status{color:var(--text-muted)}
+@media(max-width:600px){.setup-guide-panel{padding:16px}.setup-guide-panel h3{font-size:21px}.setup-guide-actions .lm-btn{flex:1 1 auto}.setup-guide-actions>.lm-btn:last-child{margin-left:0}.setup-trail{gap:5px}.setup-trail button{padding:6px 8px}.agent-nav{gap:16px}}
+:root[data-app-theme="midnight"] img[src$="/logmem-lockup.svg"]{content:url('/ds/logos/logmem-lockup-reversed.svg')}
+:root[data-app-theme="midnight"] img[src$="/logmem-symbol.svg"]{content:url('/ds/logos/logmem-symbol-reversed.svg')}

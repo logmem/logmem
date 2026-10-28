@@ -324,32 +324,6 @@
 .lmx-discussion form{display:grid;gap:12px;margin:16px 0}.lmx-discussion textarea{min-height:96px;resize:vertical}.lmx-discussion-entry{padding:14px 0;border-top:1px solid var(--border)}.lmx-discussion-entry p{white-space:pre-wrap;overflow-wrap:anywhere}.lmx-discussion details{margin:20px 0}.lmx-discussion [role=alert]{color:var(--danger)}
 
 /* Approved cockpit: application-only palettes. These do not change the public site. */
-:root[data-app-theme="white"]{
-  --bg:#FFFFFF;--surface:#FFFFFF;--surface-raised:#FFFFFF;--surface-sunken:#F4F6F5;
-  --border:#D3DAD8;--border-strong:#7A8784;--text:#121A19;--text-muted:#46534F;--text-subtle:#5C6966;
-  --text-inverse:#FFFFFF;--cockpit-rail:#FAFBFA;--cockpit-brief:#F7F9F8;--cockpit-action:#202927;--cockpit-action-hover:#35413D;--cockpit-on-action:#FFFFFF;
-}
-:root[data-app-theme="sage"]{
-  --bg:#F4F7F5;--surface:#FFFFFF;--surface-raised:#FFFFFF;--surface-sunken:#EAF1EC;
-  --border:#CEDBD2;--border-strong:#74877B;--text:#182A22;--text-muted:#435E4E;--text-subtle:#546E5E;
-  --cockpit-rail:#EEF4EF;--cockpit-brief:#EAF3ED;--cockpit-action:#253C30;--cockpit-action-hover:#375340;--cockpit-on-action:#FFFFFF;
-}
-:root[data-app-theme="sand"]{
-  --bg:#FFFDF9;--surface:#FFFDF9;--surface-raised:#FFFFFF;--surface-sunken:#F5EEE3;
-  --border:#DCD3C6;--border-strong:#8D8070;--text:#302A23;--text-muted:#61574A;--text-subtle:#716454;
-  --cockpit-rail:#F8F3EB;--cockpit-brief:#F8F3EB;--cockpit-action:#3B342C;--cockpit-action-hover:#51473B;--cockpit-on-action:#FFFFFF;
-}
-:root[data-app-theme="midnight"]{
-  --bg:#141819;--surface:#1B2021;--surface-raised:#22292A;--surface-sunken:#111617;
-  --border:#34413E;--border-strong:#788B84;--text:#E9EEEC;--text-muted:#B3BEBA;--text-subtle:#A0AEA8;
-  --cockpit-rail:#171D1D;--cockpit-brief:#222C29;--cockpit-action:#E9EEEC;--cockpit-action-hover:#CFDCD6;--cockpit-on-action:#18201D;
-}
-:root[data-app-theme]{--radius-md:9px;--radius-lg:13px}
-:root[data-app-theme] body{background:var(--bg);color:var(--text)}
-:root[data-app-theme] .lm-btn--primary{background:var(--cockpit-action);color:var(--cockpit-on-action)}
-:root[data-app-theme] .lm-btn--primary:hover{background:var(--cockpit-action-hover)}
-:root[data-app-theme] .lm-btn--secondary{border-color:var(--border)}
-:root[data-app-theme] .lm-btn{font-size:13px}
 :root[data-app-theme] .lmx{grid-template-columns:190px minmax(0,1fr)}
 :root[data-app-theme] .lmx-rail{padding:24px 13px 16px;gap:5px;background:var(--cockpit-rail)}
 :root[data-app-theme] .lm-rail-brand{padding:0 9px;margin-bottom:18px}
