@@ -1,3 +1,22 @@
+/* Base layer: the header, footer and type these pages need. home.css is not loaded here, so this carries the minimum. */
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.wordmark{font-family:var(--font-display);font-weight:600}
+a{color:var(--link)}
+.nav{position:sticky;z-index:20;top:14px;margin:14px 4.4% 0;height:58px;padding:0 17px 0 22px;border-radius:17px;display:flex;align-items:center;gap:30px;border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:var(--shadow-1);backdrop-filter:blur(18px)}
+.wordmark{display:inline-flex;align-items:center;flex-shrink:0}
+.brand-lockup{display:block;width:145px;height:32px;object-fit:contain}
+.nav nav{margin-left:auto;display:flex;gap:28px;font-size:14px}
+.nav nav a{color:var(--text-muted);text-decoration:none}
+.nav nav a:hover,.nav nav a[aria-current="page"]{color:var(--brand)}
+.nav .lm-btn{text-decoration:none}
+@media (max-width:760px){.nav{gap:10px;padding:0 10px 0 14px;margin:12px 12px 0}.nav nav{display:none}.nav .brand-lockup{width:110px;height:24px}.nav .lm-btn{margin-left:auto;padding:0 12px;font-size:13px;white-space:nowrap}}
+footer{max-width:1120px;margin:40px auto 0;padding:30px 20px 50px;border-top:1px solid var(--border);display:flex;align-items:center;gap:25px;flex-wrap:wrap}
+footer>span{font-size:12px;color:var(--text-subtle)}
+footer>div{margin-left:auto;display:flex;gap:22px;flex-wrap:wrap;font-size:12px}
+footer a{color:var(--text-subtle);text-decoration:none}
+footer a:hover{color:var(--brand)}
+footer small{width:100%;font:10px var(--font-mono);color:var(--text-subtle)}
+
 /* LogMem subpages — shared layout for /pricing, /connect, /privacy, /terms.
    Built on the live design system: /ds/tokens/logmem.css + /ds/components/bundle.css.
    Page-specific layout only; components (lm-btn, lm-badge, lm-disclosure) come from the bundle. */
@@ -80,3 +99,27 @@ table.compare td.hl { font-weight: 600; }
   .plan-card dd { margin: 0; color: var(--text); font-weight: 500; }
   .plan-card .cta-row { margin-top: 16px; }
 }
+
+/* Fun layer: same hand-drawn look as the onboarding choose screen. CSS only, decorative, no motion. */
+.page-wrap{--fun-teal:#1f8a83;--fun-amber:#a86b12;--fun-ink:var(--text)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .page-wrap{--fun-teal:#4ecdc4;--fun-amber:#f7b731}}
+:root[data-theme="dark"] .page-wrap{--fun-teal:#4ecdc4;--fun-amber:#f7b731}
+.page-eyebrow{background:#eab543;color:#101313;border:1.5px solid #101313;border-radius:55% 45% 52% 48% / 62% 58% 42% 38%;padding:3px 14px;transform:rotate(-2deg)}
+.page-hero h1::after{content:"";display:block;width:132px;height:12px;margin-top:6px;border-bottom:3px solid var(--fun-teal);border-radius:50%/100%;transform:rotate(-1.5deg)}
+.page-section>h2::before{content:"\2734";color:var(--fun-amber);margin-right:10px;font-size:.8em}
+.step-card,.rule-card,.client-card,.callout,.compare-scroll,.faq details,.prompt-block{position:relative;background:transparent;box-shadow:none;border:2px solid var(--fun-teal);border-radius:14px 9px 16px 8px / 9px 15px 8px 14px}
+.step-card::before,.rule-card::before,.client-card::before,.callout::before,.compare-scroll::before{content:"";position:absolute;inset:-5px;border:1.5px solid var(--fun-teal);opacity:.5;border-radius:10px 16px 9px 15px / 15px 9px 16px 10px;transform:rotate(-.5deg);pointer-events:none}
+.step-card:nth-child(even),.rule-card:nth-child(even),.client-card:nth-child(even){border-color:var(--fun-amber)}
+.step-card:nth-child(even)::before,.rule-card:nth-child(even)::before,.client-card:nth-child(even)::before{border-color:var(--fun-amber);transform:rotate(.5deg)}
+.compare-scroll::before{display:none}
+.callout{border-color:var(--fun-amber)}
+.callout::before{border-color:var(--fun-amber)}
+.step-card .num{background:#3b9c9c;color:#101313;border:1.5px solid #101313;border-radius:55% 45% 52% 48% / 62% 58% 42% 38%;width:32px;height:28px;transform:rotate(-3deg)}
+.step-card:nth-child(even) .num{background:#eab543}
+.client-card[aria-pressed="true"]{outline:0;border-color:var(--fun-amber);background:var(--brand-subtle)}
+.prose ul{list-style:none;padding-left:4px}
+.prose ul>li{position:relative;padding-left:24px;margin:6px 0}
+.prose ul>li::before{content:"\2734";position:absolute;left:0;top:0;color:var(--fun-amber)}
+.page-main .lm-btn--primary{position:relative}
+.page-main .lm-btn--primary::after{content:"";position:absolute;inset:-4px;border:1.5px solid var(--fun-teal);border-radius:12px 9px 13px 9px / 9px 13px 9px 12px;transform:rotate(.6deg);pointer-events:none}
+@media (max-width:480px){.step-card::before,.rule-card::before,.client-card::before,.callout::before{inset:-3px}}
