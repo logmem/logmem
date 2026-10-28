@@ -24,8 +24,9 @@ test('explicit themes choose legible logos independently of system appearance',a
  await expect(page.locator('.lm-rail-brand .logo-l')).toHaveCSS('display','none');
 });
 test('personal task summary opens the human task drawer',async({page})=>{
- await signIn(page);const tasks=page.getByRole('link',{name:/Tasks for you/});
- await expect(tasks).toHaveAttribute('href','#/blockers');await tasks.click();
+ await signIn(page);const tasks=page.getByRole('group',{name:'Workspace status filters'}).getByRole('button',{name:/Tasks/});
+ await tasks.click();await expect(page).toHaveURL(/#\/home$/);
+ await page.getByRole('button',{name:'Review task',exact:true}).first().click();
  await expect(page.locator('.lmx-drawer')).toBeVisible();
  await expect(page.locator('.lmx-drawer')).toContainText('Needs you');
 });
