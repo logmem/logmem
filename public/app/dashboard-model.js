@@ -82,3 +82,41 @@ export function splitPlans(plans = []) {
   const empty = plans.filter(p => p.id !== 'general' && !(Number(p.jobs) > 0));
   return { active: plans.filter(p => !empty.includes(p)), empty };
 }
+
+// ---- Plan detail ----
+export const PLAN_MODES = [['all', 'All'], ['open', 'Open & active'], ['blocked', 'Blocked'], ['late', 'Late'], ['waiting', 'Waiting on a person'], ['done', 'Done']];
+const waitsOnPerson = job => job.stage === 'blocked' && ['decision', 'task'].includes(job.blocked_on?.type);
+export function planMatch(job, mode, late = () => false) {
+  switch (mode) {
+    case 'open': return job.stage === 'open' || job.stage === 'active';
+    case 'blocked': return job.stage === 'blocked';
+    case 'late': return Boolean(late(job));
+    case 'waiting': return waitsOnPerson(job);
+    case 'done': return job.stage === 'done';
+    default: return true;
+  }
+}
+export function planCounts(items = [], late = () => false) {
+  const counts = {};
+  for (const [mode] of PLAN_MODES) counts[mode] = items.filter(job => planMatch(job, mode, late)).length;
+  return counts;
+}
+const squash = text => String(text ?? '').trim().replace(/\s+/g, ' ');
+/** Merge workstreams whose titles differ only by case or spacing. Other titles stay apart. */
+export function mergeTracks(tracks = []) {
+  const groups = new Map();
+  for (const t of tracks) {
+    const key = squash(t.title).toLowerCase();
+    const g = groups.get(key) || { variants: [], items: [], source: [] };
+    g.variants.push({ title: squash(t.title), n: (t.items || []).length });
+    g.items.push(...(t.items || []));
+    g.source.push(t);
+    groups.set(key, g);
+  }
+  return [...groups.values()].map(g => {
+    const best = g.variants.slice().sort((a, b) => Number(/^[A-Z]/.test(b.title)) - Number(/^[A-Z]/.test(a.title)) || b.n - a.n)[0].title;
+    const done = g.items.filter(i => i.stage === 'done').length;
+    const percent = g.source.length === 1 && Number.isFinite(g.source[0].percent) ? g.source[0].percent : (g.items.length ? Math.round(100 * done / g.items.length) : 0);
+    return { title: best.charAt(0).toUpperCase() + best.slice(1), items: g.items, done, percent };
+  });
+}
