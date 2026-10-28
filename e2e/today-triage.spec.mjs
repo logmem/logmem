@@ -15,3 +15,21 @@ test('operations collapses by keyboard and bento actions align',async({page})=>{
  for(const theme of ['white','sage','sand','midnight']){await page.evaluate(async t=>(await import('/app/theme.js')).writeTheme(t),theme);await expect(page.locator('body')).toHaveJSProperty('scrollWidth',await page.evaluate(()=>document.documentElement.clientWidth));}
  await page.screenshot({path:'/private/tmp/logmem-today-triage-'+test.info().project.name+'.png',fullPage:true});
 });
+test('long plan titles stay on one line inside narrow priority rails',async({page})=>{
+ const title='LogMem launch: build, footprint, onboarding and coordination reliability';
+ await page.route('**/api/view**',r=>new URL(r.request().url()).searchParams.get('what')==='home'?r.fulfill({json:{...data,plans:Array.from({length:7},(_,i)=>({...data.plans[0],id:'plan-'+i,title:title+' '+i,lane:{status:i>4?'parked':'active'}}))}}):r.continue());
+ await page.request.post('/api/login',{data:{password:'e2e-only-password'}});await page.goto('/app#/home');
+ const ops=page.locator('.lmx-operations');await expect(ops).toBeVisible();
+ await expect(ops.getByText('Show 2 parked plans')).toBeVisible();
+ for(const width of [280,240]){
+  await ops.evaluate((el,w)=>el.style.width=w+'px',width);
+  const tile=ops.locator('.lmx-plan-tile').first(),heading=tile.locator('.lmx-plan-tile-heading strong');
+  await expect(heading).toHaveCSS('white-space','nowrap');
+  const bounds=await heading.boundingBox();expect(bounds.width).toBeGreaterThan(70);expect(bounds.height).toBeLessThan(30);
+  expect(await tile.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  await expect(tile.getByRole('progressbar')).toHaveAttribute('aria-valuenow','40');
+  await tile.locator('summary').click();await expect(tile.getByRole('link',{name:/Review plan/})).toBeVisible();await tile.locator('summary').click();
+ }
+ await ops.evaluate(el=>el.style.width='');
+ await page.screenshot({path:'/private/tmp/logmem-plan-pulse-'+test.info().project.name+'.png',fullPage:true});
+});

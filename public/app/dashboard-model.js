@@ -77,9 +77,9 @@ export function attentionCounts(items = []) {
   return c;
 }
 export const filterAttention = (items = [], kind = 'all') => kind === 'all' ? items : items.filter(item => attentionKind(item) === kind);
-/** Plans with no work yet sit behind a toggle so active plans stay in front. */
+/** Parked, general and empty plans sit behind a toggle. */
 export function splitPlans(plans = []) {
-  const empty = plans.filter(p => p.id !== 'general' && !(Number(p.jobs) > 0));
+  const empty = plans.filter(p => p.id === 'general' || p.lane?.status === 'parked' || !(Number(p.jobs) > 0));
   return { active: plans.filter(p => !empty.includes(p)), empty };
 }
 
