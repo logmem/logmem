@@ -1,12 +1,12 @@
 // cards.js — the shared parts (live app spec, section 3): one job card, one plan card, one agent
 // chip, one task card, one decision card, one lane card. Every view is built from these.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { num, ago, agentName, glow, toast, state, live } from './core.js';
+import { num, ago, agentName, glow, toast, state, live, isLate } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
 import { decisionProblem, shortenIds, jobName, initials } from './dashboard-model.js';
 import {agentDispatchButton} from './dispatch-components.js';
-import {agentDispatchPrompt} from './dispatch-model.js';
+import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
@@ -94,12 +94,16 @@ export function needItem(i, opts) {
 }
 
 // ─── jobs board, plan rows, agent cards ─────────────────────────────
-export function boardCard(j, route) {
-  return html`<article class="lmx-card ${glow(route, 'job:' + j.id)}" tabindex="0" data-key=${'job:' + j.id} data-w=${j.stage === 'blocked' ? (j.blocked_on ? j.blocked_on.type : 'none') : nothing}>
-    <h3>${jobLink(j.id, j.title)}</h3>
-    <div class="lmx-meta">${joinDot([[j.plan, j.track].filter(Boolean).join(' › '), j.owner ? agentName(j.owner) : '', dueTag(j.due, j.stage)])} ${staleTag(j.id)}</div>
-    ${j.stage === 'blocked' ? html`<div class="lmx-why">${j.blocked_on ? html`${waitsTag(j.blocked_on)} ${j.blocked_on.note}` : html`<span class="lmx-flag">No reason given</span>`}</div>`
-      : j.last ? html`<div class="lmx-why">${j.last.summary} <span class="subtle">${ago(j.last.ts)}</span></div>` : nothing}</article>`;
+/** Compact board tile: one-line title, two-line preview, a row of pills and a Copy dispatch baseline. */
+export function boardCard(j, route, opts = {}) {
+  const blocked = j.stage === 'blocked', body = blocked ? (j.blocked_on ? j.blocked_on.note : 'No reason given') : (j.last ? j.last.summary : '');
+  const late = Boolean(j.due) && isLate(j.due, j.stage);
+  const pills = [j.plan, j.track, j.owner ? '@' + agentName(j.owner) : null].filter(Boolean);
+  return html`<article class="lmx-card lmx-bento ${glow(route, 'job:' + j.id)}" tabindex="0" data-key=${'job:' + j.id} data-stage=${j.stage} data-w=${blocked ? (j.blocked_on ? j.blocked_on.type : 'none') : nothing}>
+    <h3 class="lmx-bento-title" title=${j.title}>${jobLink(j.id, j.title)}</h3>
+    ${body ? html`<p class="lmx-bento-body" title=${body}>${blocked && j.blocked_on ? html`${waitsTag(j.blocked_on)} ` : nothing}${body}</p>` : html`<p class="lmx-bento-body lmx-meta">No entries yet.</p>`}
+    <div class="lmx-bento-meta">${pills.map((t) => html`<span class="lmx-tag">${t}</span>`)}${j.due ? html`<span class="lmx-tag" data-late=${String(late)}>${late ? 'late · ' : 'due '}${j.due}</span>` : nothing}${staleTag(j.id)}</div>
+    <div class="lmx-bento-foot">${j.last && !blocked ? html`<span class="lmx-meta">${ago(j.last.ts)}</span>` : html`<span></span>`}<span class="lmx-bento-act">${agentDispatchButton(jobDispatchPrompt(j, opts.space || state.space), 'Copy dispatch')}</span></div></article>`;
 }
 export function planRow(i) {
   return html`<div class="lmx-prow" data-key=${'job:' + i.id}>${jobLink(i.id, i.title)}<span>${stage(i.stage)}</span>
@@ -108,17 +112,19 @@ export function planRow(i) {
 }
 export function agentCard(a, opts = {}) {
   const now = a.now || {}, r = a.recap, job = jobName(now.job), open = opts.open === true;
-  const parts = shortenIds(now.doing || '');
+  const parts = shortenIds(now.doing || ''), nextParts = shortenIds(now.next || '');
   const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
   const pulse = a.seen?.state === 'active';
+  const recapLine = r ? String(r.summary || '').split(/\r?\n/).find((l) => l.trim()) || '' : '';
+  const gaps = [now.doing ? null : 'No Now set', r ? null : 'No recap'].filter(Boolean);
   return html`<article class="lmx-card lmx-agent-card" tabindex="0" data-key=${'agent:' + a.id} data-state=${a.seen?.state || 'unknown'}>
     <div class="lmx-agent-head"><span class="lmx-avatar" aria-hidden="true">${initials(a.id)}</span><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${a.id}</a><span class="lmx-agent-seen">${pulse ? html`<i class="lmx-pulse" aria-hidden="true"></i>` : nothing}${seenTag(a.seen)}</span></div>
     <div class="lmx-agent-body">
       <div class="lmx-agent-now"><span class="lmx-label">NOW</span>${now.doing ? html`<p class=${'lmx-clamp3' + (open ? ' is-open' : '')}>${parts.map((p) => (p.chip ? idChip(p) : p.text))}</p>${now.doing.length > 140 ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(open)} @click=${opts.toggle}>${open ? 'Show less' : 'Show more'}</button>` : nothing}` : html`<span class="lmx-flag">No Now set</span>`}</div>
-      ${job || now.next ? html`<div class="lmx-nextbox"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${now.next}</p>` : nothing}</div>` : nothing}
-      ${r ? html`<details class="lmx-recap"><summary>Last recap · ${ago(r.ended_at)}</summary><p>${r.summary}</p></details>` : nothing}
+      ${job || now.next ? html`<div class="lmx-nextbox"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${nextParts.map((p) => (p.chip ? idChip(p) : p.text))}</p>` : nothing}</div>` : nothing}
+      ${r ? html`<details class="lmx-recap-box"><summary><span class="lmx-recap-label">Last recap</span><span class="lmx-recap-line">${recapLine}</span></summary><div class="lmx-recap-scroll"><p>${r.summary}</p></div></details>` : nothing}
     </div>
-    <div class="lmx-agent-foot"><span class="lmx-checkpill" data-ok=${now.doing ? '1' : '0'}>Now ${now.doing ? '✓' : '✗'}</span><span class="lmx-checkpill" data-ok=${r ? '1' : '0'}>Recap ${r ? '✓' : '✗'}</span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
+    <div class="lmx-agent-foot">${gaps.length ? gaps.map((g) => html`<span class="lmx-checkpill" data-ok="0">${g}</span>`) : html`<span class="lmx-checkpill" data-ok="1" title="Now is set and a recap exists">On track</span>`}${r ? html`<span class="lmx-meta lmx-recap-age" title="When the last recap was written">recap ${ago(r.ended_at)}</span>` : nothing}<span class="lmx-foot-spacer"></span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
 }
 
 // ─── lanes ───────────────────────────────────────────────────────────

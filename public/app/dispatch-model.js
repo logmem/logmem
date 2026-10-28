@@ -18,6 +18,14 @@ export const ticketPrompt = (item, space) => dispatchPrompt({space, refs: [item.
 export function clusterPrompt(cluster, space) {
   return dispatchPrompt({space, refs:cluster.jobs.map(j => 'job:' + j.id), summary:cluster.note});
 }
+export function jobDispatchPrompt(job, space) {
+  const note = text(job.blocked_on?.note).trim();
+  const state = [`Title: ${text(job.title || job.id)}`, `Stage: ${text(job.stage)}`, job.owner ? `Owner: ${text(job.owner)}` : '',
+    job.plan ? `Plan: ${text(job.plan)}${job.track ? ' / ' + text(job.track) : ''}` : '', job.due ? `Due: ${text(job.due)}` : '',
+    note ? `Blocked on: ${note}` : job.stage === 'blocked' ? 'Blocked: no reason recorded' : '',
+    job.last?.summary ? `Last entry: ${text(job.last.summary)}` : ''].filter(Boolean).join('\n');
+  return dispatchPrompt({space, refs:['job:' + job.id], recipient:job.owner, summary:state});
+}
 export const agentDispatchPrompt = (agent, space) => dispatchPrompt({space, refs:['agent:' + agent.id], recipient:agent.id, summary:agent.now?.doing || 'Read current assignments and ask for the next task if none are available.'});
 export function groupBlockers(jobs, getNote) {
   const groups = new Map();

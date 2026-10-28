@@ -16,7 +16,7 @@ import {workspaceAssistant} from './shell.js';
 import { renderView } from './shell.js';
 import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN, signOut } from './shell.js';
-import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers, AGENT_MODES, agentMatch, agentCounts, groupDecisions, verdictLabel, agentColor, decisionGraph, splitDecisionRows } from './dashboard-model.js';
+import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers, AGENT_MODES, agentMatch, agentCounts, groupDecisions, verdictLabel, agentColor, decisionGraph, splitDecisionRows, BOARD_FILTERS, boardMatch, boardCounts } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 import { handoffMap, timeScrubber, fleetPulse, blockerMap } from './flow-views.js';
 import { blockerKind } from './flow-model.js';
@@ -154,6 +154,7 @@ function searchBox(view, ph, redraw) {
 
 // ─── Jobs: "Where is a given piece of work?" ────────────────────────
 const BOARD = [['open', 'Open'], ['active', 'Active'], ['blocked', 'Blocked'], ['done', 'Done, last 7 days']];
+const BOARD_MAIN = BOARD.slice(0, 3);
 function drawJobs() {
   const R = workFilterKey(state.space);
   const all = prioritizeWork(live.jobs || []);
@@ -164,13 +165,16 @@ function drawJobs() {
   const layout = f.layout === 'board' ? 'board' : 'list';
   const mode = WORK_MODES.some(([k]) => k === f.status) ? f.status : 'live';
   const counts = workCounts(base, lateFn);
+  const staleFn = j => (live.stale || []).includes(j.id);
+  const bmode = BOARD_FILTERS.some(([k]) => k === f.bmode) ? f.bmode : 'all', bcounts = boardCounts(base, lateFn, staleFn);
   const kindOk = j => !f.bkind || (j.stage === 'blocked' && blockerKind(j) === f.bkind);
-  const list = (layout === 'list' ? base.filter(j => workMatch(j, mode, lateFn)) : base).filter(kindOk);
+  const list = (layout === 'list' ? base.filter(j => workMatch(j, mode, lateFn)) : base.filter(j => boardMatch(j, bmode, lateFn, staleFn))).filter(kindOk);
   const tracks = trackLabels(all.filter(j => !f.plan || j.plan === f.plan).map(j => j.track));
   const setLayout = value => () => { f.layout = value; saveFilt(); drawJobs(); };
   const setMode = k => () => { f.status = k; saveFilt(); drawJobs(); };
   const toggleGroup = () => { f.group = f.group === 'blocker' ? '' : 'blocker'; saveFilt(); drawJobs(); };
-  const pick = f.stage || (list.some(j => j.stage === 'blocked') ? 'blocked' : 'active');
+  const setBoardMode = k => () => { f.bmode = k; saveFilt(); drawJobs(); };
+  const pick = BOARD_MAIN.some(b => b[0] === f.stage) ? f.stage : (list.some(j => j.stage === 'blocked') ? 'blocked' : 'active');
   const setPick = st => () => { f.stage = st; saveFilt(); drawJobs(); };
   const shared = sharedBlockers(list);
   const clusters = blockerClusters(list).filter(c=>c.jobs.length>=3);
@@ -182,12 +186,15 @@ function drawJobs() {
     return html`${clusters.map(c=>clusterBlockerGroup(c,state.space))}${list.filter(j=>!groupedIds.has(j.id)).map(row)}`;
   };
   const unknown = list.filter(j => !BOARD.some(b => b[0] === j.stage));
+  const doneList = list.filter(j => j.stage === 'done');
   renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<details class="lmx-queue-map"><summary>Show blocker map</summary>${blockerMap({ jobs: base, space: state.space, sel: f.blocker || '', kind: f.bkind || '', setKind: k => { f.bkind = k; saveFilt(); drawJobs(); }, pick: k => { f.blocker = k; saveFilt(); drawJobs(); }, copy })}</details><div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><div class="lmx-work-links"><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div></div>
     <div class="lmx-filters">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}</div>
+    ${layout === 'board' ? html`<div class="lmx-filter" role="group" aria-label="Filter the board">${BOARD_FILTERS.map(([k, l]) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(bmode === k)} @click=${setBoardMode(k)}>${l} (${bcounts[k]})</button>`)}</div>` : nothing}
     ${layout === 'list' ? html`<div class="lmx-filter" role="group" aria-label="Filter by status">${WORK_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}${shared.size ? html`<button type="button" class="lmx-typepill lmx-typepill--toggle" aria-pressed=${String(f.group === 'blocker')} @click=${toggleGroup}>Group by blocker</button>` : nothing}</div>` : nothing}
     ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? (f.group === 'blocker' && shared.size ? grouped() : keyed(list, j=>j.id, row)) : emptyState('No work matches these filters.', 'Clear a filter or pick another status.')}</div>` : html`
-      <div class="lmx-stagechips lmx-phone-only" role="tablist">${BOARD.map(b=>html`<button type="button" role="tab" aria-selected=${pick === b[0]} @click=${setPick(b[0])}>${b[1].split(',')[0]} ${list.filter(j=>j.stage===b[0]).length}</button>`)}</div>
-      <div class="lmx-board">${BOARD.map(b=>{ const mine=list.filter(j=>j.stage===b[0]); return html`<section class="lmx-boardcol" data-stage=${b[0]} ?data-pick=${pick===b[0]}><h2 class="lmx-colhead">${b[1]} <b>${mine.length}</b></h2><div class="lmx-stack">${keyed(mine,j=>j.id,j=>boardCard(j,'work'))}${!mine.length ? html`<p class="lmx-meta">None.</p>` : nothing}</div></section>`; })}</div>
+      <div class="lmx-stagechips lmx-phone-only" role="tablist">${BOARD_MAIN.map(b=>html`<button type="button" role="tab" aria-selected=${pick === b[0]} @click=${setPick(b[0])}>${b[1].split(',')[0]} ${list.filter(j=>j.stage===b[0]).length}</button>`)}</div>
+      <div class="lmx-board lmx-board--3">${BOARD_MAIN.map(b=>{ const mine=list.filter(j=>j.stage===b[0]); return html`<section class="lmx-boardcol" data-stage=${b[0]} ?data-pick=${pick===b[0]}><h2 class="lmx-colhead">${b[1]} <b>${mine.length}</b></h2><div class="lmx-stack">${keyed(mine,j=>j.id,j=>boardCard(j,'work',{space:state.space}))}${!mine.length ? html`<p class="lmx-meta">None.</p>` : nothing}</div></section>`; })}</div>
+      <details class="lmx-donedrawer" ?open=${!!f.doneOpen} @toggle=${e=>{ if(e.target===e.currentTarget && f.doneOpen!==e.target.open){ f.doneOpen=e.target.open; saveFilt(); } }}><summary>Done, last 7 days <b>${doneList.length}</b></summary><div class="lmx-donegrid">${keyed(doneList,j=>j.id,j=>boardCard(j,'work',{space:state.space}))}${!doneList.length ? html`<p class="lmx-meta">None.</p>` : nothing}</div></details>
       ${unknown.length ? html`<section><h2 class="lmx-section-title">Unrecognized stages</h2>${unknown.map(row)}</section>` : nothing}`}
     <p class="lmx-meta">${list.length} matching work items. Milestones are listed under Plans and milestones. Done work from the last seven days appears here.</p>`);
 }
@@ -215,7 +222,7 @@ pages.agents = async () => {
     renderView('agents', ['Agents'], html`<div class="lmx-filters"><span class="lmx-meta">${liveN} of ${d.agents.length} wrote in the last 15 minutes. This is reporting activity, not runtime presence.</span><span class="lm-spacer"></span><a href="#/slots" class="lm-btn lm-btn--secondary">Daily slots</a><a href="/keys" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent keys</a></div>
     ${fleetPulse({ entries: pulseEntries, agents: d.agents.map((a) => a.id), win: pf.win === 6 ? 6 : 24, sel: pf.lane || '', show: ['active', 'live', 'quiet', 'all'].includes(pf.show) ? pf.show : 'active', setShow: (k) => { pf.show = k; saveFilt(); draw(); }, setWin: (h) => { pf.win = h; saveFilt(); draw(); }, pick: (s) => { pf.lane = s; saveFilt(); draw(); } })}
     <div class="lmx-filter" role="group" aria-label="Filter the roster">${AGENT_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}</div>
-    <section class="lmx-capability-note"><strong>Run and schedule receipts are not connected yet.</strong><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits. Copy prompt puts a ready prompt on your clipboard. It does not start anything.</p></section>
+    <section class="lmx-capability-note" role="note"><div class="lmx-capability-line"><span class="lm-badge lm-badge--info">Not connected</span><strong>Run and schedule receipts</strong></div><details><summary>What this means</summary><p>Request a run and Pause future runs remain unavailable until this space has a verified runner and enforceable limits. Copy prompt puts a ready prompt on your clipboard. It does not start anything.</p></details></section>
     <div class="lmx-agents-grid">${shown.length ? keyed(shown, (a) => a.id, card) : emptyState('No agents match.', 'Pick another filter.')}</div>
     ${tucked.length ? html`<details class="lmx-tucked"><summary>Show ${tucked.length} inactive or retired ${tucked.length === 1 ? 'slot' : 'slots'} ▾</summary><div class="lmx-agents-grid">${keyed(tucked, (a) => a.id, card)}</div></details>` : nothing}`);
   };
@@ -291,9 +298,16 @@ pages.knowledge = async () => {
 pages.settings = async () => {
   const d = await api('settings');
   if (!ok(d)) return;
-  renderView('settings', ['Settings'], html`${head('Settings', 'Connections and administration for this space.')}<div class="lmx-settings-links">${ADMIN.filter(n=>n[0]!=='settings').map(n=>html`<a class="lm-btn lm-btn--secondary" href=${n[3] || '#/'+n[0]}>${n[1]}</a>`)}${btn('Sign out', 'secondary', signOut)}</div>${panel('Space', kv({ space: d.space, keys: d.keys }))}
-    ${panel('Storage', html`<div style="display:flex;flex-direction:column;gap:10px">${fresh('fresh', 'PING ' + d.ping_ms + ' ms')}<span style="font-size:13px" class="muted">Your Redis, over the deploy’s bridge connection.</span></div>`)}
-    ${panel('ACMI compatibility', kv({ 'compatibility mode': d.compat ? 'on' : 'off', 'mirror to ACMI': d.mirror ? 'on for ' + d.mirror_spaces.join(', ') : 'off' }))}`);
+  const pingOk = Number.isFinite(Number(d.ping_ms)), spaces = Array.isArray(d.mirror_spaces) ? d.mirror_spaces : [];
+  const sw = (label, on, text) => html`<div class="lmx-control-row"><span>${label}</span><span class="lmx-switch" data-on=${String(on)} role="img" aria-label=${`${label}: ${text}`}><i aria-hidden="true"></i>${text}</span></div>`;
+  const control = (title, status, body) => html`<section class="lmx-control"><header><h2>${title}</h2>${status || nothing}</header><div class="lmx-control-body">${body}</div></section>`;
+  renderView('settings', ['Settings'], html`${head('Settings', 'Connections and administration for this space.')}
+    <nav class="lmx-adminbar" aria-label="Administration">${ADMIN.filter(n=>n[0]!=='settings').map(n=>html`<a href=${n[3] || '#/'+n[0]}>${n[1]}</a>`)}<button type="button" @click=${signOut}>Sign out</button></nav>
+    <div class="lmx-controls">
+    ${control('Space', html`<span class="lm-badge lm-badge--brand mono">${d.space}</span>`, html`<div class="lmx-control-row"><span>Agent keys</span><b class="mono">${typeof d.keys === 'object' ? JSON.stringify(d.keys) : d.keys}</b></div>`)}
+    ${control('Storage', pingOk ? html`<span class="lmx-live" data-s="ok"><i class="lmx-pulse" aria-hidden="true"></i>Connected</span>` : html`<span class="lmx-live" data-s="down">Unavailable</span>`, html`<div class="lmx-control-row"><span>Latency</span><b class="mono">${pingOk ? 'PING ' + d.ping_ms + ' ms' : 'No reply'}</b></div><p class="lmx-meta">Your Redis, over the deploy’s bridge connection.</p>`)}
+    ${control('ACMI compatibility', nothing, html`${sw('Compatibility mode', !!d.compat, d.compat ? 'On' : 'Off')}${sw('Mirror to ACMI', !!d.mirror, d.mirror ? 'On for ' + (spaces.join(', ') || 'this space') : 'Off')}<p class="lmx-meta">These show the deploy’s current settings. They cannot be changed from this page.</p>`)}
+    </div>`);
 };
 // ─── Daily slots: who ran their scheduled shifts, by day ───
 const SLOT_STATE = { pass: ['completed', 'Pass'], partial: ['in-progress', 'Partial'], failed: ['failed', 'Failed'], missed: ['blocked', 'Missed'], pending: ['pending', 'Pending'], disabled: ['deferred', 'Disabled'] };
