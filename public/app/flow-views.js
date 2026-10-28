@@ -2,8 +2,10 @@
 // Pass state in, get a template back. Pickers call redraw(), so the host page owns the render.
 // Values reach the page only as text nodes or attribute values, never as HTML.
 import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
+import {agentDispatchButton} from './dispatch-components.js';
+import {clusterPrompt} from './dispatch-model.js';
 import { hhmm } from './core.js';
-import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, unblockPrompt, involves, waitingOn, handoffMatrix, laneCounts, laneView, kindCounts, KIND_LABEL } from './flow-model.js';
+import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, involves, waitingOn, handoffMatrix, laneCounts, laneView, kindCounts, KIND_LABEL } from './flow-model.js';
 
 const pill = (label, on, click, enter, leave) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click} @mouseenter=${enter} @mouseleave=${leave} @focus=${enter} @blur=${leave}>${label}</button>`;
 const bandWord = { fresh: 'Under 1 day', slow: '1 to 7 days', stale: 'Over 7 days' };
@@ -104,7 +106,7 @@ export function blockerMap({ jobs, space, sel = '', kind = '', setKind, pick, co
   const cur = lay.find(c => c.key === sel && match(c)) || lay.find(match) || lay[0], you = { x: 520, y: 100 }, agent = { x: 520, y: 320 };
   const end = c => (c.who === 'person' ? you : agent), counts = kindCounts(clusters);
   const pills = [['', 'All', counts.all], ['person', KIND_SHORT.person, counts.person], ['vendor', KIND_SHORT.vendor, counts.vendor], ['agent', KIND_SHORT.agent, counts.agent]];
-  const prompt = unblockPrompt(cur, space);
+  const prompt = clusterPrompt(cur, space);
   return html`<section class="lmx-flow lmx-card" aria-label="Blocker map">
     <div class="lmx-flowhead"><div><h2>Blocker map</h2><span class="lmx-meta">${counts.all} blocked jobs in ${clusters.length} ${clusters.length === 1 ? 'group' : 'groups'}. Bigger bubble, more jobs stalled. Colour shows who holds the lock. A pulsing ring means a job has waited over 3 days.</span></div></div>
     ${setKind ? html`<div class="lmx-filter" role="group" aria-label="Blocker kind">${pills.map(([k, label, c]) => pill(html`${label} <b class="lmx-pillcount">${c}</b>`, kind === k, () => setKind(k)))}</div>` : nothing}
@@ -121,7 +123,7 @@ export function blockerMap({ jobs, space, sel = '', kind = '', setKind, pick, co
         <p class="lmx-meta"><span class="lmx-kindtag" data-kind=${cur.kind}>${KIND_LABEL[cur.kind]}</span> ${cur.who === 'person' ? 'Waits for a person.' : 'Waits for an agent or an outside step.'}</p>
         <div class="lmx-flowjobs">${cur.jobs.slice(0, 5).map(j => html`<a class="mono" href=${'#/job/' + encodeURIComponent(j.id)}>${j.id}</a>`)}${cur.jobs.length > 5 ? html`<span class="lmx-meta">+ ${cur.jobs.length - 5} more</span>` : nothing}</div>
         <details class="lmx-preview" open><summary>Preview what Copy will paste (${prompt.length} characters)</summary><pre class="lmx-flowprompt" data-kind=${cur.kind}>${prompt}</pre></details>
-        <button type="button" class="lm-btn lm-btn--primary" @click=${() => copy(prompt)}>Copy unblock prompt (${cur.jobs.length})</button>
+        ${agentDispatchButton(prompt,'Copy unblock prompt ('+cur.jobs.length+')')}
         <p class="lmx-meta">Copy only puts the text on your clipboard. It does not start anything.</p>
       </div>
     </div></section>`;

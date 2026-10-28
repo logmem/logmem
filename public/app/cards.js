@@ -4,7 +4,9 @@ import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
-import { decisionProblem, shortenIds, jobName, initials, agentPing } from './dashboard-model.js';
+import { decisionProblem, shortenIds, jobName, initials } from './dashboard-model.js';
+import {agentDispatchButton} from './dispatch-components.js';
+import {agentDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
@@ -116,7 +118,7 @@ export function agentCard(a, opts = {}) {
       ${job || now.next ? html`<div class="lmx-nextbox"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${now.next}</p>` : nothing}</div>` : nothing}
       ${r ? html`<details class="lmx-recap"><summary>Last recap · ${ago(r.ended_at)}</summary><p>${r.summary}</p></details>` : nothing}
     </div>
-    <div class="lmx-agent-foot"><span class="lmx-checkpill" data-ok=${now.doing ? '1' : '0'}>Now ${now.doing ? '✓' : '✗'}</span><span class="lmx-checkpill" data-ok=${r ? '1' : '0'}>Recap ${r ? '✓' : '✗'}</span><button type="button" class="lmx-copyping" @click=${() => copy(agentPing(a, opts.space || state.space))}>Copy ping</button></div></article>`;
+    <div class="lmx-agent-foot"><span class="lmx-checkpill" data-ok=${now.doing ? '1' : '0'}>Now ${now.doing ? '✓' : '✗'}</span><span class="lmx-checkpill" data-ok=${r ? '1' : '0'}>Recap ${r ? '✓' : '✗'}</span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
 }
 
 // ─── lanes ───────────────────────────────────────────────────────────
