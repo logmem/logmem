@@ -10,7 +10,7 @@ import { invite } from './actions.js';
 import { renderView } from './shell.js';
 import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN, signOut } from './shell.js';
-import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision } from './dashboard-model.js';
+import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 
 import {queuePage} from './interactions.js';
@@ -32,27 +32,40 @@ pages.home = async () => {
   const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
   const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work, in view.';
   if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Today'],html`<section class="lm-panel lmx-account-form"><span class="lm-eyebrow">${state.spaceRecords.find(s=>s.id===state.spaceId)?.name}</span><h1>Your space is ready.</h1><p>Add your first task. Connect an agent or invite a teammate when you need them.</p><div class="lmx-account-actions">${state.permissions?.write?html`<a class="lm-btn lm-btn--primary" href="#/new-task">Add a task</a>`:nothing}${state.permissions?.manage?html`<a class="lm-btn" href="#/account">Connect an agent</a><a class="lm-btn" href="#/account">Invite a person</a>`:nothing}</div></section>`);
-  const attention = i => html`<article class="lmx-card lmx-attention" data-key=${state.space + ':' + i.type + ':' + i.trail}>
-    <span class="lm-eyebrow">${i.type === 'decision' ? 'Your decision' : i.type === 'task' ? 'Your task' : 'Review completion'}</span>
-    <h3>${i.summary || i.ask?.summary}</h3><div class="lmx-meta">${i.by ? 'From ' + agentName(i.by) : ''}${i.plan ? ' · ' + i.plan : ''}${i.created_at ? ' · asked ' + ago(i.created_at) : ''}</div>
-    ${btn(i.type === 'decision' ? 'Review decision' : i.type === 'task' ? 'Review task' : 'Review evidence', 'primary', () => i.job ? openDrawer('job', i.job) : openDrawer('needs', 'all'))}</article>`;
+  const kindLabel = { decision: 'Your decision', task: 'Your task', review: 'Review completion' };
+  const attention = i => {
+    const kind = attentionKind(i), { head, body } = splitHeadline(i.summary || i.ask?.summary);
+    return html`<article class="lmx-card lmx-attention" data-kind=${kind} data-key=${state.space + ':' + i.type + ':' + i.trail}>
+    <div class="lmx-attention-top"><span class="lm-eyebrow lmx-kind">${kindLabel[kind]}</span>
+    <h3 class="lmx-attention-title">${head}</h3>${body ? html`<p class="lmx-attention-body">${body}</p>` : nothing}</div>
+    <div class="lmx-attention-foot"><div class="lmx-attention-meta">${i.by ? html`<span class="lmx-chip">${agentName(i.by)}</span>` : nothing}${i.plan ? html`<span class="lmx-chip lmx-chip--lane">${i.plan}</span>` : nothing}${i.created_at ? html`<time class="lmx-meta lmx-attention-ago">${ago(i.created_at)}</time>` : nothing}</div>
+    ${btn(i.type === 'decision' ? 'Review decision' : i.type === 'task' ? 'Review task' : 'Review evidence', 'primary', () => i.job ? openDrawer('job', i.job) : openDrawer('needs', 'all'))}</div></article>`;
+  };
+  const counts = attentionCounts(needs), pf = filt('home');
+  const draw = () => {
+  const shown = filterAttention(needs, pf.attn || 'all');
+  const plans = splitPlans(d.plans || []);
+  const setAttn = kind => () => { pf.attn = kind; saveFilt(); draw(); document.getElementById('today-board')?.scrollIntoView({ block: 'nearest' }); };
+  const pills = [['all', 'All'], ['decision', 'Decisions'], ['task', 'Tasks'], ['review', 'Reviews']];
   renderView('home', ['Today'], html`
     <div class="lmx-today-heading"><div><span class="lm-eyebrow">Your workspace · ${state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name:state.space}</span><h1>${heading}</h1><p>Decide what needs you. Keep the next step in view.</p></div>
       <a class="lm-btn lm-btn--secondary" href="#/queue">Open Inbox</a></div>
     <div class="lmx-cockpit-metrics" aria-label="Workspace snapshot">${[[b.decisions, 'Decisions for you', '#/knowledge'], [b.tasks, 'Tasks for you', '#/blockers'], [b.blocked, 'Blocked work', '#/work'], [b.done + ' / ' + b.total, 'Work completed', '#/work']].map(([value, label, href]) => html`<a class="lmx-card" href=${href}><span class="lmx-meta">${label}</span><strong>${value == null ? 'Unknown' : value}</strong></a>`)}</div>
     <section class="lmx-brief" aria-label="Your brief"><div><span class="lm-eyebrow">Your brief</span>
-      <p>${b.decisions == null ? 'Decision count is unavailable.' : `${b.decisions} ${b.decisions === 1 ? 'decision' : 'decisions'} and ${b.tasks} ${b.tasks === 1 ? 'task' : 'tasks'} for you to review.`}
-      ${b.blocked} ${b.blocked === 1 ? 'job is' : 'jobs are'} waiting. ${b.done} of ${b.total} work items are done.</p>
+      <p class="lm-sr">${b.decisions == null ? 'Decision count is unavailable.' : `${b.decisions} ${b.decisions === 1 ? 'decision' : 'decisions'} and ${b.tasks} ${b.tasks === 1 ? 'task' : 'tasks'} for you to review.`} ${b.blocked} ${b.blocked === 1 ? 'job is' : 'jobs are'} waiting. ${b.done} of ${b.total} work items are done.</p>
+      <div class="lmx-brief-chips"><button type="button" class="lmx-statchip" data-tone="decision" @click=${setAttn('decision')}><strong>${b.decisions ?? '?'}</strong> Decisions</button><button type="button" class="lmx-statchip" data-tone="task" @click=${setAttn('task')}><strong>${b.tasks ?? '?'}</strong> Tasks</button><button type="button" class="lmx-statchip" @click=${() => document.getElementById('today-waiting')?.scrollIntoView()}><strong>${b.blocked ?? '?'}</strong> Waiting</button><a class="lmx-statchip" href="#/work"><strong>${b.done} / ${b.total}</strong> Done</a></div>
       <button type="button" class="lm-btn lm-btn--ghost" @click=${()=>document.getElementById('today-updates')?.scrollIntoView()}>Read the source updates ↓</button></div><span class="lmx-meta">Updated ${d.generated_at ? ago(d.generated_at) : 'on this read'} · partial coverage</span></section>
     <details class="lmx-coverage"><summary>What this view covers</summary><p>This summary reads a bounded set of records. Open Inbox for unanswered coordination and Health for receipt coverage. Counts describe this view only.</p>
       ${(d.coverage?.notes || []).map(n => html`<p>${n}</p>`)}${(d.coverage?.errors || []).map(e => html`<p role="alert">${e.source}: ${e.message}</p>`)}</details>
     <div class="lmx-today-grid"><div class="lmx-stack">
-      <section><h2 class="lmx-section-title">Needs your attention <span>${needs.length}</span></h2><div class="lmx-attention-grid">${needs.length ? keyed(needs, i => state.space + ':' + i.type + ':' + i.trail, attention) : emptyState('No personal requests were returned.', 'The coordination backlog may contain other unanswered requests. See coverage above.')}</div></section>
-      <section><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-stack">${waits.length ? keyed(waits, j => j.id, j => jobCard(j, {route:'home'})) : emptyState('No other blocked jobs were returned.', 'This is not a complete handoff backlog.')}</div></section>
+      <section id="today-board"><div class="lmx-board-head"><h2 class="lmx-section-title">Needs your attention <span>${needs.length}</span></h2><div class="lmx-filter" role="group" aria-label="Filter by type">${pills.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String((pf.attn || 'all') === k)} @click=${setAttn(k)}>${l} (${counts[k]})</button>`)}</div></div><div class="lmx-attention-grid">${shown.length ? keyed(shown, i => state.space + ':' + i.type + ':' + i.trail, attention) : needs.length ? emptyState('Nothing of this type.', 'Pick All to see every request.') : emptyState('No personal requests were returned.', 'The coordination backlog may contain other unanswered requests. See coverage above.')}</div></section>
+      <section id="today-waiting"><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-stack">${waits.length ? keyed(waits, j => j.id, j => jobCard(j, {route:'home'})) : emptyState('No other blocked jobs were returned.', 'This is not a complete handoff backlog.')}</div></section>
       <section id="today-updates"><h2 class="lmx-section-title">Recent job updates</h2><div class="lmx-card lmx-update-list">${groupUpdates(d.recent || []).groups.slice(0,6).map(g => g.entries[0]).map(e => html`<div class="lmx-update"><div class="lmx-meta">${hhmm(e.ts)} · ${agentName(e.by)} · ${e.kind}</div><p>${e.summary}</p><a href=${'#/job/' + encodeURIComponent(e.where.replace(/^job:/,''))}>Open work →</a></div>`)}${!d.recent?.length ? html`<p class="lmx-meta">No recent job updates were returned. See coverage above.</p>` : nothing}</div><a href="#/activity" class="lmx-text-link">View Activity →</a></section>
-    </div><aside class="lmx-stack"><section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(d.plans, p => p.id, p => planCard(p, 'home'))}</div><a href="#/work" class="lmx-text-link">Open all work →</a></section>
+    </div><aside class="lmx-stack"><section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(plans.active, p => p.id, p => planCard(p, 'home'))}</div>${plans.empty.length ? html`<details class="lmx-parked-plans"><summary>Show ${plans.empty.length} parked ${plans.empty.length === 1 ? 'plan' : 'plans'}</summary><div class="lmx-stack">${keyed(plans.empty, p => p.id, p => planCard(p, 'home'))}</div></details>` : nothing}<a href="#/work" class="lmx-text-link">Open all work →</a></section>
       <section class="lmx-card"><h3>Keep work moving</h3><p class="lmx-why">Review unanswered requests, check shared decisions, or inspect missing receipts.</p><div class="lmx-cockpit-links"><a href="#/queue">Open Inbox →</a><a href="#/knowledge">Shared knowledge →</a><a href="#/health">Workspace health →</a></div></section>
       <section class="lmx-card"><h3>Your team</h3><p class="lmx-why">${d.agents.length} agents have records in this space. Recent entries show reporting activity, not whether an agent is running.</p><a href="#/agents" class="lmx-text-link">Review agents →</a></section></aside></div>`);
+  };
+  draw();
 };
 pages.overview = pages.home;
 pages.decisions = async () => { location.replace('#/home'); openDrawer('needs', 'decisions'); };
