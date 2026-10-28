@@ -10,7 +10,7 @@ test('cockpit theme persists and navigation exposes the real work destinations',
  for(const label of ['Today','Inbox','Work','Team','Knowledge','Health'])await expect(visibleNav.getByRole('link',{name:label,exact:true})).toBeVisible();
  await visibleNav.getByRole('link',{name:'Inbox',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Coordination queue',exact:true})).toBeVisible();
- await expect(page.getByRole('complementary',{name:'Workspace assistant'})).toContainText('AI execution is not connected.');
+ await expect(page.getByRole('complementary',{name:'Workspace assistant'})).toContainText('Agent execution: unverified');
  const width=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,content:document.documentElement.scrollWidth}));
  expect(width.content).toBeLessThanOrEqual(width.viewport);
 });

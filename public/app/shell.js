@@ -6,6 +6,7 @@ import { icon } from './ui.js';
 import { openDrawer } from './drawer.js';
 import { openSearch } from './search.js';
 import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
+import {assistantWidget} from './assistant-widget.js';
 import { themeControl } from './theme-controls.js';
 
 export const NAV = [['home', 'Today', 'overview'], ['queue', 'Inbox', 'handoff'], ['work', 'Work', 'work'], ['agents', 'Team', 'agents'], ['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye']];
@@ -35,10 +36,8 @@ function navItem(n, route) {
 }
 const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
 const themePicker = () => themeControl(refreshFrame);
-export function workspaceAssistant(route) {
-  const context = route === 'queue' || route === 'discussion' ? 'Coordination inbox' : route === 'health' || route === 'audit' ? 'Workspace health' : route === 'job' ? 'Selected work' : 'Current space';
-  return html`<aside class="lmx-assistant" aria-label="Workspace assistant"><h2>${icon('recall')}Workspace assistant</h2><p class="lmx-assistant-context">${context} · ${state.space}</p><div class="lmx-assistant-card"><span class="lm-eyebrow">Start with the source</span><h3>Keep the next step clear.</h3><p>Review unanswered requests, check ownership and open the original discussion before changing work.</p><a class="lm-btn lm-btn--primary" href="#/queue">Review your inbox</a></div><div class="lmx-assistant-links"><a href="#/knowledge">Find decisions and shared context</a><a href="#/health">Check receipts and coverage</a><a href="#/activity">Read source activity</a></div><div class="lmx-assistant-card"><h3>AI execution is not connected.</h3><p>These links use your existing workspace. No model calls or agent runs start when you open this page.</p><a href=${state.customer?'#/account':'/connections'}>Manage connections</a></div></aside>`;
-}
+export const workspaceAssistant = route => assistantWidget(route,refreshFrame);
+
 const banner = () => live.storageDown ? html`<div class="lm-alert lm-alert--danger lmx-banner" role="alert">${icon('alert')}<div><strong>LogMem can’t reach its storage.</strong> What you see may be out of date, and nothing you do will save until it is back. The app keeps trying.</div></div>` : nothing;
 
 function frame(route, crumbs, body) {

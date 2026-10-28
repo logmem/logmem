@@ -5,6 +5,7 @@ import {renderView} from './shell.js';
 import {handoffMap} from './flow-views.js';
 import {handoffArcs} from './flow-model.js';
 import {terminalTicketCard} from './dispatch-components.js';
+import {observeTelemetry} from './telemetry-state.js';
 import {ticketStatus} from './dispatch-model.js';
 const drafts=new Map(),queueRequests=new Map();let generation=0;
 export function clearInteractions(){drafts.clear();queueRequests.clear();generation++;}
@@ -83,7 +84,7 @@ export async function queuePage(){
  };
  const load=async()=>{
   busy=true;error='';draw();
-  try{const result=await getJSON(endpoint(null,{queue:'1',cursor,...(recipient?{recipient}:{})}));if(!active()||result.__stale)return;if(result.__status!==200)throw new Error(result.error||'Could not load requests.');data=result;}
+  try{const result=await getJSON(endpoint(null,{queue:'1',cursor,...(recipient?{recipient}:{})}));if(!active()||result.__stale)return;if(result.__status!==200)throw new Error(result.error||'Could not load requests.');data=result;observeTelemetry(space,{inbox:{value:result.items.length}});}
   catch(e){if(active())error=e.message;}
   finally{if(active()){busy=false;draw();}}
  };

@@ -95,3 +95,13 @@ test("Blocker map: same text becomes one bubble, parked jobs are left out", () =
   assert.notDeepEqual([lay[0].x, lay[0].y], [lay[1].x, lay[1].y]);
   assert.deepEqual(bubbleLayout([], 600, 470), []);
 });
+
+test('density bins preserve totals and jump only to real matching events',async()=>{
+ const{replayDensity}=await import('../public/app/flow-model.js');
+ const rows=[{ts:100,kind:'progress'},{ts:110,kind:'handoff'},{ts:120,kind:'handoff'},{ts:700,kind:'stuck'},{ts:1000,kind:'done'}];
+ const d=replayDensity(rows,4);assert.equal(d.bins.reduce((n,b)=>n+b.count,0),5);assert.equal(d.bins.at(-1).count,1);
+ assert.deepEqual(d.peaks.map(p=>[p.key,p.count,p.at]),[['handoffs',2,120],['stuck',1,700]]);
+ assert.equal(replayDensity([{ts:100,kind:'done'}]).bins.length,0);
+ assert.equal(replayDensity([{ts:100,kind:'done'},{ts:200,kind:'progress'}]).peaks.length,0);
+});
+test('replay excludes blank, nonpositive and future timestamps',()=>{assert.equal(replayEntries([{ts:null},{ts:''},{ts:0},{ts:-1},{ts:150},{ts:100}],100).length,1);});
