@@ -29,6 +29,7 @@
 <script src="/attrib.js" defer></script>
 <script src="/gtm.js" defer></script>
 <script src="/onboarding.js" defer></script>
+<script type="module" src="/onboarding-orb.js"></script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -60,6 +61,10 @@
   </nav>
 
   <main class="ob-main" id="ob-main">
+    <aside class="ob-companion" data-setup-companion aria-label="Setup guide">
+      <div class="ob-orb" aria-hidden="true"><div class="ob-orb-fallback"><span></span><span></span></div><canvas></canvas></div>
+      <div><p class="lm-eyebrow">Your setup companion</p><p data-companion-message>Open your workspace, then connect your AI.</p></div>
+    </aside>
     <noscript><div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="alert" aria-hidden="true"></i><div>This setup flow needs JavaScript. You can still <a href="/probe.sh">read the probe script</a> or go back to the <a href="/">home page</a>.</div></div></noscript>
 
     <!-- Managed clients start here. BYO remains an explicit advanced path. -->

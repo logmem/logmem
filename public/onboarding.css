@@ -177,3 +177,16 @@ body[data-ob-step="choose"]::before{content:"";position:fixed;inset:0;z-index:-1
 
 /* optional extras after the 4-step setup */
 .ob-extras{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-md)}
+
+/* A single guide, with a CSS face whenever WebGL is unavailable. */
+.ob-companion{display:flex;align-items:center;gap:16px;padding:0 4px 20px;color:var(--text)}
+.ob-companion p{margin:0}
+.ob-companion .lm-eyebrow{margin-bottom:5px}
+.ob-companion [data-companion-message]{font-size:14px;line-height:1.5;color:var(--text-muted)}
+.ob-orb{position:relative;flex:none;width:76px;height:76px}
+.ob-orb canvas{position:absolute;inset:0;width:100%;height:100%}
+.ob-orb-fallback{position:absolute;inset:3%;border-radius:50%;background:#0f6e68;overflow:hidden}
+.ob-orb-fallback span{position:absolute;top:34%;height:28%;width:13%;border-radius:999px;background:#f4f8f5;left:31%}
+.ob-orb-fallback span+span{left:56%}
+.ob-companion[data-gl="true"] .ob-orb-fallback{visibility:hidden}
+@media(max-width:639px){.ob-orb{width:56px;height:56px}.ob-companion{gap:12px;padding-bottom:16px}}
