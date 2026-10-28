@@ -40,5 +40,5 @@ jobs:
         run: npm run ci
       # Deploy is intentionally not wired yet.
       # - name: Deploy to production
-      #   environment: production   # requires Vercel token secret + named owner
+      #   environment: production   # secret created by Mikey; owner is Mikey (madezmedia, ruled 2026-10-28)
       #   run: npx vercel --prod --yes

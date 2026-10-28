@@ -175,7 +175,7 @@ async function main() {
   console.log(`
 release-guard: canonical gate passed (one entrypoint: release:check / release:prod).
 Process controls (owner duties):
-  1. One named release owner runs the release. No shared or delegated runs.
+  1. The named release owner is Mikey (madezmedia), ruled 2026-10-28. No shared or delegated runs.
   2. Stage the build: preview first, never straight to production.
   3. Visual check on preview: home, onboarding, app, keys.
   4. Onboarding proof: one full sign-in walk before promote.
