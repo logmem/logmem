@@ -554,3 +554,29 @@
 .lmx-tucked{margin-top:16px}
 .lmx-tucked>summary{cursor:pointer;min-height:36px;display:list-item;font-size:13px;color:var(--text-muted)}
 .lmx-tucked .lmx-agents-grid{margin-top:10px;opacity:.85}
+
+/* Knowledge: decision map, terminal frames, floating dock, time buckets */
+.lmx-neural svg{width:100%;height:auto;display:block;max-height:340px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-sunken);padding:6px 8px;box-sizing:border-box}
+.lmx-neural-label{font:500 12px var(--font-mono);fill:var(--text-muted)}
+.lmx-neural-line{stroke:currentColor;stroke-opacity:.35;stroke-width:1.5}
+.lmx-neural-node{fill:currentColor;fill-opacity:.8;cursor:pointer}
+.lmx-neural-node:hover{fill-opacity:1;stroke:var(--text);stroke-width:2}
+.lmx-neural-node.is-pending{fill:var(--warning);stroke:var(--warning);stroke-opacity:.5;stroke-width:5;animation:lmx-glow 2s ease-in-out infinite}
+@keyframes lmx-glow{0%,100%{stroke-opacity:.15}50%{stroke-opacity:.6}}
+@media (prefers-reduced-motion:reduce){.lmx-neural-node.is-pending{animation:none}}
+.lmx-decisions .lm-approval{border:1.5px solid var(--warning);border-radius:var(--radius-lg,14px);box-shadow:0 0 22px -10px var(--warning);overflow:visible}
+.lmx-decisions .lm-approval-head{background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(128,128,128,.05) 3px 4px)}
+.lmx-decisions .lm-approval-body{display:flex;flex-direction:column;gap:8px}
+.lmx-proposal-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.lmx-decisions .lm-action{font-family:var(--font-mono);font-size:12.5px;line-height:1.55;max-height:9.5em;overflow:auto;margin:0}
+.lmx-decisions .lm-approval-foot{position:sticky;bottom:12px;z-index:2;margin:0 10px 10px;border:1px solid var(--border-strong);border-radius:12px;background:color-mix(in srgb,var(--surface) 82%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 8px 24px -12px rgba(0,0,0,.35)}
+.lmx-flash{animation:lmx-flash 1.8s ease-out}
+@keyframes lmx-flash{0%{box-shadow:0 0 0 4px var(--warning)}100%{box-shadow:0 0 0 0 transparent}}
+.lmx-bucket{border:1px solid var(--border);border-radius:var(--radius-md);padding:0 12px 12px;background:var(--surface)}
+.lmx-bucket>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;gap:8px;font:600 14px var(--font-sans)}
+.lmx-bucket>summary span{font-weight:400;color:var(--text-subtle);font-size:12px}
+.lmx-histhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.lmx-histhead h3{margin:0}
+.lmx-verdict{flex:none;font:600 11px var(--font-sans);border-radius:999px;padding:3px 10px;border:1px solid var(--border-strong);color:var(--text-muted)}
+.lmx-verdict[data-v="approve"]{color:var(--success);border-color:var(--success)}
+.lmx-verdict[data-v="reject"]{color:var(--danger);border-color:var(--danger)}
