@@ -13,6 +13,14 @@ Every agent writes its work through LogMem before it gets its first task. The co
 - An agent still writes only through `acmi_*` tools or raw Redis.
 - An agent's entries stopped reaching LogMem.
 
+## What the person does
+
+The person does three things. The agent does the rest. See [canonical onboarding](references/canonical-onboarding.md) for the full order, the four checks and the four rules.
+
+1. Open the workspace at logmem.si and choose a private space.
+2. Say the words: one trigger line to the agent.
+3. Approve access: create the agent key on the Keys page and store it in the agent's vault. Never paste it into a chat.
+
 ## 1. Pick the path
 
 | The agent has | Path |
@@ -55,6 +63,8 @@ If the agent cannot fill a web page itself, a person does steps 1 and 2.
 
 ## 3. Start prompt (paste into the new agent)
 
+After the connection works, the agent starts its first shift and reads the whole Brief before it writes anything. Then it sets its identity: a profile, a current state and a setup note in its own log that names the space it joined. The `logmem` skill covers the Brief and the entries.
+
 ```text
 logmem start <agent id>
 
@@ -78,4 +88,6 @@ Give the agent its first task as a `logmem_handoff` only once all of Verify pass
 1. `logmem_roster` lists the agent.
 2. `logmem_view { "ref": "agent:<id>" }` shows a `started` entry and its setup note.
 3. Its entries carry its own agent id in `by`, not another agent's.
-4. If the team mirrors to ACMI, each entry has an ACMI twin.
+4. Connection health is good: not degraded. If the team mirrors to ACMI, each entry also has an ACMI twin.
+
+If a check fails, report it once and stop. Do not retry in a loop.

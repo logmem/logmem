@@ -15,20 +15,20 @@ This branch builds on the existing Activity and assistant PR 177.
 
 ## Public discovery and client entry
 
-- [ ] Verify robots.txt and sitemap.xml include public discovery pages.
-- [ ] Add llms.txt and the requested llm.txt path.
-- [ ] Show a skills-first agent setup hub with supported client paths.
-- [ ] Preserve branded sign-in, safe return validation and invite boundaries.
-- [ ] Link agent setup and skills from the main website.
+- [x] Verify robots.txt and sitemap.xml include public discovery pages.
+- [x] Add llms.txt and the requested llm.txt path.
+- [x] Show a skills-first agent setup hub with supported client paths.
+- [x] Preserve branded sign-in, safe return validation and invite boundaries.
+- [x] Link agent setup and skills from the main website.
 
 ## First-run launchpad
 
-- [ ] Replace the empty customer Today view with three setup tiles.
-- [ ] Confirm a first recorded agent entry instead of pretending to start a worker.
-- [ ] Save an inline first task with existing permissions and retry behavior.
-- [ ] Use real membership evidence or an explicit scoped solo choice for collaboration.
-- [ ] Keep setup progress visible after the first task creates work.
-- [ ] Replace completed setup guidance with measured workspace state.
+- [x] Replace the empty customer Today view with three setup tiles.
+- [x] Confirm a first recorded agent entry instead of pretending to start a worker.
+- [x] Save an inline first task with existing permissions and retry behavior.
+- [x] Use real membership evidence or an explicit scoped solo choice for collaboration.
+- [x] Keep setup progress visible after the first task creates work.
+- [x] Replace completed setup guidance with measured workspace state.
 
 ## Constraints and verification
 

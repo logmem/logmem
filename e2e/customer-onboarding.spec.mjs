@@ -26,9 +26,10 @@ test('customer creates workspace and spaces, adds work, and signs out',async({pa
  await page.getByLabel('First space name').fill('Operations');
  await page.getByRole('button',{name:'Create workspace',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
- await page.getByRole('link',{name:'Add a task',exact:true}).click();
- await page.getByLabel('What needs to happen?').fill('Confirm Friday appointments');
- await page.getByRole('button',{name:'Add task',exact:true}).click();
+ await page.getByLabel('What should your team build or fix?').fill('Confirm Friday appointments');
+ await page.getByRole('button',{name:'Save first task',exact:true}).click();
+ await expect(page.getByText('1 of 3 steps complete',{exact:false})).toBeVisible();
+ await page.getByRole('link',{name:'Open Work',exact:true}).first().click();
  await page.getByRole('button',{name:/^Open \(1\)/}).click();
  await expect(page.getByText('Confirm Friday appointments').first()).toBeVisible();
  // Workspace settings is available on both phone and desktop.

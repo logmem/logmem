@@ -1,3 +1,4 @@
+// launchpad provides shared workspace interface behavior.
 import {html,nothing,render} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {state,postJSON} from './core.js';
 import {launchpadProgress,taskDraft} from './launchpad-model.js';
