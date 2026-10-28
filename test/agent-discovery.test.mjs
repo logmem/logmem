@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {AGENT_CLIENTS} from '../public/agent-clients.js';
+import {startPrompt} from '../public/app/start-prompt.js';
 import {createHandler} from '../api/sign-in.mjs';
 import {mockReq,mockRes} from './oauth-helpers.mjs';
 const read = path => readFile(new URL('../'+path,import.meta.url),'utf8');
@@ -23,10 +24,24 @@ test('published skills match reviewed repository sources, including relative ref
  }}await walk('skills');
 });
 test('AI reading guides give skills-first setup and avoid claiming public access',async()=>{
- const guide=await read('public/llms.txt');assert.equal(await read('public/llm.txt'),guide);
+ const guide=await read('public/llms.txt');
  assert.match(guide,/skills first/);assert.match(guide,/Managed access is invite only/);assert.match(guide,/not a public crawl target/);
  for(const id of Object.keys(AGENT_CLIENTS))assert.ok(guide.includes('/agents/'+id));
- assert.match(await read('public/llm.tx'),/https:\/\/logmem.si\/llms.txt/);
+});
+test('llm.txt and llm.tx redirect to the one reading guide instead of copying it',async()=>{
+ const {redirects}=JSON.parse(await read('vercel.json'));
+ for(const source of ['/llm.txt','/llm.tx'])assert.deepEqual(redirects.find(r=>r.source===source),{source,destination:'/llms.txt',permanent:true});
+ for(const name of ['llm.txt','llm.tx'])await assert.rejects(read('public/'+name),{code:'ENOENT'});
+});
+test('every web copy of the start prompt equals the canonical skill block',async()=>{
+ const skill=await read('skills/logmem-onboard-agent/SKILL.md');
+ const canon=skill.match(/## 3\. Start prompt[\s\S]*?```text\n([\s\S]*?)\n```/)[1];
+ assert.equal(startPrompt('<agent id>'),canon);
+ for(const id of Object.keys(AGENT_CLIENTS)){
+  const html=await read('public/agents/'+id+'.html');
+  assert.equal(html.match(/<pre>(logmem start [\s\S]*?)<\/pre>/)[1],canon.replaceAll('<agent id>',id),id);
+ }
+ assert.match(await read('public/app/setup-guide.js'),/startPrompt\(m\.client\)/);
 });
 test('branded client sign-in context is allowlisted and does not alter destination validation',async()=>{
  const env={CLERK_PUBLISHABLE_KEY:'pk_test_'+Buffer.from('test-login.clerk.accounts.dev$').toString('base64')};
