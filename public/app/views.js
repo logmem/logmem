@@ -10,7 +10,7 @@ import { invite } from './actions.js';
 import { renderView } from './shell.js';
 import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN, signOut } from './shell.js';
-import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans } from './dashboard-model.js';
+import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 
 import {queuePage} from './interactions.js';
@@ -93,26 +93,49 @@ pages.plan = async (name) => {
   if (!ok(d)) return;
   if (!d.plan) { renderView('plan', ['Lanes'], emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')); return; }
   const items = d.tracks.reduce((a, t) => a.concat(t.items), []);
+  const lateFn = (i) => isLate(i.due, i.stage);
   const done = items.filter((i) => i.stage === 'done').length;
-  const late = items.filter((i) => isLate(i.due, i.stage));
+  const late = items.filter(lateFn);
   const blocked = items.filter((i) => i.stage === 'blocked').length;
+  const waiting = items.filter((i) => planMatch(i, 'waiting'));
   const toward = (m) => items.filter((i) => i.milestone && (i.milestone === m.id || String(m.title).indexOf(i.milestone + ':') === 0));
   const msName = (k) => { const m = d.milestones.find((x) => x.id === k); return m ? m.title + (m.date ? ' · ' + m.date : '') : k; };
-  renderView('plan', [html`<a href="#/lanes">Lanes</a>`, d.title || d.plan], html`
-    <div class="lmx-stagechips">${d.plans.map((p) => html`<a href=${'#/plan/' + encodeURIComponent(p)} role="tab" aria-selected=${p === d.plan}>${p}</a>`)}</div>
-    <section class="lmx-card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><h3 style="font-size:18px">${laneBadge(d.lane)}${d.title || d.plan}</h3><span class="lmx-pct">${num(d.percent)}%</span></div>
-      <div class="lmx-bar"><i style=${`width:${num(d.percent)}%`}></i></div>
-      <div class="lmx-meta">${done} of ${items.length} done${blocked ? html` · <b style="color:var(--warning)">${blocked} blocked</b>` : nothing}${late.length ? html` · <b style="color:var(--danger)">${late.length} late</b>` : nothing}</div></section>
-    <a class="lm-btn lm-btn--secondary" href=${'#/discussion/plan/'+encodeURIComponent(d.plan)}>Plan comments</a>
-    ${d.milestones.length ? html`<div class="lmx-rail-ms">${d.milestones.map((m) => { const mine = toward(m), md = mine.filter((i) => i.stage === 'done').length; return html`<div class="lmx-card lmx-ms" data-key=${'ms:' + m.id} ?data-done=${m.stage === 'done'}><span class="lmx-meta mono">${m.date || 'no date'}</span><h3>${m.title}</h3><div class="lmx-why">${m.criteria}</div><div class="lmx-meta">${stage(m.stage)}${mine.length ? ` · ${md}/${mine.length} jobs` : ''}</div></div>`; })}</div>` : nothing}
-    ${late.length ? html`<section class="lmx-card"><h3>Late</h3>${late.map(planRow)}</section>` : nothing}
-    <div class="lmx-stack">${d.tracks.map((t) => {
-      const groups = {}; t.items.forEach((i) => { const k = i.milestone || 'No milestone'; (groups[k] = groups[k] || []).push(i); });
+  const tracks = mergeTracks(d.tracks), counts = planCounts(items, lateFn), pf = filt('plan:' + d.plan);
+  const draw = () => {
+    const mode = pf.mode || 'all', ms = d.milestones.find((m) => m.id === pf.ms);
+    const inMs = ms ? new Set(toward(ms).map((i) => i.id)) : null;
+    const plain = mode === 'all' && !inMs;
+    const keep = (i) => planMatch(i, mode, lateFn) && (!inMs || inMs.has(i.id));
+    const setMode = (k) => () => { pf.mode = k; saveFilt(); draw(); };
+    const pickMs = (m) => () => { pf.ms = pf.ms === m.id ? '' : m.id; saveFilt(); draw(); };
+    const slide = (dir) => () => { const el = document.getElementById('plan-ms-track'); if (el) el.scrollBy({ left: dir * Math.max(240, el.clientWidth * 0.8), behavior: 'smooth' }); };
+    const fade = (e) => { const el = e.currentTarget; el.parentElement.toggleAttribute('data-end', el.scrollLeft + el.clientWidth >= el.scrollWidth - 4); };
+    const group = (list) => { const groups = {}; list.forEach((i) => { const k = i.milestone || 'No milestone'; (groups[k] = groups[k] || []).push(i); });
       const keys = Object.keys(groups).sort((a, b) => (a === 'No milestone') - (b === 'No milestone') || a.localeCompare(b));
-      const td = t.items.filter((i) => i.stage === 'done').length;
-      return html`<section class="lmx-card lmx-track" data-key=${'track:' + t.title}><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline"><h3>${t.title}</h3><span class="lmx-meta">${td}/${t.items.length} · ${num(t.percent)}%</span></div><div class="lmx-bar"><i style=${`width:${num(t.percent)}%`}></i></div>
-        ${keys.map((k) => html`<div class="lmx-pgroup"><div class="lmx-colhead" style="margin:10px 0 4px">${msName(k)}</div>${groups[k].map(planRow)}</div>`)}</section>`;
-    })}</div>`);
+      return keys.map((k) => html`<div class="lmx-pgroup"><div class="lmx-colhead" style="margin:10px 0 4px">${msName(k)}</div>${groups[k].map(planRow)}</div>`); };
+    const trackCard = (t) => {
+      const shown = t.items.filter(keep);
+      if (!shown.length) return nothing;
+      const doneRows = plain ? shown.filter((i) => i.stage === 'done') : [], liveRows = plain ? shown.filter((i) => i.stage !== 'done') : shown;
+      const head = html`<h3>${t.title}</h3><span class="lmx-meta">${t.done}/${t.items.length} · ${num(t.percent)}%</span>`;
+      if (plain && t.items.length && t.done === t.items.length) return html`<details class="lmx-card lmx-track lmx-track--done" data-key=${'track:' + t.title}><summary>${head}</summary>${group(doneRows)}</details>`;
+      return html`<section class="lmx-card lmx-track" data-key=${'track:' + t.title}><div class="lmx-planhead">${head}</div><div class="lmx-bar"><i style=${`width:${num(t.percent)}%`}></i></div>
+        ${group(liveRows)}${doneRows.length ? html`<details class="lmx-donejobs"><summary>+ ${doneRows.length} completed ${doneRows.length === 1 ? 'job' : 'jobs'} (Show ▾)</summary>${group(doneRows)}</details>` : nothing}</section>`;
+    };
+    renderView('plan', [html`<a href="#/lanes">Lanes</a>`, d.title || d.plan], html`
+    <div class="lmx-stagechips">${d.plans.map((p) => html`<a href=${'#/plan/' + encodeURIComponent(p)} role="tab" aria-selected=${p === d.plan}>${p}</a>`)}</div>
+    <section class="lmx-card"><div class="lmx-planhead"><h3 style="font-size:18px">${laneBadge(d.lane)}${d.title || d.plan}</h3><span class="lmx-planhead-r"><a class="lmx-chiplink" href=${'#/discussion/plan/' + encodeURIComponent(d.plan)}>Plan comments</a><span class="lmx-pct">${num(d.percent)}%</span></span></div>
+      <div class="lmx-bar"><i style=${`width:${num(d.percent)}%`}></i></div>
+      <div class="lmx-meta">${done} of ${items.length} done${blocked ? html` · <b style="color:var(--warning)">${blocked} blocked</b>` : nothing}${late.length ? html` · <b style="color:var(--danger)">${late.length} late</b>` : nothing}</div>
+      <div class="lmx-filter" role="group" aria-label="Filter jobs">${PLAN_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}</div></section>
+    ${d.milestones.length ? html`<section aria-label="Milestones"><div class="lmx-ms-head"><h2 class="lmx-section-title">Milestones <span>${d.milestones.length}</span></h2><div class="lmx-ms-nav"><button type="button" aria-label="Scroll milestones left" @click=${slide(-1)}>‹</button><button type="button" aria-label="Scroll milestones right" @click=${slide(1)}>›</button></div></div>
+      <div class="lmx-ms-wrap" ?data-few=${d.milestones.length <= 4}><div class="lmx-rail-ms" id="plan-ms-track" @scroll=${fade}>${d.milestones.map((m) => { const mine = toward(m), md = mine.filter((i) => i.stage === 'done').length; return html`<button type="button" class="lmx-card lmx-ms" data-key=${'ms:' + m.id} ?data-done=${m.stage === 'done'} aria-pressed=${String(pf.ms === m.id)} title=${m.criteria || ''} @click=${pickMs(m)}><span class="lmx-ms-top"><span class="lmx-meta mono">${m.date || 'no date'}</span><strong class="lmx-ms-title">${m.title}</strong><span class="lmx-why lmx-ms-why">${m.criteria}</span></span><span class="lmx-meta">${stage(m.stage)}${mine.length ? ` · ${md}/${mine.length} jobs` : ''}</span></button>`; })}</div></div></section>` : nothing}
+    ${ms ? html`<p class="lmx-meta">Showing jobs toward ${ms.title}. <button type="button" class="ob-linkbtn lmx-clearms" @click=${pickMs(ms)}>Clear milestone filter</button></p>` : nothing}
+    ${plain && late.length ? html`<section class="lmx-card lmx-hot" data-tone="late"><h3>Late <span class="lmx-meta">${late.length}</span></h3>${late.map(planRow)}</section>` : nothing}
+    ${plain && waiting.length ? html`<section class="lmx-card lmx-hot"><h3>Waiting on a person <span class="lmx-meta">${waiting.length}</span></h3>${waiting.map(planRow)}</section>` : nothing}
+    <div class="lmx-stack">${tracks.map(trackCard)}</div>`);
+  };
+  draw();
 };
 
 // ─── Filters (Jobs and Log) ──────────────────────────────────────────
@@ -133,19 +156,34 @@ function drawJobs() {
   const R = workFilterKey(state.space);
   const all = prioritizeWork(live.jobs || []);
   const f = filt(R), q = (f.q || '').toLowerCase(), week = Date.now() - 7 * 86400e3;
-  const list = all.filter(j => (!f.plan || j.plan === f.plan) && (!f.track || j.track === f.track) && (!f.owner || agentName(j.owner) === f.owner)
+  const lateFn = j => isLate(j.due, j.stage);
+  const base = all.filter(j => (!f.plan || j.plan === f.plan) && (!f.track || trackKey(j.track) === trackKey(f.track)) && (!f.owner || agentName(j.owner) === f.owner)
     && (!q || (j.title + ' ' + j.id + ' ' + (j.last ? j.last.summary : '')).toLowerCase().includes(q)) && !(j.stage === 'done' && j.stage_at && j.stage_at < week));
-  const tracks = uniq(all.filter(j => !f.plan || j.plan === f.plan).map(j => j.track));
   const layout = f.layout === 'board' ? 'board' : 'list';
+  const mode = WORK_MODES.some(([k]) => k === f.status) ? f.status : 'live';
+  const counts = workCounts(base, lateFn);
+  const list = layout === 'list' ? base.filter(j => workMatch(j, mode, lateFn)) : base;
+  const tracks = trackLabels(all.filter(j => !f.plan || j.plan === f.plan).map(j => j.track));
   const setLayout = value => () => { f.layout = value; saveFilt(); drawJobs(); };
+  const setMode = k => () => { f.status = k; saveFilt(); drawJobs(); };
+  const toggleGroup = () => { f.group = f.group === 'blocker' ? '' : 'blocker'; saveFilt(); drawJobs(); };
   const pick = f.stage || (list.some(j => j.stage === 'blocked') ? 'blocked' : 'active');
   const setPick = st => () => { f.stage = st; saveFilt(); drawJobs(); };
-  const row = j => html`<article class="lmx-work-row" data-key=${j.id}><div><h3><a href=${'#/job/' + encodeURIComponent(j.id)}>${j.title}</a></h3><div class="lmx-meta">${j.plan || 'No plan'}${j.track ? ' · ' + j.track : ''} · ${j.owner ? agentName(j.owner) : 'Owner not assigned'}</div></div>
-    <div>${stage(j.stage)}${j.blocked_on?.parked ? html`<span class="lm-badge">Parked</span>` : nothing}</div><div class="lmx-why">${j.blocked_on?.note || j.last?.summary || 'No next step recorded.'}</div><div class="lmx-meta">${j.due || 'No due date'}${j.due ? dueTag(j.due, j.stage) : nothing}</div></article>`;
+  const shared = sharedBlockers(list);
+  const row = j => { const due = dueState(j, lateFn), note = blockerNote(j), why = j.blocked_on?.note || j.last?.summary || 'No next step recorded.';
+    return html`<article class="lmx-work-row" data-key=${j.id}><div><h3><a href=${'#/job/' + encodeURIComponent(j.id)}>${j.title}</a></h3><div class="lmx-meta lmx-rowmeta"><span class="lmx-chip lmx-chip--lane">${j.plan || 'No plan'}</span>${j.track ? html`<span>${j.track}</span>` : nothing}<span class="lmx-chip">${j.owner ? agentName(j.owner) : 'Owner not assigned'}</span></div></div>
+    <div>${stage(j.stage)}${j.blocked_on?.parked ? html`<span class="lm-badge">Parked</span>` : nothing}${note && shared.has(note) ? html` <span class="lmx-chip" title=${note}>Same blocker ×${shared.get(note)}</span>` : nothing}</div><div class="lmx-why lmx-why-clamp" title=${why}>${why}</div><div class="lmx-due" data-kind=${due.kind}>${due.kind === 'late' ? html`<span class="lmx-flag">${due.text}</span>` : html`<span class="lmx-meta">${due.text}</span>`}</div></article>`; };
+  const grouped = () => { const out = [], seen = new Set();
+    for (const j of list) { const note = blockerNote(j);
+      if (note && shared.has(note)) { if (seen.has(note)) continue; seen.add(note); const mine = list.filter(x => blockerNote(x) === note);
+        out.push(html`<details class="lmx-blockgroup" open><summary><b>${mine.length}</b> jobs wait on: ${note}</summary>${mine.map(row)}</details>`); }
+      else out.push(row(j)); }
+    return out; };
   const unknown = list.filter(j => !BOARD.some(b => b[0] === j.stage));
-  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div>
+  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button></div><div class="lmx-work-links"><a href="#/lanes" class="lm-btn lm-btn--secondary">Plans and milestones</a><a href="#/queue" class="lm-btn lm-btn--secondary">Coordination queue</a></div></div>
     <div class="lmx-filters">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}</div>
-    ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? keyed(list, j=>j.id, row) : emptyState('No work matches these filters.', 'Clear a filter or select another plan.')}</div>` : html`
+    ${layout === 'list' ? html`<div class="lmx-filter" role="group" aria-label="Filter by status">${WORK_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}${shared.size ? html`<button type="button" class="lmx-typepill lmx-typepill--toggle" aria-pressed=${String(f.group === 'blocker')} @click=${toggleGroup}>Group by blocker</button>` : nothing}</div>` : nothing}
+    ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? (f.group === 'blocker' && shared.size ? grouped() : keyed(list, j=>j.id, row)) : emptyState('No work matches these filters.', 'Clear a filter or pick another status.')}</div>` : html`
       <div class="lmx-stagechips lmx-phone-only" role="tablist">${BOARD.map(b=>html`<button type="button" role="tab" aria-selected=${pick === b[0]} @click=${setPick(b[0])}>${b[1].split(',')[0]} ${list.filter(j=>j.stage===b[0]).length}</button>`)}</div>
       <div class="lmx-board">${BOARD.map(b=>{ const mine=list.filter(j=>j.stage===b[0]); return html`<section class="lmx-boardcol" data-stage=${b[0]} ?data-pick=${pick===b[0]}><h2 class="lmx-colhead">${b[1]} <b>${mine.length}</b></h2><div class="lmx-stack">${keyed(mine,j=>j.id,j=>boardCard(j,'work'))}${!mine.length ? html`<p class="lmx-meta">None.</p>` : nothing}</div></section>`; })}</div>
       ${unknown.length ? html`<section><h2 class="lmx-section-title">Unrecognized stages</h2>${unknown.map(row)}</section>` : nothing}`}
