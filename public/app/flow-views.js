@@ -5,10 +5,31 @@ import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
 import {agentDispatchButton} from './dispatch-components.js';
 import {clusterPrompt} from './dispatch-model.js';
 import { hhmm } from './core.js';
+import { autoScrollOn } from './marquee.js';
 import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, involves, waitingOn, handoffMatrix, laneCounts, laneView, kindCounts, KIND_LABEL } from './flow-model.js';
 
 const pill = (label, on, click, enter, leave) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click} @mouseenter=${enter} @mouseleave=${leave} @focus=${enter} @blur=${leave}>${label}</button>`;
 const bandWord = { fresh: 'Under 1 day', slow: '1 to 7 days', stale: 'Over 7 days' };
+
+/** Waiting strip: one compact card per open handoff, oldest first. It scrolls on its own and stops on hover or focus.
+ *  A card filters the list below to that sender and receiver. Details opens the full text in a popover. */
+function waitingStrip({ arcs, pair, pickPair }) {
+  const toggle = e => {
+    const b = e.currentTarget, strip = b.closest('.lmx-marquee-wrap').querySelector('.lmx-marquee'), on = strip.dataset.paused !== 'true';
+    strip.dataset.paused = String(on);
+    b.setAttribute('aria-pressed', String(on));
+    b.textContent = on ? 'Resume scrolling' : 'Pause scrolling';
+  };
+  return html`<div class="lmx-marquee-wrap">
+    <div class="lmx-marqueehead"><div class="lm-eyebrow">Waiting longest, oldest first (${arcs.length})</div><button type="button" class="lmx-typepill lmx-marquee-toggle" aria-pressed="false" @click=${toggle}>Pause scrolling</button></div>
+    <ul class="lmx-marquee" aria-label="Waiting handoffs, oldest first" ${autoScrollOn()}>${arcs.map((a, i) => { const on = !!pair && pair.from === a.from && pair.to === a.to, id = 'lmx-wp-' + i;
+      return html`<li class="lmx-wcard" data-band=${a.band}>
+        <button type="button" class="lmx-wmain" aria-pressed=${String(on)} title=${a.summary} @click=${() => pickPair && pickPair(on ? null : { from: a.from, to: a.to })}>
+          <span class="lmx-wtop"><span class="lmx-wchip mono">${a.from}</span><span aria-hidden="true">→</span><span class="lmx-wchip mono">${a.to}</span><span class="lmx-flowage" data-band=${a.band}>${a.label}</span></span>
+          <span class="lmx-wsum">${a.summary || 'No summary'}</span></button>
+        <button type="button" class="lmx-wdetails" popovertarget=${id} aria-label=${`Details: ${a.from} to ${a.to}, waiting ${a.label}`}>Details ▾</button>
+        <div popover id=${id} class="lmx-wpop"><b class="mono">${a.from} → ${a.to}</b> <span class="lmx-flowage" data-band=${a.band}>${a.label}</span><p>${a.summary || 'No summary'}</p><p class="lmx-meta mono">${a.trail}</p></div></li>`; })}</ul></div>`;
+}
 
 /** Handoff map: each open handoff is an arc from sender to receiver. Colour shows how long it has waited.
  *  Hover or focus an agent to isolate its arcs. Click to keep that choice. The matrix view shows the same data as a grid. */
@@ -20,9 +41,10 @@ export function handoffMap({ arcs, sel = '', hover = '', pair = null, view = 'ma
   const head = html`<div class="lmx-flowhead"><div><h2>Handoff map</h2><span class="lmx-meta">${arcs.length} open ${arcs.length === 1 ? 'handoff' : 'handoffs'} from the queue. Each arc runs from sender to receiver.</span></div>
     ${setView ? html`<div class="lmx-filter" role="group" aria-label="Handoff view">${pill('Network map', !grid, () => setView('map'))}${pill('Matrix grid', grid, () => setView('matrix'))}</div>` : nothing}</div>`;
   const key = html`<ul class="lmx-flowkey">${Object.entries(bandWord).map(([b, w]) => html`<li><i data-band=${b}></i>${w}</li>`)}</ul>`;
+  const strip = waitingStrip({ arcs: arcs.filter(a => involves(a, sel)), pair, pickPair });
   if (grid) {
     const { cells } = handoffMatrix(arcs);
-    return html`<section class="lmx-flow lmx-card" aria-label="Handoff map">${head}
+    return html`<section class="lmx-flow lmx-card" aria-label="Handoff map">${head}${strip}
       <div class="lmx-matrixwrap"><table class="lmx-matrix"><caption class="lmx-meta">Rows send, columns receive. Each number is open handoffs. Pick a cell to filter the list below.</caption>
         <thead><tr><td></td>${names.map(n => html`<th scope="col"><span>${n}</span></th>`)}</tr></thead>
         <tbody>${names.map(r => html`<tr><th scope="row">${r}</th>${names.map(c => { const x = cells.get(r + '>' + c); const on = !!pair && pair.from === r && pair.to === c;
@@ -31,8 +53,7 @@ export function handoffMap({ arcs, sel = '', hover = '', pair = null, view = 'ma
   const W = 600, H = 460, cx = 300, cy = 230, pts = ringPoints(names.length, cx, cy, 170), at = new Map(names.map((n, i) => [n, pts[i]]));
   const on = a => involves(a, focus);
   const near = n => !focus || n === focus || arcs.some(a => (a.from === focus && a.to === n) || (a.to === focus && a.from === n));
-  const rows = arcs.filter(a => involves(a, sel)).slice(0, 4);
-  return html`<section class="lmx-flow lmx-card" aria-label="Handoff map">${head}
+  return html`<section class="lmx-flow lmx-card" aria-label="Handoff map">${head}${strip}
     <div class="lmx-flowsplit">
       <svg class="lmx-flowsvg" viewBox="0 0 ${W} ${H}" role="group" aria-label=${`${arcs.length} open handoffs between ${names.length} agents. The oldest has waited ${arcs[0].label}.`}>
         <defs>${['fresh', 'slow', 'stale'].map(b => svg`<marker id=${'lmx-ar-' + b} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="lmx-ar" data-band=${b} d="M0 0 L10 5 L0 10 z"></path></marker>`)}</defs>
@@ -47,8 +68,6 @@ export function handoffMap({ arcs, sel = '', hover = '', pair = null, view = 'ma
       <div class="lmx-flowside">
         <div class="lm-eyebrow">Follow an agent</div>
         <div class="lmx-filter" role="group" aria-label="Follow an agent">${names.map(n => pill(html`${n} <b class="lmx-pillcount">${(waits.get(n) || { count: 0 }).count}</b>`, sel === n, () => pick(sel === n ? '' : n), enter(n), leave))}</div>
-        <div class="lm-eyebrow">Waiting longest</div>
-        ${rows.map(a => html`<div class="lmx-flowrow"><div><b class="mono">${a.from} → ${a.to}</b><span class="lmx-flowage" data-band=${a.band}>${a.label}</span></div><p>${a.summary}</p></div>`)}
         ${key}
       </div>
     </div></section>`;
