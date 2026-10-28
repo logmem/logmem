@@ -70,7 +70,7 @@ test("dry run performs no Redis writes, including reset or settlement", async ()
   await store.append("job", "release", handoff("dry"));
   await store.append("agent", "quill", { kind: "accepted", origin: "dry", trail: "accepted", by: "agent:quill", ts: ts + 1 });
   store.redis = async (...args) => {
-    assert.ok(["HGETALL", "GET", "TYPE"].includes(args[0]), `Unexpected write ${args[0]}`);
+    assert.ok(["HGETALL", "GET", "TYPE", "SCAN"].includes(args[0]), `Unexpected write ${args[0]}`);
     return redis(...args);
   };
   const result = await run({ dry: true, reset: true });
@@ -143,4 +143,77 @@ test("unreadable source warnings prevent complete coverage", async () => {
     return log;
   };
   assert.equal((await run()).status, "partial");
+});
+
+test("source discovery indexes an orphan canonical log without a roster entry", async () => {
+  const { store, redis, run } = fixture();
+  await redis("ZADD", `lm:${space}:agent:unregistered:log`, ts, JSON.stringify(handoff("orphan", "agent:unregistered")));
+  assert.deepEqual(await store.list("agent"), []);
+  const result = await run();
+  assert.equal(result.status, "complete");
+  assert.equal(result.itemsCreated, 1);
+  assert.equal((await listOpenCoordItemsForAgent(store, space, "unregistered")).length, 1);
+});
+
+test("source discovery reads unregistered legacy work and thread timelines with normalized timestamps", async () => {
+  const { store, redis, run } = fixture();
+  const old = { kind: "task-delegation", correlationId: "old-source", source: "agent:atlas", to: "agent:quill", timestamp: ts / 1000, summary: "Legacy request" };
+  await redis("ZADD", `acmi:${space}:work:orphan-job:timeline`, ts / 1000, JSON.stringify(old));
+  await redis("SET", `acmi:${space}:thread:orphan-channel:timeline`, JSON.stringify([{ kind: "handoff-ack", parentCorrelationId: "old-source", correlationId: "old-accept", source: "agent:quill", timestamp: (ts + 1000) / 1000 }]));
+  const result = await run();
+  assert.equal(result.status, "complete");
+  assert.equal(result.itemsCreated, 1);
+  assert.equal(result.itemsSettled, 1);
+  const item = await getCoordItem(store, space, computeItemId(space, "handoff", "old-source", "quill"));
+  assert.equal(item.created_at, ts);
+  assert.equal(item.where, "job:orphan-job");
+  assert.equal(item.response, "answered");
+});
+
+test("source discovery keeps legacy colon identifiers partial without writing unsafe item records", async () => {
+  const { redis, run } = fixture();
+  await redis("ZADD", `acmi:${space}:thread:channel:old:timeline`, ts, JSON.stringify(handoff("unsafe")));
+  const result = await run();
+  assert.equal(result.status, "partial");
+  assert.equal(result.itemsCreated, 0);
+  assert.match(result.warnings[0], /Unsafe source identifier/);
+});
+
+test("source discovery stays inside exact space boundaries and reads every scan page", async () => {
+  const { store, redis, run } = fixture();
+  const ownKey = `lm:${space}:channel:orphan:log`;
+  const foreignKey = `lm:${space}-other:agent:foreign:log`;
+  await redis("ZADD", ownKey, ts, JSON.stringify(handoff("own")));
+  await redis("ZADD", foreignKey, ts, JSON.stringify(handoff("foreign")));
+  const calls = [];
+  store.redis = async (...args) => {
+    if (args[0] === "SCAN" && args[3] === `lm:${space}:*`) {
+      calls.push(args[1]);
+      return args[1] === "0" ? ["7", [foreignKey]] : ["0", [ownKey]];
+    }
+    return redis(...args);
+  };
+  const result = await run();
+  assert.equal(result.status, "complete");
+  assert.deepEqual(calls, ["0", "7"]);
+  assert.equal(result.itemsCreated, 1);
+  assert.equal(await getCoordItem(store, space, computeItemId(space, "handoff", "foreign", "quill")), null);
+});
+
+test("unreadable orphan legacy timelines keep coverage partial", async () => {
+  const { redis, run } = fixture();
+  await redis("HSET", `acmi:${space}:agent:orphan:timeline`, "bad", "data");
+  const result = await run();
+  assert.equal(result.status, "partial");
+  assert.match(result.warnings[0], /Unreadable source entries/);
+});
+
+test("unsafe historical recipients stay partial and never create malformed indexes", async () => {
+  const { redis, run } = fixture();
+  await redis("ZADD", `lm:${space}:job:orphan:log`, ts, JSON.stringify(handoff("unsafe-recipient", "agent:foo:bar")));
+  const result = await run();
+  assert.equal(result.status, "partial");
+  assert.equal(result.itemsCreated, 0);
+  assert.match(result.warnings[0], /Unsafe recipient/);
+  assert.equal(await redis("EXISTS", `lm:${space}:coord:open:foo:bar`), 0);
 });

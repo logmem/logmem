@@ -27,7 +27,7 @@ Preserve validated local destinations and server verification after authenticati
 - [x] Add palette dots and role-aware space actions.
 - [x] Integrate homepage spacing and connection guidance.
 - [x] Add branded Clerk sign-in with safe return paths and a scoped content policy.
-- [ ] Finish integration browser checks and independent review.
+- [x] Finish integration browser checks and independent review.
 - [ ] Publish reviewed source through the existing release path.
 - [ ] Run a reviewed history-indexing dry run against the selected deployment.
 - [ ] Verify real provider sign-in, invitation return and session recovery after release.
@@ -55,3 +55,13 @@ Coverage stays partial when a source fails, a scan is bounded or evidence is amb
 The sign-in page preserves a permitted destination without exposing the server secret.
 An unavailable provider leaves a visible retry path inside LogMem branding.
 Live acceptance includes the exact deployed revision and actual provider sign-in.
+
+## Verified candidate
+
+The candidate includes main through `3cc70d8` and preserves its flow views.
+All 981 repository tests and 84 desktop and phone browser cases pass.
+Schema checks and 30 conformance checks pass.
+Independent review found callback routing and orphan-source discovery gaps. Both have regression checks.
+Provider browser tests use a Clerk fixture. Actual provider sign-in remains a release check.
+Legacy source names with colons still require a reviewed migration before full coverage.
+No live backfill, mirror replay or scheduler provisioning ran.

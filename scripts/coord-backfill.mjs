@@ -17,6 +17,8 @@ import {
   coordCoverageKey,
   getCoordItem,
 } from "../src/core/coord.mjs";
+import { parseRef } from "../src/core/keys.mjs";
+import { validateKeySegments } from "../src/lib/helpers.mjs";
 import { isDeclined } from "../src/core/tools.mjs";
 
 function parseArgs(argv) {
@@ -41,6 +43,7 @@ function parseArgs(argv) {
 export async function runCoordBackfill(options = {}) {
   const flags = { ...parseArgs(process.argv), ...options };
   const { space, dry = false } = flags;
+  validateKeySegments(space);
   const backend = flags.store ? null : fromDescriptor(descriptorFromEnv());
   if (!flags.store && !backend?.redis) throw new Error("Configure a durable Redis backend before backfill");
   const store = flags.store || createStore(backend.redis, { space, compat: true });
@@ -62,15 +65,47 @@ export async function runCoordBackfill(options = {}) {
     const revisionKey = `lm:${space}:rev`;
     const sourceRevision = await store.redis("GET", revisionKey);
     const records = [];
-    // Read all registered source logs. A cap is explicit and never proves coverage.
+    // Roster indexes are not a complete inventory of historical source logs.
+    const refs = new Map(), legacyRefs = new Set();
+    const addRef = (ns, id, legacy = false) => {
+      const ref = `${ns}:${id}`;
+      try { parseRef(ref); }
+      catch { warn(`Unsafe source identifier requires manual migration: ${ref}`); return; }
+      refs.set(ref, { ns, id });
+      if (legacy) legacyRefs.add(ref);
+    };
     for (const ns of ["agent", "job", "channel"]) {
-      for (const id of await store.list(ns)) {
-        const log = await store.readLog(ns, id, limit == null ? {} : { limit: limit + 1 });
-        if (log.warnings?.length) warn(`Unreadable source entries in ${ns}:${id}`);
-        if (limit != null && log.length > limit) warn(`Read limit reached in ${ns}:${id}`);
-        const entries = limit == null ? log : log.slice(0, limit);
-        result.totalScanned += entries.length;
-        for (const entry of entries) records.push({ entry, ns, id });
+      for (const id of await store.list(ns)) addRef(ns, id);
+    }
+    for (const family of ["lm", "acmi"]) {
+      const prefix = `${family}:${space}:`;
+      let cursor = "0";
+      do {
+        const page = await store.redis("SCAN", cursor, "MATCH", `${prefix}*`, "COUNT", "1000");
+        if (!Array.isArray(page) || page.length !== 2 || !Array.isArray(page[1])) throw new Error("Invalid source discovery response");
+        cursor = String(page[0]);
+        for (const key of page[1]) {
+          if (typeof key !== "string" || !key.startsWith(prefix)) continue;
+          const match = family === "lm"
+            ? /^(agent|job|channel):(.+):log$/.exec(key.slice(prefix.length))
+            : /^(agent|work|thread):(.+):timeline$/.exec(key.slice(prefix.length));
+          if (!match) continue;
+          const ns = ({ work: "job", thread: "channel" })[match[1]] || match[1];
+          addRef(ns, match[2], family === "acmi");
+        }
+      } while (cursor !== "0");
+    }
+    const compatReader = createStore(store.redis, { space, compat: true });
+    for (const [ref, { ns, id }] of refs) {
+      const reader = !store.compat && legacyRefs.has(ref) ? compatReader : store;
+      const log = await reader.readLog(ns, id, limit == null ? {} : { limit: limit + 1 });
+      if (log.warnings?.length) warn(`Unreadable source entries in ${ref}`);
+      if (limit != null && log.length > limit) warn(`Read limit reached in ${ref}`);
+      const entries = limit == null ? log : log.slice(0, limit);
+      result.totalScanned += entries.length;
+      for (const entry of entries) {
+        if (!entry.kind) warn(`Unrecognized source entry in ${ref}`);
+        records.push({ entry, ns, id });
       }
     }
     const items = new Map();
@@ -93,10 +128,16 @@ export async function runCoordBackfill(options = {}) {
           continue;
         }
         const to = rawTo.replace(/^agent:/, "");
+        try { parseRef(`agent:${to}`); }
+        catch { warn(`Unsafe recipient requires manual migration in ${ns}:${id}`); continue; }
         const itemId = computeItemId(space, type, e.trail, to);
         const item = { space, type, requestTrail: e.trail, from: e.by || "unknown", to,
           where: e.job || e.extra?.job || (ns === "agent" ? "" : `${ns}:${id}`),
           summary: e.summary || e.kind, createdAt: Number(e.ts) };
+        if (item.where) {
+          try { parseRef(item.where); }
+          catch { warn(`Unsafe request source requires manual migration in ${ns}:${id}`); continue; }
+        }
         const previous = items.get(itemId);
         if (!previous || (!previous.where && item.where)) items.set(itemId, item);
       }
