@@ -1,0 +1,20 @@
+/* Use the same frame and tokens as the HTML dashboard. */
+.lmx-utility-shell .lm-rail-brand { padding: 6px 8px 20px; }
+.lmx-utility-shell .lm-rail-brand img { height: 26px; width: auto; }
+.lmx-utility-shell .lm-rail-foot { margin-top: auto; }
+.lmx-utility-shell .lm-nav-item[aria-current="page"] { background: var(--brand-subtle); color: var(--brand); }
+:root[data-app-theme] .lmx-utility-shell .lmx-workarea { display: block; }
+.lmx-utility-shell .lmx-utility-content { max-width: 1120px; min-width: 0; }
+.lmx-utility-content table td { padding: 10px 8px; border-top: 1px solid var(--border); }
+.lmx-utility-content table th { color: var(--text-subtle); font-weight: 600; }
+.lmx-utility-content form { min-width: 0; }
+.lmx-utility-content input, .lmx-utility-content select { max-width: 100%; }
+.lmx-utility-content p { overflow-wrap: anywhere; }
+.lmx-utility-mobile { display: none; }
+.lmx-utility-skip { position: fixed; left: 12px; top: -100px; z-index: 100; padding: 12px; background: var(--surface); color: var(--text); }
+.lmx-utility-skip:focus { top: 12px; }
+@media (max-width: 639px) {
+  .lmx-utility-mobile { display: flex; gap: 4px; padding: 8px 16px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+  .lmx-utility-mobile .lm-nav-item { flex-shrink: 0; min-height: 44px; }
+  .lmx-utility-shell .lmx-main { padding-bottom: 32px; }
+}
