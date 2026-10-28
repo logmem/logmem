@@ -2,7 +2,7 @@
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { NAV, ADMIN } from '/app/shell.js';
 import { icon } from '/app/ui.js';
-import { THEMES, readTheme, writeTheme } from '/app/theme.js';
+import { themeControl } from '/app/theme-controls.js';
 
 const content = document.getElementById('root');
 const page = document.body.dataset.utility;
@@ -39,7 +39,7 @@ render(html`
   <div class="lmx-col">
     <header class="lmx-head">
       <ol class="lm-crumbs"><li><a href=${dashboard + '#/settings'}>Settings</a></li><li aria-hidden="true">/</li><li aria-current="page">${label}</li></ol>
-      <label class="lmx-theme-picker"><span>Theme</span><select class="lm-select" aria-label="Theme" @change=${event => writeTheme(event.target.value)}>${THEMES.map(theme => html`<option value=${theme} ?selected=${theme === readTheme()}>${theme[0].toUpperCase() + theme.slice(1)}</option>`)}</select></label>
+      ${themeControl()}
       <a class="lm-btn lm-btn--ghost" href=${dashboard}>Back to dashboard</a>
     </header>
     <nav class="lmx-utility-mobile" aria-label="Page navigation">${ADMIN.map(navItem)}</nav>

@@ -503,18 +503,22 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   };
 
   // 6. Slots (three-run state per roster agent)
+  const sourceStatus = { receipts: "ok", audit: "ok" };
   let slots = [];
   try {
     const targetDate = params.date || getLocalSlotDate(nowTs);
     const agentList = await store.list("agent");
     slots = await inBatches(agentList, 8, a => getAgentSlotsView(store, space, a, targetDate, nowTs));
-  } catch (_) {}
+  } catch (_) {
+    sourceStatus.receipts = "error";
+  }
 
   // 7. History (scorecard as today)
   let history = null;
   try {
     history = await buildScorecard(r, space);
   } catch (_) {
+    sourceStatus.audit = "error";
     history = { space, days: [], gate: { pass: false } };
   }
 
@@ -531,6 +535,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
     data_errors: dataErrors,
     history,
     ...(history || {}),
+    source_status: sourceStatus,
   };
 }
 

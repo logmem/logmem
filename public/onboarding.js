@@ -589,7 +589,8 @@
   });
 
   renderPicks();
-  go(0, { noFocus: true });
+  if (new URLSearchParams(location.search).get('intent') === 'request-invite') choose('cloud');
+  else go(0, { noFocus: true });
   // Clerk's post-signup fallback can land here with an active session.
   // Do not interrupt a visitor who has already chosen an advanced setup path.
   fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })

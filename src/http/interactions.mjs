@@ -74,11 +74,21 @@ local rate=tonumber(redis.call('GET',KEYS[6]) or '0')
 if rate>=30 then return {'rate'} end
 local revision=redis.call('GET',KEYS[4])
 if revision and (not string.match(revision,'^%d+$') or tonumber(revision)>9007199254740000) then return {'storage'} end
+if ARGV[4]=='resolve' then
+ for i=7,8 do
+  local kind=redis.call('TYPE',KEYS[i]).ok
+  if kind~='none' and kind~='zset' then return {'storage'} end
+ end
+end
 local receipt=cjson.decode(ARGV[6])
 local fields=cjson.decode(ARGV[7])
 if ARGV[3]=='hash' then
  for _,pair in ipairs(fields) do redis.call('HSET',KEYS[1],pair[1],pair[2]) end
 elseif ARGV[8]~='' then redis.call('SET',KEYS[1],ARGV[8]) end
+if ARGV[4]=='resolve' then
+ redis.call('ZREM',KEYS[7],receipt.entry.payload.target.id)
+ redis.call('ZREM',KEYS[8],receipt.entry.payload.target.id)
+end
 redis.call('ZADD',KEYS[2],ARGV[5],ARGV[9])
 redis.call('SET',KEYS[3],ARGV[6],'EX',604800)
 if ARGV[4]=='nudge' then redis.call('SET',KEYS[5],ARGV[5],'EX',300) end
@@ -93,7 +103,9 @@ registerEvalScript(INTERACTION_LUA,(call,k,a)=>{
  const prev=call('GET',k[4]);if(a[3]==='nudge'){const canonical=call('HGET',k[0],'last_nudge_at');if((prev&&Number(prev)+300000>Number(a[4]))||(canonical&&Number(canonical)+300000>Number(a[4])))return ['cooldown'];}
  const rate=Number(call('GET',k[5])||0);if(rate>=30)return ['rate'];
  const revision=call('GET',k[3]);if(revision!=null&&(!/^\d+$/.test(revision)||Number(revision)>9007199254740000))return ['storage'];
+ if(a[3]==='resolve'){for(const index of [k[6],k[7]])if(!['none','zset'].includes(call('TYPE',index)))return ['storage'];}
  if(a[2]==='hash'){for(const[f,v]of parse(a[6]))call('HSET',k[0],f,v);}else if(a[7])call('SET',k[0],a[7]);
+ if(a[3]==='resolve'){const id=parse(a[5]).entry.payload.target.id;call('ZREM',k[6],id);call('ZREM',k[7],id);}
  call('ZADD',k[1],a[4],a[8]);call('SET',k[2],a[5],'EX','604800');
  if(a[3]==='nudge')call('SET',k[4],a[4],'EX','300');
  call('SET',k[5],String(rate+1),'EX','60');call('INCR',k[3]);return ['ok',a[5]];
@@ -104,7 +116,7 @@ export async function discussion(store,target,options={}){
  const rows=await store.redis('ZREVRANGE',journal(store.space,t.target),cursor,cursor+limit);
  const entries=rows.slice(0,limit).map(parse).filter(Boolean);
  const writable=options.canWrite!==false;
- return {target:t.target,title:t.rec.title||t.rec.summary||t.target.id,owner:t.owner,entries,nextCursor:rows.length>limit?cursor+limit:null,canComment:writable,canReassign:!!options.manager&&['job','task'].includes(t.target.type)&&!t.rec.done,canNudge:writable&&t.target.type==='coord'&&t.rec.response==='open'};
+ return {target:t.target,title:t.rec.title||t.rec.summary||t.target.id,owner:t.owner,entries,nextCursor:rows.length>limit?cursor+limit:null,canComment:writable,canReassign:!!options.manager&&['job','task'].includes(t.target.type)&&!t.rec.done,canNudge:writable&&t.target.type==='coord'&&t.rec.response==='open',canResolve:writable&&!!options.manager&&t.target.type==='coord'&&t.rec.response==='open'};
 }
 async function deliver(store,receipt){
  for(const dest of receipt.destinations){const split=dest.indexOf(':');await store.append(dest.slice(0,split),dest.slice(split+1),receipt.entry);}
@@ -112,10 +124,12 @@ async function deliver(store,receipt){
 export async function interact(store,{target:input,action,text='',requestId,by,manager=false,to,expectedOwner,now=Date.now}){
  if(!PERSON_RE.test(String(by)))fail(403,'A verified person must make this change.');
  const target=normalizeTarget(input);
- if(!['comment','reassign','nudge'].includes(action)||typeof requestId!=='string'||!/^[A-Za-z0-9_-]{8,128}$/.test(requestId))fail(400,'Invalid action or request ID.');
- if(typeof text!=='string'||text.length>2000||((action==='comment'||action==='reassign')&&!text.trim()))fail(400,'Add a comment or reason, up to 2000 characters.');
+ if(!['comment','reassign','nudge','resolve'].includes(action)||typeof requestId!=='string'||!/^[A-Za-z0-9_-]{8,128}$/.test(requestId))fail(400,'Invalid action or request ID.');
+ if(typeof text!=='string'||text.length>2000||((action==='comment'||action==='reassign'||action==='resolve')&&!text.trim()))fail(400,'Add a comment or reason, up to 2000 characters.');
+ if(action==='resolve'&&!manager)fail(403,'Only a space manager can resolve coordination.');
+ if(action==='resolve'&&target.type!=='coord')fail(400,'Choose a pending coordination item.');
  if(action==='reassign'&&!manager)fail(403,'Only a space manager can reassign work.');
- const fingerprint=hash({target,action,text:text.trim(),to:action==='reassign'?to:null,expectedOwner:action==='reassign'?expectedOwner:null});
+ const fingerprint=hash({target,action,text:text.trim(),to:action==='reassign'?to:null,expectedOwner:['reassign','resolve'].includes(action)?expectedOwner:null});
  const receiptKey=`lm:${store.space}:interaction:request:${hash([by,requestId])}`;
  const old=parse(await store.redis('GET',receiptKey));
  if(old){if(old.fingerprint!==fingerprint)fail(409,'Request ID already names another change.');await loadTarget(store,target,{by,manager});try{await deliver(store,old);}catch{fail(503,'Saved. Notification pending. Retry to finish delivery.');}return {ok:true,replayed:true,entry:old.entry};}
@@ -138,6 +152,10 @@ export async function interact(store,{target:input,action,text='',requestId,by,m
    if(parse(watch[0][1])!==t.owner&&!(watch[0][1]==null&&t.rec.owner===t.owner))fail(409,'Owner changed. Reload before reassigning.');
    if(parse(watch[1][1])==='done')fail(409,'This job is already done.');fields=[['owner',JSON.stringify(to)]];
   }
+ }else if(action==='resolve'){
+  if(t.rec.response!=='open')fail(409,'This item already has an answer.');
+  if(typeof expectedOwner!=='string'||t.owner!==expectedOwner)fail(409,'Recipient changed. Reload before resolving.');
+  try{recipient='agent:'+checkAgentId(t.rec.to);}catch{fail(409,'This item has no valid agent recipient.');}
  }else if(action==='nudge'){
   if(target.type!=='coord')fail(400,'Choose a pending coordination item.');
   if(t.rec.response!=='open')fail(409,'This item already has an answer.');
@@ -146,9 +164,10 @@ export async function interact(store,{target:input,action,text='',requestId,by,m
   if(!await store.getWho('agent',recipient.slice(6)))fail(404,'Recipient unavailable in this space.');
   fields=[['last_nudge_at',String(at)]];
  }
- const entry={ts:at,kind:action==='nudge'?'ping':action==='reassign'?'assigned':'memo',by,via:'web',trail:'interaction-'+randomUUID(),origin:target.type==='coord'?t.rec.request_trail:['task','decision'].includes(target.type)?target.id:undefined,summary:action==='comment'?text.trim():action==='reassign'?`Reassigned from ${t.owner||'unassigned'} to ${to}: ${text.trim()}`:`Nudge: ${text.trim()||t.rec.summary}`,payload:{interaction:action,target,...(action==='reassign'?{from:t.owner,to}:{}),...(action==='nudge'?{nudge:true,item:target.id}:{})},...(recipient?{to:recipient}:{})};
+ const entry={ts:at,kind:action==='nudge'?'ping':action==='reassign'?'assigned':'memo',by,via:'web',trail:'interaction-'+randomUUID(),origin:target.type==='coord'?t.rec.request_trail:['task','decision'].includes(target.type)?target.id:undefined,summary:action==='comment'?text.trim():action==='resolve'?`Manager resolved coordination for ${t.owner}: ${text.trim()}`:action==='reassign'?`Reassigned from ${t.owner||'unassigned'} to ${to}: ${text.trim()}`:`Nudge: ${text.trim()||t.rec.summary}`,payload:{interaction:action,target,...(action==='resolve'?{disposition:'manager-resolved',reason:text.trim(),recipient:t.owner}:{}),...(action==='reassign'?{from:t.owner,to}:{}),...(action==='nudge'?{nudge:true,item:target.id}:{})},...(recipient?{to:recipient}:{})};
+ if(action==='resolve')fields=[['response','declined'],['disposition','manager-resolved'],['settled_by',by],['settled_at',String(at)],['settlement_trail',entry.trail]];
  const receipt={fingerprint,entry,destinations:[...new Set([t.where,...(recipient?.startsWith('agent:')?[recipient]:[])])]};
- const result=await store.redis('EVAL',INTERACTION_LUA,6,key,journal(store.space,target),receiptKey,revKey(store.space),`lm:${store.space}:interaction:cooldown:${hash(target)}`,`lm:${store.space}:interaction:rate:${hash(by)}`,
+ const result=await store.redis('EVAL',INTERACTION_LUA,8,key,journal(store.space,target),receiptKey,revKey(store.space),`lm:${store.space}:interaction:cooldown:${hash(target)}`,`lm:${store.space}:interaction:rate:${hash(by)}`,`lm:${store.space}:coord:open`,`lm:${store.space}:coord:open:${action==='resolve'?recipient.slice(6):'unused'}`,
  fingerprint,JSON.stringify(watch),kind,action,String(at),JSON.stringify(receipt),JSON.stringify(fields),replacement,JSON.stringify(entry));
  const [status,raw]=result;
  if(status==='conflict')fail(409,'Request ID already names another change.');
@@ -162,7 +181,8 @@ export async function interact(store,{target:input,action,text='',requestId,by,m
 }
 export async function coordinationQueue(store,{cursor,limit,recipient}={}){
  cursor=bounded(cursor,0,100000);limit=Math.max(1,bounded(limit,30,100));
- const coverage=hashObject(await store.redis('HGETALL',`lm:${store.space}:coord:coverage`));
+ const coverageKey=`lm:${store.space}:coord:coverage`,coverageType=await store.redis('TYPE',coverageKey);
+ const coverage=coverageType==='hash'?hashObject(await store.redis('HGETALL',coverageKey)):coverageType==='string'?{status:(await store.redis('GET',coverageKey))==='full'?'complete':'partial'}:{};
  const index=recipient?`lm:${store.space}:coord:open:${checkAgentId(recipient)}`:`lm:${store.space}:coord:open`;
  const ids=await store.redis('ZRANGE',index,cursor,cursor+limit),items=[],errors=[];
  for(const id of ids.slice(0,limit)){
@@ -171,5 +191,5 @@ export async function coordinationQueue(store,{cursor,limit,recipient}={}){
   if(rec?.id!==id||rec.space!==store.space||rec.response!=='open'){errors.push('An index entry has no matching pending record.');continue;}
   items.push(rec);
  }
- return {items,nextCursor:ids.length>limit?cursor+limit:null,coverage:{...coverage,complete:coverage?.status==='complete'&&errors.length===0,errors,notes:['This queue reads the canonical coordination index. Legacy records require verified backfill.']}};
+ return {items,nextCursor:ids.length>limit?cursor+limit:null,coverage:{...coverage,complete:coverage?.status==='complete'&&errors.length===0,errors,notes:coverage?.status==='complete'&&errors.length===0?[]:['This queue reads indexed requests. Older source records need verified history indexing.']}};
 }

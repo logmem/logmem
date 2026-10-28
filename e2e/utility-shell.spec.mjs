@@ -22,12 +22,12 @@ for (const tool of ['keys', 'connections']) {
     }
     await expect(page.getByRole('link', { name: 'Back to dashboard', exact: true }).last()).toHaveAttribute('href', '/app?operator=1');
     if (tool === 'keys') await page.getByLabel('Agent id', { exact: true }).fill('sample-agent');
-    await page.getByLabel('Theme', { exact: true }).selectOption('midnight');
+    await page.getByRole('radio', { name: 'Midnight theme' }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     if (tool === 'keys') await expect(page.getByLabel('Agent id', { exact: true })).toHaveValue('sample-agent');
     await expect(page.locator('body')).toHaveJSProperty('scrollWidth', await page.evaluate(() => document.documentElement.clientWidth));
     await page.screenshot({ path: '/private/tmp/logmem-' + tool + '-shell-' + test.info().project.name + '.png', fullPage: true });
-    await page.getByLabel('Theme', { exact: true }).selectOption('sand');
+    await page.getByRole('radio', { name: 'Sand theme' }).check();
     const other = tool === 'keys' ? 'Connections' : 'Agent keys';
     await nav.getByRole('link', { name: other, exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-app-theme', 'sand');
@@ -59,7 +59,7 @@ test('signed-out and failed states retain the frame', async ({ page }) => {
   await page.route('**/api/agent-keys', route => route.fulfill({ status: 401, json: { error: 'sign in required' } }));
   await page.goto('/keys');
   await expect(page.getByLabel('Admin password', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Theme', { exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Theme', exact: true })).toBeVisible();
   await page.route('**/api/connections', route => route.fulfill({ status: 503, json: { error: 'Service unavailable' } }));
   await page.goto('/connections');
   await expect(page.getByRole('alert')).toHaveText('Service unavailable');
