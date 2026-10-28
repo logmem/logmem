@@ -35,7 +35,7 @@ function navItem(n, route) {
 }
 const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
 const themePicker = () => themeControl(refreshFrame);
-function assistant(route) {
+export function workspaceAssistant(route) {
   const context = route === 'queue' || route === 'discussion' ? 'Coordination inbox' : route === 'health' || route === 'audit' ? 'Workspace health' : route === 'job' ? 'Selected work' : 'Current space';
   return html`<aside class="lmx-assistant" aria-label="Workspace assistant"><h2>${icon('recall')}Workspace assistant</h2><p class="lmx-assistant-context">${context} · ${state.space}</p><div class="lmx-assistant-card"><span class="lm-eyebrow">Start with the source</span><h3>Keep the next step clear.</h3><p>Review unanswered requests, check ownership and open the original discussion before changing work.</p><a class="lm-btn lm-btn--primary" href="#/queue">Review your inbox</a></div><div class="lmx-assistant-links"><a href="#/knowledge">Find decisions and shared context</a><a href="#/health">Check receipts and coverage</a><a href="#/activity">Read source activity</a></div><div class="lmx-assistant-card"><h3>AI execution is not connected.</h3><p>These links use your existing workspace. No model calls or agent runs start when you open this page.</p><a href=${state.customer?'#/account':'/connections'}>Manage connections</a></div></aside>`;
 }
@@ -55,7 +55,7 @@ function frame(route, crumbs, body) {
       ${headSpace()}${themePicker()}${demo?html`<span class="lm-badge lm-badge--warning">Contains sample content</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
-      <div class="lmx-workarea"><main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main>${assistant(route)}</div></div>
+      <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
     <nav class="lmx-tabs" aria-label="LogMem">${NAV.map(n=>tab(n[0],n[1],n[2]))}</nav></div>`;
 }
 
