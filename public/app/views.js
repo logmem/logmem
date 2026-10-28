@@ -7,6 +7,7 @@ import { api, getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, u
 import { icon, agent, seenTag, fresh, stage, decision, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
 import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink, askCard, copy } from './cards.js';
 import { invite } from './actions.js';
+import {observeTelemetry} from './telemetry-state.js';
 import {bentoTaskCard,planProgressTile,terminalActionBanner} from './today-components.js';
 import {workspaceAssistant} from './shell.js';
 import { renderView } from './shell.js';
@@ -35,6 +36,7 @@ pages.home = async () => {
   const d = await api('home');
   if (!ok(d)) return;
   live.needs = d.needs_count; live.home = d;
+  observeTelemetry(state.space,{decisions:{value:Array.isArray(d.needs_items)?d.needs_items.filter(i=>i.type==='decision').length:null}});
   const b = briefFor(d), needs = d.needs_items || [];
   const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
   const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work, in view.';
@@ -251,12 +253,12 @@ function drawLog() {
     <section class="lm-panel" style="padding:8px 16px 16px">${f.allEvents ? entries(list) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${entries(g.entries)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.</p></section>`);
 }
 pages.activity = () => pages.log();
-pages.log = async () => { live.recall = null; const d = await api('log'); if (!ok(d)) return; live.log = d.entries; drawLog(); };
+pages.log = async () => { live.recall = null; const d = await api('log'); if (!ok(d)) return; live.log = d.entries; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
 pages.recall = async (q) => {
   const query = q || '';
   const [l, r] = await Promise.all([api('log'), query ? api('recall', { q: query }) : Promise.resolve({ results: [] })]);
   if (!ok(l)) return;
-  live.log = l.entries; live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
+  live.log = l.entries; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
 };
 pages.channels = async (id) => { filt('log').where = id ? 'channel:' + id : 'channel'; saveFilt(); return pages.log(); };
 
@@ -265,6 +267,7 @@ pages.knowledge = async () => {
   const [d, c] = await Promise.all([api('decisions'), api('channels')]);
   if (!ok(d) || !ok(c)) return;
   const waiting = d.waiting || [], decided = d.decided || [];
+  observeTelemetry(state.space,{decisions:{value:Array.isArray(d.waiting)?d.waiting.length:null}});
   // The card you picked glows and the rest dim for three seconds. Picking another card restarts the timer.
   const focusCard = (el) => { clearTimeout(focusCard.t); document.querySelectorAll('.lmx-focus').forEach((x) => x.classList.remove('lmx-focus')); el.classList.add('lmx-focus'); document.body.classList.add('lmx-focusing'); focusCard.t = setTimeout(() => { el.classList.remove('lmx-focus'); document.body.classList.remove('lmx-focusing'); }, 3000); };
   const jump = (trail) => { const el = document.querySelector('[data-key="decision:' + trail + '"]'); if (!el) return; const box = el.closest('details'); if (box) box.setAttribute('open', ''); el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' }); focusCard(el); };
@@ -354,6 +357,7 @@ async function auditPage(route = 'audit') {
   const recordedRuns = runs.filter(a => Object.values(a.slots || {}).some(slot => slot?.attempts?.length));
   const latestAudit = d.days?.at(-1);
   const mirrorValue = d.source_status?.audit === 'error' ? 'Unavailable' : !latestAudit ? 'Unknown' : latestAudit.mirror_checked === false ? 'Not enabled' : latestAudit.mirror_mismatches;
+  observeTelemetry(state.space,{mirror:{value:typeof mirrorValue==='number'?mirrorValue:null,label:String(mirrorValue??'Unknown')}});
   const runRows = recordedRuns.map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td><td>${a.date || 'Unknown date'}</td>${['morning', 'midday', 'closeout'].map((slot) => html`<td>${runState(a.slots?.[slot])}</td>`)}</tr>`);
   const dailyRuns = html`<details class="lmx-coverage" aria-label="Saved coordination checks"><summary>Saved coordination checks (${recordedRuns.length} agents)</summary>
     <p>These are saved receipts. This page has no scheduler connection and does not start agent runs.</p>
