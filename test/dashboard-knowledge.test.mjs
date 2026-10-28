@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { timeBucket, groupDecisions, verdictLabel, agentColor, decisionGraph, BUCKETS } from "../public/app/dashboard-model.js";
+import { timeBucket, groupDecisions, verdictLabel, agentColor, decisionGraph, splitDecisionRows, BUCKETS } from "../public/app/dashboard-model.js";
 
 const NOW = new Date(2026, 9, 27, 15, 0, 0).getTime();
 const at = (daysAgo, h = 9) => new Date(2026, 9, 27 - daysAgo, h, 0, 0).getTime();
@@ -36,4 +36,15 @@ test("Knowledge: the graph has one row per asker, busiest first", () => {
   assert.equal(decisionGraph(waiting, decided, { rows: 1 }).length, 1);
   assert.equal(decisionGraph(waiting, decided, { perRow: 1 })[2].nodes.length, 1);
   assert.deepEqual(decisionGraph(), []);
+});
+
+test("Decision map: agents with pending items float up and the rest become a summary", () => {
+  const rows = decisionGraph(
+    [{ by: "agent:muse", trail: "t1", summary: "Publish README", ts: 5 }, { by: "agent:muse", trail: "t2", summary: "Ship page", ts: 6 }],
+    [{ ask: { by: "agent:infra", trail: "t3", summary: "Rotate key", ts: 1 } }, { ask: { by: "agent:muse", trail: "t4", summary: "Old", ts: 2 } }],
+  );
+  const { waiting, clear } = splitDecisionRows(rows);
+  assert.deepEqual(waiting.map(r => [r.agent, r.pending]), [["agent:muse", 2]]);
+  assert.deepEqual(clear, [{ agent: "agent:infra", decided: 1 }]);
+  assert.equal(rows[0].nodes[0].ts, 5);
 });
