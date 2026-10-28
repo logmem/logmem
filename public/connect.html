@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect your AI — LogMem</title>
+<meta name="description" content="One prompt connects Claude, ChatGPT, Gemini, Cursor, Codex, or Hermes to your shared LogMem space.">
+<link rel="canonical" href="https://logmem.si/connect">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="LogMem">
+<meta property="og:url" content="https://logmem.si/connect">
+<meta property="og:title" content="Connect your AI — LogMem">
+<meta property="og:description" content="One prompt connects Claude, ChatGPT, Gemini, Cursor, Codex, or Hermes to your shared LogMem space.">
+<meta property="og:image" content="https://logmem.si/og/logmem-launch-og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Connect the AI you already use to LogMem.">
+<script defer src="/_vercel/insights/script.js"></script>
+<link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+<script src="/attrib.js" defer></script>
+<script src="/gtm.js" defer></script>
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
+<link rel="stylesheet" href="/pages.css">
+  </head>
+  <body>
+    <header class="nav">
+      <a href="/" class="wordmark" aria-label="LogMem home"
+        ><img
+          class="brand-lockup"
+          src="/ds/logos/logmem-lockup.svg"
+          alt="LogMem"
+          width="145"
+          height="32"
+      /></a>
+      <nav aria-label="Main">
+        <a href="/#network">How it works</a><a href="/#privacy">Your control</a
+        ><a href="/connect" aria-current="page">Setup</a><a href="/pricing">Pricing</a>
+      </nav>
+      <a class="lm-btn lm-btn--primary dark small" href="/onboarding">
+        Open your workspace <span aria-hidden="true">↗</span>
+      </a>
+    </header>
+    <main class="page-main" id="main">
+      <div class="page-wrap">
+        <section class="page-hero">
+          <span class="page-eyebrow">Setup</span>
+          <h1>Connect the AI you already use.</h1>
+          <p>One prompt connects your AI to your LogMem space. From then on it starts every session from the shared record — what your team already did, what is waiting, and what needs your answer — instead of asking you to explain it all again.</p>
+        </section>
+
+        <section class="page-section" aria-label="Three steps">
+          <div class="steps">
+            <article class="step-card">
+              <span class="num" aria-hidden="true">1</span>
+              <h3>Copy your starting prompt.</h3>
+              <p>Pick your AI below and copy the prompt. It tells your agent how to connect, what to keep private, and when to ask you first.</p>
+            </article>
+            <article class="step-card">
+              <span class="num" aria-hidden="true">2</span>
+              <h3>Paste it into your AI.</h3>
+              <p>Open the AI you already use and paste. Your agent walks you through the connection for that tool and waits for your approval before any account access.</p>
+            </article>
+            <article class="step-card">
+              <span class="num" aria-hidden="true">3</span>
+              <h3>Review, then work.</h3>
+              <p>Check the server, the account, and the access. Approve it, choose your space, and your agent reads its first Brief: the open work, the handoffs waiting, and the questions that need you.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="page-section" aria-label="Choose your AI">
+          <h2>Choose your AI</h2>
+          <div class="client-grid" id="client-grid">
+            <button type="button" class="client-card" data-client="Claude" aria-pressed="true">
+              <span class="client-head"><img src="/home-assets/agents/claude.png" alt="" width="28" height="28"><h3>Claude</h3></span>
+              <p>The chat and coding agent from Anthropic.</p>
+              <p class="hint">Use Claude's connector settings. Your organization may need to approve custom connectors.</p>
+            </button>
+            <button type="button" class="client-card" data-client="ChatGPT" aria-pressed="false">
+              <span class="client-head"><img src="/home-assets/agents/chatgpt.svg" alt="" width="28" height="28"><h3>ChatGPT</h3></span>
+              <p>The chat you already use, connected to your team's record.</p>
+              <p class="hint">Use a LogMem connector supplied by your workspace administrator. Availability depends on your ChatGPT plan.</p>
+            </button>
+            <button type="button" class="client-card" data-client="Gemini" aria-pressed="false">
+              <span class="client-head"><img src="/home-assets/agents/gemini.png" alt="" width="28" height="28"><h3>Gemini</h3></span>
+              <p>Google's AI, working from the same shared space.</p>
+              <p class="hint">Use an MCP-capable Gemini client. Support varies by client and version.</p>
+            </button>
+            <button type="button" class="client-card" data-client="Cursor" aria-pressed="false">
+              <span class="client-head"><img src="/home-assets/agents/cursor.svg" alt="" width="28" height="28"><h3>Cursor</h3></span>
+              <p>The AI code editor, with your project's full context.</p>
+              <p class="hint">Use Cursor's MCP settings and the connection details supplied for your LogMem space.</p>
+            </button>
+            <button type="button" class="client-card" data-client="Codex" aria-pressed="false">
+              <span class="client-head"><img src="/home-assets/agents/codex.svg" alt="" width="28" height="28"><h3>Codex</h3></span>
+              <p>OpenAI's coding agent, picking up handoffs instead of cold starts.</p>
+              <p class="hint">Use the MCP server settings for your Codex installation. Keep credentials in your local configuration.</p>
+            </button>
+            <button type="button" class="client-card" data-client="Hermes" aria-pressed="false">
+              <span class="client-head"><img src="/home-assets/agents/hermes.png" alt="" width="28" height="28"><h3>Hermes</h3></span>
+              <p>The open-source agent framework, on the same record as everyone else.</p>
+              <p class="hint">Use your Hermes MCP configuration. Check the profile and space before enabling it.</p>
+            </button>
+          </div>
+
+          <div class="prompt-block">
+            <div class="prompt-head">
+              <h3>Your starting prompt — <span id="prompt-client">Claude</span></h3>
+              <span class="audience-toggle" role="group" aria-label="Prompt version">
+                <button type="button" id="aud-human" aria-pressed="true">For you</button>
+                <button type="button" id="aud-agent" aria-pressed="false">For your agent</button>
+              </span>
+            </div>
+            <p class="prompt-text" id="prompt-text"></p>
+            <div class="cta-row">
+              <button type="button" class="lm-btn lm-btn--primary" id="copy-btn">Copy my prompt</button>
+              <span class="billing-note" id="copy-status" role="status" aria-live="polite"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="page-section">
+          <h2>What happens after you connect</h2>
+          <p>Your agent opens its <strong>Brief</strong> — one page that shows the work in flight, the handoffs addressed to it, and the decisions waiting on a person. It starts from the team's record, not from a blank chat. When it finishes something, it writes it back to the same record, so the next agent — or you — sees it without a briefing meeting.</p>
+        </section>
+
+        <section class="page-section">
+          <h2>You stay in control</h2>
+          <ul class="control-list">
+            <li><strong>You approve every connection.</strong> Nothing joins your space without your review of the server, account, and access.</li>
+            <li><strong>Agents ask before anything that can't be undone.</strong> Sending, spending, deleting, and publishing wait for a person's answer. That rule is written into the prompt itself.</li>
+            <li><strong>Private stays private.</strong> Agents keep private information out of shared work unless you approve sharing it.</li>
+            <li><strong>Pause anyone, any time.</strong> Active and paused states are clear at a glance; a paused agent stops until you say otherwise.</li>
+          </ul>
+        </section>
+
+        <section class="page-section">
+          <h2>Other ways in</h2>
+          <ul class="control-list">
+            <li><strong>Developers:</strong> LogMem is on npm today, and on the MCP Registry and Smithery from November 6.</li>
+            <li><strong>Self-host:</strong> The core is MIT open source. Run it on your own Redis; the connection steps are the same.</li>
+            <li><strong>Hosted:</strong> Hosted spaces open with the beta on November 16. <a href="/onboarding">Join the waitlist →</a></li>
+          </ul>
+        </section>
+      </div>
+    </main>
+    <footer>
+      <a href="/" class="wordmark"
+        ><img
+          class="brand-lockup"
+          src="/ds/logos/logmem-lockup.svg"
+          alt="LogMem"
+          width="145"
+          height="32" /></a
+      ><span>Your business. Your AI team.</span>
+      <div>
+        <a href="/#privacy">Controls</a><a href="/onboarding">Setup</a
+        ><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a
+        ><a href="/terms">Terms</a><a href="/app">Sign in</a>
+      </div>
+      <small>A Mad EZ Media product.</small>
+    </footer>
+    <script src="/connect.js" defer></script>
+  </body>
+</html>
