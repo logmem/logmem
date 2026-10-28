@@ -74,7 +74,7 @@ export function arcPath(p, q, cx, cy, pull = 0.35, inset = 0) {
 const GROUPS = ['handoff', 'approval', 'stuck', 'done', 'progress'];
 /** Entries with a real timestamp, oldest first. Anything future or invalid is dropped. */
 export function replayEntries(entries = [], now = Date.now()) {
-  return entries.filter(e => Number.isFinite(Number(e.ts)) && Number(e.ts) <= now).map(e => ({ ...e, ts: Number(e.ts) })).sort((a, b) => a.ts - b.ts);
+  return entries.filter(e => e.ts != null && String(e.ts).trim() !== '' && Number.isFinite(Number(e.ts)) && Number(e.ts) > 0 && Number(e.ts) <= now).map(e => ({ ...e, ts: Number(e.ts) })).sort((a, b) => a.ts - b.ts);
 }
 export function replayBounds(sorted) {
   if (!sorted.length) return null;
@@ -191,4 +191,23 @@ export function bubbleLayout(clusters, w, h) {
     const t = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(n, 1);
     return { ...c, x: Math.round(n === 1 ? cx : cx + rx * Math.cos(t)), y: Math.round(n === 1 ? cy : cy + ry * Math.sin(t)) };
   });
+}
+
+/** Fixed bins for the loaded interval. Jump targets are actual event times, never estimated peaks. */
+export function replayDensity(sorted, binCount = 48) {
+  const bounds = replayBounds(sorted);
+  if (!bounds || bounds.start === bounds.end) return {bins:[],peaks:[],max:0};
+  const size=Number.isFinite(binCount)?Math.max(1,Math.min(120,Math.floor(binCount))):48;
+  const bins=Array.from({length:size},(_,index)=>({index,count:0,handoffs:0,stuck:0,last:null,handoffAt:null,stuckAt:null}));
+  for(const row of sorted){const index=Math.min(size-1,Math.floor((row.ts-bounds.start)/(bounds.end-bounds.start)*size));if(index<0)continue;
+    const bin=bins[index];bin.count++;bin.last=row.ts;
+    if(row.kind==='handoff'){bin.handoffs++;bin.handoffAt=row.ts;}
+    if(row.kind==='stuck'){bin.stuck++;bin.stuckAt=row.ts;}
+  }
+  const peaks=[];
+  for(const [key,label,field] of [['handoffs','Peak handoffs','handoffAt'],['stuck','Stuck peak','stuckAt']]){
+    const peak=bins.reduce((best,bin)=>bin[key]>(best?.[key]||0)?bin:best,null);
+    if(peak)peaks.push({key,label,count:peak[key],at:peak[field],index:peak.index});
+  }
+  return {bins,peaks,max:Math.max(...bins.map(bin=>bin.count))};
 }

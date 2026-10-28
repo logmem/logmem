@@ -6,7 +6,7 @@ import {agentDispatchButton} from './dispatch-components.js';
 import {clusterPrompt} from './dispatch-model.js';
 import { hhmm } from './core.js';
 import { autoScrollOn } from './marquee.js';
-import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, involves, waitingOn, handoffMatrix, laneCounts, laneView, kindCounts, KIND_LABEL } from './flow-model.js';
+import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, replayDensity, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, unblockPrompt, involves, waitingOn, handoffMatrix, laneCounts, laneView, kindCounts, KIND_LABEL } from './flow-model.js';
 
 const pill = (label, on, click, enter, leave) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click} @mouseenter=${enter} @mouseleave=${leave} @focus=${enter} @blur=${leave}>${label}</button>`;
 const bandWord = { fresh: 'Under 1 day', slow: '1 to 7 days', stale: 'Over 7 days' };
@@ -79,13 +79,14 @@ export function timeScrubber({ entries, t = null, scrub, now = Date.now() }) {
   if (!bounds || bounds.start === bounds.end) return nothing;
   const at = t == null ? bounds.end : Math.min(Math.max(t, bounds.start), bounds.end), snap = replayAt(rows, at), live = at >= bounds.end;
   const frac = (at - bounds.start) / (bounds.end - bounds.start);
+  const density=replayDensity(rows), fullTime=value=>new Date(value).toLocaleString();
   const COUNTS = [['handoff', 'Handoffs'], ['approval', 'Asks'], ['stuck', 'Stuck'], ['done', 'Done'], ['progress', 'Progress']];
   return html`<section class="lmx-flow lmx-card" aria-label="Time scrubber">
-    <div class="lmx-flowhead"><div><h2>Time scrubber</h2><span class="lmx-meta">Drag to see this window of the log as it stood then. Only the ${rows.length} entries loaded here are used.</span></div>
-      <div class="lmx-scrubclock"><b class="mono">${hhmm(at)}</b><span class="lmx-flowage" data-band=${live ? 'fresh' : 'slow'}>${live ? 'Latest' : 'Replay'}</span></div></div>
-    <div class="lmx-scrubstats">${COUNTS.map(([k, l]) => html`<div><span>${l}</span><b class="mono">${snap.counts[k]}</b></div>`)}</div>
-    <input class="lmx-scrub" type="range" min="0" max="1000" step="5" .value=${String(Math.round(frac * 1000))} aria-label="Moment in this window" aria-valuetext=${hhmm(at)} @input=${e => scrub(atFraction(bounds, Number(e.target.value) / 1000))}>
-    <div class="lmx-scrubends mono"><span>${hhmm(bounds.start)}</span><span>${hhmm(bounds.end)}</span></div>
+    <div class="lmx-flowhead"><div><h2>Time scrubber</h2><span class="lmx-meta">${rows.length} loaded entries. Drag through this interval. Counts describe saved events, not running agents.</span></div></div>
+    <div class="lmx-telemetry-bar"><div class="lmx-scrubclock"><time class="mono" title=${fullTime(at)}>${hhmm(at)}</time><button type="button" class="lmx-typepill" aria-label="Jump to latest loaded entry" @click=${()=>scrub(null)}>${live?'Latest loaded':'Replay · return to latest'}</button></div><div class="lmx-telemetry-pills" aria-label="Counts at selected time">${COUNTS.map(([key,label])=>html`<span data-kind=${key}>${label} <b class="mono">${snap.counts[key]}</b></span>`)}</div></div>
+    <div class="lmx-density-track"><svg viewBox="0 0 480 72" preserveAspectRatio="none" role="img" aria-label=${`Activity density across ${density.bins.length} time bins. The busiest bin has ${density.max} loaded entries. Amber shows recorded stuck events.`}>${density.bins.map(bin=>{const height=bin.count?Math.max(2,bin.count/density.max*62):1,stuck=bin.stuck/density.max*62;return svg`<rect class="lmx-density-bar" x=${bin.index*10+1} y=${68-height} width="7" height=${height} opacity=${bin.count?0.35+0.65*bin.count/density.max:0.12}></rect>${bin.stuck?svg`<rect class="lmx-density-stuck" x=${bin.index*10+1} y=${68-height} width="7" height=${Math.max(3,stuck)}></rect>`:nothing}`;})}</svg><span class="lmx-density-needle" style=${'left:calc(10px + (100% - 20px) * '+frac+')'} aria-hidden="true"></span><input class="lmx-scrub lmx-density-input" type="range" min="0" max="1000" step="1" .value=${String(Math.round(frac*1000))} aria-label="Moment in this window" aria-valuetext=${fullTime(at)+' · '+snap.total+' loaded entries'} @input=${e=>scrub(atFraction(bounds,Number(e.target.value)/1000))}></div>
+    <div class="lmx-scrubends mono"><time title=${fullTime(bounds.start)}>${fullTime(bounds.start)}</time><time title=${fullTime(bounds.end)}>${fullTime(bounds.end)}</time></div>
+    <div class="lmx-spike-jumps" role="group" aria-label="Jump to activity spikes">${density.peaks.map(peak=>html`<button type="button" class="lmx-typepill" data-kind=${peak.key} title=${fullTime(peak.at)} @click=${()=>scrub(peak.at)}>${peak.key==='stuck'?'⚠':'↗'} ${peak.label} (${peak.count}) · ${hhmm(peak.at)}</button>`)}<span class="lmx-meta">Teal: entries · Amber: stuck. Peaks use ${density.bins.length} equal intervals.</span></div>
     <div class="lm-eyebrow">Last five entries at this moment</div>
     ${snap.last.length ? snap.last.map(e => html`<div class="lmx-scrubrow"><span class="mono">${hhmm(e.ts)}</span><span class="lm-kind">${e.kind}</span><span class="mono">${String(e.by || '').replace(/^agent:/, '')}</span><span>${e.summary}</span></div>`) : html`<p class="lmx-meta">Nothing was written before this moment.</p>`}
   </section>`;
