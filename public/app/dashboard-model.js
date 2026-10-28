@@ -57,3 +57,28 @@ export const receiptForSpace = (receipt, space) => receipt?.space === space ? re
 export function canAnswerDecision(ask, {person, canApprove}) {
   return Boolean(person?.startsWith('human:') && canApprove && (!ask.to || ask.to === person));
 }
+
+// ---- Today: attention cards ----
+const HEAD_MAX = 85;
+/** Split a long title into a short headline and a body. Short text stays whole. */
+export function splitHeadline(text, max = HEAD_MAX) {
+  const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (s.length <= max) return { head: s, body: '' };
+  const cut = /^(.{12,}?)(?::\s|\.\s)/.exec(s);
+  if (cut && cut[1].length <= max + 25) return { head: cut[1], body: s.slice(cut[0].length).trim() };
+  const at = s.lastIndexOf(' ', max);
+  const i = at > 20 ? at : max;
+  return { head: s.slice(0, i).trim() + '…', body: s.slice(i).trim() };
+}
+export const attentionKind = item => item.type === 'decision' ? 'decision' : item.type === 'task' ? 'task' : 'review';
+export function attentionCounts(items = []) {
+  const c = { all: items.length, decision: 0, task: 0, review: 0 };
+  for (const item of items) c[attentionKind(item)]++;
+  return c;
+}
+export const filterAttention = (items = [], kind = 'all') => kind === 'all' ? items : items.filter(item => attentionKind(item) === kind);
+/** Plans with no work yet sit behind a toggle so active plans stay in front. */
+export function splitPlans(plans = []) {
+  const empty = plans.filter(p => p.id !== 'general' && !(Number(p.jobs) > 0));
+  return { active: plans.filter(p => !empty.includes(p)), empty };
+}
