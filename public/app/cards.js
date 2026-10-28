@@ -4,7 +4,7 @@ import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
-import { decisionProblem } from './dashboard-model.js';
+import { decisionProblem, shortenIds, jobName, initials, agentPing } from './dashboard-model.js';
 import { openDrawer } from './drawer.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
@@ -104,15 +104,19 @@ export function planRow(i) {
     <span class="lmx-meta">${joinDot([i.owner ? agentName(i.owner) : '', dueTag(i.due, i.stage)])} ${staleTag(i.id)}</span>
     <span>${i.stage === 'blocked' ? (i.blocked_on ? waitsTag(i.blocked_on) : html`<span class="lmx-flag">No reason</span>`) : nothing}</span></div>`;
 }
-export function agentCard(a) {
-  const now = a.now || {}, r = a.recap;
-  const check = (ok, text) => html`<li data-ok=${ok ? '1' : '0'}>${ok ? '✓ ' : '✗ '}${text}</li>`;
-  return html`<article class="lmx-card" tabindex="0" data-key=${'agent:' + a.id}>
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><a href=${`#/agent/${encodeURIComponent(a.id)}`} style="text-decoration:none;color:inherit">${agent('agent:' + a.id)}</a>${seenTag(a.seen)}</div>
-    <div class="lmx-why"><b>Now:</b> ${now.doing ? now.doing : html`<span class="lmx-flag">No Now set</span>`}</div>
-    ${now.job || now.next ? html`<div class="lmx-meta">${joinDot([now.job ? 'job ' + (typeof now.job === 'string' ? now.job : JSON.stringify(now.job)) : '', now.next ? 'next: ' + now.next : ''])}</div>` : nothing}
-    ${r ? html`<div class="lmx-why"><b>Last recap:</b> ${r.summary} <span class="subtle">${ago(r.ended_at)}</span></div>` : nothing}
-    <ul class="lmx-checks">${check(a.seen && a.seen.state === 'active', 'wrote in the last 15 min')}${check(!!now.doing, 'keeps Now set')}${check(!!r, 'leaves recaps')}</ul></article>`;
+export function agentCard(a, opts = {}) {
+  const now = a.now || {}, r = a.recap, job = jobName(now.job), open = opts.open === true;
+  const parts = shortenIds(now.doing || '');
+  const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
+  const pulse = a.seen?.state === 'active';
+  return html`<article class="lmx-card lmx-agent-card" tabindex="0" data-key=${'agent:' + a.id} data-state=${a.seen?.state || 'unknown'}>
+    <div class="lmx-agent-head"><span class="lmx-avatar" aria-hidden="true">${initials(a.id)}</span><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${a.id}</a><span class="lmx-agent-seen">${pulse ? html`<i class="lmx-pulse" aria-hidden="true"></i>` : nothing}${seenTag(a.seen)}</span></div>
+    <div class="lmx-agent-body">
+      <div class="lmx-agent-now"><span class="lmx-label">NOW</span>${now.doing ? html`<p class=${'lmx-clamp3' + (open ? ' is-open' : '')}>${parts.map((p) => (p.chip ? idChip(p) : p.text))}</p>${now.doing.length > 140 ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(open)} @click=${opts.toggle}>${open ? 'Show less' : 'Show more'}</button>` : nothing}` : html`<span class="lmx-flag">No Now set</span>`}</div>
+      ${job || now.next ? html`<div class="lmx-nextbox"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${now.next}</p>` : nothing}</div>` : nothing}
+      ${r ? html`<details class="lmx-recap"><summary>Last recap · ${ago(r.ended_at)}</summary><p>${r.summary}</p></details>` : nothing}
+    </div>
+    <div class="lmx-agent-foot"><span class="lmx-checkpill" data-ok=${now.doing ? '1' : '0'}>Now ${now.doing ? '✓' : '✗'}</span><span class="lmx-checkpill" data-ok=${r ? '1' : '0'}>Recap ${r ? '✓' : '✗'}</span><button type="button" class="lmx-copyping" @click=${() => copy(agentPing(a, opts.space || state.space))}>Copy ping</button></div></article>`;
 }
 
 // ─── lanes ───────────────────────────────────────────────────────────
