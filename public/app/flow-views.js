@@ -99,7 +99,7 @@ export function fleetPulse({ entries, agents = [], win = 24, sel = '', show = 'a
   const n = laneCounts(lanes), shown = laneView(lanes, show), tucked = show === 'active' ? lanes.filter(l => l.empty) : [];
   const row = l => html`<div class="lmx-lane" data-dim=${String(!!sel && sel !== l.id)}>
       <button type="button" class="lmx-lanename mono" aria-pressed=${String(sel === l.id)} @click=${() => pick(sel === l.id ? '' : l.id)}>${l.id}</button>
-      <div class="lmx-lanetrack">${l.quiet.map(q => html`<span class="lmx-quiet" style=${`left:${q.left}%;width:${q.width}%`}>${q.width > 22 ? `quiet ${q.hours} h` : ''}</span>`)}${l.bars.map(b => html`<i class="lmx-bar" data-level=${b.level} title=${`${b.n} ${b.n === 1 ? 'entry' : 'entries'}`} style=${`left:min(${b.left}%, calc(100% - 12px));width:${b.width}%`}></i>`)}${l.recaps.map(r => html`<i class="lmx-recap" style=${`left:calc(${r}% - 6px)`}></i>`)}</div>
+      <div class="lmx-lanetrack">${l.quiet.map(q => html`<span class="lmx-quiet" style=${`left:${q.left}%;width:${q.width}%`}>${q.width > 22 ? `quiet ${q.hours} h` : ''}</span>`)}${l.bars.map(b => html`<i class="lmx-bar" data-level=${b.level} title=${`${b.n} ${b.n === 1 ? 'entry' : 'entries'}`} style=${`left:min(${b.left}%, calc(100% - 12px));width:${b.width}%`}></i>`)}${l.recaps.map(r => html`<i class="lmx-pulse-recap" style=${`left:calc(${r}% - 6px)`}></i>`)}</div>
       <span class="lmx-lanestate" data-s=${l.status}>${l.state}</span></div>`;
   const views = [['active', 'Active', n.active], ['live', 'Live now', n.live], ['quiet', 'Quiet', n.quiet], ['all', 'All', n.all]];
   return html`<section class="lmx-flow lmx-card" aria-label="Fleet pulse">
