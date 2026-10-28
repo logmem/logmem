@@ -109,6 +109,8 @@ test("site: /onboarding has every step, /probe.sh is served, and the probe pairs
   for (const step of ["choose", "plan", "detect", "waitlist", "space", "redis", "acmi", "connect", "first", "handoff", "approver"]) {
     assert.ok(html.includes(`data-step="${step}"`), `step ${step}`);
   }
+  // Phase B: the BYO path is 4 steps; the rest are optional extras opened from connect.
+  assert.ok(html.includes('data-extra="first"') && html.includes('data-extra="detect"') && html.includes('data-extra="acmi"'), "optional extras on connect");
   assert.ok(html.includes("No pricing yet"));
   assert.doesNotMatch(html, /\$\d/, "no prices on /onboarding");
   assert.doesNotMatch(html, /<script(?![^>]*\b(?:src=|type="application\/ld\+json"))[^>]*>/, "no inline scripts (CSP)");
@@ -116,7 +118,10 @@ test("site: /onboarding has every step, /probe.sh is served, and the probe pairs
   assert.doesNotMatch(html, /https?:\/\/(?!logmem\.si)[a-z0-9.-]+\.[a-z]{2,}\/[^"]*\.(?:js|css|woff2?)/i, "no external scripts, styles or fonts");
   const js = await fetch(`${base}/onboarding.js`);
   assert.equal(js.status, 200);
-  assert.match(await js.text(), /getRandomValues/);
+  const jsText = await js.text();
+  assert.match(jsText, /byo: \['choose', 'space', 'redis', 'connect'\]/, "BYO is four steps");
+  assert.match(jsText, /'byo-full'/, "full path keeps every step reachable");
+  assert.match(jsText, /getRandomValues/);
 
   const sh = await fetch(`${base}/probe.sh`);
   assert.equal(sh.status, 200);

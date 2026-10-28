@@ -63,23 +63,25 @@
     <noscript><div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="alert" aria-hidden="true"></i><div>This setup flow needs JavaScript. You can still <a href="/probe.sh">read the probe script</a> or go back to the <a href="/">home page</a>.</div></div></noscript>
 
     <!-- Managed clients start here. BYO remains an explicit advanced path. -->
-    <section class="lm-panel ob-card" data-step="choose" aria-labelledby="h-choose">
-      <div><h1 id="h-choose" tabindex="-1">A shared space for your business.</h1><p class="ob-lede">Keep customer work, tasks, decisions and agent handoffs together. Start with your business workspace, then choose who can join each space.</p></div>
-      <div class="ob-grid2">
-        <div class="lm-panel ob-choice ob-choice--rec">
-          <div class="lm-row"><h2 class="lm-title-2">Use managed LogMem</h2><span class="lm-badge lm-badge--brand">Invite only</span></div>
+    <section class="lm-panel ob-card ob-fork" data-step="choose" aria-labelledby="h-choose">
+      <div class="fun-sticker fun-sticker--1" aria-hidden="true"><img src="/home-assets/agents/claude.png" alt=""></div><div class="fun-sticker fun-sticker--2" aria-hidden="true"><img src="/home-assets/agents/cursor.svg" alt=""></div><div class="fun-sticker fun-sticker--3" aria-hidden="true"><img src="/home-assets/agents/gemini.png" alt=""></div>
+      <div class="ob-fork-head"><h1 id="h-choose" tabindex="-1">A shared space for your business.</h1><p class="ob-lede">Keep customer work, tasks, decisions and agent handoffs together. Start with your business workspace, then choose who can join each space.</p></div>
+      <svg class="ob-doodle ob-doodle--a" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 2 C12.6 8 14 10.4 22 12 C14 13.6 12.6 16 12 22 C11.4 16 10 13.6 2 12 C10 10.4 11.4 8 12 2Z" fill="currentColor"/></svg><svg class="ob-doodle ob-doodle--b" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="M12 2 C12.6 8 14 10.4 22 12 C14 13.6 12.6 16 12 22 C11.4 16 10 13.6 2 12 C10 10.4 11.4 8 12 2Z" fill="currentColor"/></svg><svg class="ob-doodle ob-doodle--c" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 2 C12.6 8 14 10.4 22 12 C14 13.6 12.6 16 12 22 C11.4 16 10 13.6 2 12 C10 10.4 11.4 8 12 2Z" fill="currentColor"/></svg>
+      <div class="ob-grid2 ob-fork-grid">
+        <div class="lm-panel ob-choice ob-choice--rec ob-sketch ob-sketch--teal">
+          <div class="ob-choice-head"><h2 class="lm-title-2">Use managed LogMem</h2><span class="lm-badge lm-badge--brand ob-oval ob-oval--teal">Invite only</span></div>
           <p class="ob-note ob-note--muted">For solo operators and small teams. We manage storage. You do not need a Redis account or connection URL.</p>
-          <ol class="ob-list"><li>Sign in with the email that received access.</li><li>Create your business workspace, or join your team through its invitation link.</li><li>Choose a private space and connect one agent.</li><li>Add a real task and check its first update.</li></ol>
+          <ol class="ob-list ob-list--arrows"><li>Sign in with the email that received access.</li><li>Create your business workspace, or join your team through its invitation link.</li><li>Choose a private space and connect one agent.</li><li>Add a real task and check its first update.</li></ol>
           <p class="ob-note">Already have a team invitation link? Open that link to join the right workspace.</p>
-          <div class="lm-row"><a class="lm-btn lm-btn--primary" href="/app" id="managed-start" aria-describedby="managed-status">Open your workspace</a></div>
+          <div class="ob-cta"><a class="lm-btn lm-btn--primary ob-btn-ring" href="/app" id="managed-start" aria-describedby="managed-status">Open your workspace</a></div>
           <p class="ob-note" id="managed-status" role="status" aria-live="polite">Managed access is invite only. Public signup is not open.</p>
-          <p class="ob-note">No invitation yet? <button type="button" class="ob-linkbtn" data-choose="cloud">Request access</button>.</p>
+          <p class="ob-note">No invitation yet? <button type="button" class="ob-linkbtn ob-scribble" data-choose="cloud">Request access</button>.</p>
         </div>
-        <div class="lm-panel ob-choice">
-          <div class="lm-row"><h2 class="lm-title-2">Bring your own Redis</h2><span class="lm-badge">Advanced</span></div>
+        <div class="lm-panel ob-choice ob-sketch ob-sketch--amber">
+          <div class="ob-choice-head"><h2 class="lm-title-2">Bring your own Redis</h2><span class="lm-badge ob-oval ob-oval--amber">Advanced</span></div>
           <p class="ob-note ob-note--muted">For developers who manage their own storage and agent configuration.</p>
-          <ul class="ob-list"><li>Use a TLS Redis endpoint or a compatible HTTPS REST bridge.</li><li>Name your space and test your connection.</li><li>Configure each agent on your own machine.</li></ul>
-          <div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-choose="byo">Set up my own Redis</button></div>
+          <ul class="ob-list ob-list--stars"><li>Works with Upstash, a TLS Redis, or an HTTPS REST bridge.</li><li>Name your space and run a read-only connection test.</li><li>Get ready-to-paste config for Claude, Cursor, Codex and more.</li></ul>
+          <div class="ob-cta"><button type="button" class="lm-btn lm-btn--secondary ob-btn-ring ob-btn-ring--white" data-choose="byo">Set up my own Redis</button></div>
         </div>
       </div>
     </section>
@@ -191,7 +193,8 @@
       <div class="lm-alert lm-alert--warning"><i class="lm-i" data-i="info" aria-hidden="true"></i><div>The <code class="mono">@logmem/mcp</code> package isn’t published on npm yet; this is the command it will use. In the real flow your space token appears here in place of <code class="mono">&lt;space token&gt;</code>.</div></div>
       <div class="lm-alert lm-alert--info" id="waiting"><i class="lm-i" data-i="hourglass" aria-hidden="true"></i><div>This page doesn’t watch for the first call yet. After the restart, the agent shows up in the app under Agents. <button type="button" class="ob-linkbtn" id="sim">Show what success looks like</button></div></div>
       <div class="lm-alert lm-alert--success lm-demo-frame" id="connected" role="status" hidden><i class="lm-i" data-i="check" aria-hidden="true"></i><div><span class="lm-demo">Demo data</span> <strong>quill connected</strong> from <span id="sim-host">Claude Code</span>. Its first call started a shift automatically.</div></div>
-      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
+      <div class="ob-extras"><p class="ob-label mono">OPTIONAL, AFTER SETUP</p><div class="lm-row"><button type="button" class="lm-btn lm-btn--secondary" data-extra="detect">Find tools on this machine</button><button type="button" class="lm-btn lm-btn--secondary" data-extra="acmi">Bring existing ACMI history</button><button type="button" class="lm-btn lm-btn--secondary" data-extra="first">Watch the first notes</button></div></div>
+      <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><a class="lm-btn lm-btn--primary" href="/docs">Done, read the docs</a></div>
     </section>
 
     <!-- BYO: first entries -->

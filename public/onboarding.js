@@ -38,7 +38,9 @@
   var PATHS = {
     entry: ['choose'],
     cloud: ['choose', 'plan', 'waitlist'],
-    byo: ['choose', 'detect', 'space', 'redis', 'acmi', 'connect', 'first', 'handoff', 'approver']
+    byo: ['choose', 'space', 'redis', 'connect'],
+    // The optional extras live here. A visitor opens them from the connect step; none blocks setup.
+    'byo-full': ['choose', 'detect', 'space', 'redis', 'acmi', 'connect', 'first', 'handoff', 'approver']
   };
   var state = { path: 'entry', i: 0, max: 0 };
 
@@ -78,6 +80,7 @@
     state.i = Math.min(list.length - 1, Math.max(0, n));
     state.max = Math.max(state.max, state.i);
     var id = current();
+    document.body.setAttribute('data-ob-step', id);
     $$('[data-step]').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== id; });
     renderRail();
     onEnter(id);
@@ -88,6 +91,15 @@
     }
   }
   function goId(id) { var n = steps().indexOf(id); if (n >= 0) { state.max = Math.max(state.max, n); go(n); } }
+
+  // Open an optional extra. The full path lists every step, so all of them stay reachable.
+  function openExtra(id) {
+    state.path = 'byo-full';
+    var n = PATHS['byo-full'].indexOf(id);
+    if (n < 0) return;
+    state.max = PATHS['byo-full'].length - 1;
+    go(n);
+  }
 
   function choose(path) {
     state.path = path;
@@ -563,6 +575,7 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.hasAttribute('data-choose')) choose(t.getAttribute('data-choose'));
+    else if (t.hasAttribute('data-extra')) openExtra(t.getAttribute('data-extra'));
     else if (t.hasAttribute('data-next')) {
       if (current() === 'space') {
         var wsOk = checkWorkspace(), spOk = checkSpace();
