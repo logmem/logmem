@@ -93,6 +93,8 @@
     $("#preview-mascot").src = selected.logo;
     $("#preview-mascot").alt = selected.name + " logo";
     $("#agent-hint").textContent = selected.hint;
+    $("#agent-instruction").textContent = selected.instruction;
+    $("#preview-note").textContent = "Connect " + selected.name + " to your workspace before pasting this prompt.";
     $$("#agent-picker button").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.agent === selected.name)),
     );
@@ -112,7 +114,7 @@
     try {
       if (!navigator.clipboard) throw Error();
       await navigator.clipboard.writeText(text);
-      toast("Prompt copied. Paste it into " + selected.name + ".");
+      toast("Prompt copied. Connect your workspace, then paste it into " + selected.name + ".");
       if (button) {
         button.classList.add("copied");
         button.textContent = "Copied ✓";
@@ -519,6 +521,10 @@
     $$(".agent-state").forEach(
       (n) => (n.textContent = on ? "Active" : "Paused"),
     );
+    $("#handoff-status").textContent = on ? "Handoff ready" : "Handoff blocked in this example";
+    $("#handoff-activity").textContent = on
+      ? "Claude can read the project Brief and pick up the next task."
+      : "Claude cannot read the project Brief while its example access is paused.";
     $("#pause-note").textContent = on
       ? "Try the switch to preview a paused state."
       : "Preview only. No real agent or service changed.";
@@ -537,7 +543,7 @@
         node(
           "p",
           "",
-          "Start with your familiar tool. This guide prepares your prompt, then takes you to LogMem setup.",
+          "First open your workspace or request an invite. Then use this guide to connect your AI and prepare its prompt.",
         ),
       );
       const list = node("div", "wizard-agents");
@@ -570,6 +576,7 @@
         node("h2", "", "Connect " + selected.name),
         node("p", "", selected.hint),
         node("div", "wizard-instruction", selected.instruction),
+        node("p", "", "Use connection details from your workspace. Paste the prompt only after you connect."),
       );
       const copyBtn = node(
         "button",

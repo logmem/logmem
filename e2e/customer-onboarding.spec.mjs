@@ -29,6 +29,7 @@ test('customer creates workspace and spaces, adds work, and signs out',async({pa
  await page.getByRole('link',{name:'Add a task',exact:true}).click();
  await page.getByLabel('What needs to happen?').fill('Confirm Friday appointments');
  await page.getByRole('button',{name:'Add task',exact:true}).click();
+ await page.getByRole('button',{name:/^Open \(1\)/}).click();
  await expect(page.getByText('Confirm Friday appointments').first()).toBeVisible();
  // Workspace settings is available on both phone and desktop.
  await page.goto('/app#/account');
@@ -38,8 +39,8 @@ test('customer creates workspace and spaces, adds work, and signs out',async({pa
  await page.getByRole('button',{name:'Create space',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
  await page.screenshot({path:'/private/tmp/logmem-customer-'+test.info().project.name+'.png',fullPage:true});
- const picker=page.getByRole('combobox',{name:'Space',exact:true}).filter({visible:true}).first();
- await picker.selectOption({label:'Operations'});
+ const picker=page.locator('.lmx-space-picker:visible').first();
+ await picker.locator('summary').click();await picker.getByRole('button',{name:'Operations',exact:true}).click();
  await expect(page.getByText('Confirm Friday appointments').first()).toBeVisible();
  await page.goto('/app#/account');
  await page.getByRole('button',{name:'Sign out',exact:true}).last().click();
@@ -76,9 +77,33 @@ test('walkthrough drafts accept verified identities and stay private after a pen
  let release,arrived;const held=new Promise(r=>release=r),seen=new Promise(r=>arrived=r);
  await page.route('**/api/tasks**',async route=>{if(route.request().method()==='POST'){arrived();await held;}await route.fallback();});
  await page.getByRole('button',{name:'Save walkthrough'}).click();await seen;
- await page.getByRole('combobox',{name:'Space',exact:true}).filter({visible:true}).first().selectOption({label:'Sales'});
+ const picker=page.locator('.lmx-space-picker:visible').first();await picker.locator('summary').click();await picker.getByRole('button',{name:'Sales',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
  const response=page.waitForResponse(r=>r.url().includes('/api/tasks')&&r.request().method()==='POST');release();await response;
  await expect(page.getByText('Private operations draft',{exact:true})).toHaveCount(0);
  await page.goto('/app#/walk/preview');await expect(page.getByText('Nothing to preview.',{exact:true})).toBeVisible();
+});
+
+test('space picker exposes creation and invitation for a workspace owner',async({page,context})=>{
+ await fixture(context);await page.goto('/app');
+ await page.getByLabel('Workspace name').fill('Picker business');
+ await page.getByRole('button',{name:'Create workspace',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
+ const picker=page.locator('.lmx-space-picker:visible').first();await picker.locator('summary').click();
+ await expect(picker.getByRole('button',{name:'Add space'})).toBeVisible();
+ await picker.getByRole('button',{name:'Invite a teammate'}).click();
+ await expect(page.getByRole('heading',{name:'Invite a teammate',exact:true})).toBeVisible();
+});
+
+test('viewer space picker keeps management actions hidden',async({page,context})=>{
+ const f=await fixture(context);
+ const {createWorkspace,setMembership}=await import('../src/http/workspaces.mjs');
+ const {workspace:w,space}=await createWorkspace({userId:'user_Owner000001',name:'Read only business',firstSpaceName:'Operations',requestId:'picker-owner-001'},{redis:f.redis});
+ await setMembership({actorId:'user_Owner000001',workspaceId:w.id,userId:'user_Customer00001',role:'viewer',spaces:{[space.id]:{role:'viewer',canApprove:false}},requestId:'picker-viewer-001'},{redis:f.redis});
+ await page.goto('/app');
+ const picker=page.locator('.lmx-space-picker:visible').first();await picker.locator('summary').click();
+ await expect(picker.getByRole('button',{name:'Add space'})).toHaveCount(0);
+ await expect(picker.getByRole('button',{name:'Invite a teammate'})).toHaveCount(0);
+ await expect(picker).toContainText('Your workspace owner manages spaces and invitations.');
+ await expect(picker.getByRole('button',{name:'Workspace settings'})).toBeVisible();
 });

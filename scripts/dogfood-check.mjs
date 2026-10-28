@@ -28,6 +28,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createStore, tryParse, normTs } from "../src/core/store.mjs";
 import { createMirror } from "../src/core/mirror.mjs";
+import { getCoordItem, computeItemId } from "../src/core/coord.mjs";
 import { acmiKey } from "../src/core/keys.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { validateKeySegments } from "../src/lib/helpers.mjs";
@@ -205,6 +206,13 @@ export async function runCheck(redis, {
 
   // ACMI-side accepts (VM agents answer with handoff-ack in acmi:* only).
   const acked = async (trail, h) => {
+    const recipient = String(h.to || "").replace(/^agent:/, "");
+    const id = computeItemId(space, "handoff", trail, recipient);
+    const item = await getCoordItem(store, space, id);
+    // Manager resolutions settle the canonical record without impersonating its recipient.
+    if (item?.id === id && item.space === space && item.type === "handoff"
+      && item.request_trail === trail && String(item.to || "").replace(/^agent:/, "") === recipient
+      && ["answered", "declined"].includes(item.response)) return true;
     if (accepts.has(trail)) return true;
     // Every log the handoff was written to, plus the recipient's own timeline.
     const keys = new Set([acmiKey(space, "agent", String(h.to || "").replace(/^agent:/, ""), "log"), ...h.logs.map((l) => acmiKey(space, l.ns, l.id, "log"))]);

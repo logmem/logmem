@@ -39,8 +39,7 @@ test('advanced setup and access requests stay separate from managed login',async
  await page.getByRole('button',{name:'Back',exact:true}).click();
  await page.getByRole('button',{name:'Back',exact:true}).click();
  await page.getByRole('button',{name:'Set up my own Redis',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Find the AI tools on this machine.'})).toBeVisible();
- await page.getByRole('button',{name:'Continue',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Name your space.',exact:true})).toBeVisible();
  await page.getByLabel('Workspace name').fill('Northside Repairs');
  await page.getByLabel('Space id',{exact:true}).fill('northside');
  await page.getByRole('button',{name:'Continue',exact:true}).click();

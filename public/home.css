@@ -575,11 +575,11 @@ small {
 .section {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 100px 30px;
+  padding: 64px 30px;
 }
 .section-title {
   text-align: center;
-  margin: 0 auto 55px;
+  margin: 0 auto 36px;
 }
 .eyebrow {
   font-size: 11px;
@@ -896,8 +896,7 @@ small {
   margin: 0 0 16px;
 }
 .setup-preview {
-  position: sticky;
-  top: 120px;
+  position: static;
 }
 .setup-preview .phone-panel {
   background: #ffffff9c;
@@ -1519,7 +1518,7 @@ dialog::backdrop {
     font-size: 25px;
   }
   .section {
-    padding: 75px 25px;
+    padding: 50px 25px;
   }
   .split {
     gap: 35px;
@@ -1737,7 +1736,7 @@ dialog::backdrop {
     margin-right: 0;
   }
   .section {
-    padding: 65px 22px;
+    padding: 44px 22px;
   }
   .section-title {
     margin-bottom: 35px;
@@ -1970,7 +1969,7 @@ dialog::backdrop {
   color: #746c63;
   text-align: center;
   max-width: 580px;
-  margin: -22px auto 45px;
+  margin: 16px auto 45px;
 }
 .h-fine {
   font-size: 11px !important;
@@ -2726,3 +2725,23 @@ dialog {
 .privacy-grid article:hover .home-primitive-icon {
   box-shadow: var(--shadow-1);
 }
+
+/* Workspace access comes before the prompt. */
+.workspace-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 24px;
+}
+.setup-preview .preview-caption { margin: 0; padding: 16px 12px 0; }
+.connection-guide { margin-top: 16px; padding: 16px; border: 1px solid var(--border, #ded8cf); border-radius: 12px; }
+.steps .connection-guide p { margin: 0; }
+.steps .connection-guide .agent-hint { margin-top: 10px; color: #746c63; }
+.prompt-guardrails { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 16px 0; }
+.prompt-guardrails li { border: 1px solid #ded8cf; border-radius: 8px; padding: 6px 9px; font-size: 11px; }
+.sample-activity { border-top: 1px solid #ded8cf; margin-top: 14px; padding-top: 16px; }
+.sample-activity small { font-size: 10px; letter-spacing: .08em; }
+.sample-activity p { font-size: 13px; margin-top: 8px; }
+.agents-card.paused .sample-activity { color: #746044; }

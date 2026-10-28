@@ -168,7 +168,7 @@ test("homepage: shared-space examples, honest access, safe prompts and self-cont
   assert.doesNotMatch(html + js, /Plan a trip|weekend away|data-scenario="launch"/i);
   assert.match(html, /href="\/onboarding"/);
   assert.match(html, /href="\/app"/);
-  const caveat = "Today, agents that follow LogMem pause and ask before anything that can’t be undone, and LogMem does not stop an agent that skips that ask.";
+  const caveat = "Revoke a workspace key to stop requests that use it. Review access changes in the audit history. The starting prompt tells agents to ask before external actions. Prompt guidance cannot enforce an agent’s external actions.";
   assert.equal(html.split(caveat).length - 1, 1);
   assert.match(html, /Illustrative controls/);
   assert.match(js, /This guide has not connected an agent/);

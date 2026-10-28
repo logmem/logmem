@@ -581,6 +581,8 @@
 .lmx-verdict[data-v="approve"]{color:var(--success);border-color:var(--success)}
 .lmx-verdict[data-v="reject"]{color:var(--danger);border-color:var(--danger)}
 
+.lmx-coverage-note { border: 1px solid var(--border); border-left: 3px solid var(--brand); border-radius: var(--radius-md); padding: 16px 18px; background: var(--surface); font-size: 13px; line-height: 1.6; }
+.lmx-coverage-note p { margin: 4px 0; }
 /* Data views: handoff map, time scrubber, fleet pulse, blocker map. Colours come from tokens, so light and dark both work. */
 .lmx-flow{display:block;padding:18px;margin:0 0 16px}
 .lmx-flowhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}

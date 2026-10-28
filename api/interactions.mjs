@@ -17,7 +17,7 @@ export function createHandler(deps={}){return async(req,res)=>{
   if(write)requireIntent(req,'interactions');
   let store,by,manager,canWrite,viewer,control;
   if(customerRequest(req)){
-   viewer=await resolveViewer(req,{workspaceId:b.workspaceId,spaceId:b.spaceId,action:write?(b.action==='reassign'?'manage-members':'write'):'read'},deps);
+   viewer=await resolveViewer(req,{workspaceId:b.workspaceId,spaceId:b.spaceId,action:write?(['reassign','resolve'].includes(b.action)?'manage-members':'write'):'read'},deps);
    store=webStore(viewer.redis,viewer.namespace,{...env,LOGMEM_MIRROR_ACMI:''});by=viewer.person;manager=viewer.permissions.manage;canWrite=viewer.permissions.write;
    control=deps.redis||customerRedis(env);
    if(write&&b.action==='reassign'&&typeof b.to==='string'&&b.to.startsWith('human:'))await authorizeSpace({userId:b.to.slice(6),workspaceId:b.workspaceId,spaceId:b.spaceId,action:'write'},{redis:control});

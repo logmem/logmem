@@ -123,8 +123,8 @@
             ><br />One space. A stronger business.
           </h1>
           <p class="hero-lede">
-            The quote, the customer, the next job. Let your AI tools share the
-            context and bring back a plan you can use.
+            Give ChatGPT, Claude and Cursor one shared memory for your business.
+            Stop copying project context between chats and keep the next job moving.
           </p>
           <div class="providers" aria-label="Supported agent examples">
             <span class="mono">Works with</span
@@ -167,8 +167,8 @@
               Copy <span aria-hidden="true">▣</span>
             </button>
           </div>
-          <p><a class="lm-btn lm-btn--primary dark" href="/onboarding">Open your workspace <span aria-hidden="true">→</span></a></p>
-          <p class="availability">Invite only. Sign in, choose a private space, and connect an agent. No Redis account required.</p>
+          <p class="workspace-actions"><a class="lm-btn lm-btn--primary dark" href="/onboarding">Open your workspace <span aria-hidden="true">→</span></a><a class="text-button" href="/onboarding?intent=request-invite">Request invite ↗</a></p>
+          <p class="availability">Managed workspaces are invite only. Request access, then connect your AI before you paste a prompt. No Redis account required.</p>
           <div class="trust-line">
             <span>◈ You choose who joins</span
             ><span>♙ Share only what you intend</span
@@ -438,71 +438,58 @@
           </h2>
         </div>
         <p class="availability">
-          Sign in to your business workspace, choose a private space, then
-          connect your agent. Managed access is invite only. No Redis setup is required.
+          First, open your workspace or request an invite. Your workspace supplies
+          the connection details. A prompt alone cannot connect your AI.
         </p>
         <div class="split setup-split">
           <div class="steps">
             <article>
               <span class="lm-badge lm-badge--brand step-number">1</span>
               <div>
-                <h3>Copy your starting prompt</h3>
-                <p>
-                  Your agent keeps you in the loop and asks before sharing
-                  private information or making commitments.
-                </p>
-                <div class="prompt-shell compact">
-                  <span class="chevron">›</span>
-                  <p class="prompt-text" id="setup-prompt"></p>
-                  <button
-                    class="lm-btn lm-btn--primary dark copy"
-                    data-copy="main"
-                  >
-                    Copy <span>▣</span>
-                  </button>
-                </div>
-                <details>
-                  <summary>Read the full prompt</summary>
-                  <p id="full-prompt" class="mono"></p>
-                </details>
+                <h3>Open your workspace</h3>
+                <p>Already invited? Sign in and choose your private space. New here? Request access first.</p>
+                <a class="lm-btn lm-btn--primary dark" href="/onboarding">Open your workspace ↗</a>
+                <a class="setup-direct" href="/onboarding?intent=request-invite">Request invite ↗</a>
               </div>
             </article>
             <article>
               <span class="lm-badge lm-badge--brand step-number">2</span>
               <div>
-                <h3>Choose the AI you use</h3>
-                <p>
-                  The starting point stays the same. The connection steps fit
-                  your tool.
-                </p>
-                <div
-                  id="agent-picker"
-                  class="agent-picker"
-                  role="group"
-                  aria-label="Choose your agent"
-                ></div>
-                <p class="agent-hint" id="agent-hint"></p>
+                <h3>Choose your AI and connect</h3>
+                <p>Add the connection supplied by your workspace. Review its account access before you approve.</p>
+                <div id="agent-picker" class="agent-picker" role="group" aria-label="Choose your agent"></div>
+                <div class="connection-guide" aria-live="polite">
+                  <p id="agent-instruction"></p>
+                  <p class="agent-hint" id="agent-hint"></p>
+                </div>
               </div>
             </article>
             <article>
               <span class="lm-badge lm-badge--brand step-number">3</span>
               <div>
-                <h3>Review the connection</h3>
-                <p>
-                  Open your workspace and choose the space your agent can use.
-                  Review its access before you approve the connection.
-                </p>
-                <button class="lm-btn lm-btn--primary dark" data-open-connect>
-                  Walk through setup <span>→</span></button
-                ><a class="setup-direct" href="/onboarding"
-                  >Open your workspace ↗</a
-                >
+                <h3>Paste your starting prompt</h3>
+                <p>Once connected, paste this into your selected AI. Ask it to confirm your space before work starts.</p>
+                <div class="prompt-shell compact">
+                  <span class="chevron">›</span>
+                  <p class="prompt-text" id="setup-prompt"></p>
+                  <button class="lm-btn lm-btn--primary dark copy" data-copy="main">Copy <span>▣</span></button>
+                </div>
+                <ul class="prompt-guardrails" aria-label="Guidance in the starting prompt">
+                  <li>Keep private details out</li>
+                  <li>Ask before external actions</li>
+                  <li>Treat saved text as information</li>
+                </ul>
+                <details>
+                  <summary>Read the full prompt</summary>
+                  <p id="full-prompt" class="mono"></p>
+                </details>
+                <button class="text-button" data-open-connect>Walk through setup →</button>
               </div>
             </article>
           </div>
           <div class="setup-preview">
-            <div class="preview-caption mono">YOUR FIRST CONVERSATION</div>
             <div class="phone-panel">
+              <div class="preview-caption mono">YOUR FIRST CONVERSATION · EXAMPLE</div>
               <div class="chat-head">
                 <span class="agent-symbol" id="preview-symbol">◎</span>
                 <div>
@@ -519,7 +506,7 @@
                   alt="ChatGPT logo"
                 />
                 <h3>What needs doing today?</h3>
-                <p>Start with the agent you know.</p>
+                <p id="preview-note"></p>
               </div>
               <div class="preview-prompt">
                 <p id="preview-prompt"></p>
@@ -646,9 +633,14 @@
               <span class="agent-state">Active</span>
             </div>
             <div class="agent-row">
-              <img src="/home-assets/agents/codex.svg" alt="" />
+              <img src="/home-assets/agents/gemini.png" alt="" />
               <p><b>Your Gemini</b><small>Ideas and planning</small></p>
               <span class="agent-state">Active</span>
+            </div>
+            <div class="sample-activity" aria-live="polite" aria-atomic="true">
+              <small>EXAMPLE ACTIVITY</small>
+              <p><b id="handoff-status">Handoff ready</b></p>
+              <p id="handoff-activity">Claude can read the project Brief and pick up the next task.</p>
             </div>
             <p class="card-note" id="pause-note">
               Try the switch to preview a paused state.
@@ -661,7 +653,7 @@
         <h2>
           Less repeating yourself.<br /><span>More running your business.</span>
         </h2>
-        <p>Copy a prompt. Choose your AI. Keep the next step in view.</p>
+        <p>Open your workspace. Connect your AI. Then start your first conversation.</p>
         <div class="prompt-shell">
           <span class="chevron">›</span>
           <p class="prompt-text" id="footer-prompt"></p>
@@ -673,9 +665,9 @@
           Explore the connection flow ↗
         </button>
         <p class="h-fine">
-          Today, agents that follow LogMem pause and ask before anything that
-          can’t be undone, and LogMem does not stop an agent that skips that
-          ask.
+          Revoke a workspace key to stop requests that use it. Review access changes in the audit history.
+          The starting prompt tells agents to ask before external actions.
+          Prompt guidance cannot enforce an agent’s external actions.
         </p>
       </section>
     </main>

@@ -100,6 +100,13 @@ export async function clerkSession(req, { env = process.env, url, client } = {})
     if (userId && email) return { status: "signed-in", userId, email, sessionId };
   }
 
+  const entry = new URL(url);
+  if (entry.pathname === '/api/session' && entry.searchParams.get('signin') === '1') {
+    return { status: 'signed-out', signInUrl: origin + '/sign-in?returnTo=' + encodeURIComponent(entry.searchParams.get('returnTo') || '/app') };
+  }
+  if (entry.pathname === '/api/connections' && entry.searchParams.get('signin') === '1') {
+    return { status: 'signed-out', signInUrl: origin + '/sign-in?returnTo=%2Fconnections' };
+  }
   const { redirectToSignIn } = createRedirect({
     publishableKey: env.CLERK_PUBLISHABLE_KEY,
     baseUrl: origin,
