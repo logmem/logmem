@@ -62,7 +62,7 @@ export function fleetPulse({ entries, agents = [], win = 24, sel = '', setWin, p
       <div class="lmx-filter" role="group" aria-label="Pulse window">${[24, 6].map(h => pill(`Last ${h} h`, win === h, () => setWin(h)))}</div></div>
     <div class="lmx-lanes">${lanes.map(l => html`<div class="lmx-lane" data-dim=${String(!!sel && sel !== l.id)}>
       <button type="button" class="lmx-lanename mono" aria-pressed=${String(sel === l.id)} @click=${() => pick(sel === l.id ? '' : l.id)}>${l.id}</button>
-      <div class="lmx-lanetrack">${l.quiet.map(q => html`<span class="lmx-quiet" style=${`left:${q.left}%;width:${q.width}%`}>${q.width > 22 ? `quiet ${q.hours} h` : ''}</span>`)}${l.bars.map(b => html`<i class="lmx-bar" style=${`left:${b.left}%;width:${b.width}%`}></i>`)}${l.recaps.map(r => html`<i class="lmx-recap" style=${`left:calc(${r}% - 6px)`}></i>`)}</div>
+      <div class="lmx-lanetrack">${l.quiet.map(q => html`<span class="lmx-quiet" style=${`left:${q.left}%;width:${q.width}%`}>${q.width > 22 ? `quiet ${q.hours} h` : ''}</span>`)}${l.bars.map(b => html`<i class="lmx-bar" style=${`left:${b.left}%;width:${b.width}%`}></i>`)}${l.recaps.map(r => html`<i class="lmx-pulse-recap" style=${`left:calc(${r}% - 6px)`}></i>`)}</div>
       <span class="lmx-lanestate" data-live=${String(l.live)}>${l.state}</span></div>`)}</div>
     <div class="lmx-laneaxis mono">${pulseAxis(win).map(a => html`<span>${a}</span>`)}</div>
     <ul class="lmx-flowkey"><li><i data-k="bar"></i>Writing</li><li><i data-k="recap"></i>Recap</li><li><i data-k="quiet"></i>Quiet ${6} hours or more</li></ul>

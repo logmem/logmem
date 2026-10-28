@@ -149,6 +149,19 @@ export function workMatch(job, mode, late = () => false) {
     default: return job.stage === 'active' || (job.stage === 'blocked' && !parked(job));
   }
 }
+export const BOARD_FILTERS = [['all', 'All'], ['attention', 'Needs attention'], ['late', 'Late / overdue'], ['blocked', 'Blocked']];
+/** Board filter. Needs attention means blocked, overdue or flagged stale, and never done. */
+export function boardMatch(job, mode, late = () => false, stale = () => false) {
+  if (mode === 'late') return job.stage !== 'done' && Boolean(late(job));
+  if (mode === 'blocked') return job.stage === 'blocked' && !parked(job);
+  if (mode === 'attention') return job.stage !== 'done' && ((job.stage === 'blocked' && !parked(job)) || Boolean(late(job)) || Boolean(stale(job)));
+  return true;
+}
+export function boardCounts(list = [], late = () => false, stale = () => false) {
+  const out = {};
+  for (const [mode] of BOARD_FILTERS) out[mode] = list.filter(job => boardMatch(job, mode, late, stale)).length;
+  return out;
+}
 export function workCounts(list = [], late = () => false) {
   const counts = {};
   for (const [mode] of WORK_MODES) counts[mode] = list.filter(job => workMatch(job, mode, late)).length;
