@@ -259,12 +259,19 @@ export function agentColor(id) {
   for (const ch of String(id ?? '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
+/** Split decision rows: agents with something waiting float up. The rest become one summary line. */
+export function splitDecisionRows(rows = []) {
+  const count = row => row.nodes.filter(n => n.state === 'pending').length;
+  const waiting = rows.filter(r => count(r) > 0).map(r => ({ ...r, pending: count(r) }));
+  const clear = rows.filter(r => count(r) === 0).map(r => ({ agent: r.agent, decided: r.nodes.length }));
+  return { waiting, clear };
+}
 /** One row per asking agent, with a node for each waiting or settled decision. Busiest rows first. */
 export function decisionGraph(waiting = [], decided = [], { rows = 8, perRow = 14 } = {}) {
   const by = new Map();
   const add = (ask, state) => {
     const id = String(ask?.by ?? 'unknown'), row = by.get(id) || { agent: id, nodes: [] };
-    row.nodes.push({ trail: ask?.trail, summary: ask?.summary, state });
+    row.nodes.push({ trail: ask?.trail, summary: ask?.summary, ts: Number(ask?.ts) || null, state });
     by.set(id, row);
   };
   waiting.forEach(ask => add(ask, 'pending'));
