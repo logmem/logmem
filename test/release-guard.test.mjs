@@ -40,3 +40,15 @@ test("wrong vercel project or org is rejected, production target passes", () => 
   assert.equal(checkProject({ projectId: "prj_someone_elses", orgId: [...ALLOWED_ORGS][0] }).ok, false);
   assert.equal(checkProject({ projectId: [...ALLOWED_PROJECTS][0], orgId: "team_wrong" }).ok, false);
 });
+
+test("canonical repository accepts the four logmem URLs and rejects others", async () => {
+  const { checkRepository } = await import("../scripts/release-guard.mjs");
+  for (const url of [
+    "https://github.com/logmem/logmem.git",
+    "https://github.com/logmem/logmem",
+    "git@github.com:logmem/logmem.git",
+    "ssh://git@github.com/logmem/logmem.git",
+  ]) assert.equal(checkRepository(url).ok, true, url);
+  assert.equal(checkRepository("https://github.com/someone/fork.git").ok, false);
+  assert.equal(checkRepository(null).ok, false);
+});
