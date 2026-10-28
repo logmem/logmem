@@ -654,6 +654,93 @@
 .lmx-flowprompt{margin:0;font:11px/1.45 var(--font-mono);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
 @media (prefers-reduced-motion:reduce){.lmx-flow *{transition:none!important;animation:none!important}}
 
+/* Flow views: handoff focus and matrix, blocker kinds, fleet pulse density. */
+:root{--kind-vendor:#3A5A8C;--kind-vendor-subtle:#E3EAF5;--kind-agent:#6B4FBF;--kind-agent-subtle:#ECE6FA}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--kind-vendor:#8FB0E8;--kind-vendor-subtle:#1B2840;--kind-agent:#B79CFF;--kind-agent-subtle:#2A2144}}
+:root[data-theme="dark"]{--kind-vendor:#8FB0E8;--kind-vendor-subtle:#1B2840;--kind-agent:#B79CFF;--kind-agent-subtle:#2A2144}
+.lmx-pillcount{font:600 11px var(--font-mono);margin-left:4px;opacity:.85}
+.lmx-node[role="button"]{cursor:pointer;transition:opacity .15s}
+.lmx-node[data-dim="true"]{opacity:.2}
+.lmx-node:focus-visible circle{outline:2px solid var(--focus);outline-offset:3px}
+.lmx-node .lmx-badge circle{fill:var(--brand);stroke:var(--surface);stroke-width:2}
+.lmx-node .lmx-badge[data-late="true"] circle{fill:var(--warning)}
+.lmx-badgen{text-anchor:middle;font:700 11px var(--font-mono);fill:var(--on-brand)}
+.lmx-badge[data-late="true"] .lmx-badgen{fill:var(--surface)}
+.lmx-arc[data-who="person"]{stroke:var(--warning)}
+.lmx-arc{transition:opacity .15s}
+.lmx-flowsvg .lmx-arc[data-band="slow"],.lmx-flowsvg .lmx-arc[data-band="stale"]{stroke-dasharray:9 6;animation:lmx-dash 1.4s linear infinite}
+@keyframes lmx-dash{to{stroke-dashoffset:-30}}
+@media (prefers-reduced-motion:reduce){.lmx-flowsvg .lmx-arc{animation:none}.lmx-bubble .lmx-bubblering{animation:none!important}}
+.lmx-matrixwrap{overflow:auto;max-width:100%}
+.lmx-matrix{border-collapse:separate;border-spacing:3px;font-size:12px}
+.lmx-matrix caption{text-align:left;padding-bottom:8px}
+.lmx-matrix th[scope="col"]{vertical-align:bottom;padding-bottom:4px}
+.lmx-matrix th[scope="col"] span{display:block;writing-mode:vertical-rl;transform:rotate(180deg);font:12px var(--font-mono);color:var(--text-muted);white-space:nowrap}
+.lmx-matrix th[scope="row"]{text-align:right;font:12px var(--font-mono);color:var(--text-muted);padding-right:8px;white-space:nowrap;position:sticky;left:0;background:var(--surface)}
+.lmx-matrix td{width:34px;height:34px;padding:0}
+.lmx-cellempty{background:var(--surface-sunken);border-radius:6px;opacity:.6}
+.lmx-cell{width:34px;height:34px;border-radius:6px;border:1px solid transparent;font:700 13px var(--font-mono);cursor:pointer;color:var(--on-brand);background:var(--brand)}
+.lmx-cell[data-band="slow"]{background:var(--warning);color:var(--surface)}
+.lmx-cell[data-band="stale"]{background:var(--danger);color:var(--surface)}
+.lmx-cell[aria-pressed="true"]{outline:3px solid var(--text);outline-offset:1px}
+.lmx-cell:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-bubble{transition:opacity .15s}
+.lmx-bubble[data-dim="true"]{opacity:.2}
+.lmx-bubble[data-kind="person"] circle{stroke:var(--warning);fill:var(--warning-subtle)}
+.lmx-bubble[data-kind="vendor"] circle{stroke:var(--kind-vendor);fill:var(--kind-vendor-subtle)}
+.lmx-bubble[data-kind="agent"] circle{stroke:var(--kind-agent);fill:var(--kind-agent-subtle)}
+.lmx-bubble[data-on="true"] circle{stroke-width:4}
+.lmx-bubble[data-kind] .lmx-bubblering{fill:none;stroke-width:3;opacity:0;transform-box:fill-box;transform-origin:center}
+.lmx-bubble[data-kind="person"] .lmx-bubblering{stroke:var(--warning)}
+.lmx-bubble[data-kind="vendor"] .lmx-bubblering{stroke:var(--kind-vendor)}
+.lmx-bubble[data-kind="agent"] .lmx-bubblering{stroke:var(--kind-agent)}
+.lmx-bubble[data-late="true"] .lmx-bubblering{animation:lmx-ring 1.8s ease-out infinite}
+@keyframes lmx-ring{0%{opacity:.85;transform:scale(1)}100%{opacity:0;transform:scale(1.3)}}
+.lmx-bubble[data-kind="person"] .lmx-kindbadge circle{fill:var(--warning);stroke:var(--surface);stroke-width:2}
+.lmx-bubble[data-kind="vendor"] .lmx-kindbadge circle{fill:var(--kind-vendor);stroke:var(--surface);stroke-width:2}
+.lmx-bubble[data-kind="agent"] .lmx-kindbadge circle{fill:var(--kind-agent);stroke:var(--surface);stroke-width:2}
+.lmx-kindbadge text{text-anchor:middle;font:700 11px var(--font-mono);fill:var(--surface)}
+.lmx-kindtag{display:inline-block;border-radius:999px;padding:1px 9px;font:600 11px var(--font-sans);color:var(--surface);background:var(--warning)}
+.lmx-kindtag[data-kind="vendor"]{background:var(--kind-vendor)}
+.lmx-kindtag[data-kind="agent"]{background:var(--kind-agent)}
+.lmx-preview summary{cursor:pointer;font-size:12px;color:var(--text-muted);min-height:28px;display:list-item}
+.lmx-flowprompt[data-kind]{border-left:3px solid var(--warning)}
+.lmx-flowprompt[data-kind="vendor"]{border-left-color:var(--kind-vendor)}
+.lmx-flowprompt[data-kind="agent"]{border-left-color:var(--kind-agent)}
+.lmx-lane{grid-template-columns:132px minmax(0,1fr) 150px}
+.lmx-laneaxis{margin:6px 162px 0 144px}
+@media (max-width:620px){.lmx-lane{grid-template-columns:96px minmax(0,1fr)}.lmx-laneaxis{margin:6px 0 0 108px}}
+.lmx-bar{min-width:12px;background:color-mix(in srgb,var(--brand) 78%,var(--surface-sunken))}
+.lmx-bar[data-level="one"]{background:color-mix(in srgb,var(--brand) 45%,var(--surface-sunken))}
+.lmx-bar[data-level="many"]{background:var(--brand);box-shadow:0 0 8px var(--brand)}
+.lmx-quiet{background:color-mix(in srgb,var(--warning) 14%,transparent)}
+.lmx-lanestate{text-align:right;justify-self:end;min-width:112px;white-space:nowrap}
+.lmx-lanestate[data-s="long"]{background:var(--warning-subtle);color:var(--warning)}
+.lmx-lanestate[data-s="empty"]{background:none;color:var(--text-subtle)}
+.lmx-flowkey i[data-k="dot"]{width:12px;height:12px;border-radius:50%}
+.lmx-flowkey i[data-k="dot"][data-level="one"]{background:color-mix(in srgb,var(--brand) 45%,var(--surface-sunken))}
+.lmx-flowkey i[data-k="dot"][data-level="few"]{background:color-mix(in srgb,var(--brand) 78%,var(--surface-sunken))}
+.lmx-flowkey i[data-k="dot"][data-level="many"]{background:var(--brand);box-shadow:0 0 6px var(--brand)}
+.lmx-emptylanes{margin-top:10px}
+.lmx-emptylanes summary{cursor:pointer;font-size:13px;color:var(--text-muted);min-height:32px;display:list-item}
+.lmx-emptylanes .lmx-filter{margin-top:6px}
+
+/* Decision map: pending badges, an all-clear line and the focused card. */
+.lmx-neural-badgebg{fill:var(--warning-subtle);stroke:var(--warning);stroke-width:1}
+.lmx-neural-badge{text-anchor:middle;font:700 11px var(--font-mono);fill:var(--warning)}
+.lmx-neural-clear{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:10px 0 0;font-size:13px;color:var(--text-muted)}
+.lmx-neural-clear>b{color:var(--success);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.lmx-neural-chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:2px 10px;font:12px var(--font-mono);background:var(--surface)}
+.lmx-neural-chip i{font-style:normal;color:var(--text-subtle)}
+.lmx-flowkey i[data-k="pend"]{background:var(--warning);box-shadow:0 0 6px var(--warning)}
+.lmx-flowkey i[data-k="done"]{background:var(--text-subtle)}
+[data-key^="decision:"]{transition:opacity .2s,box-shadow .2s}
+.lmx-focusing [data-key^="decision:"]:not(.lmx-focus){opacity:.25}
+.lmx-focus[data-key^="decision:"]{box-shadow:0 0 0 2px var(--warning),0 0 18px color-mix(in srgb,var(--warning) 55%,transparent)}
+.lmx-focus .lm-btn--primary{animation:lmx-btnpulse 1.2s ease-in-out infinite}
+@keyframes lmx-btnpulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 55%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+@media (prefers-reduced-motion:reduce){.lmx-focus .lm-btn--primary{animation:none}[data-key^="decision:"]{transition:none}}
+
 /* Compact coordination components. Every theme keeps its own readable surface. */
 .lmx-ticket{border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:inset 0 0 0 3px var(--bg);overflow:visible;min-width:0}
 [data-app-theme="midnight"] .lmx-ticket{background:#0e1111}

@@ -7,8 +7,8 @@ const H = 3600000, DAY = 86400000;
 const bare = id => String(id ?? '').replace(/^(agent|human):/, '');
 
 // ---- Handoff map ----
-/** Age band: fresh under 3 days, slow to 7 days, stale after that. */
-export const ageBand = days => (days > 7 ? 'stale' : days > 3 ? 'slow' : 'fresh');
+/** Age band: fresh under 1 day, slow to 7 days, stale after that. */
+export const ageBand = days => (days > 7 ? 'stale' : days > 1 ? 'slow' : 'fresh');
 export function ageLabel(ms) {
   const d = ms / DAY;
   return d >= 1 ? Math.round(d) + ' d' : Math.max(1, Math.round(ms / H)) + ' h';
@@ -26,6 +26,36 @@ export function handoffArcs(items = [], now = Date.now()) {
     .sort((a, b) => b.age - a.age);
 }
 export const arcAgents = arcs => [...new Set(arcs.flatMap(a => [a.from, a.to]))].sort();
+/** Arcs that start or end at agent. An empty agent keeps every arc. */
+export const involves = (arc, agent) => !agent || arc.from === agent || arc.to === agent;
+/** Queue items for one agent, or for one sender and receiver pair. Pair wins over agent. */
+export function matchHandoff(item, agent = '', pair = null) {
+  const from = bare(item.from), to = bare(item.to);
+  if (pair) return from === pair.from && to === pair.to;
+  return !agent || from === agent || to === agent;
+}
+/** Per agent: how many handoffs wait on it, and how many of those are past a day. */
+export function waitingOn(arcs) {
+  const by = new Map();
+  for (const a of arcs) {
+    const w = by.get(a.to) || { count: 0, late: 0 };
+    w.count++;
+    if (a.band !== 'fresh') w.late++;
+    by.set(a.to, w);
+  }
+  return by;
+}
+/** Sender by receiver grid. Each cell holds the count and the band of its oldest handoff. */
+export function handoffMatrix(arcs) {
+  const cells = new Map();
+  for (const a of arcs) {
+    const key = a.from + '>' + a.to, c = cells.get(key) || { from: a.from, to: a.to, count: 0, age: 0, band: 'fresh', label: '' };
+    c.count++;
+    if (a.age >= c.age) { c.age = a.age; c.band = a.band; c.label = a.label; }
+    cells.set(key, c);
+  }
+  return { names: arcAgents(arcs), cells };
+}
 /** Place n nodes on a circle, first one at the top. */
 export function ringPoints(n, cx, cy, r) {
   return Array.from({ length: n }, (_, i) => {
@@ -77,8 +107,8 @@ export function pulseLanes(entries = [], windowHours = 24, now = Date.now(), age
     const runs = [];
     for (const r of rows) {
       const last = runs[runs.length - 1];
-      if (last && r.ts - last.end <= SHIFT_GAP_MS) last.end = r.ts;
-      else runs.push({ start: r.ts, end: r.ts });
+      if (last && r.ts - last.end <= SHIFT_GAP_MS) { last.end = r.ts; last.n++; }
+      else runs.push({ start: r.ts, end: r.ts, n: 1 });
     }
     const quiet = [];
     let cursor = from;
@@ -89,25 +119,59 @@ export function pulseLanes(entries = [], windowHours = 24, now = Date.now(), age
     const lastTs = rows.length ? rows[rows.length - 1].ts : null, ago = lastTs == null ? null : now - lastTs;
     return {
       id, empty: !rows.length,
-      bars: runs.map(r => ({ left: pos(r.start), width: Math.max(pos(r.end) - pos(r.start), 0.8) })),
+      count: rows.length,
+      bars: runs.map(r => ({ left: pos(r.start), width: Math.max(pos(r.end) - pos(r.start), 0.8), n: r.n, level: r.n >= 5 ? 'many' : r.n >= 2 ? 'few' : 'one' })),
       recaps: rows.filter(r => r.kind === 'recap').map(r => pos(r.ts)),
       quiet: quiet.map(q => ({ left: pos(q.start), width: pos(q.end) - pos(q.start), hours: q.hours })),
       state: lastTs == null ? 'No entries in this window' : ago < 15 * 60000 ? 'Wrote just now' : ago < H ? `Quiet ${Math.round(ago / 60000)} m` : `Quiet ${Math.round(ago / H)} h`,
       live: ago != null && ago < 15 * 60000,
+      status: lastTs == null ? 'empty' : ago < 15 * 60000 ? 'live' : ago >= QUIET_HOURS * H ? 'long' : 'quiet',
     };
   }).sort((a, b) => Number(a.empty) - Number(b.empty) || (b.live - a.live) || a.id.localeCompare(b.id));
+}
+/** Lane counts for the filter pills. Live is a subset of active. */
+export function laneCounts(lanes) {
+  return { all: lanes.length, live: lanes.filter(l => l.live).length, quiet: lanes.filter(l => !l.empty && !l.live).length, active: lanes.filter(l => !l.empty).length, empty: lanes.filter(l => l.empty).length };
+}
+/** Which lanes a view shows inline. Active hides the empty ones, which the page tucks in a drawer. */
+export function laneView(lanes, show) {
+  if (show === 'all') return lanes;
+  if (show === 'live') return lanes.filter(l => l.live);
+  if (show === 'quiet') return lanes.filter(l => !l.empty && !l.live);
+  return lanes.filter(l => !l.empty);
 }
 export function pulseAxis(windowHours, steps = 4) {
   return Array.from({ length: steps + 1 }, (_, i) => (i === steps ? 'now' : Math.round(windowHours - (i * windowHours) / steps) + ' h ago'));
 }
 
 // ---- Blocker map ----
+export const KIND_LABEL = { person: 'Waiting on a person', vendor: 'Billing and infrastructure', agent: 'Agent handoffs' };
+const PERSON_NOTE = /\b(waits?\s+for|needs?|awaiting)\s+(mikey|michael|a person|the operator|operator|a human|human|you)\b/i;
+const VENDOR_NOTE = /\b(billing|payment|invoice|credits?|quota|subscription|plan limit|rate limit|tokens?|expired|expiry|api key|secret|oauth|infisical|vercel|github|openai|anthropic|stripe|clerk|dns|domain|certificate)\b/i;
+/** A guess from the job's type and blocker text: person, vendor (billing or infrastructure) or agent. */
+export function blockerKind(job) {
+  const note = blockerNote(job);
+  if (['task', 'decision'].includes(job.blocked_on?.type) || PERSON_NOTE.test(note)) return 'person';
+  return VENDOR_NOTE.test(note) ? 'vendor' : 'agent';
+}
+export const STALL_DAYS = 3;
+/** Jobs per kind, for the filter pills. */
+export function kindCounts(clusters) {
+  const n = { all: 0, person: 0, vendor: 0, agent: 0 };
+  for (const c of clusters) { n.all += c.jobs.length; n[c.kind] += c.jobs.length; }
+  return n;
+}
 /** Blocked jobs that wait on the same text become one bubble. Parked jobs are left out. */
-export function blockerClusters(jobs = []) {
-  return groupBlockers(jobs, blockerNote).map(c => ({...c,
-    who: c.jobs.some(j => ['task','decision'].includes(j.blocked_on?.type)) ? 'person' : 'agent',
-    radius: Math.round(22 + 8 * Math.sqrt(c.jobs.length)),
-  }));
+export function blockerClusters(jobs = [], now = Date.now()) {
+  return groupBlockers(jobs, blockerNote).map(c => {
+    const kinds = new Set(c.jobs.map(blockerKind));
+    return {...c,
+      who: c.jobs.some(j => ['task','decision'].includes(j.blocked_on?.type)) ? 'person' : 'agent',
+      kind: kinds.has('person') ? 'person' : kinds.has('vendor') ? 'vendor' : 'agent',
+      late: c.jobs.some(j => { const since = Number(j.since); return Number.isFinite(since) && since > 0 && now - since > STALL_DAYS * DAY; }),
+      radius: Math.round(22 + 8 * Math.sqrt(c.jobs.length)),
+    };
+  });
 }
 /** The text the Copy button puts on the clipboard. It starts nothing. */
 export function unblockPrompt(cluster, space) {
