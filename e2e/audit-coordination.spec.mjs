@@ -12,9 +12,9 @@ test('audit does not present partial empty coverage as an empty backlog',async({
 test('audit shows a real future deadline and links beyond its first page',async({page})=>{
  const deadline=Date.now()+3600000;
  await audit(page,{coverage:'full',pending:{items:[{id:'ci_'+'b'.repeat(24),summary:'Confirm the supplier quote',from:'agent:one',to:'agent:two',where:'job:quote',type:'handoff',created_at:Date.now(),deadline}],total:51,cursor:'1',counts:{handoffs:51,overdue:0}}});
- await signIn(page);await expect(page.getByText('Confirm the supplier quote',{exact:true})).toBeVisible();
+ await signIn(page);await expect(page.locator('.lmx-health-row>summary').getByText('Confirm the supplier quote',{exact:true})).toBeVisible();
  await expect(page.getByText('Showing 1 of 51 returned records.',{exact:true})).toBeVisible();
- await expect(page.locator('td').filter({hasText:new Date(deadline).getFullYear().toString()})).toHaveCount(1);
+ await expect(page.locator('.lmx-health-deadline').filter({hasText:new Date(deadline).getFullYear().toString()})).toHaveCount(1);
  await expect(page.getByText(/due in .*ago/)).toHaveCount(0);
  await expect(page.getByRole('link',{name:'Review requests in Inbox'})).toHaveAttribute('href','#/queue');
 });
@@ -56,6 +56,7 @@ test('Health shows measured counts and distinguishes historical source handoffs'
  await expect(summary).toContainText('Open coordination');
  await expect(summary).toContainText('Agents with saved checks');
  await expect(summary).toContainText('7');
+ await page.locator('.lmx-health-row>summary').click();
  await expect(page.getByRole('link',{name:'Read source handoff'})).toHaveAttribute('href','#/agent/codex');
  await expect(page.getByText('Provider usage Not connected',{exact:true})).toHaveCount(0);
 });
