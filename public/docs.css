@@ -359,3 +359,5 @@ pre.code-block {
     border-bottom: 1px solid var(--border);
   }
 }
+
+.docs-header{position:relative}

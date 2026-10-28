@@ -25,3 +25,15 @@ pre.code{margin:0;padding:12px 14px;background:var(--surface-sunken);border:1px 
 /* logos: dark ink files on light grounds, reversed files on dark grounds */
 .logo-d{display:none!important}
 @media (prefers-color-scheme:dark){.logo-l{display:none!important}.logo-d{display:inline-block!important}}
+
+/* fun-sticker: floating agent marks, same look as the home page. Decorative only. */
+.fun-sticker{position:absolute;pointer-events:none;padding:12px;border:4px solid var(--surface);border-radius:30%;box-shadow:0 10px 18px #143e3321,inset 0 2px 2px #fff;animation:fun-float 7s ease-in-out infinite}
+.fun-sticker img{width:100%;height:100%;object-fit:contain;display:block}
+.fun-sticker--1{width:72px;height:72px;right:20px;top:14px;transform:rotate(10deg);background:linear-gradient(135deg,#f1e9e1,#dfc1ae)}
+.fun-sticker--2{width:58px;height:58px;right:104px;top:34px;transform:rotate(-9deg);animation-delay:-2s;background:linear-gradient(135deg,#e2ede8,#b4cfc7)}
+.fun-sticker--3{width:50px;height:50px;right:168px;top:10px;transform:rotate(7deg);animation-delay:-4s;background:linear-gradient(135deg,#e3eaf6,#b9c8e6)}
+@keyframes fun-float{0%,100%{translate:0 0}50%{translate:0 -10px}}
+@media (prefers-reduced-motion:reduce){.fun-sticker{animation:none}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .fun-sticker{border-color:var(--surface-sunken);box-shadow:0 10px 18px #0006}}
+:root[data-theme="dark"] .fun-sticker{border-color:var(--surface-sunken);box-shadow:0 10px 18px #0006}
+@media (max-width:959px){.fun-sticker{display:none}}
