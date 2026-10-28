@@ -588,6 +588,10 @@
     else if (t.hasAttribute('data-go')) go(Number(t.getAttribute('data-go')));
   });
 
+  // The orb is decoration. If the module or WebGL fails, the step still works.
+  var orbHost = document.getElementById('ob-orb');
+  if (orbHost) import('/orb.js').then(function (m) { m.mount(orbHost, { theme: 'auto' }); }).catch(function () { /* no orb */ });
+
   renderPicks();
   if (new URLSearchParams(location.search).get('intent') === 'request-invite') choose('cloud');
   else go(0, { noFocus: true });

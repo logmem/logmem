@@ -198,3 +198,9 @@ body[data-ob-step]::before{content:"";position:fixed;inset:0;z-index:-1;pointer-
 @keyframes ob-pop{from{transform:scale(.94) rotate(-1deg);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.ob-card .lm-alert--success{animation:none}}
 @media (max-width:767px){.ob-card:not(.ob-fork)::before{inset:-4px}.ob-card:not(.ob-fork)::after{right:14px}}
+
+/* Say hello: a small orb next to the heading. It follows the pointer. */
+.ob-hello{display:flex;align-items:flex-start;gap:18px}
+.ob-orb{flex:none;width:88px;height:88px}
+.ob-hello>div:last-child{min-width:0}
+@media (max-width:520px){.ob-orb{width:64px;height:64px}.ob-hello{gap:12px}}
