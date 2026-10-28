@@ -95,6 +95,65 @@
 .ob-card h1[tabindex="-1"]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .ob-av1{background:var(--viz-1)}.ob-av2{background:var(--viz-2)}
 
+/* fork screen: hand-drawn chalkboard look. Colors are scoped here so light mode stays readable. */
+.ob-fork{--ob-teal:#1f8a83;--ob-amber:#a86b12;--ob-ink:var(--text)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ob-fork{--ob-teal:#4ecdc4;--ob-amber:#f7b731}}
+:root[data-theme="dark"] .ob-fork{--ob-teal:#4ecdc4;--ob-amber:#f7b731}
+body[data-ob-step="choose"]::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
+  background:
+    linear-gradient(90deg,rgba(128,128,128,.09) 1px,transparent 1px) 100% 0/44px 44px,
+    linear-gradient(0deg,rgba(128,128,128,.09) 1px,transparent 1px) 100% 0/44px 44px;
+  -webkit-mask-image:radial-gradient(ellipse 38% 40% at 100% 0,#000,transparent),radial-gradient(ellipse 38% 40% at 0 100%,#000,transparent);
+  mask-image:radial-gradient(ellipse 38% 40% at 100% 0,#000,transparent),radial-gradient(ellipse 38% 40% at 0 100%,#000,transparent)}
+.ob-fork{position:relative;padding:32px}
+.ob-fork-head{display:flex;flex-direction:column;gap:8px}
+.ob-fork-grid{align-items:stretch;gap:28px}
+.ob-choice{position:relative;display:flex;flex-direction:column;justify-content:space-between;gap:12px;padding-top:2rem}
+.ob-choice-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ob-cta{margin-top:auto;padding-top:4px;display:flex;flex-wrap:wrap;gap:8px}
+
+/* sketchy double-line frames: the real border is wobbly, a rotated ghost ring sits just outside */
+.ob-sketch{--c:var(--ob-teal);background:transparent;border:2px solid var(--c);border-radius:14px 9px 16px 8px / 9px 15px 8px 14px}
+.ob-sketch::before{content:"";position:absolute;inset:-6px;border:1.5px solid var(--c);opacity:.55;border-radius:10px 16px 9px 15px / 15px 9px 16px 10px;transform:rotate(-.5deg);pointer-events:none}
+.ob-sketch--amber{--c:var(--ob-amber)}
+.ob-sketch::after{content:"";position:absolute;width:16px;height:16px;left:-10px;top:-10px;border-top:2px solid var(--c);border-left:2px solid var(--c);border-radius:6px 0 0 0;transform:rotate(-8deg);pointer-events:none}
+.ob-sketch--amber::after{left:auto;right:-10px;border-left:0;border-right:2px solid var(--c);border-radius:0 6px 0 0;transform:rotate(8deg)}
+
+/* oval badges with radiating ticks */
+.ob-oval{position:relative;color:#101313;border:1.5px solid #101313;border-radius:55% 45% 52% 48% / 62% 58% 42% 38%;padding:2px 12px;font-weight:600;transform:rotate(-2deg)}
+.ob-oval--teal{background:#3b9c9c}
+.ob-oval--amber{background:#eab543}
+.ob-oval::before,.ob-oval::after{content:"";position:absolute;top:-5px;right:-3px;width:7px;height:2px;border-radius:2px;background:var(--ob-tick,currentColor);transform:rotate(-35deg)}
+.ob-oval::after{top:-9px;right:6px;transform:rotate(-80deg)}
+.ob-oval--teal{--ob-tick:var(--ob-teal)}.ob-oval--amber{--ob-tick:var(--ob-amber)}
+
+/* list markers: teal arrows that step over the card edge, amber stars */
+.ob-list--arrows,.ob-list--stars{list-style:none;padding-left:0;counter-reset:ob}
+.ob-list--arrows>li{counter-increment:ob;position:relative;padding-left:22px}
+.ob-list--arrows>li::before{content:"\2192 " counter(ob) ".";position:absolute;left:-12px;top:0;color:var(--ob-teal);font-weight:700;white-space:nowrap}
+.ob-list--arrows>li{padding-left:30px}
+.ob-list--stars>li{position:relative;padding-left:22px}
+.ob-list--stars>li::before{content:"\2734";position:absolute;left:0;top:0;color:var(--ob-amber)}
+
+/* buttons: solid teal with a ghost ring; dark button with a bold white double stroke */
+.ob-btn-ring{position:relative;border-radius:10px 7px 11px 8px / 8px 11px 7px 10px}
+.ob-btn-ring::after{content:"";position:absolute;inset:-4px;border:1.5px solid var(--ob-teal);border-radius:12px 9px 13px 9px / 9px 13px 9px 12px;transform:rotate(.6deg);pointer-events:none}
+.ob-btn-ring--white{border:2px solid var(--ob-ink)}
+.ob-btn-ring--white::after{border-color:var(--ob-ink);opacity:.7}
+.ob-scribble{text-decoration:none;background:linear-gradient(var(--ob-teal),var(--ob-teal)) 0 100%/100% 2px no-repeat;padding-bottom:2px;clip-path:none;border-radius:1px}
+
+/* sparkle doodles */
+.ob-doodle{position:absolute;pointer-events:none;color:var(--ob-amber)}
+.ob-doodle--a{top:22px;right:34px}
+.ob-doodle--b{top:58px;right:70px;color:var(--ob-teal)}
+.ob-doodle--c{bottom:18px;left:30px;color:var(--ob-teal)}
+
+/* the current step in the rail reads as a hand-drawn oval */
+.ob-step[aria-current]{position:relative;background:transparent;border:2px solid var(--ob-ink,var(--text));border-radius:28px 22px 30px 20px / 22px 28px 20px 26px}
+.ob-step[aria-current]::after{content:"";position:absolute;inset:-5px;border:1.5px solid var(--text);opacity:.5;border-radius:30px 24px 32px 22px / 24px 30px 22px 28px;transform:rotate(-.8deg);pointer-events:none}
+
+@media (max-width:959px){.ob-doodle--a,.ob-doodle--b{display:none}.ob-list--arrows>li::before{left:0}.ob-list--arrows>li{padding-left:34px}}
+
 @media (max-width:767px){
   .ob-layout{gap:16px;padding-top:20px;padding-bottom:40px}
   .ob-rail{max-width:none;flex-basis:100%}
@@ -105,6 +164,7 @@
   .ob-step-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .ob-rail-now{display:block}
   .ob-card{padding:20px 16px}
+  .ob-fork{padding:24px 16px 20px}
   .wrap.ob-layout,.wrap.ob-header-in{padding-left:16px;padding-right:16px}
   /* P1-3: 44x44 touch targets on phones */
   .lm{--control-h:var(--row-comfortable,44px)}

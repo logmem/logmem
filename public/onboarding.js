@@ -78,6 +78,7 @@
     state.i = Math.min(list.length - 1, Math.max(0, n));
     state.max = Math.max(state.max, state.i);
     var id = current();
+    document.body.setAttribute('data-ob-step', id);
     $$('[data-step]').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== id; });
     renderRail();
     onEnter(id);
