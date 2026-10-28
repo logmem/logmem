@@ -2,6 +2,8 @@
 // Pass state in, get a template back. Pickers call redraw(), so the host page owns the render.
 // Values reach the page only as text nodes or attribute values, never as HTML.
 import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
+import {agentDispatchButton} from './dispatch-components.js';
+import {clusterPrompt} from './dispatch-model.js';
 import { hhmm } from './core.js';
 import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, unblockPrompt } from './flow-model.js';
 
@@ -88,7 +90,7 @@ export function blockerMap({ jobs, space, sel = '', pick, copy }) {
         <p class="lmx-meta">${cur.who === 'person' ? 'Waits for a person.' : 'Waits for an agent or an outside step.'}</p>
         <div class="lmx-flowjobs">${cur.jobs.slice(0, 5).map(j => html`<a class="mono" href=${'#/job/' + encodeURIComponent(j.id)}>${j.id}</a>`)}${cur.jobs.length > 5 ? html`<span class="lmx-meta">+ ${cur.jobs.length - 5} more</span>` : nothing}</div>
         <pre class="lmx-flowprompt">${unblockPrompt(cur, space)}</pre>
-        <button type="button" class="lm-btn lm-btn--primary" @click=${() => copy(unblockPrompt(cur, space))}>Copy unblock prompt (${cur.jobs.length})</button>
+        ${agentDispatchButton(clusterPrompt(cur,space),'Copy unblock prompt ('+cur.jobs.length+')')}
         <p class="lmx-meta">Copy only puts the text on your clipboard. It does not start anything.</p>
       </div>
     </div></section>`;
