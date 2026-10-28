@@ -10,6 +10,17 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-24-dashboard-cockpit-html-design.md`
 
+## October 27 planning update
+
+Michael chose framework migration planning first.
+Use `2026-10-27-dashboard-framework-first-slice.md` for the first delivery slice.
+Its companion design is `../specs/2026-10-27-dashboard-framework-migration-design.md`.
+The newer documents define routing, identity recovery, preview gates and current owner evidence.
+They replace stale first-slice assumptions below. Later milestones remain roadmap items.
+Antigravity delivered viewer authorization files, but the runnable Next.js app remains unbuilt.
+Ops Center declined coordination review. Codex retains integration ownership.
+Muse owns public page creation. No implementation or release follows from this planning update.
+
 ## Global constraints
 
 - White is the default. Preserve Sage, Sand and Midnight.
