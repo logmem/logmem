@@ -1005,3 +1005,19 @@
 .lmx-health-row>summary:focus-visible,.lmx-audit-day>summary:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 @media(max-width:1023px){.lmx-health-row>summary{grid-template-columns:minmax(100px,1fr) minmax(0,2fr) 12px}.lmx-health-deadline{grid-column:1}.lmx-health-index{justify-self:start;grid-column:2}.lmx-health-row>summary>span:last-child{grid-column:3;grid-row:1}}
 @media(max-width:639px){.lmx-health-filters{top:136px}.lmx-health-filters .lmx-typepill{min-height:44px}.lmx-health-metrics>button{flex-basis:40%;padding:9px;gap:7px;font-size:11px}.lmx-health-metrics strong{font-size:19px}.lmx-audit-day>summary{grid-template-columns:95px minmax(0,1fr) 12px;gap:8px}.lmx-audit-signals{grid-column:1/3;white-space:normal}.lmx-audit-day>summary>span:last-child{grid-column:3;grid-row:1}.lmx-failure-matrix{grid-template-columns:minmax(0,1fr)}}
+
+/* Keep priority tiles within the operations drawer at every rail width. */
+.lmx-operations-body>section,.lmx-operations-body .lmx-stack{min-width:0;max-width:100%}
+.lmx-operations-body{overflow-x:hidden}
+.lmx-plan-tile{box-sizing:border-box;width:100%;max-width:100%;overflow:hidden}
+.lmx-plan-tile>summary{box-sizing:border-box;min-width:0;min-height:110px;gap:10px}
+.lmx-plan-tile-heading{display:flex;flex-wrap:nowrap;min-width:0;width:100%;gap:8px}
+.lmx-plan-tile-heading strong{display:block;flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
+.lmx-plan-tile-heading>:not(strong){flex-shrink:0}
+.lmx-plan-tile-metrics{display:flex;align-items:center;gap:8px;min-width:0;font-size:11px;color:var(--text-subtle);white-space:nowrap}
+.lmx-plan-tile-metrics .lmx-bar{flex:1 1 30px;min-width:16px;height:4px}
+.lmx-plan-tile-metrics .lmx-pct{font:600 11px/1.3 var(--font-sans);padding:3px 6px;border-radius:999px;background:var(--surface-sunken);flex-shrink:0}
+.lmx-plan-tile-meta{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;max-width:100%}
+/* The Activity lane grid shares this legacy name with priority badges. */
+.lmx-plan-tile-heading>.lmx-lane{display:inline-flex;grid-template-columns:none;gap:0;width:auto;min-width:0;white-space:nowrap;align-items:center}
+.lmx-plan-tile-metrics .lmx-bar{position:static;top:auto;background:var(--surface-sunken);border-radius:3px}

@@ -34,8 +34,8 @@ test("Today: filter and counts by request type", () => {
 });
 
 test("Today: plans with no work go behind the parked toggle", () => {
-  const plans = [{ id: "launch", jobs: 40 }, { id: "entry", jobs: 0 }, { id: "general", jobs: 0 }, { id: "metering", jobs: "0" }];
+  const plans = [{ id: "launch", jobs: 40 }, { id: "entry", jobs: 0 }, { id: "general", jobs: 0 }, { id: "metering", jobs: "0" }, { id: "paused", jobs: 10, lane: {status: "parked"} }];
   const r = splitPlans(plans);
-  assert.deepEqual(r.active.map(p => p.id), ["launch", "general"]);
-  assert.deepEqual(r.empty.map(p => p.id), ["entry", "metering"]);
+  assert.deepEqual(r.active.map(p => p.id), ["launch"]);
+  assert.deepEqual(r.empty.map(p => p.id), ["entry", "general", "metering", "paused"]);
 });
