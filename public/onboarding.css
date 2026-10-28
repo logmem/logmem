@@ -174,3 +174,6 @@ body[data-ob-step="choose"]::before{content:"";position:fixed;inset:0;z-index:-1
   .ob-events .lm-event{grid-template-columns:64px 3px minmax(0,1fr)}
   .ob-agent{min-height:44px}
 }
+
+/* optional extras after the 4-step setup */
+.ob-extras{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-md)}
