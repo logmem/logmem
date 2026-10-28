@@ -637,7 +637,7 @@
 .lmx-lanename[aria-pressed="true"]{border-color:var(--brand);background:var(--brand-subtle)}
 .lmx-lanetrack{position:relative;height:40px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-sunken);overflow:hidden}
 .lmx-bar{position:absolute;top:14px;height:12px;border-radius:6px;background:var(--brand)}
-.lmx-recap{position:absolute;top:14px;width:12px;height:12px;background:var(--warning);transform:rotate(45deg)}
+.lmx-pulse-recap{position:absolute;top:14px;width:12px;height:12px;background:var(--warning);transform:rotate(45deg)}
 .lmx-quiet{position:absolute;top:6px;bottom:6px;border:1px dashed var(--warning);border-radius:8px;display:flex;align-items:center;justify-content:center;font:11px var(--font-mono);color:var(--text-muted)}
 .lmx-lanestate{font:12px var(--font-mono);text-align:center;border-radius:999px;padding:3px 8px;background:var(--surface-sunken);color:var(--text-muted)}
 .lmx-lanestate[data-live="true"]{background:var(--brand);color:var(--on-brand)}
@@ -788,6 +788,33 @@
 .lmx-queue .lmx-coverage-note{padding:10px 12px;margin:0}
 .lmx-queue .lmx-coverage-note p{margin:0}
 .lmx-queue>.lmx-stack{gap:8px}
+
+/* Handoff map: waiting strip. Compact cards that scroll on their own and stop on hover or focus. */
+.lmx-marquee-wrap{position:relative;margin:0 0 14px}
+.lmx-marqueehead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.lmx-marquee{display:flex;gap:12px;overflow-x:auto;white-space:nowrap;list-style:none;margin:0;padding:2px 2px 8px;scrollbar-width:thin}
+.lmx-marquee-wrap::before,.lmx-marquee-wrap::after{content:"";position:absolute;bottom:8px;width:28px;height:80px;z-index:1;pointer-events:none}
+.lmx-marquee-wrap::before{left:0;background:linear-gradient(90deg,var(--surface),transparent)}
+.lmx-marquee-wrap::after{right:0;background:linear-gradient(270deg,var(--surface),transparent)}
+.lmx-wcard{position:relative;flex:0 0 auto;min-width:280px;max-width:320px;height:72px;box-sizing:border-box;border:1px solid var(--border);border-left:4px solid var(--brand);border-radius:var(--radius-md);background:var(--surface-sunken);padding:0}
+.lmx-wcard[data-band="slow"]{border-left-color:var(--warning)}
+.lmx-wcard[data-band="stale"]{border-left-color:var(--danger)}
+.lmx-wcard[data-band="slow"]::after,.lmx-wcard[data-band="stale"]::after{content:"";position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--warning);animation:lmx-wpulse 1.8s ease-out infinite}
+.lmx-wcard[data-band="stale"]::after{background:var(--danger)}
+@keyframes lmx-wpulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warning) 60%,transparent)}100%{box-shadow:0 0 0 9px transparent}}
+@media (prefers-reduced-motion:reduce){.lmx-wcard::after{animation:none!important}}
+.lmx-wmain{display:flex;flex-direction:column;justify-content:center;gap:6px;width:100%;height:100%;padding:8px 38px 8px 10px;border:0;background:none;color:var(--text);text-align:left;cursor:pointer;border-radius:var(--radius-md);box-sizing:border-box;min-width:0}
+.lmx-wmain[aria-pressed="true"]{background:var(--brand-subtle)}
+.lmx-wmain:focus-visible,.lmx-wdetails:focus-visible,.lmx-marquee:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-wtop{display:flex;align-items:center;gap:6px;font-size:12px;min-width:0}
+.lmx-wchip{max-width:96px;overflow:hidden;text-overflow:ellipsis;border:1px solid var(--border-strong);border-radius:999px;padding:1px 8px;background:var(--surface);font-size:12px}
+.lmx-wsum{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-muted)}
+.lmx-wdetails{position:absolute;right:6px;bottom:4px;border:0;background:none;color:var(--text-muted);font:500 11px var(--font-sans);cursor:pointer;padding:2px 4px;border-radius:4px}
+.lmx-wdetails:hover{color:var(--text);background:var(--surface)}
+.lmx-wpop{max-width:min(420px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--text);box-shadow:0 12px 32px rgba(0,0,0,.25);white-space:normal;overflow-wrap:anywhere}
+.lmx-wpop p{margin:8px 0 0;font-size:13px;line-height:1.5}
+.lmx-wpop::backdrop{background:rgba(0,0,0,.25)}
+@media (max-width:620px){.lmx-wcard{min-width:240px}}
 
 /* Today triage: one full-width status strip, a reading canvas and one operations rail. */
 :root[data-app-theme] .lmx-workarea[data-route="home"],:root[data-app-theme] .lmx-workarea[data-route="overview"]{grid-template-columns:minmax(0,1fr)}
