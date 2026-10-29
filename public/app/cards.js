@@ -115,8 +115,9 @@ export function agentCard(a, opts = {}) {
   const now = a.now || {}, r = a.recap, job = jobName(now.job), open = opts.open === true;
   const parts = shortenIds(now.doing || ''), nextParts = shortenIds(now.next || '');
   const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
-  // Grok Bot is its own product. These agents run on it and report to chief-of-staff, per their profiles in the madez space.
-  const GROK_BOT_IDS = ['chief-of-staff', 'grok', 'grok-local', 'grok-coding', 'infra'];
+  // Grok Bot is its own product. These agents run on it or report to chief-of-staff, per their profiles in the madez space.
+  const GROK_BOT_IDS = ['chief-of-staff', 'ops-center', 'open-design', 'avery', 'ez-influencer-lab', 'grok', 'grok-local', 'grok-coding', 'infra'];
+  const GROK_BOT_FAMILIES = ['bentley', 'folana'];
   const id = String(a.id || '').toLowerCase();
   const isAgent = (name) => id === name || id.startsWith(name + '-');
   const provider = isAgent('claude-code') ? { name: 'Anthropic', asset: 'claude-code.png' }
@@ -130,7 +131,7 @@ export function agentCard(a, opts = {}) {
     : isAgent('muse') ? { name: 'Muse', asset: 'muse.jpg' }
     : isAgent('opencode') ? { name: 'OpenCode', asset: 'opencode.svg' }
     : isAgent('antigravity') ? { name: 'Antigravity', asset: 'antigravity.png' }
-    : GROK_BOT_IDS.includes(id) ? { name: 'Grok Bot', asset: 'grokbot.jpg' }
+    : GROK_BOT_IDS.includes(id) || GROK_BOT_FAMILIES.some(isAgent) ? { name: 'Grok Bot', asset: 'grokbot.jpg' }
     : null;
   const client = AGENT_CLIENTS[id];
   const providerName = provider?.name || client?.name || '';
