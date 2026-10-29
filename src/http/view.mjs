@@ -394,7 +394,9 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
     const agents = params.recipient ? [String(params.recipient).replace(/^agent:/, "")] : await store.list("agent");
     const legacy = await inBatches(agents.slice(0, 100), 6, async (agent) => {
       try {
-        const log = await store.readLog("agent", agent, { reverse: true, limit: 1000 });
+        // Read the full log until coverage is complete. A fixed window can drop
+        // old settlements while their original handoffs still appear in the window.
+        const log = await store.readLog("agent", agent, { reverse: true });
         const settled = new Set(log.filter(e => e.by === `agent:${agent}` && e.origin && handoffSettlement(e.kind, e.payload)).map(e => e.origin));
         const rows = [];
         const seen = new Set();

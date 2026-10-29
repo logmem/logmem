@@ -326,6 +326,10 @@ test('partial audit includes old handoffs without inventing index records or rev
     ts:now-2*86400000,kind:'handoff',by:'agent:hermes',to:'agent:codex',trail,job:'job:review',summary:trail
   });
   await store.append('agent','codex',{ts:now-86400000,kind:'accepted',by:'agent:codex',origin:'accepted',trail:'ack'});
+  // Keep the settlement outside the old 1,000-entry window.
+  for (let i = 0; i < 1001; i++) {
+    await store.append('agent','codex',{ts:now+i,kind:'memo',by:'agent:codex',summary:`unrelated ${i}`});
+  }
   await createCoordItem(store,{type:'handoff',request_trail:'indexed',from:'agent:hermes',to:'codex',where:'job:review',summary:'indexed',created_at:now-2*86400000});
   const id=computeItemId('fleet','handoff','indexed','codex');
   await settleCoordItem(store,{id,recipient:'codex',settledBy:'agent:codex'});
