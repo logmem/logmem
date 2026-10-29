@@ -93,3 +93,16 @@ test("do_next puts a handoff first and the ask names it", async () => {
   assert.equal(b.do_next[0].type, "handoff", "a waiting handoff ranks first");
   assert.match(b.ask, /review the rollout lane/i, "the question names the work");
 });
+
+test("a brand-new space gets a seed hint, and a space with a job does not", async () => {
+  const redis = createMemoryRedis();
+  const first = await call(lmFor(redis, { defaultAgent: "quill" }), "logmem_start", { mode: "quiet" });
+  assert.equal(first.brief.seed.needed, true);
+  assert.match(first.brief.seed.skill, /logmem-seed-space\/SKILL\.md$/);
+  assert.match(first.brief.ask, /seed/i);
+  const lm = lmFor(redis, { session: "s2", defaultAgent: "quill" });
+  await call(lm, "logmem_start", { mode: "quiet" });
+  await call(lm, "logmem_assign", { job: "first-job", title: "First job" });
+  const next = await call(lmFor(redis, { session: "s3", defaultAgent: "quill" }), "logmem_start", { mode: "quiet" });
+  assert.equal(next.brief.seed, undefined);
+});
