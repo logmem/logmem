@@ -3,10 +3,7 @@
    ds/components/bundle.css. No new colors here. */
 
 [hidden]{display:none!important}
-.ob-header{background:var(--surface);border-bottom:1px solid var(--border)}
-.ob-header-in{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
-.ob-logo{display:flex}
-.ob-logo img{height:28px;width:auto}
+.ob-subbar{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;padding-top:20px}
 .ob-count{margin-left:auto;font-size:13px;color:var(--text-muted)}
 
 .ob-layout{display:flex;flex-wrap:wrap;gap:32px;padding-top:40px;padding-bottom:64px}
@@ -165,7 +162,7 @@ body[data-ob-step]::before{content:"";position:fixed;inset:0;z-index:-1;pointer-
   .ob-rail-now{display:block}
   .ob-card{padding:20px 16px}
   .ob-fork{padding:24px 16px 20px}
-  .wrap.ob-layout,.wrap.ob-header-in{padding-left:16px;padding-right:16px}
+  .wrap.ob-layout,.wrap.ob-subbar{padding-left:16px;padding-right:16px}
   /* P1-3: 44x44 touch targets on phones */
   .lm{--control-h:var(--row-comfortable,44px)}
   .lm-btn,.lm-seg button,.lm-tab,.ob-step,.ob-linkbtn,#sim{min-height:44px;min-width:44px}

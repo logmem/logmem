@@ -24,7 +24,7 @@
   // ---- steps -----------------------------------------------------------------
   var STEPS = {
     choose: ['Choose your setup', 'Managed workspace or advanced Redis'],
-    plan: ['What it’s for', 'No pricing yet'],
+    plan: ['What it’s for', 'Plans are on the pricing page'],
     detect: ['Find your AI tools', 'Local probe, read-only'],
     waitlist: ['Join the waitlist', 'Email and agent count'],
     space: ['Name your space', 'One walled-off memory'],

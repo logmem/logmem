@@ -1,15 +1,8 @@
+@import url("/site-nav.css");
 /* Base layer: the header, footer and type these pages need. home.css is not loaded here, so this carries the minimum. */
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;-webkit-font-smoothing:antialiased}
 h1,h2,h3,.wordmark{font-family:var(--font-display);font-weight:600}
 a{color:var(--link)}
-.nav{position:sticky;z-index:20;top:14px;margin:14px 4.4% 0;height:58px;padding:0 17px 0 22px;border-radius:17px;display:flex;align-items:center;gap:30px;border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:var(--shadow-1);backdrop-filter:blur(18px)}
-.wordmark{display:inline-flex;align-items:center;flex-shrink:0}
-.brand-lockup{display:block;width:145px;height:32px;object-fit:contain}
-.nav nav{margin-left:auto;display:flex;gap:28px;font-size:14px}
-.nav nav a{color:var(--text-muted);text-decoration:none}
-.nav nav a:hover,.nav nav a[aria-current="page"]{color:var(--brand)}
-.nav .lm-btn{text-decoration:none}
-@media (max-width:760px){.nav{gap:10px;padding:0 10px 0 14px;margin:12px 12px 0}.nav nav{display:none}.nav .brand-lockup{width:110px;height:24px}.nav .lm-btn{margin-left:auto;padding:0 12px;font-size:13px;white-space:nowrap}}
 footer{max-width:1120px;margin:40px auto 0;padding:30px 20px 50px;border-top:1px solid var(--border);display:flex;align-items:center;gap:25px;flex-wrap:wrap}
 footer>span{font-size:12px;color:var(--text-subtle)}
 footer>div{margin-left:auto;display:flex;gap:22px;flex-wrap:wrap;font-size:12px}
