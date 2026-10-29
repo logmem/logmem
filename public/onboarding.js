@@ -409,22 +409,22 @@
 
   // ---- connect: hosts + snippets ---------------------------------------------------
   var HOSTS = {
-    claude: { label: 'Claude Code', where: 'Run in a terminal', tested: true, snip: function (e) { return 'claude mcp add logmem --scope user \\\n' + e.map(function (p) { return '  -e ' + p[0] + '=' + p[1] + ' \\\n'; }).join('') + '  -- npx @logmem/mcp'; } },
-    codex: { label: 'Codex', where: '~/.codex/config.toml', tested: true, snip: function (e) { return '[mcp_servers.logmem]\ncommand = "npx"\nargs = ["@logmem/mcp"]\n\n[mcp_servers.logmem.env]\n' + e.map(function (p) { return p[0] + ' = "' + p[1] + '"'; }).join('\n'); } },
+    claude: { label: 'Claude Code', where: 'Run in a terminal', tested: true, snip: function (e) { return 'claude mcp add logmem --scope user \\\n' + e.map(function (p) { return '  -e ' + p[0] + '=' + p[1] + ' \\\n'; }).join('') + '  -- npx -y github:logmem/logmem'; } },
+    codex: { label: 'Codex', where: '~/.codex/config.toml', tested: true, snip: function (e) { return '[mcp_servers.logmem]\ncommand = "npx"\nargs = ["-y", "github:logmem/logmem"]\n\n[mcp_servers.logmem.env]\n' + e.map(function (p) { return p[0] + ' = "' + p[1] + '"'; }).join('\n'); } },
     cursor: { label: 'Cursor', where: '.cursor/mcp.json', tested: true, snip: jsonSnip },
     web: { label: 'Claude Web', where: 'Settings › Connectors › Add custom connector', tested: true, web: true, snip: function () { return location.origin + '/mcp'; } },
     gemini: { label: 'Gemini CLI', where: '~/.gemini/settings.json', snip: jsonSnip },
-    opencode: { label: 'opencode', where: 'opencode.json', snip: function (e) { return '{\n  "mcp": {\n    "logmem": {\n      "type": "local",\n      "command": ["npx", "@logmem/mcp"],\n      "environment": {\n' + e.map(function (p, i) { return '        "' + p[0] + '": "' + p[1] + '"' + (i < e.length - 1 ? ',' : ''); }).join('\n') + '\n      }\n    }\n  }\n}'; } },
-    goose: { label: 'Goose', where: '~/.config/goose/config.yaml', snip: function (e) { return 'extensions:\n  logmem:\n    type: stdio\n    cmd: npx\n    args: ["@logmem/mcp"]\n    enabled: true\n    envs:\n' + e.map(function (p) { return '      ' + p[0] + ': "' + p[1] + '"'; }).join('\n'); } },
+    opencode: { label: 'opencode', where: 'opencode.json', snip: function (e) { return '{\n  "mcp": {\n    "logmem": {\n      "type": "local",\n      "command": ["npx", "-y", "github:logmem/logmem"],\n      "environment": {\n' + e.map(function (p, i) { return '        "' + p[0] + '": "' + p[1] + '"' + (i < e.length - 1 ? ',' : ''); }).join('\n') + '\n      }\n    }\n  }\n}'; } },
+    goose: { label: 'Goose', where: '~/.config/goose/config.yaml', snip: function (e) { return 'extensions:\n  logmem:\n    type: stdio\n    cmd: npx\n    args: ["-y", "github:logmem/logmem"]\n    enabled: true\n    envs:\n' + e.map(function (p) { return '      ' + p[0] + ': "' + p[1] + '"'; }).join('\n'); } },
     cline: { label: 'Cline', where: 'Cline › MCP Servers › Configure (cline_mcp_settings.json)', snip: jsonSnip },
     windsurf: { label: 'Windsurf', where: '~/.codeium/windsurf/mcp_config.json', snip: jsonSnip },
-    aider: { label: 'Aider', where: 'No MCP setup yet', none: true, snip: function (e) { return e.map(function (p) { return p[0] + '=' + p[1]; }).join('\n') + '\n\nnpx @logmem/mcp'; } }
+    aider: { label: 'Aider', where: 'No MCP setup yet', none: true, snip: function (e) { return e.map(function (p) { return p[0] + '=' + p[1]; }).join('\n') + '\n\nnpx -y github:logmem/logmem'; } }
   };
   var CORE = ['claude', 'codex', 'cursor', 'web'];
   var host = null;
 
   function jsonSnip(e) {
-    return '{\n  "mcpServers": {\n    "logmem": {\n      "command": "npx",\n      "args": ["@logmem/mcp"],\n      "env": {\n' +
+    return '{\n  "mcpServers": {\n    "logmem": {\n      "command": "npx",\n      "args": ["-y", "github:logmem/logmem"],\n      "env": {\n' +
       e.map(function (p, i) { return '        "' + p[0] + '": "' + p[1] + '"' + (i < e.length - 1 ? ',' : ''); }).join('\n') + '\n      }\n    }\n  }\n}';
   }
 
