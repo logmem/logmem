@@ -25,7 +25,7 @@
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/site.css">
-<link rel="stylesheet" href="/onboarding.css">
+<link rel="stylesheet" href="/site-nav.css"><link rel="stylesheet" href="/onboarding.css">
 <script src="/attrib.js" defer></script>
 <script src="/gtm.js" defer></script>
 <script src="/onboarding.js" defer></script>
@@ -41,18 +41,13 @@
   "isPartOf": { "@id": "https://logmem.si/#website" }
 }
 </script>
-</head>
+<script type="module" src="/site-nav.js"></script></head>
 <body class="lm">
 <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KW8M5T7H" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip" href="#ob-main">Skip to the current step</a>
 
-<header class="ob-header">
-  <div class="wrap ob-header-in">
-    <a href="/" class="ob-logo" aria-label="LogMem home"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="127" height="28"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" width="127" height="28"></a>
-    <span class="lm-eyebrow">Set up LogMem</span>
-    <span class="ob-count" id="count" aria-live="polite"></span>
-  </div>
-</header>
+<header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a></nav></header>
+<div class="wrap ob-subbar"><span class="lm-eyebrow">Set up LogMem</span><span class="ob-count" id="count" aria-live="polite"></span></div>
 
 <div class="wrap ob-layout">
   <nav class="ob-rail" aria-label="Setup steps">
@@ -91,10 +86,10 @@
       </div>
     </section>
 
-    <!-- Cloud: what you'd use it for (no pricing; the value still goes to the waitlist as "plan") -->
+    <!-- Cloud: what you'd use it for (prices live on /pricing; the value still goes to the waitlist as "plan") -->
     <section class="lm-panel ob-card" data-step="plan" aria-labelledby="h-plan" hidden>
       <div>
-        <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">No pricing yet</span></div>
+        <div class="lm-row ob-tags"><a class="lm-badge lm-badge--info" href="/pricing">See pricing</a></div>
         <span class="lm-badge ob-oval ob-oval--amber ob-chip">Quick question</span><h1 id="h-plan" tabindex="-1">What would you use it for?</h1>
         <p class="ob-lede">Pick the one closest to you. Include this with your access request. This form does not create an account or workspace.</p>
       </div>

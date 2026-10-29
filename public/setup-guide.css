@@ -24,6 +24,15 @@
 :root[data-app-theme] .signin-note,:root[data-app-theme] .signin-access{border-color:var(--border)}
 :root[data-app-theme] .signin-nav a,:root[data-app-theme] .signin-card a,:root[data-app-theme] .signin-story .lm-eyebrow{color:var(--brand)}
 :root[data-app-theme] .signin-intro,:root[data-app-theme] .signin-access,:root[data-app-theme] .signin-note p,:root[data-app-theme] .signin-story>p,:root[data-app-theme] .signin-story h1 span,:root[data-app-theme] .signin-footer,:root[data-app-theme] #signin-status{color:var(--text-muted)}
-@media(max-width:600px){.setup-guide-panel{padding:16px}.setup-guide-panel h3{font-size:21px}.setup-guide-actions .lm-btn{flex:1 1 auto}.setup-guide-actions>.lm-btn:last-child{margin-left:0}.setup-trail{gap:5px}.setup-trail button{padding:6px 8px}.agent-nav{gap:16px}}
+@media(max-width:600px){.setup-guide-panel{padding:16px}.setup-guide-panel h3{font-size:21px}.setup-guide-actions .lm-btn{flex:1 1 auto}.setup-guide-actions>.lm-btn:last-child{margin-left:0}.setup-trail{gap:5px}.setup-trail button{padding:6px 8px}}
 :root[data-app-theme="midnight"] img[src$="/logmem-lockup.svg"]{content:url('/ds/logos/logmem-lockup-reversed.svg')}
 :root[data-app-theme="midnight"] img[src$="/logmem-symbol.svg"]{content:url('/ds/logos/logmem-symbol-reversed.svg')}
+/* Theme picker: one swatch at rest, all four on hover or focus. On phones it sits in the menu panel, fully open. */
+@media (min-width:1001px){
+  .setup-theme-picker{gap:0;padding:4px;overflow:hidden;max-width:36px;transition:max-width .2s ease,gap .2s ease}
+  .setup-theme-picker:hover,.setup-theme-picker:focus-within{max-width:160px;gap:8px}
+  .setup-theme-picker [aria-pressed="true"]{order:-1}
+  .setup-theme-picker button:not([aria-pressed="true"]){opacity:0;transition:opacity .15s ease}
+  .setup-theme-picker:hover button,.setup-theme-picker:focus-within button{opacity:1}
+}
+@media (min-width:1001px) and (prefers-reduced-motion:reduce){.setup-theme-picker,.setup-theme-picker button{transition:none}}
