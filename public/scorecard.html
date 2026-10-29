@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LogMem Dogfood Scorecard</title>
 <meta name="robots" content="noindex">
-<style>
+<link rel="stylesheet" href="/ds/tokens/logmem.css"><link rel="stylesheet" href="/ds/components/bundle.css"><style>
 :root{--bg:#F4F6F5;--surface:#fff;--border:#D3DAD8;--text:#121A19;--muted:#46534F;--brand:#0E6863;--pass:#1E6B35;--pass-bg:#E2F1E5;--fail:#B42318;--fail-bg:#FBE6E3;--gap:#875100;--gap-bg:#FBEED6;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0C1211;--surface:#121A19;--border:#2B3835;--text:#E9EEEC;--muted:#B3BEBA;--brand:#4FC3B8;--pass:#5DC47C;--pass-bg:#0F2618;--fail:#F47A66;--fail-bg:#341411;--gap:#E8A746;--gap-bg:#2C1F08}}
 :root[data-theme="dark"]{--bg:#0C1211;--surface:#121A19;--border:#2B3835;--text:#E9EEEC;--muted:#B3BEBA;--brand:#4FC3B8;--pass:#5DC47C;--pass-bg:#0F2618;--fail:#F47A66;--fail-bg:#341411;--gap:#E8A746;--gap-bg:#2C1F08}
@@ -30,11 +30,12 @@ select{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--bor
 </style>
 <script src="/analytics.js" defer></script>
 <script defer src="/_vercel/insights/script.js"></script>
-</head>
+<script src="/theme-boot.js"></script><link rel="stylesheet" href="/site-nav.css"><link rel="stylesheet" href="/setup-theme.css"><script type="module" src="/site-nav.js"></script></head>
 <body>
+<header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a></nav><a class="lm-btn lm-btn--primary dark small" href="/onboarding">Open your workspace <span aria-hidden="true">↗</span></a></header>
 <main>
   <div class="row">
-    <div><h1>LogMem dogfood</h1><div class="sub" id="meta">Loading…</div></div>
+    <div><h1 class="look-title">LogMem dogfood</h1><div class="sub" id="meta">Loading…</div></div>
     <select id="space" aria-label="Space"><option>madez</option><option>fieldnotes</option></select>
   </div>
   <section class="card"><div class="row"><span class="verdict" id="verdict">…</span><span class="pill" id="deliv"></span></div><p class="sub" id="bar">Pass bar: 7 consecutive passing days (≥3 agents, ≥1 accepted handoff, 0 mirror mismatches, 0 degraded, 0 handoffs unanswered for 24h) plus job logmem-v0-ship done.</p></section>

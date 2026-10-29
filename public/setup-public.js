@@ -2,11 +2,7 @@
 import {html,render} from '/vendor/lit-html-3.2.1/lit-html.js';
 import './app/setup-guide.js';
 import {readGuide,clientId,saveGuide} from './app/setup-model.js';
-import {THEMES,readTheme,writeTheme} from './app/theme.js';
 const main=document.querySelector('.agent-main');
-const picker=document.createElement('div');picker.className='setup-theme-picker';picker.setAttribute('role','group');picker.setAttribute('aria-label','Theme');
-function paintPicker(){render(html`${THEMES.map(t=>html`<button type="button" title=${t} aria-label=${t+' theme'} aria-pressed=${String(readTheme()===t)} data-swatch=${t} @click=${()=>{writeTheme(t);paintPicker();}}></button>`)}`,picker);}
-(document.querySelector('#nav-extra')||document.querySelector('.nav nav'))?.append(picker);paintPicker();
 if(main){
  const original=document.createElement('div');while(main.firstChild)original.append(main.firstChild);main.append(original);
  const host=document.createElement('section');host.setAttribute('aria-label','Guided setup');main.prepend(host);

@@ -1,3 +1,4 @@
+@import url("/look.css");
 /* app.css — the live web app: daily work and evidence on every screen size.
    Spec: docs/superpowers/specs/2026-10-19-logmem-live-app-design.md.
    Tokens come from ds/tokens/logmem.css. Breakpoints: phone < 640,
@@ -1034,12 +1035,6 @@ dl.lmx-prof-sub dd{margin:0}
    Sage canvas, soft 20px cards, big two-tone headlines, mono teal eyebrows. The sketchy touches are few on purpose:
    a swoosh under page titles, stars on section titles, a wobbly second outline on three featured cards, a halo on the main buttons.
    Colours come from tokens, with a canvas and shadow per theme, so white, sage, sand and midnight all work. */
-:root{--fun-teal:#1f8a83;--fun-amber:#a86b12}
-:root[data-theme="dark"]{--fun-teal:#4ecdc4;--fun-amber:#f7b731}
-:root[data-app-theme="white"]{--app-canvas:#F2F6F3;--app-shadow:0 12px 40px #163c2510}
-:root[data-app-theme="sage"]{--app-canvas:#EAF1EC;--app-shadow:0 12px 40px #163c2512}
-:root[data-app-theme="sand"]{--app-canvas:#F6F0E5;--app-shadow:0 12px 40px #3b2f1c12}
-:root[data-app-theme="midnight"]{--app-canvas:var(--bg);--app-shadow:0 12px 40px #0006}
 .lmx-workarea{background:var(--app-canvas,var(--bg))}
 /* headlines */
 :root[data-app-theme] .lmx-workarea h1{font:600 clamp(30px,3.8vw,46px)/1.1 var(--font-display);letter-spacing:-.045em;margin:0}

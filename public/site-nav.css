@@ -1,3 +1,4 @@
+@import url("/look.css");
 /* Shared site header: logo, links with sub menus, the workspace button, and a menu button on phones. */
 .nav{position:sticky;z-index:20;top:14px;margin:14px 4.4% 0;height:58px;padding:0 17px 0 22px;border-radius:17px;display:flex;align-items:center;gap:30px;border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:var(--shadow-1);backdrop-filter:blur(18px)}
 .wordmark{display:inline-flex;align-items:center;flex-shrink:0;font-family:var(--font-display);font-weight:600}
@@ -51,3 +52,22 @@
   .nav[data-open] .nav-menu-cta{display:inline-flex;justify-content:center}
   .nav-extra{padding:4px 10px 6px}
 }
+
+/* Theme picker, built by site-nav.js into the header. One swatch at rest and all four on hover or focus on desktop.
+   On phones it sits open in the menu panel. */
+.setup-theme-picker{display:flex;gap:8px;flex-shrink:0}
+.setup-theme-picker button{flex:none;width:23px;height:23px;border:1px solid var(--border-strong,var(--border));border-radius:50%;cursor:pointer;padding:0}
+.setup-theme-picker [data-swatch="white"]{background:#fff}
+.setup-theme-picker [data-swatch="sage"]{background:#b6cbbd}
+.setup-theme-picker [data-swatch="sand"]{background:#d7c29b}
+.setup-theme-picker [data-swatch="midnight"]{background:#1b2021}
+.setup-theme-picker [aria-pressed="true"]{outline:2px solid var(--brand);outline-offset:3px}
+.setup-theme-picker button:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+@media (min-width:1001px){
+  .setup-theme-picker{gap:0;padding:4px;overflow:hidden;max-width:36px;transition:max-width .2s ease,gap .2s ease}
+  .setup-theme-picker:hover,.setup-theme-picker:focus-within{max-width:160px;gap:8px}
+  .setup-theme-picker [aria-pressed="true"]{order:-1}
+  .setup-theme-picker button:not([aria-pressed="true"]){opacity:0;transition:opacity .15s ease}
+  .setup-theme-picker:hover button,.setup-theme-picker:focus-within button{opacity:1}
+}
+@media (min-width:1001px) and (prefers-reduced-motion:reduce){.setup-theme-picker,.setup-theme-picker button{transition:none}}
