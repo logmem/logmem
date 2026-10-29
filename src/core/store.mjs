@@ -7,9 +7,9 @@
 // Timestamps: always milliseconds on write. On read, scores and `ts` fields
 // in seconds / microseconds / nanoseconds are normalised to ms (normTs).
 
-import { lmKey, lmIndexKey, acmiKey, acmiIndexKey, PROTECTED } from "./keys.mjs";
+import { lmKey, lmIndexKey, acmiKey, acmiIndexKey, PROTECTED, PREFIX, REF_ID_RE } from "./keys.mjs";
 import { asEntry, normalizeKind, stageFromStatus } from "./vocab.mjs";
-import { isProtectedKey } from "../lib/helpers.mjs";
+import { isProtectedKey, validateKeySegments } from "../lib/helpers.mjs";
 import { unreadableTypeWarning } from "../lib/redact.mjs";
 import { registerEvalScript } from "../lib/lua-scripts.mjs";
 
@@ -209,6 +209,48 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
     }
   }
 
+  async function readLogRows(key, legacyKey, { limit, reverse = false, sinceMs, untilMs } = {}) {
+    const min = sinceMs != null ? normTs(sinceMs) : "-inf";
+    const max = untilMs != null ? normTs(untilMs) : "+inf";
+    const rows = parseZ(await redis("ZRANGEBYSCORE", key, min, max, "WITHSCORES"));
+    let unreadableType = null;
+    if (compat) {
+      // Legacy scores may be in s/us/ns, so scan the whole key and filter
+      // after normalising (a score-range query would miss mixed units).
+      const old = await readLegacyLog(redis, legacyKey);
+      if (old.unreadableType) unreadableType = old.unreadableType;
+      // After the migration copy, an entry exists in both places. The lm
+      // copy wins; the legacy twin (same ts + trail + summary) is skipped.
+      const sig = (e) => `${normTs(e.ts)}|${e.trail ?? ""}|${e.summary ?? ""}`;
+      const have = new Set(rows.map((r) => sig(asEntry(tryParse(r.member)) || {})));
+      for (const r of old) {
+        if ((sinceMs == null || r.score >= min) && (untilMs == null || r.score <= max)) {
+          const e = asEntry(tryParse(r.member));
+          if (e && typeof e === "object" && have.has(sig({ ...e, ts: e.ts ?? r.score }))) continue;
+          rows.push({ ...r, legacy: true });
+        }
+      }
+    }
+    let entries = rows.filter((r) => !isBlankMember(r.member)).map((r, i) => {
+      const e = asEntry(tryParse(r.member));
+      const { _o, ...obj } = e && typeof e === "object" ? e : { summary: String(e) };
+      const out = { ...obj, ts: normTs(obj.ts ?? r.score) };
+      if (r.legacy) Object.defineProperty(out, "legacy", { value: true, enumerable: false });
+      return { e: out, o: _o ?? "", i };
+    });
+    entries.sort((a, b) => a.e.ts - b.e.ts || (a.o < b.o ? -1 : a.o > b.o ? 1 : a.i - b.i));
+    entries = entries.map((x) => x.e);
+    if (reverse) entries.reverse();
+    if (limit != null) entries = entries.slice(0, limit);
+    if (unreadableType) {
+      Object.defineProperty(entries, "warnings", {
+        value: [unreadableTypeWarning(unreadableType)],
+        enumerable: false,
+      });
+    }
+    return entries;
+  }
+
   /** Dogfood mirror: write the ACMI twin; record ok/failed for the caller. */
   async function mirrorWrite(op) {
     if (!mirror) return;
@@ -368,50 +410,21 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
       if (n) await bumpRev();
       return n;
     },
-    async readLog(ns, id, { limit, reverse = false, sinceMs, untilMs } = {}) {
-      const min = sinceMs != null ? normTs(sinceMs) : "-inf";
-      const max = untilMs != null ? normTs(untilMs) : "+inf";
-      const rows = parseZ(await redis("ZRANGEBYSCORE", k(ns, id, "log"), min, max, "WITHSCORES"));
-      let unreadableType = null;
-      if (compat) {
-        // Legacy scores may be in s/us/ns, so scan the whole key and filter
-        // after normalising (a score-range query would miss mixed units).
-        const old = await readLegacyLog(redis, legacy(ns, id, "log"));
-        if (old.unreadableType) unreadableType = old.unreadableType;
-        // After the migration copy, an entry exists in both places. The lm
-        // copy wins; the legacy twin (same ts + trail + summary) is skipped.
-        const sig = (e) => `${normTs(e.ts)}|${e.trail ?? ""}|${e.summary ?? ""}`;
-        const have = new Set(rows.map((r) => sig(asEntry(tryParse(r.member)) || {})));
-        for (const r of old) {
-          if ((sinceMs == null || r.score >= min) && (untilMs == null || r.score <= max)) {
-            const e = asEntry(tryParse(r.member));
-            if (e && typeof e === "object" && have.has(sig({ ...e, ts: e.ts ?? r.score }))) continue;
-            rows.push({ ...r, legacy: true });
-          }
-        }
+    async readLog(ns, id, options = {}) {
+      return readLogRows(k(ns, id, "log"), legacy(ns, id, "log"), options);
+    },
+    // Read old compound IDs found in legacy indexes or discovered log keys.
+    // This method reads only. Writes still reject colons in IDs.
+    async readLogWithLegacyId(ns, id, options = {}) {
+      if (ns !== "job" && ns !== "channel") throw new Error("compound IDs are only valid for jobs and channels");
+      const parts = String(id).split(":");
+      if (parts.length < 2 || parts.some((part) => !REF_ID_RE.test(part))) {
+        throw new Error("invalid legacy compound ID");
       }
-      let entries = rows.filter((r) => !isBlankMember(r.member)).map((r, i) => {
-        const e = asEntry(tryParse(r.member));
-        const { _o, ...obj } = e && typeof e === "object" ? e : { summary: String(e) };
-        const out = { ...obj, ts: normTs(obj.ts ?? r.score) };
-        // Rows merged from legacy acmi:* keys carry a non-enumerable flag, so
-        // readers can refuse to treat them as asks or decisions without
-        // changing what compat reads return.
-        if (r.legacy) Object.defineProperty(out, "legacy", { value: true, enumerable: false });
-        return { e: out, o: _o ?? "", i };
-      });
-      // Stable: ts, then same-ms ordinal, then read order.
-      entries.sort((a, b) => a.e.ts - b.e.ts || (a.o < b.o ? -1 : a.o > b.o ? 1 : a.i - b.i));
-      entries = entries.map((x) => x.e);
-      if (reverse) entries.reverse();
-      if (limit != null) entries = entries.slice(0, limit);
-      if (unreadableType) {
-        Object.defineProperty(entries, "warnings", {
-          value: [unreadableTypeWarning(unreadableType)],
-          enumerable: false,
-        });
-      }
-      return entries;
+      const keyParts = [space, ns, ...parts];
+      for (const part of keyParts) validateKeySegments(part);
+      const key = `${PREFIX}:${space}:${ns}:${parts.join(":")}:log`;
+      return readLogRows(key, legacy(ns, id, "log"), options);
     },
     async logSize(ns, id) {
       let n = Number(await redis("ZCARD", k(ns, id, "log"))) || 0;

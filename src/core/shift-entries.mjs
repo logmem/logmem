@@ -42,7 +42,8 @@ export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }
   for (let i = 0; i < refs.length; i += 20) {
     const rows = await Promise.all(refs.slice(i, i + 20).map(async ([ref, [ns, id]]) => {
       try {
-        const entries = await store.readLog(ns, id, { sinceMs, untilMs });
+        const readLog = id.includes(":") ? store.readLogWithLegacyId : store.readLog;
+        const entries = await readLog.call(store, ns, id, { sinceMs, untilMs });
         if (entries.warnings?.length) read_errors.push({ ref, reason: "unreadable_legacy_log" });
         return entries;
       } catch {

@@ -13,6 +13,7 @@ export function applyLimits(store, limits) {
   store.historyFloorMs = () => limits.historyFloorMs();
   const append = store.append.bind(store);
   const readLog = store.readLog.bind(store);
+  const readLogWithLegacyId = store.readLogWithLegacyId.bind(store);
   const getRecap = store.getRecap.bind(store);
   store.append = async (ns, id, entry) => {
     const commit = await limits.beforeWrite(entry);
@@ -25,6 +26,12 @@ export function applyLimits(store, limits) {
     if (floor == null) return readLog(ns, id, opts);
     const sinceMs = opts.sinceMs != null ? Math.max(Number(opts.sinceMs), floor) : floor;
     return readLog(ns, id, { ...opts, sinceMs });
+  };
+  store.readLogWithLegacyId = async (ns, id, opts = {}) => {
+    const floor = limits.historyFloorMs();
+    if (floor == null) return readLogWithLegacyId(ns, id, opts);
+    const sinceMs = opts.sinceMs != null ? Math.max(Number(opts.sinceMs), floor) : floor;
+    return readLogWithLegacyId(ns, id, { ...opts, sinceMs });
   };
   store.getRecap = async (agent) => {
     const r = await getRecap(agent);
