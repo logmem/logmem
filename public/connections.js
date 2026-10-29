@@ -4,6 +4,18 @@
   var root = document.getElementById('root');
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function when(sec) { try { return new Date(sec * 1000).toLocaleString(); } catch (e) { return ''; } }
+  // How long ago, in plain words. The exact time is in the tooltip.
+  function ago(sec, nowSec) {
+    var d = Math.max(0, (nowSec || Math.floor(Date.now() / 1000)) - sec);
+    if (d < 60) return 'just now';
+    if (d < 3600) return Math.floor(d / 60) + ' min ago';
+    if (d < 86400) return Math.floor(d / 3600) + ' h ago';
+    return Math.floor(d / 86400) + ' d ago';
+  }
+  function lastCall(a) {
+    if (!a.last_call_at) return '<span title="Connected ' + esc(when(a.created_at)) + '">No calls yet</span>';
+    return '<span title="' + esc(when(a.last_call_at)) + '">' + esc(ago(a.last_call_at)) + '</span>';
+  }
   var H1 = '<h1 style="margin:0">Connected apps</h1>';
 
   function render(d, err) {
@@ -12,13 +24,13 @@
       return;
     }
     var rows = (d.apps || []).map(function (a) {
-      return '<tr><td>' + esc(a.app) + '</td><td class="mono">' + esc(a.agent) + '</td><td class="muted" style="font-size:13px">' + esc(when(a.last_used)) + '</td>' +
+      return '<tr><td>' + esc(a.app) + '</td><td class="mono">' + esc(a.last_call_agent || a.agent) + '</td><td class="muted" style="font-size:13px">' + lastCall(a) + '</td>' +
         '<td><button class="lm-btn" data-fid="' + esc(a.fid) + '" data-app="' + esc(a.app) + '">Disconnect</button></td></tr>';
     }).join('');
     root.innerHTML = H1 +
-      '<p class="muted" style="margin:0">Signed in as ' + esc(d.email) + ' · plan ' + esc(d.plan) + '. These apps can read and write your LogMem memory. Disconnect one to stop it at once and free its agent slot.</p>' +
+      '<p class="muted" style="margin:0">Signed in as ' + esc(d.email) + ' · plan ' + esc(d.plan) + '. These apps can read and write your LogMem memory. Last call is the last time the app used a LogMem tool. It shows No calls yet until the first one. Disconnect one to stop it at once and free its agent slot.</p>' +
       (err ? '<p role="alert" style="margin:0;color:var(--danger)">' + esc(err) + '</p>' : '') +
-      '<div class="lm-panel" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:8px">App</th><th style="text-align:left;padding:8px">Agent</th><th style="text-align:left;padding:8px">Last used</th><th></th></tr></thead><tbody>' +
+      '<div class="lm-panel" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:8px">App</th><th style="text-align:left;padding:8px">Agent</th><th style="text-align:left;padding:8px">Last call</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="4" class="muted" style="padding:8px">No apps connected yet. Add https://logmem.si/mcp in your app to connect one.</td></tr>') + '</tbody></table></div>';
     Array.prototype.forEach.call(root.querySelectorAll('[data-fid]'), function (b) {
       b.addEventListener('click', function () {
