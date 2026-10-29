@@ -96,6 +96,33 @@ test("recap finds a written log even when its roster index update was lost", asy
   assert.equal(recap.coverage, "complete");
 });
 
+test("recap reads compound legacy channel IDs without partial coverage", async () => {
+  const { lm, redis } = setup();
+  const started = await call(lm, "logmem_start", { agent: "atlas" });
+  const ids = [
+    "client:duane:duane-lead-pipeline",
+    "client:duane:duane-requests",
+    "client:duane:duane-status",
+    "shared:team-pulse",
+  ];
+  const ts = started.started.started_at + 1;
+  await redis("SADD", "lm:acme:channel:list", ...ids);
+  for (const [i, id] of ids.entries()) {
+    const key = `lm:acme:channel:${id}:log`;
+    const entry = { ts: ts + i, by: "agent:atlas", shift: started.started.shift,
+      kind: "progress", trail: `legacy-${i}`, summary: `Read ${id}` };
+    await redis("ZADD", key, ts + i, JSON.stringify(entry));
+  }
+  const { readShiftEntries } = await import("../src/core/shift-entries.mjs");
+  const result = await readShiftEntries(lm.store, {
+    agent: "atlas", shift: started.started.shift,
+    sinceMs: started.started.started_at, untilMs: ts + ids.length,
+  });
+  assert.equal(result.coverage, "complete");
+  assert.deepEqual(result.read_errors, []);
+  assert.equal(result.entries.filter((entry) => entry.summary.startsWith("Read ")).length, 4);
+});
+
 
 test("recap marks history-limited shift reads as partial", async () => {
   const { createStore } = await import("../src/core/store.mjs");
