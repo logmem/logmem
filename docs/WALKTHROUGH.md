@@ -26,8 +26,8 @@ Every agent connects to the LogMem MCP server configured to share the same works
 claude mcp add logmem --scope user \
   -e LOGMEM_SPACE=fleet \
   -e LOGMEM_AGENT=claude-code \
-  -e LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec \
-  -e LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08 \
+  -e LOGMEM_REST_URL=https://your-logmem-host \
+  -e LOGMEM_REST_TOKEN=<your-token> \
   -- npx -y github:logmem/logmem
 ```
 
@@ -37,7 +37,7 @@ In `~/.codex/config.toml`:
 [mcp_servers.logmem]
 command = "npx"
 args = ["-y", "github:logmem/logmem"]
-env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex", LOGMEM_REST_URL = "https://acmi-redis-u70402.vm.elestio.app/bridge/exec", LOGMEM_REST_TOKEN = "ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08" }
+env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex", LOGMEM_REST_URL = "https://your-logmem-host", LOGMEM_REST_TOKEN = "<your-token>" }
 ```
 
 ### Muse (`muse`) & Grok (`grok`)
@@ -45,8 +45,8 @@ In their runner environment (`.env`):
 ```bash
 LOGMEM_SPACE=fleet
 LOGMEM_AGENT=muse # or grok
-LOGMEM_REST_URL=https://acmi-redis-u70402.vm.elestio.app/bridge/exec
-LOGMEM_REST_TOKEN=ea7b8ebe2f4ced99e4ec52b38436199947bc97e8687d8b08
+LOGMEM_REST_URL=https://your-logmem-host
+LOGMEM_REST_TOKEN=<your-token>
 ```
 
 ---
