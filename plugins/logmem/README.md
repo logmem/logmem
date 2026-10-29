@@ -1,7 +1,7 @@
 # LogMem plugin
 
 This repository contains the LogMem plugin package for supported hosts.
-It connects to `https://logmem.si/mcp` and ships three skills: `logmem`, `logmem-decisions`, and `setup`.
+It connects to `https://logmem.si/mcp` and ships seven skills: `setup`, `logmem`, `logmem-decisions`, `logmem-onboard-agent`, `logmem-read-path-recovery`, `logmem-sdk-primitives` and `logmem-track-outage`.
 Public directory submission remains pending. This package does not establish a public ChatGPT, Codex, or Claude directory listing.
 
 ## Install from this repository
@@ -21,7 +21,7 @@ LogMem is invite only during the pilot.
 
 ## More skills
 
-The plugin ships the two everyday skills. The full set of seven (onboarding, self-hosting, recovery, outage tracking and the SDK) is public at [logmem/skills](https://github.com/logmem/skills):
+Six skills ship in the plugin besides `setup`. Only `logmem-self-host` stays out, because it shows a Redis connection string and the plugin carries no backend strings. It is public at [logmem/skills](https://github.com/logmem/skills):
 
 ```bash
 npx skills add logmem/skills
@@ -35,7 +35,7 @@ npx skills add logmem/skills
 
 ## For maintainers
 
-The `logmem` and `logmem-decisions` skills are copies of `skills/` at the repo root. Edit them there, then run `node scripts/plugin-sync.mjs`. `npm test` fails when the copies drift. Design: `docs/superpowers/specs/2026-10-20-logmem-agent-plugin-design.md`.
+Every skill except `setup` is a copy of `skills/` at the repo root. Edit them there, then run `node scripts/plugin-sync.mjs`. `npm test` fails when the copies drift. Design: `docs/superpowers/specs/2026-10-20-logmem-agent-plugin-design.md`.
 
 Both plugin manifests declare MIT. The package license is in `LICENSE`.
 The logo copies come from `public/ds/logos/logmem-lockup.svg` and `public/ds/logos/logmem-symbol.svg`.

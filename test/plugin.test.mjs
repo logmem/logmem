@@ -154,3 +154,14 @@ test("plugin marketplaces: both repo catalogs list the plugin by its local path"
   assert.equal(cc.plugins[0].version, undefined, "plugin.json owns the version");
   for (const p of [e.source.path, cc.plugins[0].source]) assert.ok(existsSync(join(ROOT, p, ".claude-plugin", "plugin.json")), p);
 });
+
+test("plugin: ships seven skills with self-host left out, and setup proves the first entry", () => {
+  const dirs = readdirSync(join(PLUGIN, "skills")).sort();
+  assert.deepEqual(dirs, ["logmem", "logmem-decisions", "logmem-onboard-agent", "logmem-read-path-recovery", "logmem-sdk-primitives", "logmem-track-outage", "setup"]);
+  assert.ok(!dirs.includes("logmem-self-host"), "self-host shows a Redis URI, which the plugin bans");
+  const setup = readFileSync(join(PLUGIN, "skills", "setup", "SKILL.md"), "utf8");
+  assert.match(setup, /## 4\. Prove it worked/);
+  for (const t of ["logmem_note", "logmem_view", "logmem_recall"]) assert.ok(setup.includes(t), t);
+  assert.match(setup, /fixes the agent name/);
+  assert.match(readFileSync(join(ROOT, "skills", "logmem-onboard-agent", "SKILL.md"), "utf8"), /connection fixes the agent name/);
+});

@@ -3,6 +3,7 @@
 export const startPrompt = id => `logmem start ${id}
 
 You are ${id} on the team. LogMem is now your memory. Plain English, short sentences.
+On a hosted connection your agent name is fixed. If LogMem names a different agent, start as that name.
 
 1. Read the Brief. Answer every handoff in it within 24 hours: logmem_accept, or decline=true with a reason.
 2. Do your normal work. Write each real step with logmem_note (channels) or logmem_assign, logmem_update and logmem_stage (jobs).
