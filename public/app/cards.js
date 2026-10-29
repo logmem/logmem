@@ -117,14 +117,18 @@ export function agentCard(a, opts = {}) {
   const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
   const id = String(a.id || '').toLowerCase();
   const isAgent = (name) => id === name || id.startsWith(name + '-');
-  const provider = isAgent('claude') ? { name: 'Anthropic', asset: 'claude.png' }
+  const provider = isAgent('claude-code') ? { name: 'Anthropic', asset: 'claude-code.png' }
+    : isAgent('claude') ? { name: 'Anthropic', asset: 'claude.png' }
     : isAgent('codex') ? { name: 'OpenAI', asset: 'codex.svg' }
     : isAgent('chatgpt') ? { name: 'ChatGPT', asset: 'chatgpt.svg' }
     : isAgent('cursor') ? { name: 'Cursor', asset: 'cursor.svg' }
+    : isAgent('gemini-cli') ? { name: 'Google Gemini', asset: 'gemini-cli.png' }
     : isAgent('gemini') ? { name: 'Google Gemini', asset: 'gemini.png' }
     : isAgent('hermes') ? { name: 'Hermes', asset: 'hermes.png' }
-    : isAgent('opencode') ? { name: 'OpenCode' }
-    : isAgent('antigravity') ? { name: 'Antigravity' }
+    : isAgent('muse') ? { name: 'Muse', asset: 'muse.jpg' }
+    : isAgent('opencode') ? { name: 'OpenCode', asset: 'opencode.svg' }
+    : isAgent('antigravity') ? { name: 'Antigravity', asset: 'antigravity.png' }
+    : id.startsWith('grok') ? { name: 'SpaceX', asset: 'grok.svg' }
     : null;
   const client = AGENT_CLIENTS[id];
   const providerName = provider?.name || client?.name || '';

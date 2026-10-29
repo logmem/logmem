@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { CLIENTS, MCP_URL, humanPrompt, agentPrompt } from '../public/connect-prompt.js';
+import { CLIENTS, MCP_URL, humanPrompt, agentPrompt, musePrompt } from '../public/connect-prompt.js';
 const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8');
 const decode = s => s.replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>');
 
@@ -10,7 +10,7 @@ test('/connect shows every client panel and prompt as static HTML, equal to the 
   for (const name of CLIENTS) {
     const m = html.match(new RegExp(`<pre class="prompt-text" id="prompt-${name.toLowerCase()}"[^>]*>([\\s\\S]*?)</pre>`));
     assert.ok(m, name);
-    assert.equal(decode(m[1]), humanPrompt(name), name);
+    assert.equal(decode(m[1]), name === 'Muse' ? musePrompt() : humanPrompt(name), name);
     assert.ok(html.includes(`data-client="${name}" role="group"`), name);
   }
   assert.equal(decode(html.match(/id="prompt-agent"[^>]*>([\s\S]*?)<\/pre>/)[1]), agentPrompt());

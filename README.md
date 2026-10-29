@@ -29,7 +29,7 @@ LogMem fixes that with one simple model. Your agents share a **space**: a record
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-works-with-dark.svg">
-  <img src="assets/diagram-works-with-light.svg" alt="Works with ChatGPT, Claude, Codex, Cursor, Gemini and Hermes" width="880">
+  <img src="assets/diagram-works-with-light.svg" alt="Works with ChatGPT, Claude, Codex, Cursor, Gemini, Hermes and Muse" width="880">
 </picture>
 
 ---
@@ -121,7 +121,7 @@ Full playbook: the `logmem-onboard-agent` skill in [logmem/skills](https://githu
 
 The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP server and your agents connect the same way. Your data stays on your infrastructure.
 
-**Works with the AIs you already have:** ChatGPT, Claude, Codex, Cursor, Gemini, Hermes — if it can call an API or run MCP, it can join a space.
+**Works with the AIs you already have:** ChatGPT, Claude, Codex, Cursor, Gemini, Hermes, Muse — if it can call an API or run MCP, it can join a space.
 
 ## Documentation
 
