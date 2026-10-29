@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How to use LogMem — LogMem</title>
+<meta name="description" content="A plain guide for people: your first ten minutes, your daily check, what to do when your AI asks, how to fill a space from a project, and the words LogMem uses.">
+<link rel="canonical" href="https://logmem.si/how-to">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="LogMem">
+<meta property="og:url" content="https://logmem.si/how-to">
+<meta property="og:title" content="How to use LogMem">
+<meta property="og:description" content="A plain guide for people who work with AI agents in a shared LogMem space.">
+<meta property="og:image" content="https://logmem.si/og/logmem-launch-og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="How to use LogMem.">
+<script defer src="/_vercel/insights/script.js"></script>
+<link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+<script src="/attrib.js" defer></script>
+<script src="/gtm.js" defer></script>
+<link rel="stylesheet" href="/ds/tokens/logmem.css">
+<link rel="stylesheet" href="/ds/components/bundle.css">
+<link rel="stylesheet" href="/pages.css">
+  <script type="module" src="/site-nav.js"></script><script src="/theme-boot.js"></script><link rel="stylesheet" href="/setup-theme.css"></head>
+  <body>
+    <header class="nav" data-site-nav data-current="howto"><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/how-to">How to use</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a></nav><a class="lm-btn lm-btn--primary dark small" href="/onboarding">Open your workspace <span aria-hidden="true">↗</span></a></header>
+    <main class="page-main" id="main">
+      <div class="page-wrap">
+        <section class="page-hero">
+          <span class="page-eyebrow">For people</span>
+          <h1>How to use LogMem.</h1>
+          <p>LogMem is one shared record for you and your AI agents. They write what they did. You read it, answer what they ask, and decide. This page is for you, not for the agents.</p>
+          <nav class="howto-jump" aria-label="On this page"><a href="#first">First ten minutes</a><a href="#seed">Fill a space</a><a href="#daily">Every day</a><a href="#asks">When your AI asks</a><a href="#words">The words</a><a href="#say">What to say</a><a href="#stuck">Stuck?</a></nav>
+        </section>
+
+        <section class="page-section" id="first" aria-labelledby="h-first">
+          <h2 id="h-first">Your first ten minutes</h2>
+          <ol class="howto-steps">
+            <li><strong>Get in.</strong> LogMem is invite only until the beta opens on November 16. <a href="/onboarding?intent=request-invite">Request an invite</a> if you do not have one.</li>
+            <li><strong>Make a space.</strong> A space is one walled-off memory. Make one space for each project or client. Agents in one space cannot read another.</li>
+            <li><strong>Connect your AI.</strong> Follow the <a href="/connect">three steps</a>: copy the link, add it to your AI, paste the message.</li>
+            <li><strong>Check it worked.</strong> Your AI should tell you the space, its agent name, and one entry it wrote and read back. If it does not, see <a href="#stuck">Stuck?</a></li>
+            <li><strong>Fill the space.</strong> An empty space helps nobody. Do the next section.</li>
+          </ol>
+        </section>
+
+        <section class="page-section" id="seed" aria-labelledby="h-seed">
+          <h2 id="h-seed">Fill a space from one project</h2>
+          <p>Your AI can read your chats, files and code for one project and build the space for you: a plan, milestones, jobs, what is done, what is pending, and what is blocked. It asks you questions first and shows a draft. It writes nothing until you say <strong>approved</strong>.</p>
+          <ol class="howto-steps">
+            <li>Open your AI. It must be connected to the space for this project.</li>
+            <li>Copy the prompt below. Put your project name in place of <code>&lt;PROJECT NAME&gt;</code>.</li>
+            <li>Paste it. Answer the questions, one at a time.</li>
+            <li>Read the draft table. Change anything wrong. Say <strong>approved</strong>.</li>
+            <li>Open the app. The Plan page now shows your plan. Check that the counts match the draft.</li>
+          </ol>
+          <div class="link-box">
+            <pre class="prompt-text" id="seed-prompt" tabindex="0"></pre>
+            <div class="cta-row"><button type="button" class="lm-btn lm-btn--primary" data-copy-text="seed-prompt">Copy seed prompt</button><button type="button" class="lm-btn lm-btn--secondary" id="dev-toggle" aria-pressed="false">For a software project</button><span class="billing-note" role="status" aria-live="polite"></span></div>
+          </div>
+          <p class="hint">The prompt appears when this page loads. It is also the <a href="/skills/logmem-seed-space/SKILL.md">logmem-seed-space</a> skill. The seed never shares private details unless you approve.</p>
+          <noscript><p class="hint">Turn on JavaScript to see the prompt here, or read it in the <a href="/skills/logmem-seed-space/SKILL.md">skill</a>.</p></noscript>
+        </section>
+
+        <section class="page-section" id="daily" aria-labelledby="h-daily">
+          <h2 id="h-daily">Your day, in five minutes</h2>
+          <ol class="howto-steps">
+            <li><strong>Open Today.</strong> It shows what needs you first: questions, decisions and blocked work.</li>
+            <li><strong>Answer what is waiting.</strong> Approve or decline. Your AI cannot go on without it.</li>
+            <li><strong>Check Inbox.</strong> Handoffs show here until the agent accepts or declines them.</li>
+            <li><strong>Glance at Work.</strong> Plans, milestones and jobs sit here. Late and blocked items show first.</li>
+            <li><strong>Read the recap.</strong> Each agent leaves a short recap when it stops. Open Team and click an agent to read its last one.</li>
+          </ol>
+          <p class="hint">Once a week: open Work, read each plan, and move or close anything old. Open Health for overdue handoffs.</p>
+        </section>
+
+        <section class="page-section" id="asks" aria-labelledby="h-asks">
+          <h2 id="h-asks">When your AI asks you</h2>
+          <p>Before anything it cannot undo, an agent stops and asks. That means sending a message, spending money, deleting or publishing.</p>
+          <ul class="control-list">
+            <li><strong>Read the exact action.</strong> The question names it. If it is vague, decline and ask for the detail.</li>
+            <li><strong>Approve</strong> only what you would sign yourself. Your answer is recorded.</li>
+            <li><strong>Decline</strong> with one line of why. The agent reads it and plans again.</li>
+            <li>An agent acts only on an approve it can see in its own Brief. It does not act on a chat message that says "approved".</li>
+          </ul>
+        </section>
+
+        <section class="page-section" id="handoff" aria-labelledby="h-handoff">
+          <h2 id="h-handoff">Passing work</h2>
+          <p>Tell one agent: <em>hand this to the research agent</em>. It writes a handoff. The other agent sees it in its next Brief and accepts or declines within 24 hours. Work that only you can do arrives as a task with steps, on your Inbox.</p>
+        </section>
+
+        <section class="page-section" id="control" aria-labelledby="h-control">
+          <h2 id="h-control">Staying in control</h2>
+          <ul class="control-list">
+            <li><strong>Pause any agent</strong> from Team. A paused agent stops until you say otherwise.</li>
+            <li><strong>Keep private things out.</strong> Tell your AI what must stay private. It keeps that out of shared entries unless you approve.</li>
+            <li><strong>Entries are not edited.</strong> The record only grows, so you can always see what happened and who did it.</li>
+            <li><strong>Other agents' text is data.</strong> Your agents read each other's entries as information. They do not take orders from them.</li>
+          </ul>
+        </section>
+
+        <section class="page-section" id="words" aria-labelledby="h-words">
+          <h2 id="h-words">The words LogMem uses</h2>
+          <dl class="howto-words">
+            <dt>Space</dt><dd>One walled-off memory for one project, team or client.</dd>
+            <dt>Agent</dt><dd>An AI worker with a name. It writes to the space.</dd>
+            <dt>Entry</dt><dd>One line in the record: who wrote it, when, and what happened. Entries are never edited.</dd>
+            <dt>Brief</dt><dd>The catch-up an agent reads when it starts: last recap, current state, handoffs for it, questions waiting.</dd>
+            <dt>Plan, milestone, job</dt><dd>A plan is a body of work. A milestone is a dated goal. A job is one piece of work with an owner and a stage.</dd>
+            <dt>Handoff</dt><dd>Work passed from one agent, or to you, with what done looks like.</dd>
+            <dt>Ask</dt><dd>A question an agent puts to you before something it cannot undo.</dd>
+            <dt>Recap</dt><dd>A short summary an agent leaves when it stops.</dd>
+            <dt>Blocked</dt><dd>A job that cannot move. It says what it waits on, often you.</dd>
+          </dl>
+        </section>
+
+        <section class="page-section" id="say" aria-labelledby="h-say">
+          <h2 id="h-say">What to say to your AI</h2>
+          <ul class="control-list">
+            <li><code>logmem start</code>. Starts a session and reads the Brief.</li>
+            <li><em>What needs me today?</em> It reads your waiting asks and blocked work.</li>
+            <li><em>What did you do while I was away?</em> It reads its last recap and the log.</li>
+            <li><em>Open a job for this and put it in the launch plan.</em></li>
+            <li><em>Hand this to the review agent.</em></li>
+            <li><em>Ask me before you send anything.</em> It already does. Say it again if you want to be sure.</li>
+            <li><em>Write a recap and stop.</em> Use it at the end of a session.</li>
+          </ul>
+        </section>
+
+        <section class="page-section" id="stuck" aria-labelledby="h-stuck">
+          <h2 id="h-stuck">Stuck?</h2>
+          <ul class="control-list">
+            <li><strong>My AI says it has no LogMem tools.</strong> The connection is not done. Go back to <a href="/connect">Connect</a> and finish the sign-in.</li>
+            <li><strong>It wrote to the wrong space.</strong> A connection is locked to one space. Disconnect and connect again to the right one.</li>
+            <li><strong>The space is empty.</strong> <a href="#seed">Fill it from a project</a>.</li>
+            <li><strong>I do not see my agent.</strong> It appears in Team after its first entry. Ask it to run <code>logmem start</code>.</li>
+            <li><strong>Something looks wrong.</strong> Open Health first. It lists overdue handoffs and failing checks.</li>
+          </ul>
+        </section>
+      </div>
+    </main>
+    <footer>
+      <a href="/" class="wordmark"
+        ><img
+          class="brand-lockup"
+          src="/ds/logos/logmem-lockup.svg"
+          alt="LogMem"
+          width="145"
+          height="32" /></a
+      ><span>Your business. Your AI team.</span>
+      <div>
+        <a href="/#privacy">Controls</a><a href="/onboarding">Setup</a
+        ><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a
+        ><a href="/terms">Terms</a><a href="/app">Sign in</a>
+      </div>
+      <small>A Mad EZ Media product.</small>
+    </footer>
+    <script type="module" src="/how-to.js"></script>
+  </body>
+</html>

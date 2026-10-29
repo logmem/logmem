@@ -12,7 +12,7 @@ import { readdirSync, readFileSync, existsSync, statSync, mkdirSync, rmSync, cop
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SHIPPED_SKILLS = ["logmem", "logmem-decisions", "logmem-onboard-agent", "logmem-read-path-recovery", "logmem-sdk-primitives", "logmem-track-outage"];
+export const SHIPPED_SKILLS = ["logmem", "logmem-decisions", "logmem-onboard-agent", "logmem-read-path-recovery", "logmem-sdk-primitives", "logmem-seed-space", "logmem-track-outage"];
 // logmem-self-host stays out: it shows a Redis URI, and the plugin test bans backend strings in the package.
 export const PLUGIN_ONLY_SKILLS = ["setup"];
 

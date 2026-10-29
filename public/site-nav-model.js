@@ -6,6 +6,7 @@ const CORE_SKILLS = [['logmem', 'Everyday LogMem'], ['logmem-onboard-agent', 'Ag
 export const MENU = [
   { id: 'how', label: 'How it works', href: '/#network' },
   { id: 'control', label: 'Your control', href: '/#privacy' },
+  { id: 'howto', label: 'How to use', href: '/how-to' },
   {
     id: 'agents', label: 'Agent setup', href: '/agents',
     sub: [

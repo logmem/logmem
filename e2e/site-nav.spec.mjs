@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {MENU} from '../public/site-nav-model.js';
 
-const PAGES=['/agents','/agents/codex','/skills','/onboarding','/pricing','/connect','/privacy','/terms'];
+const PAGES=['/agents','/agents/codex','/skills','/onboarding','/pricing','/connect','/how-to','/privacy','/terms'];
 
 for(const path of PAGES){
   test('phone menu opens and shows every link on '+path,async({page})=>{
