@@ -1029,3 +1029,32 @@ dl.lmx-prof-sub dd{margin:0}
 .lmx-prof-timeline li:last-child{border-bottom:0}
 .lmx-prof-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 @media(max-width:600px){.lmx-prof-head{padding:14px}.lmx-prof-timeline li{grid-template-columns:48px auto minmax(0,1fr)}.lmx-prof-timeline li .lmx-meta{grid-column:1/-1}}
+
+/* App home in the sign-in look: sage canvas, big two-tone headline, mono eyebrow, soft 20px cards, tagline.
+   Scoped to the home route. Colours come from tokens, so all four themes keep working. */
+:root[data-app-theme="white"]{--home-canvas:#F2F6F3;--home-shadow:0 12px 40px #163c2510}
+:root[data-app-theme="sage"]{--home-canvas:#EAF1EC;--home-shadow:0 12px 40px #163c2512}
+:root[data-app-theme="sand"]{--home-canvas:#F6F0E5;--home-shadow:0 12px 40px #3b2f1c12}
+:root[data-app-theme="midnight"]{--home-canvas:var(--bg);--home-shadow:0 12px 40px #0006}
+.lmx-workarea[data-route="home"]{background:var(--home-canvas,var(--bg))}
+.lmx-workarea[data-route="home"] .lmx-hero .lm-eyebrow{color:var(--brand);letter-spacing:.1em;font-size:10px}
+.lmx-workarea[data-route="home"] h1{font:600 clamp(34px,4.6vw,56px)/1.08 var(--font-display);letter-spacing:-.05em;margin:20px 0 16px}
+.lmx-workarea[data-route="home"] h1 span{display:block;color:var(--text-subtle)}
+.lmx-workarea[data-route="home"] .lmx-hero p{font-size:16px;line-height:1.7;max-width:440px;color:var(--text-muted)}
+.lmx-workarea[data-route="home"] .lmx-hero-note{margin-top:26px;border-top:1px solid var(--border);padding-top:20px;display:flex;align-items:flex-start;gap:16px;max-width:560px}
+.lmx-workarea[data-route="home"] .lmx-hero-note img{flex:none;margin-top:3px}
+.lmx-workarea[data-route="home"] .lmx-hero-note p{font-size:13px;line-height:1.65;max-width:340px;margin:0}
+.lmx-workarea[data-route="home"] .lmx-card,
+.lmx-workarea[data-route="home"] .lmx-triage-strip,
+.lmx-workarea[data-route="home"] .lmx-operations,
+.lmx-workarea[data-route="home"] .lmx-terminal-action,
+.lmx-workarea[data-route="home"] .lmx-launchpad{border-radius:20px;border-color:var(--border);background:var(--surface);box-shadow:var(--home-shadow)}
+.lmx-workarea[data-route="home"] .lmx-card{padding:20px 22px}
+.lmx-workarea[data-route="home"] .lmx-triage-strip{padding:8px}
+.lmx-workarea[data-route="home"] .lmx-triage-strip>button{border-radius:14px}
+.lmx-workarea[data-route="home"] .lmx-terminal-action{padding:18px 22px;color:var(--text)}
+.lmx-workarea[data-route="home"] .lmx-terminal-action .lm-eyebrow{color:var(--brand)}
+.lmx-workarea[data-route="home"] .lmx-terminal-action small{color:var(--text-muted)}
+.lmx-workarea[data-route="home"] .lmx-section-title{font:600 20px/1.3 var(--font-display);letter-spacing:-.025em}
+.lmx-home-tagline{margin:36px 0 4px;font-size:12px;color:var(--text-subtle)}
+@media (max-width:760px){.lmx-workarea[data-route="home"] .lmx-hero-note{display:none}.lmx-workarea[data-route="home"] h1{font-size:38px;margin:18px 0 14px}.lmx-workarea[data-route="home"] .lmx-card{padding:16px}}

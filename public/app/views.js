@@ -43,7 +43,7 @@ pages.home = async () => {
   observeTelemetry(state.space,{decisions:{value:Array.isArray(d.needs_items)?d.needs_items.filter(i=>i.type==='decision').length:null}});
   const b = briefFor(d), needs = d.needs_items || [];
   const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
-  const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work, in view.';
+  const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work,', sub = b.decisions ? 'Everything else is in view.' : 'in view.';
   if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Today'],html`<h1>Your space is ready.</h1>${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}`);
   const review = i => i.type==='task' ? openDrawer('needs','tasks') : i.job ? openDrawer('job',i.job) : openDrawer('needs','all');
   const attention = i => bentoTaskCard({item:i,space:state.space,review:()=>review(i)});
@@ -54,7 +54,8 @@ pages.home = async () => {
   const setAttn = kind => () => { pf.attn = kind; saveFilt(); draw(); document.getElementById('today-board')?.scrollIntoView({ block: 'nearest' }); };
   const pills = [['all', 'All'], ['decision', 'Decisions'], ['task', 'Tasks'], ['review', 'Reviews']];
   renderView('home', ['Today'], html`
-    <div class="lmx-today-heading"><div><span class="lm-eyebrow">Your workspace · ${state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name:state.space}</span><h1>${heading}</h1><p>Decide what needs you. Keep the next step in view.</p></div>
+    <div class="lmx-today-heading lmx-hero"><div><span class="lm-eyebrow">Your workspace · ${state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name:state.space}</span><h1>${heading}<span>${sub}</span></h1><p>Decide what needs you. Keep the next step in view.</p>
+      <div class="lmx-hero-note"><img src="/ds/logos/logmem-symbol.svg" alt="" width="34" height="24"><p>Counts describe the records loaded in this view. Open Inbox for unanswered coordination.</p></div></div>
       <a class="lm-btn lm-btn--secondary" href="#/queue">Open Inbox</a></div>
     ${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}
     <div class="lmx-triage-strip" role="group" aria-label="Workspace status filters">${[['decision',b.decisions,'Decisions'],['task',b.tasks,'Tasks'],['waiting',b.blocked,'Waiting'],['done',b.done+' / '+b.total,'Done']].map(([kind,value,label])=>html`<button type="button" aria-pressed=${String(pf.attn===kind)} @click=${setAttn(pf.attn===kind?'all':kind)}><strong>${value??'Unknown'}</strong><span>${label}</span></button>`)}<span class="lmx-meta">Loaded workspace records · ${d.generated_at?ago(d.generated_at):'this read'}</span></div>
@@ -66,7 +67,8 @@ pages.home = async () => {
       ${!pf.attn||pf.attn==='all'?html`<section id="today-waiting"><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-stack">${waits.length ? keyed(waits, j => j.id, j => jobCard(j, {route:'home'})) : emptyState('No other blocked jobs were returned.', 'This is not a complete handoff backlog.')}</div></section>`:nothing}
       <section id="today-updates"><h2 class="lmx-section-title">Recent job updates</h2><div class="lmx-card lmx-update-list">${groupUpdates(d.recent || []).groups.slice(0,6).map(g => g.entries[0]).map(e => html`<div class="lmx-update"><div class="lmx-meta">${hhmm(e.ts)} · ${agentName(e.by)} · ${e.kind}</div><p>${e.summary}</p><a href=${'#/job/' + encodeURIComponent(e.where.replace(/^job:/,''))}>Open work →</a></div>`)}${!d.recent?.length ? html`<p class="lmx-meta">No recent job updates were returned. See coverage above.</p>` : nothing}</div><a href="#/activity" class="lmx-text-link">View Activity →</a></section>
     </div><details class="lmx-operations" ?open=${pf.operations!==false} @toggle=${e=>{pf.operations=e.currentTarget.open;saveFilt();}}><summary><strong>Operations</strong><span>Plans, team and workspace guidance</span></summary><div class="lmx-operations-body"><section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(plans.active, p => p.id, p => planProgressTile(p))}</div>${plans.empty.length ? html`<details class="lmx-parked-plans"><summary>Show ${plans.empty.length} parked ${plans.empty.length === 1 ? 'plan' : 'plans'}</summary><div class="lmx-stack">${keyed(plans.empty, p => p.id, p => planProgressTile(p))}</div></details>` : nothing}<a href="#/work" class="lmx-text-link">Open all work →</a></section>
-      <p class="lmx-meta">${d.agents.length} agents have records. Reporting activity does not prove a running process. <a href="#/agents">Review team →</a></p><details class="lmx-operations-assistant"><summary>Workspace guidance</summary>${workspaceAssistant('home')}</details></div></details></div>`);
+      <p class="lmx-meta">${d.agents.length} agents have records. Reporting activity does not prove a running process. <a href="#/agents">Review team →</a></p><details class="lmx-operations-assistant"><summary>Workspace guidance</summary>${workspaceAssistant('home')}</details></div></details></div>
+    <p class="lmx-home-tagline">Your business. Your AI team.</p>`);
   };
   draw();
 };
