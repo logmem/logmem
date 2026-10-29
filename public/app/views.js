@@ -19,6 +19,7 @@ import { ADMIN, signOut } from './shell.js';
 import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers, AGENT_MODES, agentMatch, agentCounts, groupDecisions, verdictLabel, agentColor, decisionGraph, splitDecisionRows, BOARD_FILTERS, boardMatch, boardCounts } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 import { handoffMap, timeScrubber, fleetPulse, blockerMap } from './flow-views.js';
+import { agentProfile } from './profile-components.js';
 import { blockerKind } from './flow-model.js';
 
 import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js';
@@ -231,14 +232,9 @@ pages.agents = async () => {
 pages.agent = async (id) => {
   const d = await api('agent', { id });
   if (!ok(d)) return;
-  const r = d.recap, follows = Object.keys(d.follows || {});
-  const recap = r ? html`<p style="margin:0 0 10px;font-size:15px">${r.summary}</p>${r.next && r.next.length ? html`<span class="lm-eyebrow">Next</span><ul style="margin:4px 0 10px;padding-left:18px">${r.next.map((n) => html`<li>${n}</li>`)}</ul>` : nothing}<div class="lm-prov"><span>${r.mode}${r.reason ? ' · ' + r.reason : ''}</span><span>shift ${r.shift}</span><span>${ago(r.ended_at)}</span></div>` : emptyState('No Recap yet.', 'This agent has not finished a shift.');
-  const shifts = (d.shifts || []).map((s) => html`<tr><td class="mono" style="font-size:12px">${s.shift || ''}</td><td style="font-size:13px">${s.surface || ''}</td><td style="font-size:13px">${hhmm(s.ts)}</td><td style="font-size:13px">${s.auto ? 'auto' : 'manual'}</td></tr>`);
-  renderView('agent', [html`<a href="#/agents">Agents</a>`, id], html`<div class="lm-row" style="gap:14px">${agent('agent:' + id)}${seenTag(d.seen)}</div>
-    <p style="margin:0;font-size:13px" class="muted">Current reports for ${id}. Recent activity does not prove a running process. Schedule coverage and run controls are not verified.</p>
-    <div class="grid2">${panel('Last Recap', recap)}${panel('Now', kv(d.now))}${panel('Handoffs waiting for ' + id, d.handoffs.length ? entries(d.handoffs) : emptyState('Nothing waiting.', 'Handoffs show here until the agent accepts or declines them.'))}
-      ${panel('Follows', follows.length ? follows.map((f) => html`<div class="lm-row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span class="mono" style="font-size:13px">${f}</span><span class="lm-badge">${(d.follows[f] || {}).role || ''}</span></div>`) : emptyState('Follows nothing.', 'Handoffs and logmem_follow add channels and jobs here.'))}</div>
-    ${panel('Recent shifts', shifts.length ? table(['Shift', 'Host', 'Started', 'Start'], shifts) : emptyState('No shifts.', ''))}${panel('Log', entries(d.log))}`);
+  const pf = filt('agent:' + state.space + ':' + id);
+  const draw = () => renderView('agent', [html`<a href="#/agents">Agents</a>`, id], agentProfile({ d, id, pf, space: state.space, redraw: () => { saveFilt(); draw(); } }));
+  draw();
 };
 
 // ─── Log: "What exactly happened?" ──────────────────────────────────
