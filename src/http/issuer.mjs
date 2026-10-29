@@ -20,6 +20,11 @@
 // (/.well-known/oauth-protected-resource/api/mcp), which names /api/mcp. Its
 // tokens are still bound to /mcp. vercel.json marks the /mcp rewrite with
 // ?_lm_path=mcp, so the route can tell the two paths apart.
+//
+// Some connectors are given the bare origin (https://logmem.si). middleware.js
+// rewrites a JSON-RPC POST to / into the MCP route with ?_lm_path=root. Those
+// clients get the path-specific document /.well-known/oauth-protected-resource/root,
+// which names the origin, so their prefix check passes. Tokens stay bound to /mcp.
 
 export const PROD_ISSUER = "https://logmem.si";
 export const SCOPE_READ = "logmem:read";
@@ -54,7 +59,7 @@ export function issuerFor(req, env = process.env) {
 
 export const canonicalResource = (req, env = process.env) => `${issuerFor(req, env)}/mcp`;
 
-/** "/api/mcp" when the client connected through the old path, else "/mcp". */
+/** "/" for the bare origin, "/api/mcp" for the old path, else "/mcp". */
 export function mcpPathOf(req) {
   let u;
   try {
@@ -63,13 +68,15 @@ export function mcpPathOf(req) {
     return "/mcp";
   }
   if (u.searchParams.get("_lm_path") === "mcp") return "/mcp";
+  if (u.searchParams.get("_lm_path") === "root") return "/";
   return u.pathname === "/api/mcp" || u.pathname.startsWith("/api/mcp/") ? "/api/mcp" : "/mcp";
 }
 
 /** The protected resource metadata URL for the path this client used. */
 export function resourceMetadataUrl(req, env = process.env) {
   const base = `${issuerFor(req, env)}/.well-known/oauth-protected-resource`;
-  return mcpPathOf(req) === "/api/mcp" ? `${base}/api/mcp` : base;
+  const path = mcpPathOf(req);
+  return path === "/api/mcp" ? `${base}/api/mcp` : path === "/" ? `${base}/root` : base;
 }
 
 /**
@@ -82,7 +89,7 @@ export function bindResource(value, req, env = process.env) {
   if (typeof value !== "string") return { error: "invalid_target" };
   const issuer = issuerFor(req, env);
   const v = value.replace(/\/+$/, "");
-  if (v === canon || v === `${issuer}/api/mcp`) return { resource: canon };
+  if (v === canon || v === `${issuer}/api/mcp` || v === issuer) return { resource: canon };
   return { error: "invalid_target" };
 }
 

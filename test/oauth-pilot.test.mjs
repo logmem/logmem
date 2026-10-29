@@ -277,3 +277,25 @@ test("revoke: no token is 400, an unknown client is 401, a confidential client n
     assert.equal((await json(revokeHandler, mockReq({ method: "GET", url: "/api/oauth/revoke" }))).res.statusCode, 405);
   });
 });
+
+test("bare-origin connectors: root metadata names the origin, the challenge points at it, tokens stay bound to /mcp", async () => {
+  await withEnv(PINNED, async () => {
+    const pr = (url) => json(prMetadata, mockReq({ url })).then((x) => x.body.resource);
+    assert.equal(await pr("/api/well-known/oauth-protected-resource?path=root"), "https://logmem.si");
+    assert.equal(await pr("/.well-known/oauth-protected-resource/root"), "https://logmem.si");
+    const meta = (url) => wwwAuthenticate(mockReq({ url }), {}, PINNED).match(/resource_metadata="([^"]+)"/)[1];
+    assert.equal(meta("/api/mcp?_lm_path=root"), "https://logmem.si/.well-known/oauth-protected-resource/root");
+    const { bindResource } = await import("../src/http/issuer.mjs");
+    assert.deepEqual(bindResource("https://logmem.si", mockReq({ url: "/" }), PINNED), { resource: "https://logmem.si/mcp" });
+    assert.deepEqual(bindResource("https://logmem.si/", mockReq({ url: "/" }), PINNED), { resource: "https://logmem.si/mcp" });
+    assert.equal(bindResource("https://evil.example", mockReq({ url: "/" }), PINNED).error, "invalid_target");
+  });
+});
+
+test("middleware.js sends only POST / to the MCP route", async () => {
+  const { default: mw, config } = await import("../middleware.js");
+  assert.equal(config.matcher, "/");
+  assert.equal(mw(new Request("https://logmem.si/", { method: "GET" })), undefined);
+  const res = mw(new Request("https://logmem.si/", { method: "POST" }));
+  assert.equal(res.headers.get("x-middleware-rewrite"), "https://logmem.si/api/mcp?_lm_path=root");
+});
