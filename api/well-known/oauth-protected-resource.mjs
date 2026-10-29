@@ -4,7 +4,8 @@
 // token is bound to it. The path-specific document for the old /api/mcp URL
 // (/.well-known/oauth-protected-resource/api/mcp, reached through a rewrite
 // that passes ?path=) names /api/mcp, so MCP SDK clients configured with that
-// URL pass their resource prefix check. See src/http/issuer.mjs.
+// URL pass their resource prefix check. The same goes for /root, the document
+// for connectors given the bare origin. See src/http/issuer.mjs.
 
 import { issuerFor, SCOPES } from "../../src/http/issuer.mjs";
 
@@ -27,7 +28,7 @@ export default function handler(req, res) {
   const url = new URL(req.url || "/", "https://logmem.local");
   const suffix = (url.searchParams.get("path") || url.pathname.replace(/^.*\/oauth-protected-resource\/?/, "")).replace(/^\/+|\/+$/g, "");
   res.status(200).setHeader("Content-Type", "application/json").json({
-    resource: suffix === "api/mcp" ? `${issuer}/api/mcp` : `${issuer}/mcp`,
+    resource: suffix === "api/mcp" ? `${issuer}/api/mcp` : suffix === "root" ? issuer : `${issuer}/mcp`,
     authorization_servers: [issuer],
     scopes_supported: SCOPES,
     bearer_methods_supported: ["header"],
