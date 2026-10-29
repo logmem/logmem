@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    { "source": "/llm.txt", "destination": "/llms.txt", "permanent": true },
+    { "source": "/llm.tx", "destination": "/llms.txt", "permanent": true }
+  ],
   "rewrites": [
     {
       "source": "/sign-in",
