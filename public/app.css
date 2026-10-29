@@ -1193,3 +1193,23 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   .lmx-head .lmx-map-toggle{width:auto;margin-left:auto}
   .lmx-head .lmx-map-toggle button{flex:0 0 auto;min-height:32px}
 }
+/* Phone, second pass: row one holds the page name and quick actions, row two holds space, theme and view. */
+@media (max-width:639px){
+  .lmx-head,:root[data-app-theme] .lmx-head{padding:6px 12px;gap:4px 8px}
+  .lmx-head::after{content:"";order:1;flex:0 0 100%;height:0}
+  .lmx-head>*{order:2}
+  .lmx-head>.lm-crumbs,:root[data-app-theme] .lmx-head>.lm-crumbs{order:0;flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lmx-head>.lmx-live,.lmx-head>.lmx-searchbtn,.lmx-head>.lmx-mobile-settings{order:0}
+  .lmx-head>.lmx-searchbtn{margin-left:0}
+  .lmx-head>.lmx-searchbtn,.lmx-head>.lmx-mobile-settings{min-height:36px;min-width:36px}
+  .lmx-head>.lm-badge--warning{display:none}
+  .lmx-head .lmx-headspace summary{min-height:36px}
+  .lmx-head .lmx-theme-picker>summary{min-height:36px}
+  .lmx-head .lmx-map-toggle{margin-left:auto}
+  .lmx-head .lmx-map-toggle button{gap:4px;padding:0 9px;min-height:30px}
+}
+@media (max-width:639px){
+  .lmx-head .lmx-headspace{max-width:7.25rem}
+  .lmx-head .lmx-map-toggle button{padding:0 7px;gap:3px}
+  .lmx-head .lmx-space-avatar{display:none}
+}
