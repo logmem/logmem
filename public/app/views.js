@@ -267,9 +267,19 @@ pages.channels = async (id) => { filt('log').where = id ? 'channel:' + id : 'cha
 
 // Knowledge keeps decisions and discussions attached to their existing sources.
 pages.knowledge = async () => {
-  const [d, c] = await Promise.all([api('decisions'), api('channels')]);
+  const [d, c, fleet] = await Promise.all([api('decisions'), api('channels'), api('agents').catch(() => null)]);
   if (!ok(d) || !ok(c)) return;
   const waiting = d.waiting || [], decided = d.decided || [];
+  const pf = filt('knowledge:' + state.space);
+  const byAgent = new Map();
+  decided.forEach((row) => { const id = String(row.ask?.by || 'unknown'); byAgent.set(id, (byAgent.get(id) || 0) + 1); });
+  const decisionAgents = [...byAgent.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const applyDecisionAgent = (agentId) => {
+    pf.historyAgent = pf.historyAgent === agentId ? '' : agentId; saveFilt();
+    document.querySelectorAll('[data-agent-filter]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.agentFilter === (pf.historyAgent || ''))));
+    document.querySelectorAll('.lmx-hist-card').forEach((card) => { card.hidden = Boolean(pf.historyAgent) && card.dataset.agent !== pf.historyAgent; });
+  };
+  const exportAudit = () => copy(['LogMem settled decisions', `Space: ${state.space}`, ...decided.map(({ ask, answer }) => `- ${ask?.summary || 'Untitled decision'} | ${answer?.payload?.verdict || 'outcome unavailable'} | ${agentName(answer?.by)} | ${answer?.ts || 'time unavailable'} | trail ${ask?.trail || 'unavailable'}`)].join('\n'));
   observeTelemetry(state.space,{decisions:{value:Array.isArray(d.waiting)?d.waiting.length:null}});
   // The card you picked glows and the rest dim for three seconds. Picking another card restarts the timer.
   const focusCard = (el) => { clearTimeout(focusCard.t); document.querySelectorAll('.lmx-focus').forEach((x) => x.classList.remove('lmx-focus')); el.classList.add('lmx-focus'); document.body.classList.add('lmx-focusing'); focusCard.t = setTimeout(() => { el.classList.remove('lmx-focus'); document.body.classList.remove('lmx-focusing'); }, 3000); };
@@ -280,9 +290,18 @@ pages.knowledge = async () => {
     ${hot.length ? html`<svg viewBox=${'0 0 ' + W + ' ' + H} role="presentation" aria-hidden="true">${hot.map((row, i) => { const y = 24 + i * 34, col = agentColor(row.agent), bx = 186 + row.nodes.length * 30 + 4; return svg`<g style=${'color:' + col}><text x="6" y=${y + 4} class="lmx-neural-label">${agentName(row.agent)}</text><line x1="170" y1=${y} x2=${170 + row.nodes.length * 30} y2=${y} class="lmx-neural-line"/>${row.nodes.map((n, j) => svg`<circle cx=${186 + j * 30} cy=${y} r="8" class=${'lmx-neural-node' + (n.state === 'pending' ? ' is-pending' : '')} @click=${() => jump(n.trail)}><title>${tip(row, n)}</title></circle>`)}<rect x=${bx} y=${y - 10} width="78" height="20" rx="10" class="lmx-neural-badgebg"/><text x=${bx + 39} y=${y + 4} class="lmx-neural-badge">${row.pending} pending</text></g>`; })}</svg>` : nothing}
     ${clear.length ? html`<p class="lmx-neural-clear"><b>All clear</b> ${clear.map((r) => html`<span class="lmx-neural-chip">${agentName(r.agent)}<i>${r.decided} settled</i></span>`)}</p>` : nothing}
     <ul class="lmx-flowkey"><li><i data-k="pend"></i>Waiting on you</li><li><i data-k="done"></i>Settled</li></ul></section>` : nothing;
-  const histCard = ({ ask: a, answer }) => { const v = verdictLabel(answer?.payload?.verdict); return html`<article class="lmx-card" data-key=${'decision:' + a.trail}><div class="lmx-histhead"><h3>${a.summary}</h3>${v ? html`<span class="lmx-verdict" data-v=${answer.payload.verdict}>${v}</span>` : nothing}</div><div class="lmx-meta">${agentName(answer.by)} · ${answer.ts ? ago(answer.ts) : 'Timestamp unavailable'} <button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></div>${entries([answer])}<a href=${'#/discussion/decision/'+encodeURIComponent(a.trail)}>Source comments</a></article>`; };
+  const histCard = ({ ask: a, answer }) => { const v = verdictLabel(answer?.payload?.verdict); return html`<article class="lmx-card lmx-hist-card" data-agent=${String(a.by || 'unknown')} data-key=${'decision:' + a.trail} ?hidden=${Boolean(pf.historyAgent) && pf.historyAgent !== String(a.by || 'unknown')}><div class="lmx-histhead"><h3>${a.summary}</h3>${v ? html`<span class="lmx-verdict" data-v=${answer.payload.verdict}>${v}</span>` : nothing}</div><div class="lmx-meta">${agentName(answer.by)} · ${answer.ts ? ago(answer.ts) : 'Timestamp unavailable'} <button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></div>${entries([answer])}<a href=${'#/discussion/decision/'+encodeURIComponent(a.trail)}>Source comments</a></article>`; };
+  const fleetAgents = Array.isArray(fleet?.agents) ? fleet.agents : [];
+  const activeAgents = fleetAgents.filter((a) => a.seen?.state === 'active').length;
+  const knowledgeHud = html`<section class="lmx-knowledge-hud" aria-label="Decision and fleet overview">
+    <div class="lmx-knowledge-hud-main">${map || emptyState('No decision map yet.', 'The map appears when this space has decision records.')}
+      <div class="lmx-spatial-node-strip" role="group" aria-label="Filter settled decisions by agent"><button type="button" class="lmx-spatial-node" data-agent-filter="" aria-pressed=${String(!pf.historyAgent)} @click=${() => applyDecisionAgent('')}><span>All agents</span><span class="lmx-count-badge">${decided.length} settled</span></button>${decisionAgents.map(([id, count]) => html`<button type="button" class="lmx-spatial-node" data-agent-filter=${id} aria-pressed=${String(pf.historyAgent === id)} @click=${() => applyDecisionAgent(id)}><span>${agentName(id)}</span><span class="lmx-count-badge">${count} settled</span></button>`)}</div>
+      <div class="lmx-hud-action-row"><span class="lmx-status-pill"><i aria-hidden="true"></i>${decided.length} settled decisions loaded</span><button type="button" class="lm-btn lm-btn--secondary" @click=${exportAudit} ?disabled=${!decided.length}>Copy decision audit</button></div>
+    </div>
+    <aside class="lmx-fleet-bonsai" aria-label="Fleet pulse"><span class="lmx-label">FLEET PULSE</span><svg viewBox="0 0 120 96" role="img" aria-label=${fleetAgents.length ? `${activeAgents} of ${fleetAgents.length} agents wrote in the last 15 minutes` : 'Fleet activity data unavailable'}><path d="M59 80V42M60 59 34 38M60 64 88 39M59 47 48 25M60 48 72 23" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M49 80h22M43 86h34" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="33" cy="35" r="11"/><circle cx="47" cy="22" r="9"/><circle cx="73" cy="20" r="10"/><circle cx="89" cy="36" r="12"/><circle cx="61" cy="43" r="13"/></svg><strong>${fleetAgents.length ? `${activeAgents} / ${fleetAgents.length}` : 'Unavailable'}</strong><span class="lmx-meta">agents wrote in the last 15 minutes</span><span class="lmx-meta">${waiting.length} decisions need review</span></aside>
+  </section>`;
   renderView('knowledge', ['Knowledge'], html`${head('Knowledge', 'Find the reason behind the work. Decisions and discussions stay linked to their sources.')}
-    <div class="lmx-map-layout" data-map-page="knowledge"><div class="lmx-map-canvas">${map||emptyState('No decision map data was returned.','The map will appear when decisions are available.')}</div><div class="lmx-map-detail">
+    <div class="lmx-map-layout" data-map-page="knowledge"><div class="lmx-map-canvas">${knowledgeHud}</div><div class="lmx-map-detail">
     <p class="lmx-meta">Decisions come from a bounded source window. An empty result does not prove there are no older decisions.</p>
     <div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" href="#/activity">Browse Activity</a><a class="lm-btn lm-btn--secondary" href="#/lanes">Plans and milestones</a><a class="lm-btn lm-btn--secondary" href="#/recall">Search shared memory</a></div>
     <section class="lmx-stack lmx-decisions" aria-label="Waiting decisions"><h2 class="lmx-section-title">Waiting decisions <span>${waiting.length}</span></h2>
