@@ -122,7 +122,7 @@ test("stdio --help and -h print usage and exit 0 without starting the server", a
     const r = await runBin([flag]);
     assert.equal(r.code, 0, flag);
     assert.match(r.stdout, /Usage:/);
-    assert.match(r.stdout, /npx @logmem\/mcp/);
+    assert.match(r.stdout, /npx -y github:logmem\/logmem/);
     assert.match(r.stdout, /https:\/\/logmem\.si/);
     assert.doesNotMatch(r.stderr, /ready:/);
     assert.doesNotMatch(r.stderr, /LOGMEM_SPACE is not set/);
