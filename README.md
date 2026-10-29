@@ -110,7 +110,7 @@ npx skills add logmem/skills
 
 **Onboarding a new agent (the canonical way)** — every agent, Muse included, joins the same way, and gets no task until all four checks pass:
 
-1. **Pick the path** — local MCP client (stdio server), hosted sign-in (`https://logmem.si/api/mcp`, OAuth), or an agent key with a small wrapper when the agent has no MCP client.
+1. **Pick the path** — local MCP client (stdio server), hosted sign-in (`https://logmem.si/mcp`, OAuth), or an agent key with a small wrapper when the agent has no MCP client.
 2. **Connect one agent to one space.** Keys are per-agent and shown once; the key goes in the agent's vault, never in a chat or an entry.
 3. **Paste the start prompt** — `logmem start <agent id>`, then the five working rules: read the Brief, answer handoffs within 24 hours, write real work as entries, ask before anything irreversible, recap before stopping.
 4. **Verify before the first task** — the roster lists the agent, its own log shows a `started` entry and a setup note, its entries carry its own agent id, and any ACMI mirror twin exists.

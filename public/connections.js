@@ -19,7 +19,7 @@
       '<p class="muted" style="margin:0">Signed in as ' + esc(d.email) + ' · plan ' + esc(d.plan) + '. These apps can read and write your LogMem memory. Disconnect one to stop it at once and free its agent slot.</p>' +
       (err ? '<p role="alert" style="margin:0;color:var(--danger)">' + esc(err) + '</p>' : '') +
       '<div class="lm-panel" style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:8px">App</th><th style="text-align:left;padding:8px">Agent</th><th style="text-align:left;padding:8px">Last used</th><th></th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="4" class="muted" style="padding:8px">No apps connected yet. Add https://logmem.si/api/mcp in your app to connect one.</td></tr>') + '</tbody></table></div>';
+      (rows || '<tr><td colspan="4" class="muted" style="padding:8px">No apps connected yet. Add https://logmem.si/mcp in your app to connect one.</td></tr>') + '</tbody></table></div>';
     Array.prototype.forEach.call(root.querySelectorAll('[data-fid]'), function (b) {
       b.addEventListener('click', function () {
         if (!window.confirm('Disconnect ' + b.getAttribute('data-app') + '? It loses access at once.')) return;

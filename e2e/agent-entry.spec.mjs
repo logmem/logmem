@@ -19,7 +19,7 @@ test('skills, connection and sign-in form one themed resumable path',async({page
 });
 test('hosted guidance and inline skills keep theme and show no false connection',async({page})=>{
  await page.goto('/agents/chatgpt');await page.getByRole('button',{name:'Continue',exact:true}).click();
- await expect(page.locator('lm-agent-guide').getByText('https://logmem.si/api/mcp',{exact:true})).toBeVisible();
+ await expect(page.locator('lm-agent-guide').getByText('https://logmem.si/mcp',{exact:true})).toBeVisible();
  await expect(page.locator('lm-agent-guide').getByText('Availability depends on your client and plan.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Continue',exact:true}).click();await expect(page.getByRole('heading',{name:'Verify · ChatGPT'})).toBeVisible();
  await expect(page.getByRole('link',{name:'Open workspace to verify'})).toHaveAttribute('href',/step%3D3/);
