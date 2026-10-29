@@ -39,6 +39,10 @@ export const AGENT_CLIENTS = Object.freeze({
     "name": "Antigravity",
     "path": "local"
   },
+  "muse": {
+    "name": "Muse",
+    "path": "key"
+  },
   "vaulted-key": {
     "name": "Vaulted-key agents",
     "path": "key"

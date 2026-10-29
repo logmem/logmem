@@ -123,6 +123,7 @@ export function agentCard(a, opts = {}) {
     : isAgent('cursor') ? { name: 'Cursor', asset: 'cursor.svg' }
     : isAgent('gemini') ? { name: 'Google Gemini', asset: 'gemini.png' }
     : isAgent('hermes') ? { name: 'Hermes', asset: 'hermes.png' }
+    : isAgent('muse') ? { name: 'Muse', asset: 'muse.jpg' }
     : isAgent('opencode') ? { name: 'OpenCode' }
     : isAgent('antigravity') ? { name: 'Antigravity' }
     : null;

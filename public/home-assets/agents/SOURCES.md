@@ -7,5 +7,6 @@ Fetched October 23, 2026. Marks identify the named tools, not a partnership.
 - Cursor: https://cursor.com/marketing-static/favicon-light.svg, linked from https://cursor.com/.
 - Gemini: https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png, linked from https://gemini.google.com/.
 - Hermes: https://web-assets.nousresearch.com/marketing/c3d1ec2e994439700c3316e9b3d18d92455eb4cc/assets/hermes-agent/icon.png, linked from https://hermes-agent.nousresearch.com/.
+- Muse: "Jolly", the default Muse product avatar, from the Muse Brand Assets pack (muse-jolly-default-avatar.jpg, 1600 by 1600). `muse.jpg` is the same image scaled to 320 by 320 with no crop or colour change. Use it as is, on a light background, beside the word Muse in plain text. There is no Muse wordmark file.
 
 All marks remain the property of their owners. The files retain their supplied artwork.

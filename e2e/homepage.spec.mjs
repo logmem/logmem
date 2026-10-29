@@ -4,7 +4,7 @@ test('client selection updates the connection guide and conversation example', a
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  for (const name of ['ChatGPT', 'Claude', 'Codex', 'Cursor', 'Gemini', 'Hermes']) {
+  for (const name of ['ChatGPT', 'Claude', 'Codex', 'Cursor', 'Gemini', 'Hermes', 'Muse']) {
     await page.locator('#agent-picker').getByRole('button', { name, exact: true }).click();
     await expect(page.locator('#preview-agent')).toHaveText('Your ' + name);
     await expect(page.locator('#preview-platform')).toContainText(name);
