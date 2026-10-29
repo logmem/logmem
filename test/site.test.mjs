@@ -111,7 +111,8 @@ test("site: /onboarding has every step, /probe.sh is served, and the probe pairs
   }
   // Phase B: the BYO path is 4 steps; the rest are optional extras opened from connect.
   assert.ok(html.includes('data-extra="first"') && html.includes('data-extra="detect"') && html.includes('data-extra="acmi"'), "optional extras on connect");
-  assert.ok(html.includes("No pricing yet"));
+  assert.doesNotMatch(html, /No pricing yet/);
+  assert.ok(html.includes('href="/pricing"'), "plan step links to /pricing");
   assert.doesNotMatch(html, /\$\d/, "no prices on /onboarding");
   assert.doesNotMatch(html, /<script(?![^>]*\b(?:src=|type="application\/ld\+json"))[^>]*>/, "no inline scripts (CSP)");
   assert.doesNotMatch(html, /\son[a-z]+=/i, "no inline event handlers");

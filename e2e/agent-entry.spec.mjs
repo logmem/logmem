@@ -1,7 +1,8 @@
 import {test,expect} from '@playwright/test';
+async function pickTheme(page,theme){const needsMenu=await page.evaluate(()=>{const b=document.querySelector('.nav-toggle');return !!b&&b.offsetParent!==null&&b.getAttribute('aria-expanded')!=='true';});if(needsMenu)await page.locator('.nav-toggle').click();await page.locator('.setup-theme-picker').hover();await page.getByRole('button',{name:theme+' theme',exact:true}).click();}
 import {signInPage} from '../src/http/sign-in-page.mjs';
 test('skills, connection and sign-in form one themed resumable path',async({page})=>{
- await page.goto('/agents');await page.getByRole('button',{name:'midnight theme',exact:true}).click();
+ await page.goto('/agents');await pickTheme(page,'midnight');
  await page.locator('.agent-card').filter({has:page.getByRole('heading',{name:'OpenCode',exact:true})}).click();
  await expect(page).toHaveURL(/\/agents$/);
  await expect(page.getByRole('heading',{name:'Read skills · OpenCode'})).toBeVisible();
@@ -22,7 +23,7 @@ test('hosted guidance and inline skills keep theme and show no false connection'
  await expect(page.locator('lm-agent-guide').getByText('Availability depends on your client and plan.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'Continue',exact:true}).click();await expect(page.getByRole('heading',{name:'Verify · ChatGPT'})).toBeVisible();
  await expect(page.getByRole('link',{name:'Open workspace to verify'})).toHaveAttribute('href',/step%3D3/);
- for(const theme of ['white','sage','sand','midnight']){await page.getByRole('button',{name:theme+' theme',exact:true}).click();await expect(page.locator('html')).toHaveAttribute('data-app-theme',theme);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+ for(const theme of ['white','sage','sand','midnight']){await pickTheme(page,theme);await expect(page.locator('html')).toHaveAttribute('data-app-theme',theme);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
  await page.goto('/skills');await page.locator('.agent-card').filter({has:page.getByRole('heading',{name:'logmem-decisions',exact:true})}).click();
  await expect(page.getByRole('region',{name:'Skill reader'}).locator('pre')).toContainText('irreversible');await expect(page).toHaveURL(/\/skills$/);
  await page.screenshot({path:'/private/tmp/logmem-continuous-setup-'+test.info().project.name+'.png',fullPage:true});
