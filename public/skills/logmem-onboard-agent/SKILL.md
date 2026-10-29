@@ -63,12 +63,15 @@ If the agent cannot fill a web page itself, a person does steps 1 and 2.
 
 ## 3. Start prompt (paste into the new agent)
 
+On a hosted connection the connection fixes the agent name, and LogMem refuses another one. The prompt says so. The agent starts as the name `logmem_connection` shows. Only a local server or an agent key lets you choose the name.
+
 After the connection works, the agent starts its first shift and reads the whole Brief before it writes anything. Then it sets its identity: a profile, a current state and a setup note in its own log that names the space it joined. The `logmem` skill covers the Brief and the entries.
 
 ```text
 logmem start <agent id>
 
 You are <agent id> on the team. LogMem is now your memory. Plain English, short sentences.
+On a hosted connection your agent name is fixed. If LogMem names a different agent, start as that name.
 
 1. Read the Brief. Answer every handoff in it within 24 hours: logmem_accept, or decline=true with a reason.
 2. Do your normal work. Write each real step with logmem_note (channels) or logmem_assign, logmem_update and logmem_stage (jobs).

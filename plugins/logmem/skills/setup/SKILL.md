@@ -53,6 +53,19 @@ Start a shift and read the Brief:
 logmem_start { "agent": "<the agent from logmem_connection>" }
 ```
 
+A hosted connection fixes the agent name. Use the name `logmem_connection` shows, even when a pasted prompt names another agent. LogMem refuses any other name.
+
+## 4. Prove it worked
+
+Do this once, right after the Brief. Do not skip it, and do not say "connected" before it passes.
+
+1. Write one setup note in your own log: `logmem_note { "where": "agent:<your agent>", "kind": "setup", "summary": "Connected to space <space>. First entry from <app>." }`.
+2. Read it back: `logmem_view { "ref": "agent:<your agent>" }`. Find that exact entry.
+3. Tell the user, in four short lines: the **space**, the **agent name**, the **connection status**, and the **entry you read back**.
+4. Tell the user how to check from a new chat: ask it to run `logmem_recall { "query": "Connected to space" }`. It should find the entry.
+
+If the write fails or the read-back does not show the entry, say which step failed and stop. Do not retry in a loop.
+
 From here, follow the **logmem** skill. Before anything irreversible, follow the **logmem-decisions** skill.
 
 ## If it fails
