@@ -2,15 +2,18 @@
 export const AGENT_CLIENTS = Object.freeze({
   "codex": {
     "name": "Codex",
-    "path": "local"
+    "path": "local",
+    "hostedFirst": true
   },
   "claude-code": {
     "name": "Claude Code",
-    "path": "local"
+    "path": "local",
+    "hostedFirst": true
   },
   "cursor": {
     "name": "Cursor",
-    "path": "local"
+    "path": "local",
+    "hostedFirst": true
   },
   "chatgpt": {
     "name": "ChatGPT",

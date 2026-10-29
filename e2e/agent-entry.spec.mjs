@@ -35,3 +35,13 @@ test('inline skill failures retry safely and render source text without executio
  await expect(page.getByRole('region',{name:'Skill reader'}).locator('pre')).toContainText('<script>');expect(await page.evaluate(()=>window.skillExecuted)).toBeUndefined();
  await page.getByRole('button',{name:'Save and exit',exact:true}).click();await page.getByRole('button',{name:'Resume setup'}).click();await expect(page.getByRole('heading',{name:'Read skills · Codex'})).toBeVisible();
 });
+test('Codex guide leads with the hosted link, OpenCode leads with the local server, and both offer the other',async({page})=>{
+ await page.goto('/agents/codex');await page.getByRole('button',{name:'Continue',exact:true}).click();
+ const guide=page.locator('lm-agent-guide');
+ await expect(guide.getByText('Add the LogMem link in your client’s MCP settings',{exact:false})).toBeVisible();
+ const texts=await guide.locator('pre').allTextContents();
+ expect(texts.map(t=>t.trim())).toEqual(['https://logmem.si/mcp','node <checkout>/src/stdio/index.mjs']);
+ await page.goto('/agents/opencode');await page.getByRole('button',{name:'Continue',exact:true}).click();
+ const texts2=await page.locator('lm-agent-guide').locator('pre').allTextContents();
+ expect(texts2.map(t=>t.trim())).toEqual(['node <checkout>/src/stdio/index.mjs','https://logmem.si/mcp']);
+});

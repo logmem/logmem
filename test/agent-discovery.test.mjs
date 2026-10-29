@@ -55,3 +55,14 @@ test('branded client sign-in context is allowlisted and does not alter destinati
  assert.ok(!res.body.includes('alert(1)'));assert.match(res.body,/Pick up where you left off/);
  const bad=mockRes();await h(mockReq({url:'/sign-in?client=codex&returnTo=https://evil.example'}),bad);assert.equal(bad.statusCode,400);
 });
+test('every local-first agent page also offers the hosted link, and the three on /connect lead with it',async()=>{
+ const local=Object.entries(AGENT_CLIENTS).filter(([,c])=>c.path==='local').map(([id])=>id);
+ assert.deepEqual(local.sort(),['antigravity','claude-code','codex','cursor','gemini-cli','opencode']);
+ for(const id of local){
+  const html=await read('public/agents/'+id+'.html');
+  assert.ok(html.includes('<code>https://logmem.si/mcp</code>'),id);assert.ok(html.includes('href="/connect"'),id);
+  assert.ok(html.includes('Local: your own Redis')&&html.includes('Hosted: easiest, invite only'),id);
+  const hostedFirst=html.indexOf('Hosted: easiest')<html.indexOf('Local: your own Redis');
+  assert.equal(hostedFirst,['codex','cursor','claude-code'].includes(id),id);
+ }
+});
