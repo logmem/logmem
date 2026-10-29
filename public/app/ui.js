@@ -49,7 +49,7 @@ export function table(head, rows) {
   return html`<div class="lm-table-wrap"><table class="lm-table"><thead><tr>${head.map((h) => html`<th scope="col">${h}</th>`)}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 export function head(title, sub, right) {
-  return html`<div class="lm-row" style="justify-content:space-between"><div style="display:flex;flex-direction:column;gap:4px"><h1 class="lm-title-1" style="margin:0;font-size:22px">${title}</h1>${sub ? html`<span style="font-size:13px" class="muted">${sub}</span>` : nothing}</div>${right || nothing}</div>`;
+  return html`<div class="lmx-pagehead"><div><h1>${title}</h1>${sub ? html`<p>${sub}</p>` : nothing}</div>${right || nothing}</div>`;
 }
 export const btn = (label, kind, onClick, extra = {}) => html`<button type="button" class="lm-btn lm-btn--${kind}" @click=${onClick} ?disabled=${!!extra.disabled} aria-label=${extra.label || nothing}>${label}</button>`;
 
