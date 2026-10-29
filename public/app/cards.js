@@ -8,6 +8,7 @@ import { decisionProblem, shortenIds, jobName, initials } from './dashboard-mode
 import {agentDispatchButton} from './dispatch-components.js';
 import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
+import { AGENT_CLIENTS } from './agent-clients.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
 const jobLink = (id, title) => html`<a href=${`#/job/${encodeURIComponent(id)}`} @click=${openJob(id)}>${title}</a>`;
@@ -114,14 +115,31 @@ export function agentCard(a, opts = {}) {
   const now = a.now || {}, r = a.recap, job = jobName(now.job), open = opts.open === true;
   const parts = shortenIds(now.doing || ''), nextParts = shortenIds(now.next || '');
   const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
-  const pulse = a.seen?.state === 'active';
+  const id = String(a.id || '').toLowerCase();
+  const isAgent = (name) => id === name || id.startsWith(name + '-');
+  const provider = isAgent('claude') ? { name: 'Anthropic', asset: 'claude.png' }
+    : isAgent('codex') ? { name: 'OpenAI', asset: 'codex.svg' }
+    : isAgent('chatgpt') ? { name: 'ChatGPT', asset: 'chatgpt.svg' }
+    : isAgent('cursor') ? { name: 'Cursor', asset: 'cursor.svg' }
+    : isAgent('gemini') ? { name: 'Google Gemini', asset: 'gemini.png' }
+    : isAgent('hermes') ? { name: 'Hermes', asset: 'hermes.png' }
+    : isAgent('opencode') ? { name: 'OpenCode' }
+    : isAgent('antigravity') ? { name: 'Antigravity' }
+    : null;
+  const client = AGENT_CLIENTS[id];
+  const providerName = provider?.name || client?.name || '';
+  const activity = a.seen?.state || 'unknown';
   const recapLine = r ? String(r.summary || '').split(/\r?\n/).find((l) => l.trim()) || '' : '';
   const gaps = [now.doing ? null : 'No Now set', r ? null : 'No recap'].filter(Boolean);
   return html`<article class="lmx-card lmx-agent-card" tabindex="0" data-key=${'agent:' + a.id} data-state=${a.seen?.state || 'unknown'}>
-    <div class="lmx-agent-head"><span class="lmx-avatar" aria-hidden="true">${initials(a.id)}</span><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${a.id}</a><span class="lmx-agent-seen">${pulse ? html`<i class="lmx-pulse" aria-hidden="true"></i>` : nothing}${seenTag(a.seen)}</span></div>
-    <div class="lmx-agent-body">
-      <div class="lmx-agent-now"><span class="lmx-label">NOW</span>${now.doing ? html`<p class=${'lmx-clamp3' + (open ? ' is-open' : '')}>${parts.map((p) => (p.chip ? idChip(p) : p.text))}</p>${now.doing.length > 140 ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(open)} @click=${opts.toggle}>${open ? 'Show less' : 'Show more'}</button>` : nothing}` : html`<span class="lmx-flag">No Now set</span>`}</div>
-      ${job || now.next ? html`<div class="lmx-nextbox"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${nextParts.map((p) => (p.chip ? idChip(p) : p.text))}</p>` : nothing}</div>` : nothing}
+    <div class="lmx-agent-head">
+      <span class="lmx-avatar lmx-agent-avatar" data-state=${activity} data-agent=${id} aria-hidden="true">${provider?.asset ? html`<img src=${'/home-assets/agents/' + provider.asset} alt="" loading="lazy">` : initials(a.id)}</span>
+      <div class="lmx-agent-identity"><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${a.id}</a>${providerName ? html`<span class="lmx-agent-provider">${providerName}</span>` : nothing}</div>
+      <span class="lmx-agent-seen" title="Recent writing activity">${seenTag(a.seen)}</span>
+    </div>
+    <div class="lmx-agent-body lmx-agent-bento">
+      <div class="lmx-agent-now lmx-agent-tile"><span class="lmx-label">NOW</span>${now.doing ? html`<p class=${'lmx-clamp3' + (open ? ' is-open' : '')}>${parts.map((p) => (p.chip ? idChip(p) : p.text))}</p>${now.doing.length > 140 ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(open)} @click=${opts.toggle}>${open ? 'Show less' : 'Show more'}</button>` : nothing}` : html`<span class="lmx-flag">No Now set</span>`}</div>
+      ${job || now.next ? html`<div class="lmx-nextbox lmx-agent-tile"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${nextParts.map((p) => (p.chip ? idChip(p) : p.text))}</p>` : nothing}</div>` : nothing}
       ${r ? html`<details class="lmx-recap-box"><summary><span class="lmx-recap-label">Last recap</span><span class="lmx-recap-line">${recapLine}</span></summary><div class="lmx-recap-scroll"><p>${r.summary}</p></div></details>` : nothing}
     </div>
     <div class="lmx-agent-foot">${gaps.length ? gaps.map((g) => html`<span class="lmx-checkpill" data-ok="0">${g}</span>`) : html`<span class="lmx-checkpill" data-ok="1" title="Now is set and a recap exists">On track</span>`}${r ? html`<span class="lmx-meta lmx-recap-age" title="When the last recap was written">recap ${ago(r.ended_at)}</span>` : nothing}<span class="lmx-foot-spacer"></span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
