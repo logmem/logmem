@@ -5,7 +5,7 @@ import { MENU, CTA, WIDE_AFTER } from "../public/site-nav-model.js";
 import { AGENT_CLIENTS } from "../public/app/agent-clients.js";
 
 const read = p => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const HEADER_PAGES = ["connect", "privacy", "pricing", "terms", "agents", "skills", "onboarding", ...Object.keys(AGENT_CLIENTS).map(id => "agents/" + id)];
+const HEADER_PAGES = ["index", "docs", "scorecard", "connect", "privacy", "pricing", "terms", "agents", "skills", "onboarding", ...Object.keys(AGENT_CLIENTS).map(id => "agents/" + id)];
 const links = [...MENU.flatMap(i => [i, ...(i.sub || [])]), CTA];
 
 function resolves(href) {
@@ -53,4 +53,18 @@ test("site menu: agent pages use the fun layer, and no page keeps its own copy o
   assert.doesNotMatch(read("public/pages.css"), /\n\.nav\{/);
   assert.match(read("public/onboarding.html"), /href="\/site-nav.css"/);
   assert.ok(readdirSync(new URL("../public", import.meta.url)).includes("site-nav.js"));
+});
+
+test("look: one shared file owns the accent colours, canvas and shadow, and every header page can reach it", () => {
+  const look = read("public/look.css");
+  for (const v of ["--fun-teal", "--fun-amber", "--app-canvas", "--app-shadow"]) assert.ok(look.includes(v + ":"), v);
+  assert.match(read("public/site-nav.css"), /^@import url\("\/look.css"\);/);
+  assert.match(read("public/app.css"), /^@import url\("\/look.css"\);/);
+  assert.doesNotMatch(read("public/app.css"), /\n:root\[data-app-theme="white"\]\{--app-canvas/);
+  assert.doesNotMatch(read("public/home.css"), /\n\.nav nav \{/);
+  assert.ok(read("src/http/sign-in-page.mjs").includes("data-site-nav"));
+  for (const page of [...HEADER_PAGES]) {
+    const html = read(`public/${page}.html`);
+    assert.ok(html.includes("/theme-boot.js") && html.includes("/setup-theme.css"), page + " loads the theme");
+  }
 });

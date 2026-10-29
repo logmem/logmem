@@ -1,6 +1,7 @@
 // site-nav.js: builds the one site menu into header.nav[data-site-nav]. The static links in the page stay as the no-script fallback.
 // Desktop: links with a small button that opens each sub menu. Phone: a menu button that opens a panel with the same sub menus.
 import { MENU, CTA, WIDE_AFTER } from './site-nav-model.js';
+import { THEMES, readTheme, writeTheme } from './app/theme.js';
 
 const el = (tag, attrs = {}, kids = []) => {
   const n = document.createElement(tag);
@@ -9,6 +10,17 @@ const el = (tag, attrs = {}, kids = []) => {
   return n;
 };
 const BREAKPOINT = '(max-width: 1000px)';
+
+function themePicker() {
+  const picker = el('div', { class: 'setup-theme-picker', role: 'group', 'aria-label': 'Theme' });
+  const paint = () => picker.replaceChildren(...THEMES.map(t => {
+    const b = el('button', { type: 'button', title: t, 'aria-label': t + ' theme', 'aria-pressed': String(readTheme() === t), 'data-swatch': t });
+    b.addEventListener('click', () => { writeTheme(t); paint(); });
+    return b;
+  }));
+  paint();
+  return picker;
+}
 
 function build(header) {
   const current = header.dataset.current || '';
@@ -29,9 +41,10 @@ function build(header) {
     }
     list.append(li);
   }
-  const hasCta = !!header.querySelector(':scope > .lm-btn');
-  const menuCta = hasCta ? el('a', { class: 'lm-btn lm-btn--primary nav-menu-cta', href: CTA.href }, [CTA.label]) : null;
+  const ownCta = header.querySelector(':scope > .lm-btn');
+  const menuCta = ownCta ? el('a', { class: 'lm-btn lm-btn--primary nav-menu-cta', href: ownCta.getAttribute('href') || CTA.href }, [ownCta.textContent.replace('↗', '').trim() || CTA.label]) : null;
   const extra = el('div', { id: 'nav-extra', class: 'nav-extra' });
+  extra.append(themePicker());
   const nav = el('nav', { id: 'site-menu', 'aria-label': 'Main' }, [list, ...(menuCta ? [menuCta] : []), extra]);
   header.querySelector('nav')?.replaceWith(nav);
   header.querySelector(':scope > .lm-btn')?.classList.add('nav-cta');

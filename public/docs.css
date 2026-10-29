@@ -11,8 +11,8 @@
   width: 280px;
   flex: 0 0 280px;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: 86px;
+  height: calc(100vh - 86px);
   overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -354,8 +354,18 @@ pre.code-block {
   .docs-rail {
     width: 100%;
     height: auto;
+    top: auto;
     position: static;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
+}
+
+/* Phones: let the content shrink to the screen. Wide tables scroll inside their own box. */
+.docs-main { min-width: 0; }
+@media (max-width: 900px) {
+  .docs-main { margin: 0; width: 100%; box-sizing: border-box; padding-left: 16px; padding-right: 16px; }
+  .docs-main pre.code-block { overflow-x: auto; }
+  .docs-main .lm-table-wrap { max-width: 100%; overflow-x: auto; }
+  .persona-tabs { flex-wrap: wrap; }
 }

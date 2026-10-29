@@ -14,11 +14,7 @@
 .setup-skill-links,.setup-guide-actions,.setup-resume{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .setup-guide-actions{margin-top:18px}.setup-guide-actions>.lm-btn:last-child{margin-left:auto}
 .setup-reader{margin-top:20px}.setup-reader pre{max-height:360px;overflow-y:auto}
-.setup-note{font-size:12px!important}.setup-theme-picker{display:flex;gap:8px;flex-shrink:0}
-.setup-theme-picker button{width:23px;height:23px;border:1px solid var(--border-strong);border-radius:50%;cursor:pointer}
-.setup-theme-picker [data-swatch="white"]{background:#fff}.setup-theme-picker [data-swatch="sage"]{background:#b6cbbd}.setup-theme-picker [data-swatch="sand"]{background:#d7c29b}.setup-theme-picker [data-swatch="midnight"]{background:#1b2021}
-.setup-theme-picker [aria-pressed="true"]{outline:2px solid var(--brand);outline-offset:3px}
-.setup-guide button:focus-visible,.setup-guide a:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+.setup-note{font-size:12px!important}.setup-guide button:focus-visible,.setup-guide a:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
 :root[data-app-theme] body.lm{background:var(--bg);color:var(--text)}
 :root[data-app-theme] .signin-card{background:var(--surface);border-color:var(--border)}
 :root[data-app-theme] .signin-note,:root[data-app-theme] .signin-access{border-color:var(--border)}
@@ -27,12 +23,3 @@
 @media(max-width:600px){.setup-guide-panel{padding:16px}.setup-guide-panel h3{font-size:21px}.setup-guide-actions .lm-btn{flex:1 1 auto}.setup-guide-actions>.lm-btn:last-child{margin-left:0}.setup-trail{gap:5px}.setup-trail button{padding:6px 8px}}
 :root[data-app-theme="midnight"] img[src$="/logmem-lockup.svg"]{content:url('/ds/logos/logmem-lockup-reversed.svg')}
 :root[data-app-theme="midnight"] img[src$="/logmem-symbol.svg"]{content:url('/ds/logos/logmem-symbol-reversed.svg')}
-/* Theme picker: one swatch at rest, all four on hover or focus. On phones it sits in the menu panel, fully open. */
-@media (min-width:1001px){
-  .setup-theme-picker{gap:0;padding:4px;overflow:hidden;max-width:36px;transition:max-width .2s ease,gap .2s ease}
-  .setup-theme-picker:hover,.setup-theme-picker:focus-within{max-width:160px;gap:8px}
-  .setup-theme-picker [aria-pressed="true"]{order:-1}
-  .setup-theme-picker button:not([aria-pressed="true"]){opacity:0;transition:opacity .15s ease}
-  .setup-theme-picker:hover button,.setup-theme-picker:focus-within button{opacity:1}
-}
-@media (min-width:1001px) and (prefers-reduced-motion:reduce){.setup-theme-picker,.setup-theme-picker button{transition:none}}

@@ -1,24 +1,23 @@
-:root { color-scheme: light; }
-body.lm { margin: 0; min-height: 100vh; background: #f2f6f3; color: #172321; }
-.signin-nav { max-width: 1180px; margin: 0 auto; padding: 28px 32px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-.signin-nav a { color: #0b6c68; font-size: 13px; }
+/* Sign-in: the reference look for the whole site. Colours come from tokens, so every theme works. */
+body.lm { margin: 0; min-height: 100vh; background: var(--app-canvas, var(--bg)); color: var(--text); }
 .signin-layout { max-width: 1120px; min-height: 65vh; margin: 35px auto; padding: 32px; display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 100px; }
-.signin-story .lm-eyebrow { color: #0b6c68; letter-spacing: .1em; font-size: 10px; }
+.signin-story .lm-eyebrow { color: var(--brand); letter-spacing: .1em; font-size: 10px; }
 .signin-story h1 { font: 600 clamp(38px, 5vw, 62px)/1.08 var(--font-display); letter-spacing: -.05em; margin: 26px 0; }
-.signin-story h1 span { color: #6b7972; }
-.signin-story > p { max-width: 370px; font-size: 17px; line-height: 1.7; color: #5b6e66; }
-.signin-note { margin-top: 55px; border-top: 1px solid #d5dfd8; padding-top: 24px; display: flex; align-items: start; gap: 16px; }
-.signin-note p { font-size: 13px; line-height: 1.65; max-width: 300px; color: #5b6e66; margin: 0; }
-.signin-card { min-width: 0; padding: 35px; background: #fff; border: 1px solid #d4ddd7; border-radius: 20px; box-shadow: 0 12px 40px #163c2510; }
+.signin-story h1 span { color: var(--text-subtle); }
+.signin-story h1::after { content: ""; display: block; width: 132px; height: 12px; margin-top: 14px; border-bottom: 3px solid var(--fun-teal); border-radius: 50%/100%; transform: rotate(-1.5deg); }
+.signin-story > p { max-width: 370px; font-size: 17px; line-height: 1.7; color: var(--text-muted); }
+.signin-note { margin-top: 55px; border-top: 1px solid var(--border); padding-top: 24px; display: flex; align-items: start; gap: 16px; }
+.signin-note p { font-size: 13px; line-height: 1.65; max-width: 300px; color: var(--text-muted); margin: 0; }
+.signin-card { position: relative; min-width: 0; padding: 35px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--app-shadow); }
+.signin-card::before { content: ""; position: absolute; inset: -5px; border: 1.5px solid var(--fun-teal); opacity: .45; border-radius: 22px 26px 21px 25px / 25px 21px 26px 22px; transform: rotate(-.4deg); pointer-events: none; }
 .signin-card h2 { font-size: 23px; letter-spacing: -.025em; margin: 0 0 8px; }
-.signin-intro { color: #657570; font-size: 14px; margin: 0 0 28px; }
-.signin-access { font-size: 12px; color: #657570; border-top: 1px solid #e1e7e3; padding-top: 20px; margin-top: 24px; }
-.signin-card a { color: #0b6c68; }
-#signin-status { font-size: 13px; color: #657570; }
+.signin-intro { color: var(--text-muted); font-size: 14px; margin: 0 0 28px; }
+.signin-access { font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 20px; margin-top: 24px; }
+.signin-card a { color: var(--brand); }
+#signin-status { font-size: 13px; color: var(--text-muted); }
 #signin-status:empty { display: none; }
-.signin-footer { max-width: 1120px; margin: 0 auto; padding: 24px 32px; font-size: 12px; color: #657570; }
-@media (max-width: 760px) {
- .signin-nav { padding: 22px; }
+.signin-footer { max-width: 1120px; margin: 0 auto; padding: 24px 32px; font-size: 12px; color: var(--text-subtle); }
+@media (max-width: 1000px) {
  .signin-layout { grid-template-columns: minmax(0,1fr); gap: 30px; margin: 0 auto; padding: 26px 22px; }
  .signin-note { display: none; }
  .signin-story h1 { font-size: 39px; margin: 20px 0; }

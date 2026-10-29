@@ -1,0 +1,14 @@
+/* look.css: the shared look. One place for the accent colours, the sage canvas and the card shadow.
+   Loaded by site-nav.css (every public page) and by app.css (the app), so they cannot drift apart. */
+:root{--fun-teal:#1f8a83;--fun-amber:#a86b12;--app-canvas:#F2F6F3;--app-shadow:0 12px 40px #163c2510}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]):not([data-app-theme]){--fun-teal:#4ecdc4;--fun-amber:#f7b731;--app-canvas:var(--bg);--app-shadow:0 12px 40px #0006}}
+:root[data-theme="dark"]{--fun-teal:#4ecdc4;--fun-amber:#f7b731}
+:root[data-app-theme="white"]{--app-canvas:#F2F6F3;--app-shadow:0 12px 40px #163c2510}
+:root[data-app-theme="sage"]{--app-canvas:#EAF1EC;--app-shadow:0 12px 40px #163c2512}
+:root[data-app-theme="sand"]{--app-canvas:#F6F0E5;--app-shadow:0 12px 40px #3b2f1c12}
+:root[data-app-theme="midnight"]{--app-canvas:var(--bg);--app-shadow:0 12px 40px #0006}
+/* Public pages with the shared header sit on the canvas. */
+:root:root body:has(.nav[data-site-nav]){background:var(--app-canvas,var(--bg))}
+/* The hand-drawn swoosh under a page title. Add class look-title to an h1. */
+.look-title::after{content:"";display:block;width:112px;height:11px;margin-top:8px;border-bottom:3px solid var(--fun-teal);border-radius:50%/100%;transform:rotate(-1.5deg)}
+html:has(.nav[data-site-nav]){background:var(--app-canvas,var(--bg))}
