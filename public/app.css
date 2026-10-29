@@ -997,6 +997,26 @@
 .lmx-plan-tile-heading>.lmx-lane{display:inline-flex;grid-template-columns:none;gap:0;width:auto;min-width:0;white-space:nowrap;align-items:center}
 .lmx-plan-tile-metrics .lmx-bar{position:static;top:auto;background:var(--surface-sunken);border-radius:3px}
 
+/* Keep plan progress values and the track inside one stable metric unit. */
+.lmx-plan-tile-progress{display:grid;grid-template-columns:auto minmax(36px,1fr) auto;align-items:center;gap:8px;width:100%;min-width:0;padding:7px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface-sunken);box-sizing:border-box}
+.lmx-plan-tile-fraction{font-size:11px;color:var(--text-subtle);white-space:nowrap;font-variant-numeric:tabular-nums}
+.lmx-plan-tile-progress .lmx-bar{position:static;top:auto;width:100%;min-width:0;height:5px;border-radius:999px;background:var(--surface)}
+.lmx-plan-tile-progress .lmx-pct{padding:0;background:transparent;color:var(--text);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.lmx-waiting-list{display:grid;gap:8px}
+.lmx-waiting-card{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(150px,1fr) auto;align-items:center;gap:14px;padding:13px 15px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.lmx-waiting-main{display:grid;gap:5px;min-width:0}.lmx-waiting-main>a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650;color:var(--text);text-decoration:none}
+.lmx-waiting-card details{min-width:0}.lmx-waiting-card details summary{cursor:pointer;color:var(--text-subtle);font-size:12px}.lmx-waiting-card details p{margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--text-subtle)}
+.lmx-waiting-card>.lm-btn{min-height:34px;padding:0 11px;white-space:nowrap}
+.lmx-update-source{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lmx-update-agent{font-size:11px;font-weight:700;color:var(--brand)}
+.lmx-task-tree{position:relative;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid var(--border);border-radius:13px;background:var(--surface);overflow:hidden}
+.lmx-task-tree-art{position:relative;width:54px;height:58px}.lmx-tree-trunk{position:absolute;left:25px;bottom:3px;width:5px;height:30px;border-radius:4px;background:var(--text-subtle)}
+.lmx-tree-orb{position:absolute;left:9px;top:5px;width:38px;height:38px;border-radius:50%;background:color-mix(in srgb,var(--brand) 16%,var(--surface));box-shadow:0 0 0 5px color-mix(in srgb,var(--brand) 8%,transparent)}
+.lmx-tree-leaf{position:absolute;width:13px;height:9px;border-radius:100% 0 100% 0;background:var(--brand);transform:rotate(-28deg)}.lmx-tree-leaf--one{left:9px;top:10px}.lmx-tree-leaf--two{right:8px;top:16px;transform:rotate(34deg)}.lmx-tree-leaf--three{left:15px;top:27px}.lmx-tree-leaf--four{right:10px;top:5px;transform:rotate(38deg)}
+.lmx-task-tree[data-mood="strained"] .lmx-tree-leaf{background:var(--warning)}.lmx-task-tree[data-mood="strained"] .lmx-tree-orb{background:var(--warning-subtle)}
+.lmx-task-tree-copy{display:grid;gap:4px;min-width:0}.lmx-task-tree-copy>strong{font-size:13px}.lmx-task-tree-copy>.lmx-meta{font-size:11px}.lmx-task-tree-track{height:4px;margin-top:3px;border-radius:9px;background:var(--surface-sunken);overflow:hidden}.lmx-task-tree-track i{display:block;height:100%;border-radius:inherit;background:var(--brand)}
+.lmx-task-tree-pet{align-self:start;border:1px solid var(--border);border-radius:999px;padding:6px 9px;background:var(--surface);color:var(--text-subtle);font:inherit;font-size:10px;cursor:pointer;white-space:nowrap}.lmx-task-tree-pet[aria-pressed="true"]{color:var(--brand);border-color:var(--brand)}.lmx-task-tree-note{grid-column:2/4;font-size:11px;color:var(--text-subtle)}
+@media(max-width:639px){.lmx-waiting-card{grid-template-columns:minmax(0,1fr) auto;gap:10px}.lmx-waiting-card details{grid-column:1/-1;grid-row:2}.lmx-task-tree{grid-template-columns:48px minmax(0,1fr)}.lmx-task-tree-art{transform:scale(.88);transform-origin:left center}.lmx-task-tree-pet{grid-column:2;grid-row:2;justify-self:start}.lmx-task-tree-note{grid-column:1/-1}}
+
 /* Agent profile: header, tile grid and four drawers. Tokens only, so every theme works. */
 .lmx-prof{display:grid;gap:14px;min-width:0}
 .lmx-prof-head{display:grid;gap:10px;padding:16px 18px;border-color:var(--border)}
