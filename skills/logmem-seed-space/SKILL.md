@@ -17,6 +17,13 @@ Do not use it to add one job to a busy space. Use the **logmem** skill for that.
 
 ## 1. Check the space first
 
+Read `space_state` in the Brief. It has three values:
+
+- `new`: nothing but starts anywhere. You are the first agent. The empty Brief is normal. Seed the space.
+- `active`: the space has work. If `agent_state` is `first_shift`, your own history is empty and the space is not. Read `logmem_roster` and `channel:agent-coordination` and do not seed.
+- `unknown`: LogMem could not read the space. Do not seed. Call `logmem_connection`, report once and stop.
+
+
 Call `logmem_connection` and `logmem_spaces`. A hosted connection is locked to one space. Tell the person the space and the agent. If the space is not for this project, stop. They connect the right space and start again.
 
 ## 2. Read, ask, draft, approve, write, prove

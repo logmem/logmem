@@ -22,6 +22,7 @@ Read these files before setup. They do not grant access or launch an agent.
 - [Gemini CLI](https://logmem.si/agents/gemini-cli): local connection instructions.
 - [OpenCode](https://logmem.si/agents/opencode): local connection instructions.
 - [Antigravity](https://logmem.si/agents/antigravity): local connection instructions.
+- [Hermes](https://logmem.si/agents/hermes): hosted connection instructions for Hermes.
 - [Muse](https://logmem.si/agents/muse): key connection instructions for Muse.
 - [Vaulted-key agents](https://logmem.si/agents/vaulted-key): key connection instructions.
 

@@ -39,6 +39,10 @@ export const AGENT_CLIENTS = Object.freeze({
     "name": "Antigravity",
     "path": "local"
   },
+  "hermes": {
+    "name": "Hermes",
+    "path": "hosted"
+  },
   "muse": {
     "name": "Muse",
     "path": "key"

@@ -380,11 +380,44 @@ function rankNext({ waiting, tasks, pending, answered, nowMs }) {
 /** The Brief of a new space. There is no history, so the first job is to fill the space from one project. */
 export const SEED_HINT = {
   needed: true,
-  why: "This space is new. It has no plan, jobs or entries, so there is nothing to catch up on.",
+  why: "This space is new. You are its first agent. The Brief is empty because there is nothing yet, not because something broke.",
   skill: "https://logmem.si/skills/logmem-seed-space/SKILL.md",
   how: "Read the skill. Ask your person which project this space is for. Then ask questions one at a time and show a draft before you write anything.",
   ask: "This space is new, so the Brief is empty. Which project should we seed it from? Read the logmem-seed-space skill and I will answer your questions.",
 };
+
+/** An agent's first shift in a space that already has work. Its own history is empty, the space is not. */
+export const ORIENTATION_HINT = {
+  why: "This is your first shift here, so your own history is empty. The space is not empty. Do not seed it.",
+  how: "Call logmem_roster. Then read channel:agent-coordination with logmem_feed. Open the jobs in do_next. Ask your person which job is yours.",
+  ask: "This is my first shift in this space. Which job is mine, and who do I report to?",
+};
+
+/** The Brief could not read the space. Seeding now could write over real work. */
+export const READ_PROBLEM_HINT = {
+  why: "LogMem could not read this space, so the Brief cannot tell a new space from a full one.",
+  how: "Do not seed. Call logmem_connection and report the result once. Then stop and tell your person.",
+};
+
+const START_KINDS = ["started", "joined", "ping", "setup"];
+
+/** new: nothing but starts anywhere. active: work exists. unknown: a read failed. */
+export async function spaceState(store, agent, mineHasHistory) {
+  try {
+    if (mineHasHistory) return "active";
+    if ((await store.list("job")).length) return "active";
+    for (const ns of ["channel", "agent"]) {
+      for (const id of (await store.list(ns)).slice(0, 25)) {
+        if (ns === "agent" && id === agent) continue;
+        const rows = await store.readLog(ns, id, { reverse: true, limit: 10 });
+        if (rows.some((e) => !START_KINDS.includes(e.kind))) return "active";
+      }
+    }
+    return "new";
+  } catch (_) {
+    return "unknown";
+  }
+}
 
 /** The one question that turns a brief into an action. */
 function nextQuestion(doNext, stale) {
@@ -482,13 +515,20 @@ async function brief(ctx, agent, opts = {}) {
     do_next: doNext,
     ask: nextQuestion(doNext, stale),
   };
-  // A new space has nothing to read yet. Say so, and point the agent at the seed skill.
-  try {
-    if (!recap && !log.some((e) => !["started", "joined", "ping", "setup"].includes(e.kind)) && !waiting.length && !(await s.list("job")).length) {
-      out.seed = SEED_HINT;
-      out.ask = SEED_HINT.ask;
-    }
-  } catch (_) {}
+  // Tell a new space, a first shift in a busy space, and an unreadable space apart. Each needs a different first move.
+  const mineHasHistory = !!recap || log.some((e) => !START_KINDS.includes(e.kind)) || waiting.length > 0;
+  out.agent_state = mineHasHistory ? "returning" : "first_shift";
+  out.space_state = await spaceState(s, a, mineHasHistory);
+  if (out.space_state === "new") {
+    out.seed = SEED_HINT;
+    out.ask = SEED_HINT.ask;
+  } else if (out.space_state === "unknown") {
+    out.read_problem = READ_PROBLEM_HINT;
+    out.ask = null;
+  } else if (out.agent_state === "first_shift") {
+    out.orientation = ORIENTATION_HINT;
+    if (!out.ask) out.ask = ORIENTATION_HINT.ask;
+  }
   if (mode === "fleet" || mode === "operator") out.fleet = await fleetSnapshot(s, nowMs);
   if (mode === "operator") {
     out.needs_human = [...(tasks || []).map((t) => ({ type: "task", trail: t.trail, summary: t.summary })),

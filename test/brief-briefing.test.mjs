@@ -106,3 +106,28 @@ test("a brand-new space gets a seed hint, and a space with a job does not", asyn
   const next = await call(lmFor(redis, { session: "s3", defaultAgent: "quill" }), "logmem_start", { mode: "quiet" });
   assert.equal(next.brief.seed, undefined);
 });
+
+test("the Brief tells a new space, a first shift in a busy space, and an unreadable space apart", async () => {
+  const redis = createMemoryRedis();
+  const quill = await call(lmFor(redis, { defaultAgent: "quill" }), "logmem_start", { mode: "quiet" });
+  assert.equal(quill.brief.space_state, "new");
+  assert.equal(quill.brief.agent_state, "first_shift");
+  assert.ok(quill.brief.seed);
+  // Quill posts a note and no job. The space now has work in it.
+  const lm = lmFor(redis, { session: "q2", defaultAgent: "quill" });
+  await call(lm, "logmem_start", { mode: "quiet" });
+  await call(lm, "logmem_note", { where: "channel:agent-coordination", kind: "progress", summary: "Quill is mapping the project." });
+  const ada = await call(lmFor(redis, { session: "a1", defaultAgent: "ada" }), "logmem_start", { mode: "quiet" });
+  assert.equal(ada.brief.space_state, "active");
+  assert.equal(ada.brief.agent_state, "first_shift");
+  assert.equal(ada.brief.seed, undefined, "a second agent must not seed a busy space");
+  assert.match(ada.brief.orientation.how, /logmem_roster/);
+  assert.match(ada.brief.ask, /first shift/i);
+});
+
+test("an unreadable space is reported, never treated as new", async () => {
+  const { spaceState } = await import("../src/core/tools.mjs");
+  const broken = { list: async () => { throw new Error("read failed"); }, readLog: async () => [] };
+  assert.equal(await spaceState(broken, "quill", false), "unknown");
+  assert.equal(await spaceState(broken, "quill", true), "active", "own history proves the space is in use");
+});
