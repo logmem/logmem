@@ -1171,3 +1171,5 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 /* seed card on the empty Home and Plan pages */
 .lmx-seed{margin-top:16px;display:grid;gap:10px}
 .lmx-seed-actions{display:flex;flex-wrap:wrap;gap:10px}
+
+.lmx-invite-steps{margin:0;padding-left:20px;display:grid;gap:8px}.lmx-invite-steps li[aria-current=step]{color:var(--text)}.lmx-invite-note{font-size:14px;color:var(--text-muted);margin:0}.lmx-invite-prompt{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md,8px);font-size:14px;line-height:1.5}.lmx-linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}

@@ -29,5 +29,5 @@ test('/connect names one MCP URL, in a copy box, and the order is link first the
 test('the homepage says the same thing about invites and the order', async () => {
   const html = await read('public/index.html');
   assert.match(html, /Invite only until the beta opens on November 16/);
-  assert.match(html, /add the link to your AI, then paste the prompt/);
+  assert.match(html, /paste the prompt into your AI\. It gets the skills and connects/);
 });
