@@ -4,7 +4,7 @@ const emailHash=email=>{if(typeof email!=='string'||email.length>254||!/^\S+@\S+
 const tokenHash=token=>{if(typeof token!=='string'||!/^lmi_[A-Za-z0-9_-]{43}$/.test(token))failWorkspace('not_found',404);return digest(token);};
 function validateGrant(w,actorId,role,spaces){
  const actor=membership(w,actorId);if(!canManage(w,actorId))failWorkspace('forbidden',403);
- if(!['admin','member','viewer'].includes(role)||!spaces||typeof spaces!=='object'||Array.isArray(spaces)||!Object.keys(spaces).length)failWorkspace('invalid_invitation');
+ if(!['admin','member','viewer','contributor'].includes(role)||!spaces||typeof spaces!=='object'||Array.isArray(spaces)||!Object.keys(spaces).length)failWorkspace('invalid_invitation');
  for(const [sid,g] of Object.entries(spaces)) {
   if(!w.spaces[sid]||w.spaces[sid].status!=='active'||!g||!['editor','viewer'].includes(g.role)||typeof g.canApprove!=='boolean'||(role==='viewer'&&(g.canApprove||g.role!=='viewer')))failWorkspace('invalid_invitation');
   if(g.canApprove&&actor.role!=='owner')failWorkspace('forbidden',403);

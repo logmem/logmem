@@ -168,7 +168,7 @@ export function accessPolicy(w,userId,spaceId,action) {
  const s=w.spaces?.[spaceId];
  if(!s || s.status!=='active' || (!manager&&!m.spaces?.[spaceId])) failWorkspace('not_found',404);
  const g=m.spaces?.[spaceId], editor=m.role!=='viewer'&&(manager||g?.role==='editor');
- const allowed={read:true,write:editor,approve:m.role!=='viewer'&&g?.canApprove===true,'manage-members':manager,'manage-connections':manager,'create-space':m.role!=='viewer'};
+ const allowed={read:true,write:editor,approve:m.role!=='viewer'&&g?.canApprove===true,'manage-members':manager,'manage-connections':manager,'create-space':m.role!=='viewer'&&m.role!=='contributor'};
  if(!allowed[action]) failWorkspace('forbidden',403);
  return {workspace:summary(w),space:s,membership:m,person:`human:${userId}`,permissions:{read:true,write:editor,approve:allowed.approve,manage:manager},version:w.version};
 }
@@ -177,7 +177,7 @@ export async function authorizeSpace({userId,workspaceId,spaceId,action},deps) {
 }
 export async function setMembership({actorId,workspaceId,userId,role,spaces={},requestId},deps) {
  checkUser(actorId);checkUser(userId);
- if(!['owner','admin','member','viewer'].includes(role))failWorkspace('invalid_role');
+ if(!['owner','admin','member','viewer','contributor'].includes(role))failWorkspace('invalid_role');
  const fingerprint=digest({workspaceId,userId,role,spaces});
  for(let i=0;i<20;i++) {
   const {w}=await readWorkspace(deps.redis,workspaceId), actor=membership(w,actorId), old=w.members[userId];
