@@ -1213,3 +1213,20 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   .lmx-head .lmx-map-toggle button{padding:0 7px;gap:3px}
   .lmx-head .lmx-space-avatar{display:none}
 }
+
+/* Phone turned sideways: the screen is wide but only about 400px tall. The top bar scrolls away and stays compact, and the side rail drops its duplicate space picker so it fits without scrolling. */
+@media (max-width:1023px){
+  .lmx-rail .lmx-space-picker{display:none}
+}
+@media (max-height:500px) and (max-width:1023px){
+  .lmx-head,:root[data-app-theme] .lmx-head{position:static;min-height:0;padding:4px 14px;gap:4px 8px;backdrop-filter:none}
+  .lmx-head>.lm-badge--warning{display:none}
+  .lmx-head .lmx-space-label small,.lmx-head .lmx-space-avatar{display:none}
+  .lmx-head .lmx-theme-picker>summary>span:first-child{display:none}
+  .lmx-head .lmx-headspace{max-width:10rem}
+  .lmx-head .lmx-headspace summary,.lmx-head .lmx-theme-picker>summary,.lmx-head>.lmx-searchbtn,.lmx-head>.lmx-mobile-settings{min-height:34px}
+  .lmx-head .lmx-map-toggle button{min-height:30px;padding:0 9px}
+  :root[data-app-theme] .lmx-main{padding-top:14px;padding-bottom:24px}
+  :root[data-app-theme] .lmx-rail{padding-top:8px;padding-bottom:8px;gap:2px}
+  :root[data-app-theme] .lmx-rail .lm-nav-item{min-height:40px}
+}
