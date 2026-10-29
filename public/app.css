@@ -1173,3 +1173,23 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-seed-actions{display:flex;flex-wrap:wrap;gap:10px}
 
 .lmx-invite-steps{margin:0;padding-left:20px;display:grid;gap:8px}.lmx-invite-steps li[aria-current=step]{color:var(--text)}.lmx-invite-note{font-size:14px;color:var(--text-muted);margin:0}.lmx-invite-prompt{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md,8px);font-size:14px;line-height:1.5}.lmx-linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
+
+/* Phone: the top bar scrolls away and keeps to two short rows. Search, settings and the live dot sit beside the space picker. */
+@media (max-width:639px){
+  .lmx-head,:root[data-app-theme] .lmx-head{position:static;min-height:0;padding:8px 16px;gap:6px 8px;backdrop-filter:none}
+  :root[data-app-theme] .lmx-head .lm-crumbs{flex:1 1 100%}
+  .lmx-head .lmx-live{font-size:0;gap:0}
+  .lmx-head .lmx-live::before{width:10px;height:10px}
+  .lmx-head .lm-btn,.lmx-head .lmx-searchbtn,.lmx-head .lmx-mobile-settings{min-height:40px}
+  .lmx-head .lmx-headspace{min-height:40px}
+  .lmx-head .lmx-searchbtn,.lmx-head .lmx-mobile-settings{margin-left:auto}
+  .lmx-head .lmx-mobile-settings{margin-left:0}
+}
+@media (max-width:639px){
+  .lmx-head .lmx-space-label small{display:none}
+  .lmx-head .lmx-headspace{max-width:9rem}
+  .lmx-head .lmx-headspace summary{min-height:40px;padding-block:4px}
+  .lmx-head .lmx-theme-picker>summary>span:first-child{display:none}
+  .lmx-head .lmx-map-toggle{width:auto;margin-left:auto}
+  .lmx-head .lmx-map-toggle button{flex:0 0 auto;min-height:32px}
+}
