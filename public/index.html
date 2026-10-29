@@ -59,7 +59,7 @@
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/home.css">
-<script src="/theme-boot.js"></script><link rel="stylesheet" href="/site-nav.css"><link rel="stylesheet" href="/setup-theme.css"><script type="module" src="/site-nav.js"></script></head>
+<script src="/theme-boot.js"></script><link rel="stylesheet" href="/site-nav.css"><link rel="stylesheet" href="/setup-theme.css"><script type="module" src="/site-nav.js"></script><link rel="stylesheet" href="/network-hub.css"></head>
   <body class="lm home">
     <noscript
       ><iframe
@@ -214,27 +214,7 @@
           <span class="eyebrow">HOW IT WORKS</span>
           <h2>Less chasing.<br /><span>More work getting done.</span></h2>
         </div>
-        <div class="network-art" aria-hidden="true">
-          <div class="orbit orbit-one"></div>
-          <div class="orbit orbit-two"></div>
-          <div class="node center-node">
-            <span class="pod-icon">▧</span>Your LogMem space
-          </div>
-          <div class="node n1">
-            <img src="/home-assets/agents/chatgpt.svg" alt="" />ChatGPT ·
-            planner
-          </div>
-          <div class="node n2">
-            <img src="/home-assets/agents/gemini.png" alt="" />Gemini ·
-            researcher
-          </div>
-          <div class="node n3">
-            <img src="/home-assets/agents/claude.png" alt="" />Claude · reviewer
-          </div>
-          <div class="node n4"><span class="person">Y</span>You</div>
-          <span class="satellite s1">Design team</span
-          ><span class="satellite s2">Your client</span>
-        </div>
+        <div class="network-hub-wrap" data-network-hub><noscript><p>ChatGPT, Claude, Gemini, Cursor and Codex each write to one shared log. Before anything irreversible, a person is asked, and the answer goes in the same log.</p></noscript></div>
         <div class="three-col">
           <article>
             <span class="number">01</span>
@@ -690,5 +670,5 @@
       <div id="wizard-content"></div>
     </dialog>
     <div class="toast" role="status" aria-live="polite" id="toast"></div>
-  </body>
+  <script type="module" src="/network-hub.js"></script></body>
 </html>

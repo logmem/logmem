@@ -579,88 +579,6 @@ small {
   color: var(--text-subtle);
   margin-bottom: 14px;
 }
-.network-art {
-  position: relative;
-  height: 380px;
-  max-width: 760px;
-  margin: auto;
-}
-.orbit {
-  position: absolute;
-  left: 50%;
-  top: 48%;
-  border: 1px solid #e5e1dc;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-}
-.orbit-one {
-  width: 440px;
-  height: 280px;
-}
-.orbit-two {
-  width: 650px;
-  height: 350px;
-}
-.node {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: var(--surface);
-  border: 1px solid #e4e0d9;
-  border-radius: 13px;
-  padding: 11px 15px;
-  box-shadow: 0 8px 18px #30203008;
-  font-size: 12px;
-}
-.node img {
-  height: 35px;
-  width: 35px;
-  object-fit: contain;
-}
-.center-node {
-  top: 43%;
-  left: 39%;
-  z-index: 2;
-  animation: breathe 4s infinite;
-}
-.n1 {
-  left: 20%;
-  top: 3%;
-}
-.n2 {
-  right: 0;
-  top: 35%;
-}
-.n3 {
-  left: 0;
-  top: 45%;
-}
-.n4 {
-  right: 26%;
-  bottom: 0;
-}
-.person {
-  background: #d6cabb;
-  border-radius: 50%;
-  height: 25px;
-  width: 25px;
-  display: grid;
-  place-items: center;
-}
-.satellite {
-  position: absolute;
-  font-size: 10px;
-  color: #a49e97;
-}
-.s1 {
-  right: 8%;
-  top: 3%;
-}
-.s2 {
-  left: 12%;
-  bottom: 8%;
-}
 .agent-symbol {
   width: 32px;
   height: 32px;
@@ -1707,57 +1625,6 @@ dialog::backdrop {
     font-size: 13px;
     margin-top: 8px;
   }
-  .network-art {
-    height: 280px;
-    max-width: 350px;
-  }
-  .orbit-one {
-    width: 220px;
-    height: 200px;
-  }
-  .orbit-two {
-    width: 330px;
-    height: 260px;
-  }
-  .node {
-    font-size: 9px;
-    padding: 8px 10px;
-    gap: 5px;
-  }
-  .node img {
-    height: 26px;
-    width: 26px;
-  }
-  .center-node {
-    left: 29%;
-    top: 44%;
-  }
-  .n1 {
-    left: 15%;
-    top: 3%;
-  }
-  .n2 {
-    right: -5px;
-    top: 34%;
-  }
-  .n3 {
-    left: -5px;
-    top: 53%;
-  }
-  .n4 {
-    right: 20%;
-    bottom: 0;
-  }
-  .satellite {
-    font-size: 8px;
-  }
-  .s1 {
-    top: 13%;
-    right: 2%;
-  }
-  .s2 {
-    left: 0;
-  }
   .split {
     grid-template-columns: 1fr;
     gap: 30px;
@@ -2169,19 +2036,6 @@ h2 > span {
 }
 .pod-message p {
   color: var(--text-muted);
-}
-.node {
-  border-color: var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--text);
-  background: var(--surface);
-}
-.orbit {
-  border-color: var(--border);
-}
-.person {
-  background: var(--brand-subtle);
-  color: var(--brand);
 }
 .case-tabs {
   gap: 0;
