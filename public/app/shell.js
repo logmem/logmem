@@ -8,6 +8,7 @@ import { openSearch } from './search.js';
 import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
 import {assistantWidget} from './assistant-widget.js';
 import { themeControl } from './theme-controls.js';
+import { mapViewToggle } from './map-preference.js';
 
 export const NAV = [['home', 'Today', 'overview'], ['queue', 'Inbox', 'handoff'], ['work', 'Work', 'work'], ['agents', 'Team', 'agents'], ['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye']];
 export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['activity', 'Activity', 'timeline', '#/activity'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
@@ -53,7 +54,7 @@ function frame(route, crumbs, body) {
     <div class="lmx-col"><header class="lmx-head"><ol class="lm-crumbs">${crumbs.map((c, i) => html`${i ? html`<li aria-hidden="true">/</li>` : nothing}<li aria-current=${i === crumbs.length - 1 ? 'page' : nothing} style=${i === crumbs.length - 1 ? 'color:var(--text)' : ''}>${c}</li>`)}</ol>
       ${headSpace()}${themePicker()}${demo?html`<span class="lm-badge lm-badge--warning">Contains sample content</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
-      ${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
+      ${['queue','work','knowledge','agents'].includes(route)?mapViewToggle():nothing}${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
       <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}</main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
     <nav class="lmx-tabs" aria-label="LogMem">${NAV.map(n=>tab(n[0],n[1],n[2]))}</nav></div>`;
 }
