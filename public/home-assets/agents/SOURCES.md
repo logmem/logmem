@@ -12,8 +12,8 @@ Fetched October 23, 2026. Marks identify the named tools, not a partnership.
 - Gemini CLI: the IDE companion icon from https://github.com/google-gemini/gemini-cli (packages/vscode-ide-companion/assets/icon.png), scaled from 1645 to 256 pixels. No brand kit exists.
 - Antigravity: https://antigravity.google/assets/image/antigravity-logo.png.
 - OpenCode: opencode-logo-dark.svg from the official brand kit in the anomalyco/opencode repository.
-- Grok: Grok_Logomark_Dark.svg from the SpaceX/xAI Grok asset kit (https://x.ai/legal/brand-guidelines). Michael ruled on Oct 29 that GrokBot is a SpaceX product.
+- Grok Bot: the official Grok Bot app icon (1024 by 1024, from its App Store listing), scaled to 256. Grok Bot is a separate product from the Grok chatbot, so the Grok logomark is not used here. No Grok Bot brand kit exists.
 
-The Claude Code, Gemini CLI, Antigravity, OpenCode and Grok files match the Agent Brand Assets pack that Muse built on Oct 29, 2026. Codex has no mark of its own and uses the OpenAI Blossom. Dots (OpenAI) is in the pack and is not used on the site.
+The Claude Code, Gemini CLI, Antigravity, OpenCode and Grok Bot files match the Agent Brand Assets pack that Muse built on Oct 29, 2026. Codex has no mark of its own and uses the OpenAI Blossom. Dots (OpenAI) is in the pack and is not used on the site.
 
 All marks remain the property of their owners. The files retain their supplied artwork.
