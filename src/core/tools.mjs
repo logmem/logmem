@@ -377,6 +377,15 @@ function rankNext({ waiting, tasks, pending, answered, nowMs }) {
   return out.slice(0, 5);
 }
 
+/** The Brief of a new space. There is no history, so the first job is to fill the space from one project. */
+export const SEED_HINT = {
+  needed: true,
+  why: "This space is new. It has no plan, jobs or entries, so there is nothing to catch up on.",
+  skill: "https://logmem.si/skills/logmem-seed-space/SKILL.md",
+  how: "Read the skill. Ask your person which project this space is for. Then ask questions one at a time and show a draft before you write anything.",
+  ask: "This space is new, so the Brief is empty. Which project should we seed it from? Read the logmem-seed-space skill and I will answer your questions.",
+};
+
 /** The one question that turns a brief into an action. */
 function nextQuestion(doNext, stale) {
   if (stale) return `Your Now is stale (${stale.why}). Update it, then continue?`;
@@ -473,6 +482,13 @@ async function brief(ctx, agent, opts = {}) {
     do_next: doNext,
     ask: nextQuestion(doNext, stale),
   };
+  // A new space has nothing to read yet. Say so, and point the agent at the seed skill.
+  try {
+    if (!recap && !log.some((e) => !["started", "joined", "ping", "setup"].includes(e.kind)) && !waiting.length && !(await s.list("job")).length) {
+      out.seed = SEED_HINT;
+      out.ask = SEED_HINT.ask;
+    }
+  } catch (_) {}
   if (mode === "fleet" || mode === "operator") out.fleet = await fleetSnapshot(s, nowMs);
   if (mode === "operator") {
     out.needs_human = [...(tasks || []).map((t) => ({ type: "task", trail: t.trail, summary: t.summary })),

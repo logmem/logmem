@@ -2,6 +2,7 @@
 import {html,nothing} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {state,live,postJSON,getJSON,switchContext,clearCustomerContext,toast} from './core.js';
 import {renderBare,renderView} from './shell.js';
+import {humanPrompt} from './go-prompt.js';
 let ready=()=>{},closePanels=()=>{},formError='',busy=false,model={name:'',spaceName:'Operations',businessType:'',withSample:false};
 let requestId=crypto.randomUUID();
 export function configureAccount(hooks){ready=hooks.ready;closePanels=hooks.closePanels;}
@@ -16,7 +17,7 @@ export async function bootstrapAccount() {
  if(res.status===503&&data.error==='customer_dashboard_disabled')return false;
  if(res.status===404)return false; // Existing local sample server has no customer routes.
  state.customer=true;
- if(res.status===401){showCustomerLogin();return true;}
+ if(res.status===401){new URLSearchParams(location.search).get('invite')?showInviteSignedOut():showCustomerLogin();return true;}
  if(!res.ok){renderBare(html`<section class="lmx-account-start">${logo()}<h1>Could not open your workspace.</h1><p role="alert">Please retry. Your data stays private.</p><button class="lm-btn" @click=${()=>location.reload()}>Retry</button></section>`);return true;}
  state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;
  const invite=new URLSearchParams(location.search).get('invite');
@@ -59,7 +60,7 @@ function showCreation(kind) {
 export const showCreateWorkspace=()=>showCreation('workspace');
 export const showCreateSpace=()=>showCreation('space');
 export async function signOutCustomer() {
- try{await postJSON('/api/session','session',{action:'signout'});clearCustomerContext();localStorage.setItem('lm-account-event',JSON.stringify({type:'signout',at:Date.now()}));showCustomerLogin();}
+ try{await postJSON('/api/session','session',{action:'signout'});clearCustomerContext();localStorage.setItem('lm-account-event',JSON.stringify({type:'signout',at:Date.now()}));new URLSearchParams(location.search).get('invite')?showInviteSignedOut():showCustomerLogin();}
  catch(e){toast(e.message,true);}
 }
 export function showAccount() {
@@ -113,10 +114,24 @@ async function loadMembers() {
  }catch(e){toast(e.message,true);}
 }
 
+const inviteSteps=(on)=>html`<ol class="lmx-invite-steps"><li aria-current=${on===1?'step':nothing}><strong>Sign in</strong> with the email the invite was sent to.</li><li aria-current=${on===2?'step':nothing}><strong>Accept</strong> to join the workspace.</li><li aria-current=${on===3?'step':nothing}><strong>Connect your AI.</strong> Paste one short prompt.</li></ol>`;
+const signInHref=()=>'/api/session?signin=1&returnTo='+encodeURIComponent(location.pathname+location.search+location.hash);
+function showInviteSignedOut() {
+ clearCustomerContext();state.customer=true;
+ renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>You have been invited to LogMem.</h1><p>LogMem is a shared space where you and your AI tools keep work in one place.</p>${inviteSteps(1)}<a class="lm-btn lm-btn--primary" href=${signInHref()}>Sign in to accept</a><p class="lmx-invite-note">No account yet? The same button lets you create one. Use the email the invite was sent to. The link works once and expires after 7 days.</p></section>`);
+}
+function inviteProblem(email) {
+ renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>This invitation does not open for your account.</h1><p role="alert">You are signed in as <strong>${email}</strong>. An invitation works only for the email it was sent to. It also stops working after one use or after 7 days.</p><button class="lm-btn lm-btn--primary" @click=${signOutCustomer}>Sign out and use another email</button><a class="lm-btn" href="/app">Open my workspace</a><p class="lmx-invite-note">Still stuck? Ask the person who invited you to send a new invitation.</p></section>`);
+}
+function inviteAccepted(workspaceName,selected) {
+ const prompt=humanPrompt('this AI');
+ renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>You joined ${workspaceName}.</h1>${inviteSteps(3)}<p>Paste this into your AI. It goes to logmem.si/agents, gets the skills and connects.</p><pre class="lmx-invite-prompt" tabindex="0">${prompt}</pre><button class="lm-btn lm-btn--primary" @click=${async e=>{const b=e.currentTarget;try{await navigator.clipboard.writeText(prompt);b.textContent='Copied';}catch{b.textContent='Select the text and copy it';}}}>Copy the prompt</button><a class="lm-btn" href="https://logmem.si/agents">Open the agent setup page</a><button class="lm-btn lm-btn--ghost" @click=${()=>reloadContext(selected)}>Open the workspace</button></section>`);
+}
 async function showInvitation(token) {
- try{const res=await fetch('/api/memberships?token='+encodeURIComponent(token),{credentials:'same-origin'}),r=await res.json();if(!res.ok)throw new Error(r.error||'Invitation unavailable.');
- renderBare(html`<section class="lmx-account-start">${logo()}<h1>Join ${r.workspaceName}</h1><p>Your role: ${r.role}.</p><p>Spaces: ${r.spaces.map(s=>s.name).join(', ')}</p><button class="lm-btn lm-btn--primary" @click=${async()=>{try{const accepted=await postJSON('/api/memberships','memberships',{action:'accept',token});history.replaceState(null,'','/app');await reloadContext(accepted.selected);}catch(e){toast(e.message,true);}}}>Accept invitation</button><a class="lm-btn" href="/app">Cancel</a></section>`);
- }catch(e){renderBare(html`<section class="lmx-account-start"><h1>Invitation unavailable</h1><p role="alert">${e.message}</p><a class="lm-btn" href="/app">Open LogMem</a></section>`);}
+ let r;
+ try{const res=await fetch('/api/memberships?token='+encodeURIComponent(token),{credentials:'same-origin'});r=await res.json().catch(()=>({}));if(!res.ok){inviteProblem(state.user?.email||'your account');return;}}
+ catch{renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>Could not check the invitation.</h1><p role="alert">Check your connection and try again. Your invitation is not used up.</p><button class="lm-btn lm-btn--primary" @click=${()=>location.reload()}>Try again</button></section>`);return;}
+ renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>Join ${r.workspaceName}</h1>${inviteSteps(2)}<p>Your role: <strong>${r.role}</strong>.</p><p>Spaces: ${r.spaces.map(x=>x.name).join(', ')}</p><p class="lmx-invite-note">Signed in as ${state.user?.email}. <button class="lmx-linkbtn" @click=${signOutCustomer}>Not you? Sign out</button></p><button class="lm-btn lm-btn--primary" @click=${async e=>{const b=e.currentTarget;b.disabled=true;try{const accepted=await postJSON('/api/memberships','memberships',{action:'accept',token});history.replaceState(null,'','/app');inviteAccepted(r.workspaceName,accepted.selected);}catch(err){b.disabled=false;toast(err.message,true);}}}>Accept invitation</button><a class="lm-btn" href="/app">Not now</a></section>`);
 }
 export function showNewTask() {
  let error='';const draw=()=>renderView('home',['Today','Add a task'],html`<form class="lm-panel lmx-account-form" @submit=${async e=>{e.preventDefault();try{await postJSON('/api/work?op=create_job','work',{job:'task-'+crypto.randomUUID(),title:e.currentTarget.elements.title.value});location.hash='#/work';ready();}catch(err){if(err.stale)return;error=err.message;draw();}}}><h1>Add a task</h1><label class="lm-field"><span class="lm-label">What needs to happen?</span><input class="lm-input" name="title" maxlength="120" required></label>${error?html`<p role="alert">${error}</p>`:nothing}<button class="lm-btn lm-btn--primary">Add task</button></form>`);draw();
