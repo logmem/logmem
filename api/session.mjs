@@ -1,6 +1,7 @@
-import {customerSession,revokeCustomerSession} from '../src/http/clerk.mjs';
+import {customerSession,revokeCustomerSession,clerkFrontendForKey} from '../src/http/clerk.mjs';
 import {requestUrl,requireIntent,jsonBody,customerIdentity,customerError} from '../src/http/customer-http.mjs';
 import {listWorkspaces,listSpaces,ensureLegacyWorkspace,WorkspaceError} from '../src/http/workspaces.mjs';
+import {issuerFor} from '../src/http/issuer.mjs';
 export const config={runtime:'nodejs',maxDuration:15};
 export function safeReturn(value='/app') {
  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||/[\\\x00-\x20]/.test(value))throw new WorkspaceError('invalid_return_path');
@@ -23,6 +24,13 @@ export function createHandler(deps={}) {return async(req,res)=>{
    res.setHeader('Location',s.status==='signed-in'?back:s.signInUrl);res.statusCode=302;return res.end();
   }
   const {session:s,redis}=await customerIdentity(req,deps);
+  if(req.method==='GET'&&url.searchParams.get('profile')==='1'){
+   const frontend=clerkFrontendForKey(env.CLERK_PUBLISHABLE_KEY||'');
+   if(!frontend)throw new WorkspaceError('clerk_profile_unavailable',503);
+   const profileOrigin=env.VERCEL_ENV||env.LOGMEM_ISSUER?issuerFor(req,env):url.origin;
+   const returnTo=new URL('/app#/account',profileOrigin).toString();
+   res.setHeader('Cache-Control','no-store');res.setHeader('Location',frontend+'/user?redirect_url='+encodeURIComponent(returnTo));res.statusCode=302;return res.end();
+  }
   if(req.method==='POST') {
    requireIntent(req,'session');const b=jsonBody(req);if(b.action!=='signout')throw new WorkspaceError('invalid_action');
    if(!s.sessionId)throw new WorkspaceError('session_not_available',503);

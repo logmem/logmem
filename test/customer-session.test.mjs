@@ -23,6 +23,16 @@ test('signin accepts only local return paths and preserves handshake cookies',as
  const r=mockRes();await createHandler({...deps(redis),session:async()=>({status:'handshake',headers:[['set-cookie','a=1'],['set-cookie','b=2'],['location','https://accounts.example/handshake']]})})(mockReq({url:'/api/session?signin=1'}),r);
  assert.equal(r.statusCode,307);assert.deepEqual(r.getHeader('set-cookie'),['a=1','b=2']);
 });
+test('profile settings send the signed-in user to the Clerk account portal',async()=>{
+ const redis=createMemoryRedis(),key='pk_test_'+Buffer.from('lenient-newt-9425.accounts.dev$').toString('base64');
+ const handler=createHandler({...deps(redis),env:{LOGMEM_CUSTOMER_DASHBOARD:'1',LOGMEM_SIGNUP_OPEN:'1',CLERK_PUBLISHABLE_KEY:key}});
+ const r=mockRes();await handler(mockReq({url:'/api/session?profile=1',headers:{host:'logmem.test'}}),r);
+ assert.equal(r.statusCode,302);
+ const destination=new URL(r.getHeader('location'));
+ assert.equal(destination.origin,'https://lenient-newt-9425.accounts.dev');
+ assert.equal(destination.pathname,'/user');
+ assert.equal(destination.searchParams.get('redirect_url'),'https://logmem.test/app#/account');
+});
 test('signout requires origin and intent and revokes the actual provider session',async()=>{
  const redis=createMemoryRedis();let revoked;
  const handler=createHandler({...deps(redis),revokeSession:async id=>{revoked=id;}});

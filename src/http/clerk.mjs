@@ -23,6 +23,14 @@ export class ClerkConfigError extends Error {
 
 export const clerkConfigured = (env = process.env) => Boolean(env.CLERK_SECRET_KEY && env.CLERK_PUBLISHABLE_KEY);
 
+/** Return the Clerk Account Portal origin named by a public publishable key. */
+export function clerkFrontendForKey(key = "") {
+  if (!/^pk_(test|live)_[A-Za-z0-9+/=]+$/.test(key)) return "";
+  const domain = Buffer.from(key.replace(/^pk_(test|live)_/, ""), "base64").toString("utf8").replace(/\$$/, "");
+  if (!/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(domain) || domain.includes("..")) return "";
+  return "https://" + domain;
+}
+
 function webRequest(req, url) {
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers || {})) {
