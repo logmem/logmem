@@ -1,7 +1,7 @@
 # LogMem plugin
 
 This repository contains the LogMem plugin package for supported hosts.
-It connects to `https://logmem.si/mcp` and ships seven skills: `setup`, `logmem`, `logmem-decisions`, `logmem-onboard-agent`, `logmem-read-path-recovery`, `logmem-sdk-primitives` and `logmem-track-outage`.
+It connects to `https://logmem.si/mcp` and ships eight skills: `setup`, `logmem`, `logmem-decisions`, `logmem-onboard-agent`, `logmem-seed-space`, `logmem-read-path-recovery`, `logmem-sdk-primitives` and `logmem-track-outage`.
 Public directory submission remains pending. This package does not establish a public ChatGPT, Codex, or Claude directory listing.
 
 ## Install from this repository
@@ -21,7 +21,7 @@ LogMem is invite only during the pilot.
 
 ## More skills
 
-Six skills ship in the plugin besides `setup`. Only `logmem-self-host` stays out, because it shows a Redis connection string and the plugin carries no backend strings. It is public at [logmem/skills](https://github.com/logmem/skills):
+Seven skills ship in the plugin besides `setup`. Only `logmem-self-host` stays out, because it shows a Redis connection string and the plugin carries no backend strings. It is public at [logmem/skills](https://github.com/logmem/skills):
 
 ```bash
 npx skills add logmem/skills

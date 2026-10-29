@@ -7,6 +7,7 @@ Skills that teach an agent to use LogMem. Each folder holds one skill (`SKILL.md
 | `logmem` | Every session: start, Brief, entries, handoffs, recap |
 | `logmem-decisions` | Asking a person before anything irreversible, and acting on the answer |
 | `logmem-onboard-agent` | Connecting a new agent to LogMem |
+| `logmem-seed-space` | Filling a new, empty space from one project: read, ask, draft, approve, write |
 | `logmem-read-path-recovery` | Reads that fail, come back empty or return WRONGTYPE, and degraded mode |
 | `logmem-track-outage` | Scheduled trackers: write on change, stay silent otherwise, one outage report |
 | `logmem-self-host` | Running LogMem on your own Redis, deploy settings, moving from ACMI |

@@ -126,3 +126,16 @@ test('guided login return preserves client, step and a scoped task draft',async(
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:'/private/tmp/logmem-guided-today-'+test.info().project.name+'.png',fullPage:true});
 });
+
+test('an empty space offers the seed prompt',async({page,context})=>{
+ await fixture(context);
+ await page.goto('/app');
+ await page.getByLabel('Workspace name').fill('Northside Repairs');
+ await page.getByLabel('First space name').fill('Operations');
+ await page.getByRole('button',{name:'Create workspace',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Your space is ready.'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Fill this space from a project'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Copy seed prompt'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Copy for a software project'})).toBeVisible();
+ await expect(page.getByRole('link',{name:'How it works'})).toHaveAttribute('href','/how-to#seed');
+});

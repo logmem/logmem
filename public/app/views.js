@@ -23,6 +23,7 @@ import { agentProfile } from './profile-components.js';
 import { blockerKind } from './flow-model.js';
 
 import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js';
+import {seedCard} from './seed-components.js';
 import {blockerClusters} from './flow-model.js';
 import {ticketPrompt,jobDispatchPrompt} from './dispatch-model.js';
 import {queuePage} from './interactions.js';
@@ -44,7 +45,7 @@ pages.home = async () => {
   const b = briefFor(d), needs = d.needs_items || [];
   const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
   const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work,', sub = b.decisions ? 'Everything else is in view.' : 'in view.';
-  if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Today'],html`<h1>Your space is ready.</h1>${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}`);
+  if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Today'],html`<h1>Your space is ready.</h1>${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}${seedCard({project:state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space})}`);
   const review = i => i.type==='task' ? openDrawer('needs','tasks') : i.job ? openDrawer('job',i.job) : openDrawer('needs','all');
   const attention = i => bentoTaskCard({item:i,space:state.space,review:()=>review(i)});
   const counts = attentionCounts(needs), pf = filt('home:'+state.space);
@@ -95,7 +96,7 @@ pages.lanes = async () => {
 pages.plan = async (name) => {
   const d = await api('plan', name ? { id: name } : {});
   if (!ok(d)) return;
-  if (!d.plan) { renderView('plan', ['Lanes'], emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')); return; }
+  if (!d.plan) { renderView('plan', ['Lanes'], html`${emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')}${seedCard({project:state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space:state.space})}`); return; }
   const items = d.tracks.reduce((a, t) => a.concat(t.items), []);
   const lateFn = (i) => isLate(i.due, i.stage);
   const done = items.filter((i) => i.stage === 'done').length;

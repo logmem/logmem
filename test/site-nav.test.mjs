@@ -5,7 +5,7 @@ import { MENU, CTA, WIDE_AFTER } from "../public/site-nav-model.js";
 import { AGENT_CLIENTS } from "../public/app/agent-clients.js";
 
 const read = p => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const HEADER_PAGES = ["index", "docs", "scorecard", "connect", "privacy", "pricing", "terms", "agents", "skills", "onboarding", ...Object.keys(AGENT_CLIENTS).map(id => "agents/" + id)];
+const HEADER_PAGES = ["index", "docs", "scorecard", "connect", "how-to", "privacy", "pricing", "terms", "agents", "skills", "onboarding", ...Object.keys(AGENT_CLIENTS).map(id => "agents/" + id)];
 const links = [...MENU.flatMap(i => [i, ...(i.sub || [])]), CTA];
 
 function resolves(href) {
