@@ -398,11 +398,21 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
         // old settlements while their original handoffs still appear in the window.
         const log = await store.readLog("agent", agent, { reverse: true });
         const settled = new Set(log.filter(e => e.by === `agent:${agent}` && e.origin && handoffSettlement(e.kind, e.payload)).map(e => e.origin));
+        const jobNowById = new Map();
+        const completedJobHandoff = async (entry) => {
+          const job = jobOf(entry.job || entry.where);
+          if (!job) return false;
+          if (!jobNowById.has(job)) jobNowById.set(job, store.getNow("job", job).catch(() => null));
+          const jobNow = await jobNowById.get(job);
+          return jobNow?.stage === "done" && jobNow.handoff_trail === entry.trail;
+        };
         const rows = [];
         const seen = new Set();
         for (const e of log) {
           if (!isHandoffKind(e.kind) || e.to !== `agent:${agent}` || !e.trail || settled.has(e.trail) || seen.has(e.trail)) continue;
           seen.add(e.trail);
+          // A completed job settles only the handoff trail it records.
+          if (await completedJobHandoff(e)) continue;
           const id = computeItemId(space, "handoff", e.trail, agent);
           // An indexed settlement must never reappear through a source-log fallback.
           if (await getCoordItem(store, space, id)) continue;

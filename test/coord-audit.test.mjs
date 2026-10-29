@@ -322,9 +322,10 @@ test('partial audit includes old handoffs without inventing index records or rev
   const r = createMemoryRedis(), store = createStore(r, {space:'fleet'});
   const now = Date.now();
   await store.setWho('agent','codex',{name:'Codex'});
-  for (const trail of ['waiting','accepted','indexed']) await store.append('agent','codex', {
+  for (const trail of ['waiting','accepted','indexed','completed']) await store.append('agent','codex', {
     ts:now-2*86400000,kind:'handoff',by:'agent:hermes',to:'agent:codex',trail,job:'job:review',summary:trail
   });
+  await store.setNow('job','review',{stage:'done',handoff_trail:'completed'});
   await store.append('agent','codex',{ts:now-86400000,kind:'accepted',by:'agent:codex',origin:'accepted',trail:'ack'});
   // Keep the settlement outside the old 1,000-entry window.
   for (let i = 0; i < 1001; i++) {
