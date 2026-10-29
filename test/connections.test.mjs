@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { oauthRedis, withEnv, mockReq, mockRes, TEST_KEK_HEX } from "./oauth-helpers.mjs";
-import { __setRedisForTests, registerClient, mintTokens, lookupAccessToken, listManagedApps, revokeManagedApp } from "../api/oauth/_lib/storage.mjs";
+import { __setRedisForTests, registerClient, mintTokens, lookupAccessToken, listManagedApps, revokeManagedApp, touchManagedAppCall } from "../api/oauth/_lib/storage.mjs";
 import { inviteMany } from "../src/http/invites.mjs";
 import { accountFor } from "../src/http/accounts.mjs";
 import { createHandler } from "../api/connections.mjs";
@@ -221,5 +221,43 @@ test("connections: failed token revocation keeps the app active for shared-slot 
       assert.deepEqual((await disconnect(failedApp.fid)).body, { disconnected: true });
       assert.equal(await redis("SISMEMBER", agents, "muse"), 0);
     } finally { __setRedisForTests(null); }
+  });
+});
+
+test("connections: a tool call records when the app last called and which agent it used, once a minute", async () => {
+  await withEnv(ENV, async () => {
+    try {
+      const { ada, connect } = await setup();
+      await connect(ada, "muse");
+      const [app] = await listManagedApps(ada.tenant);
+      assert.equal(app.last_call_at, undefined, "a new app has not called yet");
+      assert.equal(await touchManagedAppCall(app.fid, { agent: "muse" }), true);
+      assert.equal(await touchManagedAppCall(app.fid, { agent: "other" }), false, "a second call inside a minute does not write");
+      const [after] = await listManagedApps(ada.tenant);
+      assert.ok(after.last_call_at > 0);
+      assert.equal(after.last_call_agent, "muse");
+      assert.equal(await touchManagedAppCall("not-a-grant", { agent: "x" }), false);
+      assert.equal(await touchManagedAppCall("0".repeat(32), { agent: "x" }), false, "no record, no write");
+    } finally {
+      __setRedisForTests(null);
+    }
+  });
+});
+
+test("connections: the owner's list carries last_call_at and last_call_agent, and no token", async () => {
+  await withEnv(ENV, async () => {
+    try {
+      const { redis, ada, connect } = await setup();
+      const t = await connect(ada, "muse");
+      const [app] = await listManagedApps(ada.tenant);
+      await touchManagedAppCall(app.fid, { agent: "muse" });
+      const r = await call(handler(redis, ADA));
+      assert.equal(r.status, 200);
+      assert.ok(r.body.apps[0].last_call_at > 0);
+      assert.equal(r.body.apps[0].last_call_agent, "muse");
+      assert.ok(!JSON.stringify(r.body).includes(t.access_token));
+    } finally {
+      __setRedisForTests(null);
+    }
   });
 });

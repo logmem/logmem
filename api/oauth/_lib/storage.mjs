@@ -563,6 +563,22 @@ async function recordManagedApp(r, { family, isNew, client_id, backend, space })
   await r("SADD", APP_KEY.apps(backend.tenant), family);
 }
 
+/**
+ * Record that an app made a tool call. last_used moves only when a token is minted, so it
+ * lags by up to an hour. This keeps the real time of the last call and the agent it used.
+ * One write a minute per app at most.
+ */
+export async function touchManagedAppCall(fid, { agent } = {}) {
+  if (!isFid(fid)) return false;
+  const r = deployRedis();
+  if ((await r("SET", `lm:account:seen:${fid}`, "1", "NX", "EX", "60")) == null) return false;
+  const prev = parse(await r("GET", APP_KEY.app(fid)));
+  if (!prev) return false;
+  const now = Math.floor(Date.now() / 1000);
+  await r("SET", APP_KEY.app(fid), JSON.stringify({ ...prev, last_call_at: now, last_call_agent: String(agent || prev.agent || "") }));
+  return true;
+}
+
 /** The connected apps of one managed tenant, newest use first. */
 export async function listManagedApps(tenant) {
   const r = deployRedis();
@@ -573,7 +589,7 @@ export async function listManagedApps(tenant) {
     if (rec && rec.tenant === tenant) out.push(rec);
     else await r("SREM", APP_KEY.apps(tenant), fid); // expired or foreign: drop the stale id
   }
-  return out.sort((a, b) => (b.last_used || 0) - (a.last_used || 0));
+  return out.sort((a, b) => (b.last_call_at || b.last_used || 0) - (a.last_call_at || a.last_used || 0));
 }
 
 /** Disconnect one app of `tenant`: every token of its grant goes. Returns the app record, or null. */

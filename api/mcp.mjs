@@ -27,6 +27,7 @@ const markUnexpected = (e) => {
 import { fromDescriptor } from "../src/lib/backend.mjs";
 import { resolveAuth, decodeConfig, wwwAuthenticate, bearerOf } from "../src/http/auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
+import { touchManagedAppCall } from "./oauth/_lib/storage.mjs";
 import { createJail } from "../src/http/jail.mjs";
 import { createLimits } from "../src/http/limits.mjs";
 import { getTenant } from "../cloud/tenants/index.mjs";
@@ -215,6 +216,14 @@ export default async function handler(req, res) {
       toolDefs,
       lmFactory: async () => (auth.source === "managed" ? buildManaged({ redis: b.redis, auth, sessionId }) : buildInstance({ redis: b.redis, kind: b.kind, auth, sessionId })),
     });
+    // Note the call on the connected-apps record, so the account owner can see when each app last called.
+    if (msg?.method === "tools/call" && (auth.source === "managed" || auth.source === "fleet-oauth")) {
+      try {
+        await touchManagedAppCall(String(auth.keyId || "").replace(/^(mf|ff)_/, ""), { agent: auth.agent });
+      } catch {
+        // last-seen is cosmetic: never fail a tool call over it
+      }
+    }
     return send(res, wantsSSE, reply, headers);
   } catch (e) {
     sendServerError(res, "/api/mcp", e);

@@ -88,7 +88,7 @@ export function createHandler(getDeps = defaultDeps) {
       if (acct.waitlist) return res.status(200).json({ email: s.email, waitlist: true, apps: [] });
 
       if (req.method === "GET") {
-        const apps = (await listManagedApps(acct.tenant)).map((a) => ({ fid: a.fid, app: a.client_name || "App", agent: a.agent, created_at: a.created_at, last_used: a.last_used }));
+        const apps = (await listManagedApps(acct.tenant)).map((a) => ({ fid: a.fid, app: a.client_name || "App", agent: a.agent, created_at: a.created_at, last_used: a.last_used, last_call_at: a.last_call_at || null, last_call_agent: a.last_call_agent || null }));
         return res.status(200).json({ email: s.email, space: acct.space, plan: acct.plan, apps });
       }
       if (req.method !== "POST") return res.status(405).json({ error: "method not allowed" });
