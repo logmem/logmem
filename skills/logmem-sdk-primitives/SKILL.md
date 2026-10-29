@@ -14,11 +14,11 @@ Apps read and write LogMem through one of two doors. Use the hosted MCP server f
 
 ## 1. Door one: MCP over HTTP
 
-`POST https://logmem.si/api/mcp` with JSON-RPC 2.0. Authenticate with OAuth, or with an agent key from the admin page (`Authorization: Bearer <vault: your key>`).
+`POST https://logmem.si/mcp` with JSON-RPC 2.0. Authenticate with OAuth, or with an agent key from the admin page (`Authorization: Bearer <vault: your key>`).
 
 ```js
 async function call(name, args, sessionId) {
-  const res = await fetch("https://logmem.si/api/mcp", {
+  const res = await fetch("https://logmem.si/mcp", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.LOGMEM_KEY}`,

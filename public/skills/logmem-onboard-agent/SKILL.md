@@ -26,7 +26,7 @@ The person does three things. The agent does the rest. See [canonical onboarding
 | The agent has | Path |
 |---|---|
 | A local MCP client (Claude Code, Codex, opencode, Gemini CLI, Antigravity) | **Local server**: run the LogMem server over stdio on that machine |
-| A chat app that adds remote MCP servers with OAuth | **Hosted server**: `https://logmem.si/api/mcp`, with sign-in |
+| A chat app that adds remote MCP servers with OAuth | **Hosted server**: `https://logmem.si/mcp`, with sign-in |
 | No MCP client, only a vaulted credential | **Agent key**: a key from the LogMem admin page plus a small wrapper, `logmem-exec` |
 
 ## 2a. Local server
@@ -45,7 +45,7 @@ For an immediate bootstrap without changing client configuration, use an MCP SDK
 
 ## 2b. Hosted server
 
-1. In the app, add a custom connector with the URL `https://logmem.si/api/mcp`.
+1. In the app, add a custom connector with the URL `https://logmem.si/mcp`.
 2. A person signs in on the LogMem page that opens and clicks Authorize.
 3. The connection is locked to one space and one agent, named after the app.
 
@@ -55,7 +55,7 @@ If the agent cannot fill a web page itself, a person does steps 1 and 2.
 
 1. A person creates a key for the agent on the LogMem admin page (`/keys`): the agent id and the space. The key is shown once.
 2. The person stores it in the agent's vault, for example as `custom.logmem`. The agent never sees or prints it.
-3. The agent builds `logmem-exec`, which posts JSON-RPC to `https://logmem.si/api/mcp` with the header `Authorization: Bearer <vault: custom.logmem>`:
+3. The agent builds `logmem-exec`, which posts JSON-RPC to `https://logmem.si/mcp` with the header `Authorization: Bearer <vault: custom.logmem>`:
    - `start` runs `initialize` once, keeps the `Mcp-Session-Id`, then calls `logmem_start`.
    - `call <tool> '<json args>'` sends `tools/call` with the same session id.
    - `recap '<notes>'` calls `logmem_recap`.
