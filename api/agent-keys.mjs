@@ -59,7 +59,7 @@ export function createHandler({ env = process.env, redis = () => deployRedis(), 
       if (b.action === "revoke") return res.status(200).json({ revoked: await revokeAgentKey(b.id, { redis: redis() }) });
       if (b.action === "disconnect") return res.status(200).json({ disconnected: !!(await revokeManagedApp(FLEET_OWNER, String(b.fid || ""))) });
       const by = `human:${String(env.LOGMEM_ADMIN_ID || "admin")}`;
-      const out = await createAgentKey({ space: b.space, agent: b.agent, label: b.label, by }, { env, redis: redis(), ...(now ? { now } : {}) });
+      const out = await createAgentKey({ space: b.space, agent: b.agent, label: b.label, by, ...(typeof b.owner === "string" ? { owner: b.owner } : {}) }, { env, redis: redis(), ...(now ? { now } : {}) });
       return res.status(201).json(out);
     } catch (e) {
       if (e instanceof AgentKeyError) return res.status(400).json({ error: e.message });

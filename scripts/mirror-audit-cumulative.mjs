@@ -21,12 +21,22 @@ if (!d) { console.error("set LOGMEM_REST_URL + LOGMEM_REST_TOKEN"); process.exit
 const redis = fromDescriptor(d).redis;
 const store = createStore(redis, { space, compat: false });
 
-const scan = async (pat) => { const out = []; let cur = "0"; do { const r = await redis("SCAN", cur, "MATCH", pat, "COUNT", "1000"); out.push(...r[1]); cur = r[0]; } while (cur !== "0"); return out; };
+const safeRedis = async (op, ...args) => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await redis(op, ...args);
+    } catch (err) {
+      if (attempt === 2) throw err;
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+    }
+  }
+};
+const scan = async (pat) => { const out = []; let cur = "0"; do { const r = await safeRedis("SCAN", cur, "MATCH", pat, "COUNT", "1000"); out.push(...r[1]); cur = r[0]; } while (cur !== "0"); return out; };
 const parseLogKey = (key) => { const parts = key.split(":"); return { ns: parts[2], id: parts[3] }; };
 
 // Twin check identical to dogfood-check: same ts score, correlationId + summary.
 const acmiRows = async (key, from, to) => {
-  const rows = (await redis("ZRANGEBYSCORE", key, from, to)) || [];
+  const rows = (await safeRedis("ZRANGEBYSCORE", key, from, to)) || [];
   return rows.map(tryParse).filter(Boolean);
 };
 const shiftCache = new Map();
@@ -63,6 +73,14 @@ const bump = (bag, by) => { const k = String(by || "unknown"); bag[k] = (bag[k] 
 let done = 0;
 for (const { ns, id } of logKeys) {
   const entries = await store.readLog(ns, id, { sinceMs: 0, untilMs: Date.now() });
+  const twinKey = acmiKey(space, ns, id, "log");
+  let twinType = "none";
+  try {
+    twinType = String((await safeRedis("TYPE", twinKey)) || "none").toLowerCase();
+  } catch (err) {
+    out.parse_failures++;
+    if (out.mismatch_examples.length < 10) out.mismatch_examples.push({ log: `${ns}:${id}`, why: `TYPE query failed: ${err.message}` });
+  }
   for (const e of entries) {
     out.entries_total++;
     const policy = await entryMirror(e);
@@ -71,8 +89,6 @@ for (const { ns, id } of logKeys) {
     bump(out.writers[p], e.by);
     if (p === "off") { out.outcome.explicit_opt_outs++; continue; } // stamped opt-out: no twin expected
     if (e.ts == null) { out.parse_failures++; if (out.mismatch_examples.length < 10) out.mismatch_examples.push({ log: `${ns}:${id}`, why: "entry without ts", trail: e.trail }); continue; }
-    const twinKey = acmiKey(space, ns, id, "log");
-    const twinType = String((await redis("TYPE", twinKey)) || "none").toLowerCase();
     if (twinType !== "zset" && twinType !== "none") {
       out.parse_failures++;
       if (out.mismatch_examples.length < 10) out.mismatch_examples.push({ log: `${ns}:${id}`, why: `twin key is ${twinType}, not zset` });
