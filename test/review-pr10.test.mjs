@@ -497,3 +497,36 @@ test("high 1: signDecision covers the ask binding (v2)", () => {
   assert.equal(verifyDecision(entry, { secret: SECRET, space: "fieldnotes", ask }), true);
   assert.equal(verifyDecision(entry, { secret: SECRET, space: "fieldnotes", ask: { ...ask, action: "refund" } }), false);
 });
+
+test("agent view: reads up to 200 entries to align handoffs window with the brief", async () => {
+  const { a, q, redis } = await team();
+  // Quill writes 60 notes
+  for (let i = 0; i < 60; i++) {
+    await sc(q, "logmem_note", { text: `warmup note ${i}` });
+  }
+  const ho = await sc(a, "logmem_handoff", {
+    to: "quill",
+    summary: "review docs",
+    trail: "ho-limit-test-1",
+  });
+  assert.equal(ho.ok, true);
+
+  // Quill has 60 notes + 1 handoff = 61 entries.
+  // With limit: 50, view would truncate and miss the handoff entirely.
+  // With limit: 200, view sees it as pending.
+  let view = await buildView(redis, "fieldnotes", "agent", { id: "quill" });
+  assert.ok(view.handoffs.some((e) => e.trail === ho.trail), "agent view sees handoff within 200 entries");
+
+  // Quill accepts the handoff
+  const accepted = await sc(q, "logmem_accept", { trail: ho.trail });
+  assert.equal(accepted.ok, true);
+
+  // Quill logs 60 subsequent notes; total entries > 120
+  for (let i = 0; i < 60; i++) {
+    await sc(q, "logmem_note", { text: `post-accept note ${i}` });
+  }
+
+  // With limit: 200, acceptance and handoff are both within the 200 window, so handoff is settled
+  view = await buildView(redis, "fieldnotes", "agent", { id: "quill" });
+  assert.equal(view.handoffs.some((e) => e.trail === ho.trail), false, "settled handoff remains cleared within 200-entry window");
+});
