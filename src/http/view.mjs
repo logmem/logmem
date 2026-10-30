@@ -115,12 +115,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   if (what === "agent") {
     const id = checkAgentId(String(params.id || ""), "id");
     const [who, nowSlot, log, recap, follows, shifts] = await Promise.all([
-      store.getWho("agent", id),
-      store.getNow("agent", id),
-      store.readLog("agent", id, { reverse: true, limit: 200 }),
-      store.getRecap(id),
-      store.follows(id),
-      store.recentShifts(id, 8),
+      store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 50 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);
     // Accepted and declined both settle a handoff (same rule as the Brief: boolean true only).
     const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin));
