@@ -6,6 +6,7 @@ import {WorkspaceError,authorizeSpace} from './workspaces.mjs';
 import {createWorkspaceAgentKey,listWorkspaceAgentKeys,revokeWorkspaceAgentKey} from './workspace-agent-keys.mjs';
 import {buildView,needsView} from './view.mjs';
 import {webStore} from './web-store.mjs';
+import {isSuspended} from './admin-roles.mjs';
 import {revKey} from '../core/store.mjs';
 import {nudge,unblock,lane,confirmDone,keepOpen} from './work.mjs';
 import {writeDecision} from '../core/tools.mjs';
@@ -14,6 +15,7 @@ import {buildScorecard} from '../../api/scorecard.mjs';
 import {randomBytes} from 'node:crypto';
 
 export function createCustomerDashboard(deps={}) {return async(req,res)=>{
+// Phase A: a suspended account stops at the front door of the dashboard.
  res.setHeader('Cache-Control','no-store');
  try {
   if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'method_not_allowed'});
@@ -23,6 +25,7 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
   const action=manager?'manage-connections':path==='decide'?'approve':req.method==='GET'?'read':'write';
   const v=await resolveViewer(req,{workspaceId:b.workspaceId||q.workspaceId,spaceId:b.spaceId||q.spaceId,action},deps);
   const env=deps.env||process.env,space=v.namespace,store=webStore(v.redis,space,{...env,LOGMEM_MIRROR_ACMI:''}),opts={by:v.person};
+ if(v.person && await isSuspended(v.person, deps.redis||await import('./jail.mjs').then(m=>m.customerRedis(env))))throw new WorkspaceError('account_suspended',403);
   const result=data=>res.status(200).json({space,workspaceId:v.workspaceId,spaceId:v.spaceId,person:v.person,permissions:v.permissions,...data});
   if(req.method==='GET') {
    if(path==='view')return result({ok:true,spaces:[space],generated_at:Date.now(),...await buildView(v.redis,space,q.what||'home',{...q,person:v.person})});

@@ -41,7 +41,7 @@ export function keySpaces(env = process.env) {
 }
 
 /** Mint a key. Returns { id, key, space, agent, label, created_at }. The key is shown once. */
-export async function createAgentKey({ space, agent, label = "", by = "human:admin" }, { env = process.env, redis = deployRedis(), now = Date.now } = {}) {
+export async function createAgentKey({ space, agent, label = "", by = "human:admin", owner = "" }, { env = process.env, redis = deployRedis(), now = Date.now } = {}) {
   const s = String(space || "").trim().toLowerCase();
   try {
     validateKeySegments(s);
@@ -57,7 +57,7 @@ export async function createAgentKey({ space, agent, label = "", by = "human:adm
   }
   const key = `${AGENT_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
   const id = `ak_${randomBytes(6).toString("hex")}`;
-  const rec = { id, space: s, agent: a, label: String(label || "").slice(0, LABEL_MAX), created_at: now(), created_by: String(by) };
+  const rec = { id, space: s, agent: a, label: String(label || "").slice(0, LABEL_MAX), created_at: now(), created_by: String(by), ...(owner ? { owner: String(owner).slice(0, 64) } : {}) };
   const h = sha256hex(key);
   await redis("SET", K.byHash(h), JSON.stringify(rec));
   await redis("SET", K.byId(id), h);
@@ -96,5 +96,15 @@ export async function lookupAgentKey(bearer, { redis } = {}) {
   if (!rec || typeof rec !== "object" || !rec.id || !rec.space || !rec.agent) return null;
   // The id record must still point at this key: a revoke deletes both.
   if ((await r("GET", K.byId(rec.id))) !== sha256hex(b)) return null;
-  return { id: rec.id, space: rec.space, agent: rec.agent };
+  // Phase A: a suspended owner loses their fleet keys at the next request.
+  // Owner-tagged records are new; a missing customer store keeps legacy
+  // behavior rather than bricking fleet keys during an outage.
+  if (rec.owner) {
+    try {
+      const { isSuspended } = await import("./admin-roles.mjs");
+      const { customerRedis } = await import("./jail.mjs");
+      if (await isSuspended(rec.owner, customerRedis())) return null;
+    } catch { /* customer store unavailable: keep legacy behavior */ }
+  }
+  return { id: rec.id, space: rec.space, agent: rec.agent, ...(rec.owner ? { owner: rec.owner } : {}) };
 }

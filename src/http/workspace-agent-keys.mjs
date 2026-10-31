@@ -1,6 +1,7 @@
 import {randomBytes} from 'node:crypto';
 import {customerRedis} from './jail.mjs';
 import {checkAgentId} from '../core/keys.mjs';
+import {isSuspended} from './admin-roles.mjs';
 import {readWorkspace,accessPolicy,commitWorkspace,digest,failWorkspace,WorkspaceError,requestKey,replay} from './workspaces.mjs';
 export async function createWorkspaceAgentKey({userId,workspaceId,spaceId,agent,label='',requestId},deps) {
  agent=checkAgentId(agent);if(typeof label!=='string'||label.length>80)failWorkspace('invalid_label');
@@ -24,6 +25,7 @@ export async function lookupWorkspaceAgentKey(key,deps={}) {
  try{
   const {workspaceId,id}=JSON.parse(raw),{w}=await readWorkspace(redis,workspaceId),c=w.connections?.[id];
   if(!c||c.hash!==hash||c.revoked)return null;
+ if(c.issuedBy && await isSuspended(c.issuedBy,redis))return null;
   accessPolicy(w,c.issuedBy,c.spaceId,'manage-connections');
   return {id,workspaceId,spaceId:c.spaceId,tenant:w.tenantId,space:c.namespace,agent:c.agent,issuedBy:c.issuedBy};
  }catch(e){if(e instanceof WorkspaceError)return null;throw e;}
@@ -32,7 +34,8 @@ export async function revokeWorkspaceAgentKey({userId,workspaceId,spaceId,id,req
  for(let i=0;i<12;i++) {
   const {w}=await readWorkspace(deps.redis,workspaceId);accessPolicy(w,userId,spaceId,'manage-connections');
   const previous=await replay(deps.redis,requestKey(userId,'revoke-key',requestId),digest({workspaceId,spaceId,id}));if(previous)return previous;
-  const c=w.connections?.[id];if(!c||c.spaceId!==spaceId)failWorkspace('not_found',404);
+  const c=w.connections?.[id];
+ if(!c||c.spaceId!==spaceId)failWorkspace('not_found',404);
   const next=structuredClone(w);next.version++;delete next.connections[id];next.audit.push({kind:'agent-key-revoked',id,by:`human:${userId}`,at:(deps.now||Date.now)()});
   const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'revoke-key',fingerprint:digest({workspaceId,spaceId,id}),result:{revoked:true}},deps);if(r)return r;
  }
