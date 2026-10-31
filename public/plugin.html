@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LogMem Fleet for ChatGPT and agents</title>
+  <meta name="description" content="Download LogMem Fleet, connect ChatGPT with OAuth, and install seven LogMem skills for people and agents.">
+  <link rel="canonical" href="https://logmem.si/plugin">
+  <link rel="icon" href="/ds/logos/logmem-symbol.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/ds/tokens/logmem.css">
+  <link rel="stylesheet" href="/ds/components/bundle.css">
+  <link rel="stylesheet" href="/site.css">
+  <link rel="stylesheet" href="/site-nav.css">
+  <style>
+    .plugin-page{max-width:1120px;margin:0 auto;padding:40px 24px 88px;color:var(--lm-ink,#14211e)}
+    .plugin-hero{max-width:780px;margin:32px auto 48px;text-align:center}
+    .plugin-hero h1{font-size:clamp(2.4rem,6vw,4.8rem);line-height:1.02;letter-spacing:-.055em;margin:.5rem 0 1rem}
+    .plugin-hero p{font-size:1.12rem;line-height:1.65;color:var(--lm-muted,#5b6a65)}
+    .plugin-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:24px 0}
+    .plugin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+    .plugin-card{border:1px solid var(--lm-border,#d5dfda);border-radius:20px;background:var(--lm-surface,#fff);padding:24px;box-shadow:0 12px 34px #163b2a0b}
+    .plugin-card h2{margin:0 0 10px;font-size:1.35rem}.plugin-card p,.plugin-card li{line-height:1.6;color:var(--lm-muted,#52635d)}
+    .plugin-card ol,.plugin-card ul{padding-left:1.3rem}.plugin-card li+li{margin-top:8px}
+    .plugin-code{position:relative;margin-top:16px}.plugin-code pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#102522;color:#e2f1e9;border-radius:14px;padding:18px;max-height:420px;overflow:auto;font-size:.88rem;line-height:1.55}
+    .plugin-code button{position:absolute;top:10px;right:10px}.plugin-note{padding:14px 16px;border-radius:12px;background:#edf5f0;color:#29463b}
+    .plugin-meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}.plugin-meta span{border:1px solid #d5dfda;border-radius:999px;padding:7px 12px;font-size:.88rem}
+    @media(max-width:720px){.plugin-page{padding:24px 16px 56px}.plugin-grid{grid-template-columns:1fr}.plugin-hero{margin:22px auto 32px}.plugin-card{padding:20px}}
+  </style>
+  <script src="/theme-boot.js"></script>
+  <script type="module" src="/site-nav.js"></script>
+</head>
+<body class="lm">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/onboarding">Get started</a></nav></header>
+  <main id="main" class="plugin-page">
+    <section class="plugin-hero">
+      <p class="lm-eyebrow">One shared memory for your agent team</p>
+      <h1>Bring LogMem to ChatGPT.</h1>
+      <p>Connect the LogMem MCP server with OAuth. Add seven practical skills for ChatGPT, Codex, and your other agents.</p>
+      <div class="plugin-actions"><a class="lm-btn lm-btn--primary dark" href="/downloads/logmem-fleet-v0.1.1.zip" download>Download LogMem Fleet v0.1.1</a><a class="lm-btn" href="/onboarding">Open setup guide</a></div>
+      <div class="plugin-meta"><span>OAuth sign-in</span><span>Dynamic client registration</span><span>7 skills</span></div>
+    </section>
+
+    <section class="plugin-grid" aria-label="Setup instructions">
+      <article class="plugin-card">
+        <h2>For people using ChatGPT</h2>
+        <ol>
+          <li>Open the ChatGPT Plugins directory and choose <strong>Upload new or existing plugin</strong>.</li>
+          <li>Choose <strong>Upload plugin</strong> and select this ZIP. The package version is 0.1.1.</li>
+          <li>Confirm <code>https://logmem.si/mcp</code> and OAuth with Dynamic Client Registration.</li>
+          <li>Do not choose CIMD. LogMem does not advertise CIMD support.</li>
+          <li>Connect, sign in to LogMem, and approve the requested scopes.</li>
+          <li>Install the plugin. Ask it to read your Brief and confirm the active space.</li>
+        </ol>
+        <p class="plugin-note"><strong>Seeing a 401?</strong> Complete the browser sign-in and consent flow. Then retry the protected tool call.</p>
+      </article>
+      <article class="plugin-card">
+        <h2>For agents and developers</h2>
+        <p>Use the remote MCP server with OAuth. Then install the skill folders from the ZIP in your client's supported skill directory.</p>
+        <ul>
+          <li>Server: <code>https://logmem.si/mcp</code></li>
+          <li>Transport: Streamable HTTP</li>
+          <li>Scopes: <code>logmem:read</code>, <code>logmem:write</code></li>
+          <li>Registration: Dynamic Client Registration</li>
+        </ul>
+        <p>Sign in and confirm the active space before writing. A public initialize response does not prove access.</p>
+      </article>
+      <article class="plugin-card">
+        <h2>Copy this into Plugin Creator</h2>
+        <p>Connect LogMem MCP first. Copy the <code>plugin_asdk_app_...</code> ID from the browser URL and replace the sample ID.</p>
+        <div class="plugin-code"><button type="button" class="lm-btn small" id="copy-prompt">Copy prompt</button><pre id="creator-prompt">@plugin-creator create a personal ChatGPT and Codex plugin named LogMem Fleet.
+
+Use my existing ChatGPT MCP connection ID: plugin_asdk_app_REPLACE_WITH_YOURS.
+Do not create another MCP connection or change its authentication settings.
+
+Include all seven skill folders from the extracted LogMem Fleet v0.1.1 package.
+Keep their names and contents unchanged. Do not combine or remove any skill.
+Create a personal marketplace entry so I can install and test the plugin.
+
+Preserve the existing app ID and OAuth setup. Do not use CIMD, static secrets,
+API keys, or bearer tokens. Sign-in and consent must happen before protected
+LogMem tools run.
+
+Do not claim access from public initialize or tools/list responses. Verify one
+protected LogMem read after OAuth. Do not write to a space until I confirm it.
+
+If you edit the package manifest or skills, bump its version before saving.
+Show validation errors and name the field that needs a fix.</pre></div>
+      </article>
+      <article class="plugin-card">
+        <h2>Seven skills in the package</h2>
+        <ul>
+          <li>LogMem daily memory and coordination</li>
+          <li>Decision capture and review</li>
+          <li>Agent setup and onboarding</li>
+          <li>Safe read-path recovery</li>
+          <li>SDK primitives</li>
+          <li>Self-hosting</li>
+          <li>Outage tracking</li>
+        </ul>
+        <p><a href="/skills">Browse LogMem skills</a> · <a href="/agents">See agent setup</a></p>
+      </article>
+    </section>
+  </main>
+  <script>
+    document.getElementById('copy-prompt').addEventListener('click', async function () {
+      const text = document.getElementById('creator-prompt').textContent;
+      await navigator.clipboard.writeText(text);
+      this.textContent = 'Copied';
+      setTimeout(() => { this.textContent = 'Copy prompt'; }, 1800);
+    });
+  </script>
+</body>
+</html>
