@@ -1,6 +1,7 @@
 import {customerIdentity,requireIntent,jsonBody,requestUrl,customerError} from '../src/http/customer-http.mjs';
 import {readWorkspace,canManage,setMembership,removeMembership,WorkspaceError} from '../src/http/workspaces.mjs';
 import {createInvitation,acceptInvitation,revokeInvitation,inspectInvitation} from '../src/http/workspace-invites.mjs';
+import {sendEmail,workspaceInviteEmail} from '../src/http/resend.mjs';
 export const config={runtime:'nodejs',maxDuration:15};
 export function createHandler(deps={}){return async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
@@ -16,7 +17,18 @@ export function createHandler(deps={}){return async(req,res)=>{
   requireIntent(req,'memberships');const b=jsonBody(req);
   const input={...b,actorId:s.userId};let r;
   if(b.action==='accept')r=await acceptInvitation({userId:s.userId,verifiedEmail:s.email,token:b.token},d);
-  else if(b.action==='invite')r=await createInvitation(input,d);
+  else if(b.action==='invite'){
+   r=await createInvitation(input,d);
+   if(r.token){
+    const link=new URL('/app?invite='+encodeURIComponent(r.token),requestUrl(req).origin).toString();
+    try{
+     await (deps.sendEmail||sendEmail)({...workspaceInviteEmail(b.email,link),idempotencyKey:`workspace-invite/${r.id}`},{env:deps.env||process.env,fetchImpl:deps.fetch});
+     r={...r,emailSent:true};
+    }catch{
+     r={...r,emailSent:false,emailError:'email_not_sent'};
+    }
+   }
+  }
   else if(b.action==='revoke-invitation')r=await revokeInvitation(input,d);
   else if(b.action==='set')r=await setMembership(input,d);
   else if(b.action==='remove')r=await removeMembership(input,d);
