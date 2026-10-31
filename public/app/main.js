@@ -3,7 +3,7 @@
 import {clearInteractions} from './interactions.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { state, live, getJSON, invalidateLoads, setSignedOutHook } from './core.js';
+import { state, live, getJSON, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, toast } from './core.js';
 import { icon } from './ui.js';
 import { setChangedHook, cancelDialogs } from './actions.js';
 import { drawRender, drawerOpen, closeDrawer, setSyncHook } from './drawer.js';
@@ -47,6 +47,19 @@ function login(msg) {
 setOkHook(ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
+let customerAccessRefreshPending=false;
+setCustomerAccessChangedHook(async()=>{
+  if(customerAccessRefreshPending)return;
+  customerAccessRefreshPending=true;
+  closeDrawer();closeSearch();cancelDialogs();
+  try{
+    const handled=await bootstrapAccount();
+    if(!handled){route();refreshNeeds();schedule(0);}
+    toast('Workspace access refreshed.');
+  }catch{
+    toast('Could not refresh workspace access. Reload the page to try again.',true);
+  }finally{customerAccessRefreshPending=false;}
+});
 setShellHooks({
   space: (s) => { clearInteractions();if(state.customer)return chooseSpace(s); if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
   createSpace: showCreateSpace, account:()=>{location.hash='#/account';showAccount();},

@@ -64,9 +64,12 @@ export async function getJSON(url) {
   try{value=await fetch(customerUrl(url), {credentials:'same-origin',headers:state.customer?{'X-LogMem-Viewer':'customer'}:{},signal:pendingController.signal}).then(asJSON);}
   catch(e){if(requestedEpoch!==epoch||e.name==='AbortError')return {__stale:true,__status:0};throw e;}
   if(requestedSpace!==state.space||requestedEpoch!==epoch){value.__stale=true;return value;}
-  // Only an authentication failure means the Clerk session ended. Permission
-  // and missing-resource responses must not clear a valid signed-in context.
-  if(state.customer&&value.__status===401){clearCustomerContext();onSignedOut('Your sign-in expired. Sign in again to continue.');value.__stale=true;}
+  if(state.customer&&[401,403,404].includes(value.__status)){
+    clearCustomerContext();
+    if(value.__status===401)onSignedOut(value.error||'Your sign-in expired.');
+    else onCustomerAccessChanged(value.error||'Your workspace access changed.');
+    value.__stale=true;
+  }
   return value;
 }
 export function api(what, extra) {
@@ -80,7 +83,12 @@ export async function postJSON(url, intent, body) {
   const r = await fetch(customerUrl(url), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent, ...(state.customer?{'X-LogMem-Viewer':'customer'}:{}) }, body: JSON.stringify(Object.assign({ space: state.space }, body, state.customer?{workspaceId:state.workspaceId,spaceId:state.spaceId}:{})) });
   const j = await asJSON(r);
   if(requestedEpoch!==epoch){const e=new Error('Space changed. Check the original space before retrying.');e.stale=true;throw e;}
-  if(state.customer&&r.status===401){clearCustomerContext();onSignedOut(j.error||'Your sign-in expired.');const e=new Error(j.error||'Your sign-in expired.');e.status=r.status;e.stale=true;throw e;}
+  if(state.customer&&[401,403,404].includes(r.status)){
+    clearCustomerContext();
+    if(r.status===401)onSignedOut(j.error||'Your sign-in expired.');
+    else onCustomerAccessChanged(j.error||'Your workspace access changed.');
+    const e=new Error(j.error||'Access changed.');e.status=r.status;e.stale=true;throw e;
+  }
   if(!state.customer&&r.status===401)onSignedOut(j.error);
   if (r.status >= 300) { const e = new Error(j.error || 'status ' + r.status); e.status = r.status; throw e; }
   return j;
@@ -88,6 +96,9 @@ export async function postJSON(url, intent, body) {
 let signedOutHook = () => {};
 export function setSignedOutHook(fn) { signedOutHook = fn; }
 function onSignedOut(msg) { signedOutHook(msg); }
+let customerAccessChangedHook = () => {};
+export function setCustomerAccessChangedHook(fn) { customerAccessChangedHook = fn; }
+function onCustomerAccessChanged(msg) { customerAccessChangedHook(msg); }
 
 // ─── toasts (plain text nodes: nothing is parsed as HTML) ────────────
 export function toast(text, err) {
