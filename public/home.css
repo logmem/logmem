@@ -2518,6 +2518,10 @@ dialog {
 .connection-guide { margin-top: 16px; padding: 16px; border: 1px solid var(--border, #ded8cf); border-radius: 12px; }
 .steps .connection-guide p { margin: 0; }
 .steps .connection-guide .agent-hint { margin-top: 10px; color: #746c63; }
+.chatgpt-setup-callout { max-width: 680px; margin: 16px auto 0; padding: 14px 18px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px; border: 1px solid var(--border, #ded8cf); border-radius: 14px; background: var(--surface, #fff); color: var(--text, #17221f); text-align: center; }
+.chatgpt-setup-callout[hidden] { display: none; }
+.chatgpt-setup-callout span { color: var(--text-muted, #5b6a65); }
+.chatgpt-setup-callout a { white-space: nowrap; }
 .prompt-guardrails { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 16px 0; }
 .prompt-guardrails li { border: 1px solid #ded8cf; border-radius: 8px; padding: 6px 9px; font-size: 11px; }
 .sample-activity { border-top: 1px solid #ded8cf; margin-top: 14px; padding-top: 16px; }
