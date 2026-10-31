@@ -65,6 +65,18 @@ export async function setRole({ actorId, userId, role, redis }) {
   return { userId: u, role };
 }
 
+/**
+ * Live identity check for admin routes: the role and suspension on THIS
+ * request, read fresh from redis. A demotion or suspension takes effect on
+ * the very next request, so a valid cookie is never enough on its own.
+ * Break-glass is the operator password path: full access, attributed as such.
+ */
+export async function activeRole(actorId, redis) {
+  if (actorId === BREAK_GLASS) return { role: "operator", suspended: false, breakglass: true };
+  const [role, suspended] = [await getRole(actorId, redis), await isSuspended(actorId, redis)];
+  return { role: role?.role || null, suspended, breakglass: false };
+}
+
 export async function isSuspended(userId, redis) {
   const u = normUser(userId);
   return Number(await redis("EXISTS", suspKey(u))) === 1;

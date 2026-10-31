@@ -92,3 +92,78 @@ test("admin route attributes actions to the cookie identity, not break-glass", a
   assert.equal(entry.by, ADMIN_USER, "attribution is the real account, not break-glass");
   assert.equal((await getRole(ADMIN_USER, redis)).role, "admin");
 });
+
+// ---- P1 fix verification (Mikey review 2026-10-31) ----
+
+const headers = (idc, host = "logmem.si") => ({ cookie: idc, "x-logmem-intent": "admin-users", origin: `https://${host}`, host });
+
+test("denial: support and billing cannot set-role, whatever the cookie says", async () => {
+  const redis = createMemoryRedis();
+  const handler = adminUsersHandler({ env: ENV, redis: () => redis, deploy: () => createMemoryRedis() });
+  await setRole({ actorId: "break-glass", userId: "user_support0000001", role: "support", redis });
+  await setRole({ actorId: "break-glass", userId: "user_billing0000001", role: "billing", redis });
+  for (const u of ["user_support0000001", "user_billing0000001"]) {
+    const res = mockRes();
+    await handler(mockReq({
+      method: "POST", url: "/api/admin-users", headers: headers(cookieOf(issueIdentityCookie(ENV, u))),
+      body: { action: "set-role", userId: "user_victim00000001", role: "admin" },
+    }), res);
+    assert.equal(res.statusCode, 403, `${u} must not escalate: ${res.body}`);
+    assert.equal(JSON.parse(res.body).error, "role_not_authorized");
+  }
+  assert.equal(await getRole("user_victim00000001", redis).then(r => r.role).catch(() => null), null, "no escalation happened");
+  const trail = (await redis("ZRANGE", "lm:admin:audit", 0, -1)).map((x) => JSON.parse(x));
+  assert.ok(trail.some((e) => e.action === "authz:denied" && e.attempt === "set-role"), "denied attempt is audited");
+});
+
+test("denial: role downgrade bites on the next request, not at cookie expiry", async () => {
+  const redis = createMemoryRedis();
+  const handler = adminUsersHandler({ env: ENV, redis: () => redis, deploy: () => createMemoryRedis() });
+  await setRole({ actorId: "break-glass", userId: "user_demote00000001", role: "admin", redis });
+  const idc = cookieOf(issueIdentityCookie(ENV, "user_demote00000001"));
+  const before = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(idc), body: { action: "set-role", userId: "user_x0", role: "viewer" } }), before);
+  assert.equal(before.statusCode, 200, "admin can act");
+  await setRole({ actorId: "break-glass", userId: "user_demote00000001", role: "viewer", redis });
+  const after = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(idc), body: { action: "set-role", userId: "user_x0", role: "admin" } }), after);
+  assert.equal(after.statusCode, 403, "same cookie, demoted account: refused");
+  assert.equal(JSON.parse(after.body).error, "role_not_authorized");
+});
+
+test("denial: suspension bites on the next request; break-glass recovers", async () => {
+  const redis = createMemoryRedis();
+  const handler = adminUsersHandler({ env: ENV, redis: () => redis, deploy: () => createMemoryRedis() });
+  await setRole({ actorId: "break-glass", userId: "user_suspend0001", role: "admin", redis });
+  const idc = cookieOf(issueIdentityCookie(ENV, "user_suspend0001"));
+  const res = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(idc), body: { action: "suspend", userId: "user_target0000001", reason: "test" } }), res);
+  assert.equal(res.statusCode, 200, res.body);
+  // suspend the admin itself; the still-valid cookie dies immediately
+  const bg = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(cookieOf(issueCookie(ENV))), body: { action: "suspend", userId: "user_suspend0001", reason: "demotion in progress" } }), bg);
+  assert.equal(bg.statusCode, 200, bg.body);
+  const dead = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(idc), body: { action: "set-role", userId: "user_target0000001", role: "admin" } }), dead);
+  assert.equal(dead.statusCode, 403, "suspended admin refused at once");
+  assert.equal(JSON.parse(dead.body).error, "account_suspended");
+  // break-glass recovers the account
+  const un = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(cookieOf(issueCookie(ENV))), body: { action: "unsuspend", userId: "user_suspend0001" } }), un);
+  assert.equal(un.statusCode, 200, un.body);
+  const back = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(idc), body: { action: "set-role", userId: "user_target0000001", role: "viewer" } }), back);
+  assert.equal(back.statusCode, 200, "restored admin works again");
+});
+
+test("denial: identity cookie with no role record is refused, break-glass keeps full access", async () => {
+  const redis = createMemoryRedis();
+  const handler = adminUsersHandler({ env: ENV, redis: () => redis, deploy: () => createMemoryRedis() });
+  const stranger = mockRes();
+  await handler(mockReq({ method: "POST", url: "/api/admin-users", headers: headers(cookieOf(issueIdentityCookie(ENV, "user_stranger00001"))), body: { action: "set-role", userId: "user_y0", role: "admin" } }), stranger);
+  assert.equal(stranger.statusCode, 403, "cookie without a role record: refused");
+  assert.equal(JSON.parse(stranger.body).error, "no_role");
+  const get = mockRes();
+  await handler(mockReq({ method: "GET", url: "/api/admin-users", headers: headers(cookieOf(issueCookie(ENV))) }), get);
+  assert.equal(get.statusCode, 200, "break-glass operator keeps the full surface");
+});
