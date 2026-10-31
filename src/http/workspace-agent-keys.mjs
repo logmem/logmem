@@ -1,7 +1,7 @@
 import {randomBytes} from 'node:crypto';
 import {customerRedis} from './jail.mjs';
 import {checkAgentId} from '../core/keys.mjs';
-import {isSuspended} from './admin-roles.mjs';
+import {isSuspendedSafe} from './admin-roles.mjs';
 import {readWorkspace,accessPolicy,commitWorkspace,digest,failWorkspace,WorkspaceError,requestKey,replay} from './workspaces.mjs';
 export async function createWorkspaceAgentKey({userId,workspaceId,spaceId,agent,label='',requestId},deps) {
  agent=checkAgentId(agent);if(typeof label!=='string'||label.length>80)failWorkspace('invalid_label');
@@ -25,7 +25,7 @@ export async function lookupWorkspaceAgentKey(key,deps={}) {
  try{
   const {workspaceId,id}=JSON.parse(raw),{w}=await readWorkspace(redis,workspaceId),c=w.connections?.[id];
   if(!c||c.hash!==hash||c.revoked)return null;
- if(c.issuedBy && await isSuspended(c.issuedBy,redis))return null;
+ if(c.issuedBy && await isSuspendedSafe(c.issuedBy,redis))return null;
   accessPolicy(w,c.issuedBy,c.spaceId,'manage-connections');
   return {id,workspaceId,spaceId:c.spaceId,tenant:w.tenantId,space:c.namespace,agent:c.agent,issuedBy:c.issuedBy};
  }catch(e){if(e instanceof WorkspaceError)return null;throw e;}

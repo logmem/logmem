@@ -4,7 +4,7 @@ import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { issueCookie, issueIdentityCookie, adminIdentity, isAdmin } from "../src/http/admin-auth.mjs";
 import { createLoginHandler } from "../api/login.mjs";
 import { createHandler as adminUsersHandler } from "../api/admin-users.mjs";
-import { setRole, getRole } from "../src/http/admin-roles.mjs";
+import { setRole, getRole, isSuspended, isSuspendedSafe, activeRole } from "../src/http/admin-roles.mjs";
 import { mockReq, mockRes } from "./oauth-helpers.mjs";
 
 const ENV = { LOGMEM_ADMIN_PASSWORD: "pw", LOGMEM_CUSTOMER_DASHBOARD: "1" };
@@ -166,4 +166,13 @@ test("denial: identity cookie with no role record is refused, break-glass keeps 
   const get = mockRes();
   await handler(mockReq({ method: "GET", url: "/api/admin-users", headers: headers(cookieOf(issueCookie(ENV))) }), get);
   assert.equal(get.statusCode, 200, "break-glass operator keeps the full surface");
+});
+
+test("suspension guard: store errors never break the front door, admin stays strict", async () => {
+  const throwing = async () => { throw new Error("NOPERM No permissions to access a key"); };
+  assert.equal(await isSuspendedSafe("user_front000001", throwing), false, "front door treats a broken store as not suspended and survives");
+  await assert.rejects(() => isSuspended("user_strict00001", throwing), /NOPERM/, "strict read still surfaces the error");
+  await assert.rejects(() => activeRole("user_admin000001", throwing), /NOPERM/, "admin surface fails closed when the store is unavailable");
+  const ok = await isSuspendedSafe("user_ok00000001", async () => "0");
+  assert.equal(ok, false, "healthy store reads normally through the safe wrapper");
 });
