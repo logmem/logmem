@@ -45,12 +45,12 @@
       <article class="plugin-card">
         <h2>For people using ChatGPT</h2>
         <ol>
-          <li>Upload the ZIP in ChatGPT Plugins or Plugin Creator.</li>
-          <li>Use <code>https://logmem.si/mcp</code> with OAuth and Dynamic Client Registration.</li>
+          <li>Open the ChatGPT Plugins directory and choose <strong>Upload new or existing plugin</strong>.</li>
+          <li>Choose <strong>Upload plugin</strong> and select this ZIP. The package version is 0.1.1.</li>
+          <li>Confirm <code>https://logmem.si/mcp</code> and OAuth with Dynamic Client Registration.</li>
           <li>Do not choose CIMD. LogMem does not advertise CIMD support.</li>
-          <li>Install LogMem Fleet, then invoke it in a new Work chat.</li>
-          <li>Sign in to LogMem and approve the requested access.</li>
-          <li>Ask it to read your Brief. Confirm the right space is active.</li>
+          <li>Connect, sign in to LogMem, and approve the requested scopes.</li>
+          <li>Install the plugin. Ask it to read your Brief and confirm the active space.</li>
         </ol>
         <p class="plugin-note"><strong>Seeing a 401?</strong> Complete the browser sign-in and consent flow. Then retry the protected tool call.</p>
       </article>
@@ -67,26 +67,25 @@
       </article>
       <article class="plugin-card">
         <h2>Copy this into Plugin Creator</h2>
-        <p>Upload the ZIP first. Then paste this prompt into Plugin Creator.</p>
-        <div class="plugin-code"><button type="button" class="lm-btn small" id="copy-prompt">Copy prompt</button><pre id="creator-prompt">Create a ChatGPT and Codex plugin from the attached LogMem Fleet ZIP.
+        <p>Connect LogMem MCP first. Copy the <code>plugin_asdk_app_...</code> ID from the browser URL and replace the sample ID.</p>
+        <div class="plugin-code"><button type="button" class="lm-btn small" id="copy-prompt">Copy prompt</button><pre id="creator-prompt">@plugin-creator create a personal ChatGPT and Codex plugin named LogMem Fleet.
 
-Keep all seven bundled LogMem skills. Keep the name LogMem Fleet and version 0.1.1.
+Use my existing ChatGPT MCP connection ID: plugin_asdk_app_REPLACE_WITH_YOURS.
+Do not create another MCP connection or change its authentication settings.
 
-Connect the remote MCP server at https://logmem.si/mcp using Streamable HTTP.
-Use OAuth with Dynamic Client Registration. Request logmem:read and logmem:write.
-Do not configure CIMD. LogMem does not advertise CIMD support.
-Do not use a static client secret, API key, or bearer token.
+Include all seven skill folders from the extracted LogMem Fleet v0.1.1 package.
+Keep their names and contents unchanged. Do not combine or remove any skill.
+Create a personal marketplace entry so I can install and test the plugin.
 
-Use OAuth discovery metadata from the server. The issuer is https://logmem.si.
-Complete browser sign-in and user consent before protected tool calls.
-Do not treat public initialize or tools/list responses as proof of authorized access.
+Preserve the existing app ID and OAuth setup. Do not use CIMD, static secrets,
+API keys, or bearer tokens. Sign-in and consent must happen before protected
+LogMem tools run.
 
-Preserve the bundled plugin manifest and MCP configuration unless validation needs a correction.
-If you change plugin metadata or skills, bump the plugin version before saving.
-Show validation errors and the exact field to fix.
+Do not claim access from public initialize or tools/list responses. Verify one
+protected LogMem read after OAuth. Do not write to a space until I confirm it.
 
-After creation, explain how to install the plugin in ChatGPT and Codex.
-Verify one protected LogMem read after OAuth. Do not write to a space until I confirm it.</pre></div>
+If you edit the package manifest or skills, bump its version before saving.
+Show validation errors and name the field that needs a fix.</pre></div>
       </article>
       <article class="plugin-card">
         <h2>Seven skills in the package</h2>
