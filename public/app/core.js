@@ -64,7 +64,9 @@ export async function getJSON(url) {
   try{value=await fetch(customerUrl(url), {credentials:'same-origin',headers:state.customer?{'X-LogMem-Viewer':'customer'}:{},signal:pendingController.signal}).then(asJSON);}
   catch(e){if(requestedEpoch!==epoch||e.name==='AbortError')return {__stale:true,__status:0};throw e;}
   if(requestedSpace!==state.space||requestedEpoch!==epoch){value.__stale=true;return value;}
-  if(state.customer&&[401,403,404].includes(value.__status)){clearCustomerContext();onSignedOut('Your access changed. Sign in or choose an available space.');value.__stale=true;}
+  // Only an authentication failure means the Clerk session ended. Permission
+  // and missing-resource responses must not clear a valid signed-in context.
+  if(state.customer&&value.__status===401){clearCustomerContext();onSignedOut('Your sign-in expired. Sign in again to continue.');value.__stale=true;}
   return value;
 }
 export function api(what, extra) {
@@ -78,8 +80,8 @@ export async function postJSON(url, intent, body) {
   const r = await fetch(customerUrl(url), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent, ...(state.customer?{'X-LogMem-Viewer':'customer'}:{}) }, body: JSON.stringify(Object.assign({ space: state.space }, body, state.customer?{workspaceId:state.workspaceId,spaceId:state.spaceId}:{})) });
   const j = await asJSON(r);
   if(requestedEpoch!==epoch){const e=new Error('Space changed. Check the original space before retrying.');e.stale=true;throw e;}
-  if(state.customer&&[401,403,404].includes(r.status)){clearCustomerContext();onSignedOut(j.error);const e=new Error(j.error||'Access changed.');e.status=r.status;e.stale=true;throw e;}
-  if(r.status===401)onSignedOut(j.error);
+  if(state.customer&&r.status===401){clearCustomerContext();onSignedOut(j.error||'Your sign-in expired.');const e=new Error(j.error||'Your sign-in expired.');e.status=r.status;e.stale=true;throw e;}
+  if(!state.customer&&r.status===401)onSignedOut(j.error);
   if (r.status >= 300) { const e = new Error(j.error || 'status ' + r.status); e.status = r.status; throw e; }
   return j;
 }
