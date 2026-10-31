@@ -101,9 +101,9 @@ export async function lookupAgentKey(bearer, { redis } = {}) {
   // behavior rather than bricking fleet keys during an outage.
   if (rec.owner) {
     try {
-      const { isSuspended } = await import("./admin-roles.mjs");
+      const { isSuspendedSafe } = await import("./admin-roles.mjs");
       const { customerRedis } = await import("./jail.mjs");
-      if (await isSuspended(rec.owner, customerRedis())) return null;
+      if (await isSuspendedSafe(rec.owner, customerRedis())) return null;
     } catch { /* customer store unavailable: keep legacy behavior */ }
   }
   return { id: rec.id, space: rec.space, agent: rec.agent, ...(rec.owner ? { owner: rec.owner } : {}) };

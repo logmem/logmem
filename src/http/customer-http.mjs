@@ -2,7 +2,7 @@ import {customerSession} from './clerk.mjs';
 import {customerRedis} from './jail.mjs';
 import {WorkspaceError} from './workspaces.mjs';
 import {sendServerError} from './log.mjs';
-import {isSuspended} from './admin-roles.mjs';
+import {isSuspendedSafe} from './admin-roles.mjs';
 export function requestUrl(req) {
  const host=req.headers?.host||'logmem.si';
  const protocol=/^(localhost|127\.0\.0\.1)(:|$)/.test(host)?'http':'https';
@@ -24,7 +24,7 @@ export async function customerIdentity(req,deps={}) {
  const s=await (deps.session||customerSession)(req,{env,url:requestUrl(req).toString()});
  if(s.status!=='signed-in')throw new WorkspaceError('sign_in_required',401);
  const redis=deps.redis||customerRedis(env);
- if(s.userId && await isSuspended(s.userId,redis))throw new WorkspaceError('account_suspended',403);
+ if(s.userId && await isSuspendedSafe(s.userId,redis))throw new WorkspaceError('account_suspended',403);
  return {session:s,redis,env};
 }
 export function customerError(res,e,context) {

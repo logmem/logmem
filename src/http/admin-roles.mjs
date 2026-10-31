@@ -83,6 +83,23 @@ export async function isSuspended(userId, redis) {
 }
 
 /**
+ * Front-door variant: a suspension-store error (NOPERM, timeout, outage) must
+ * never break sessions or agent-key validation. It warns loudly in the request
+ * log and treats the account as not suspended. Admin routes keep the strict
+ * read through activeRole and fail closed instead. With the store healthy the
+ * two behave identically, so enforcement is exact once the ACL allows
+ * lm:admin:* again.
+ */
+export async function isSuspendedSafe(userId, redis) {
+  try {
+    return await isSuspended(userId, redis);
+  } catch (e) {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), level: "warn", route: "suspension-guard", code: String(e?.message || e).slice(0, 120), note: "suspension store unavailable, treating as not suspended" }));
+    return false;
+  }
+}
+
+/**
  * Suspend a user: record the stop, then cascade. Returns revoked fleet key
  * ids. Workspace keys and sessions die at their choke points on the next
  * request (lookup and identity read this same record), so no mass rewrite.
