@@ -13,8 +13,9 @@
 // so the audit never claims a person who has not been identified.
 import { customerRedis } from "../src/http/jail.mjs";
 import { WorkspaceError } from "../src/http/workspaces.mjs";
-import { isAdmin } from "../src/http/admin-auth.mjs";
-import { ROLES, getRole, setRole, suspendUser, unsuspendUser, listRoles, suspendedList } from "../src/http/admin-roles.mjs";
+import { adminIdentity } from "../src/http/admin-auth.mjs";
+import { ROLES, getRole, setRole, suspendUser, unsuspendUser, listRoles, suspendedList, audit } from "../src/http/admin-roles.mjs";
+import { createClerkClient } from "@clerk/backend";
 import { deployRedis } from "./oauth/_lib/storage.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
@@ -36,7 +37,8 @@ export function createHandler({ env = process.env, redis = () => customerRedis(e
   return async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     try {
-      if (!isAdmin(req, env)) return res.status(401).json({ error: "sign in required" });
+      const actorId = adminIdentity(req, env);
+      if (!actorId) return res.status(401).json({ error: "sign in required" });
       if (req.method === "GET") {
         return res.status(200).json({ ok: true, roles: await listRoles(redis()), suspended: await suspendedList(redis()), allowed_roles: ROLES });
       }
@@ -46,7 +48,20 @@ export function createHandler({ env = process.env, redis = () => customerRedis(e
       }
       const b = body(req);
       if (!b) return res.status(400).json({ error: "JSON body required" });
-      const actorId = "break-glass"; // slice 2: replace with the identity from the admin session cookie
+      if (b.action === "sessions") {
+        const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+        const page = await clerk.sessions.getSessionList({});
+        const sessions = (page?.data || []).map((x) => ({ id: x.id, user_id: x.userId ?? x.user_id, status: x.status, last_active_at: x.lastActiveAt ?? x.last_active_at, created_at: x.createdAt ?? x.created_at }));
+        await audit(redis(), { action: "sessions:list", count: sessions.length, by: actorId });
+        return res.status(200).json({ ok: true, sessions });
+      }
+      if (b.action === "revoke_session") {
+        if (!b.sessionId || !/^sess_/.test(String(b.sessionId))) throw new WorkspaceError("invalid_session", 400);
+        const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+        await clerk.sessions.revokeSession(String(b.sessionId));
+        await audit(redis(), { action: "session:revoke", target: String(b.sessionId), by: actorId });
+        return res.status(200).json({ ok: true, revoked: b.sessionId });
+      }
       if (b.action === "set-role") {
         const r = await setRole({ actorId, userId: b.userId, role: b.role, redis: redis() });
         return res.status(200).json({ ok: true, ...r });

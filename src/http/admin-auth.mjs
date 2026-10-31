@@ -31,6 +31,43 @@ export function checkPassword(given, env = process.env) {
   return safeEqual(createHash("sha256").update(String(given)).digest(), createHash("sha256").update(env.LOGMEM_ADMIN_PASSWORD).digest());
 }
 
+/**
+ * Slice 2 identity: the cookie carries the admin's own id so every admin
+ * action can attribute to a real account instead of the shared password.
+ *   legacy:  {exp}.{mac}                     -> "break-glass" attribution
+ *   identity: {exp}.{identity}.{mac}          -> the account id (user_...)
+ * Both formats stay valid for their 12h TTL, so rolling a login never
+ * invalidates sessions in flight.
+ */
+const BREAK_GLASS = "break-glass";
+
+/** The verified admin identity on this request, or null when not an admin. */
+export function adminIdentity(req, env = process.env, now = Date.now()) {
+  if (!adminEnabled(env)) return null;
+  const v = readCookie(req);
+  if (!v) return null;
+  const parts = String(v).split(".");
+  if (parts.length === 3) {
+    const [exp, identity, mac] = parts;
+    if (!identity || Number(exp) * 1000 < now) return null;
+    return safeEqual(mac, sign(`${exp}.${identity}`, secret(env))) ? identity : null;
+  }
+  if (parts.length === 2) {
+    const [exp, mac] = parts;
+    if (Number(exp) * 1000 < now) return null;
+    return safeEqual(mac, sign(exp, secret(env))) ? BREAK_GLASS : null;
+  }
+  return null;
+}
+
+/** Issue an identity-bearing admin cookie for a Clerk user id. */
+export function issueIdentityCookie(env = process.env, identity, now = Date.now()) {
+  const exp = Math.floor(now / 1000) + TTL_S;
+  const payload = `${exp}.${String(identity).slice(0, 64)}`;
+  const value = `${payload}.${sign(payload, secret(env))}`;
+  return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${TTL_S}`;
+}
+
 export function issueCookie(env = process.env, now = Date.now()) {
   const exp = Math.floor(now / 1000) + TTL_S;
   const value = `${exp}.${sign(String(exp), secret(env))}`;
@@ -49,12 +86,7 @@ export function readCookie(req) {
 }
 
 export function isAdmin(req, env = process.env, now = Date.now()) {
-  if (!adminEnabled(env)) return false;
-  const v = readCookie(req);
-  if (!v) return false;
-  const [exp, mac] = v.split(".");
-  if (!exp || !mac || Number(exp) * 1000 < now) return false;
-  return safeEqual(mac, sign(exp, secret(env)));
+  return adminIdentity(req, env, now) !== null;
 }
 
 /**
