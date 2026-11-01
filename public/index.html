@@ -149,11 +149,16 @@
             <span class="chevron" aria-hidden="true">›</span>
             <p class="prompt-text" id="hero-prompt"></p>
             <button class="lm-btn lm-btn--primary dark copy" data-copy="main">
-              Copy <span aria-hidden="true">▣</span>
+              <span class="copy-label">Copy</span> <span aria-hidden="true">▣</span>
             </button>
           </div>
           <p class="workspace-actions"><a class="lm-btn lm-btn--primary dark" href="/onboarding">Open your workspace <span aria-hidden="true">→</span></a><a class="text-button" href="/onboarding?intent=request-invite">Request invite ↗</a></p>
-          <p class="availability">Invite only until the beta opens on November 16. Request access, then paste the prompt into your AI. It gets the skills and connects. <a href="/connect">See the three steps</a>. No Redis account required.</p>
+          <p class="availability">Invite only until the beta opens on November 16. Request access first. For supported clients, paste the prompt into your AI. It gets the skills and connects after sign-in. ChatGPT users must follow the web setup guide first. <a href="/connect">See the three steps</a>. No Redis account required.</p>
+          <aside id="chatgpt-setup-callout" class="chatgpt-setup-callout" hidden>
+            <strong>Using ChatGPT?</strong>
+            <span>Set it up on ChatGPT web first. The iPhone app cannot add custom MCP connections.</span>
+            <a class="lm-btn lm-btn--secondary small" href="/plugin#chatgpt-setup">Open ChatGPT setup guide ↗</a><a class="lm-btn lm-btn--secondary small" href="/plugin#creator-prompt">Open copy-ready Plugin Creator prompt ↗</a><a class="lm-btn lm-btn--secondary small" href="/downloads/logmem-fleet-v0.1.1.zip" download>Download LogMem Fleet ZIP</a>
+          </aside>
           <div class="trust-line">
             <span>◈ You choose who joins</span
             ><span>♙ Share only what you intend</span
@@ -432,12 +437,12 @@
             <article>
               <span class="lm-badge lm-badge--brand step-number">3</span>
               <div>
-                <h3>Paste your starting prompt</h3>
-                <p>Paste this into your selected AI. It goes to logmem.si/agents, gets the skills, connects, and asks you to approve sign-in.</p>
+                <h3>Start after connection</h3>
+                <p>Only paste this after your MCP connection works and sign-in completes. A prompt cannot install or authorize a connection.</p>
                 <div class="prompt-shell compact">
                   <span class="chevron">›</span>
                   <p class="prompt-text" id="setup-prompt"></p>
-                  <button class="lm-btn lm-btn--primary dark copy" data-copy="main">Copy <span>▣</span></button>
+                  <button class="lm-btn lm-btn--primary dark copy" data-copy="main"><span class="copy-label">Copy</span> <span aria-hidden="true">▣</span></button>
                 </div>
                 <ul class="prompt-guardrails" aria-label="Guidance in the starting prompt">
                   <li>Keep private details out</li>
@@ -623,7 +628,7 @@
           <span class="chevron">›</span>
           <p class="prompt-text" id="footer-prompt"></p>
           <button class="lm-btn lm-btn--primary dark copy" data-copy="main">
-            Copy <span>▣</span>
+            <span class="copy-label">Copy</span> <span aria-hidden="true">▣</span>
           </button>
         </div>
         <button class="text-button" data-open-connect>

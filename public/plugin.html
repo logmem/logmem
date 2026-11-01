@@ -23,6 +23,9 @@
     .plugin-card ol,.plugin-card ul{padding-left:1.3rem}.plugin-card li+li{margin-top:8px}
     .plugin-code{position:relative;margin-top:16px}.plugin-code pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#102522;color:#e2f1e9;border-radius:14px;padding:18px;max-height:420px;overflow:auto;font-size:.88rem;line-height:1.55}
     .plugin-code button{position:absolute;top:10px;right:10px}.plugin-note{padding:14px 16px;border-radius:12px;background:#edf5f0;color:#29463b}
+    .plugin-note strong{display:block;margin-bottom:4px;color:#17352d}
+    .plugin-callout{max-width:850px;margin:18px auto;padding:16px 20px;border:1px solid #d5dfda;border-radius:16px;background:#f4f7f4;text-align:left;line-height:1.6}
+    .plugin-callout strong{display:block;margin-bottom:4px}
     .plugin-meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}.plugin-meta span{border:1px solid #d5dfda;border-radius:999px;padding:7px 12px;font-size:.88rem}
     @media(max-width:720px){.plugin-page{padding:24px 16px 56px}.plugin-grid{grid-template-columns:1fr}.plugin-hero{margin:22px auto 32px}.plugin-card{padding:20px}}
   </style>
@@ -33,42 +36,33 @@
   <a class="skip" href="#main">Skip to content</a>
   <header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/onboarding">Get started</a></nav></header>
   <main id="main" class="plugin-page">
-    <section class="plugin-hero">
-      <p class="lm-eyebrow">One shared memory for your agent team</p>
-      <h1>Bring LogMem to ChatGPT.</h1>
-      <p>Connect the LogMem MCP server with OAuth. Add seven practical skills for ChatGPT, Codex, and your other agents.</p>
-      <div class="plugin-actions"><a class="lm-btn lm-btn--primary dark" href="/downloads/logmem-fleet-v0.1.1.zip" download>Download LogMem Fleet v0.1.1</a><a class="lm-btn" href="/onboarding">Open setup guide</a></div>
-      <div class="plugin-meta"><span>OAuth sign-in</span><span>Dynamic client registration</span><span>7 skills</span></div>
+    <section class="plugin-hero" id="chatgpt-setup">
+      <p class="lm-eyebrow">ChatGPT setup starts on the web</p>
+      <h1>Connect ChatGPT before you ask it to use LogMem.</h1>
+      <p>First connect and install LogMem in ChatGPT. Then use Plugin Creator to add the seven LogMem skills. The iPhone app cannot add custom MCP connections.</p>
+      <div class="plugin-actions"><a class="lm-btn lm-btn--primary dark" href="https://chatgpt.com/plugins" target="_blank" rel="noopener">Open ChatGPT Plugins on web ↗</a><a class="lm-btn" href="/downloads/logmem-fleet-v0.1.1.zip" download>Download LogMem Fleet v0.1.1</a></div>
+      <div class="plugin-meta"><span>1. Connect with OAuth</span><span>2. Add skills with Plugin Creator</span><span>3. Test in Work mode</span></div>
+      <div class="plugin-callout"><strong>On iPhone?</strong> Save this page and finish setup at <a href="https://chatgpt.com/plugins" target="_blank" rel="noopener">chatgpt.com/plugins</a> in a desktop browser. OpenAI supports custom MCP setup on the web, not in the iPhone app. <a href="https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt" target="_blank" rel="noopener">See OpenAI's availability notes ↗</a></div>
     </section>
 
     <section class="plugin-grid" aria-label="Setup instructions">
       <article class="plugin-card">
-        <h2>For people using ChatGPT</h2>
+        <h2>Step 1 · Connect LogMem on ChatGPT web</h2>
+        <p>Use ChatGPT on the web. Open Plugins, select <strong>+</strong>, then choose <strong>Add custom MCP server</strong>.</p>
         <ol>
-          <li>Open the ChatGPT Plugins directory and choose <strong>Upload new or existing plugin</strong>.</li>
-          <li>Choose <strong>Upload plugin</strong> and select this ZIP. The package version is 0.1.1.</li>
-          <li>Confirm <code>https://logmem.si/mcp</code> and OAuth with Dynamic Client Registration.</li>
-          <li>Do not choose CIMD. LogMem does not advertise CIMD support.</li>
-          <li>Connect, sign in to LogMem, and approve the requested scopes.</li>
-          <li>Install the plugin. Ask it to read your Brief and confirm the active space.</li>
+          <li>Set the server URL to <code>https://logmem.si/mcp</code>.</li>
+          <li>Choose OAuth. If ChatGPT asks for a registration method, choose Dynamic Client Registration. Do not choose CIMD.</li>
+          <li>Create the plugin, complete LogMem sign-in and consent, then install it.</li>
+          <li>Copy the connection ID from the browser URL. It starts with <code>plugin_asdk_app_</code>.</li>
         </ol>
-        <p class="plugin-note"><strong>Seeing a 401?</strong> Complete the browser sign-in and consent flow. Then retry the protected tool call.</p>
+        <p class="plugin-note"><strong>Do not paste the starter prompt yet.</strong> First confirm that LogMem is installed and OAuth has completed. If a protected call returns 401, finish sign-in once. If access still fails, stop and check account or workspace access. Do not repeat the same blocked call.</p>
+        <p>Full MCP access depends on your ChatGPT plan and workspace permissions. <a href="https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt" target="_blank" rel="noopener">Check OpenAI's current availability rules ↗</a></p>
       </article>
       <article class="plugin-card">
-        <h2>For agents and developers</h2>
-        <p>Use the remote MCP server with OAuth. Then install the skill folders from the ZIP in your client's supported skill directory.</p>
-        <ul>
-          <li>Server: <code>https://logmem.si/mcp</code></li>
-          <li>Transport: Streamable HTTP</li>
-          <li>Scopes: <code>logmem:read</code>, <code>logmem:write</code></li>
-          <li>Registration: Dynamic Client Registration</li>
-        </ul>
-        <p>Sign in and confirm the active space before writing. A public initialize response does not prove access.</p>
-      </article>
-      <article class="plugin-card">
-        <h2>Copy this into Plugin Creator</h2>
-        <p>Connect LogMem MCP first. Copy the <code>plugin_asdk_app_...</code> ID from the browser URL and replace the sample ID.</p>
-        <div class="plugin-code"><button type="button" class="lm-btn small" id="copy-prompt">Copy prompt</button><pre id="creator-prompt">@plugin-creator create a personal ChatGPT and Codex plugin named LogMem Fleet.
+        <h2>Step 2 · Add skills with Plugin Creator</h2>
+        <p>Download and extract the ZIP on your computer. Open ChatGPT Work on the web or desktop. Give Plugin Creator access to the extracted folder or attach the ZIP.</p>
+        <p>Copy this prompt. Replace the sample connection ID with your real ID. Attach the ZIP or give Plugin Creator its extracted folder.</p>
+        <div class="plugin-code"><button type="button" class="lm-btn small" id="copy-prompt">Copy Plugin Creator prompt</button><pre id="creator-prompt">@plugin-creator create a personal ChatGPT and Codex plugin named LogMem Fleet.
 
 Use my existing ChatGPT MCP connection ID: plugin_asdk_app_REPLACE_WITH_YOURS.
 Do not create another MCP connection or change its authentication settings.
@@ -88,6 +82,31 @@ If you edit the package manifest or skills, bump its version before saving.
 Show validation errors and name the field that needs a fix.</pre></div>
       </article>
       <article class="plugin-card">
+        <h2>Step 3 · Install and verify</h2>
+        <ol>
+          <li>Install LogMem Fleet from your personal Plugins directory.</li>
+          <li>Start a new ChatGPT Work chat and select LogMem Fleet.</li>
+          <li>Ask it to read <code>logmem_brief</code> and confirm the active space.</li>
+        </ol>
+        <p>If the protected read fails after OAuth, stop. Check the app connection and account permissions before you retry.</p>
+      </article>
+      <article class="plugin-card">
+        <h2>For agents and developers</h2>
+        <p>Use the remote MCP server with OAuth. Then install the skill folders from the ZIP in your client's supported skill directory.</p>
+        <ul>
+          <li>Server: <code>https://logmem.si/mcp</code></li>
+          <li>Transport: Streamable HTTP</li>
+          <li>Scopes: <code>logmem:read</code>, <code>logmem:write</code></li>
+          <li>Registration: Dynamic Client Registration</li>
+        </ul>
+        <p>Sign in and confirm the active space before writing. A public initialize response does not prove access.</p>
+      </article>
+      <article class="plugin-card">
+        <h2>Public directory submission is separate</h2>
+        <p>You do not need to submit this ZIP to install a personal plugin. Public publishing uses the official submission process, where you upload a ZIP for review.</p>
+        <p><a href="https://developers.openai.com/plugins/deploy/submission" target="_blank" rel="noopener">Read OpenAI's ZIP submission guide ↗</a></p>
+      </article>
+      <article class="plugin-card">
         <h2>Seven skills in the package</h2>
         <ul>
           <li>LogMem daily memory and coordination</li>
@@ -105,9 +124,22 @@ Show validation errors and name the field that needs a fix.</pre></div>
   <script>
     document.getElementById('copy-prompt').addEventListener('click', async function () {
       const text = document.getElementById('creator-prompt').textContent;
-      await navigator.clipboard.writeText(text);
-      this.textContent = 'Copied';
-      setTimeout(() => { this.textContent = 'Copy prompt'; }, 1800);
+      const button = this;
+      try {
+        if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+        await navigator.clipboard.writeText(text);
+        button.textContent = 'Copied';
+        setTimeout(() => { button.textContent = 'Copy Plugin Creator prompt'; }, 1800);
+      } catch {
+        button.textContent = 'Select the prompt below';
+        const prompt = document.getElementById('creator-prompt');
+        const range = document.createRange();
+        range.selectNodeContents(prompt);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        setTimeout(() => { button.textContent = 'Copy Plugin Creator prompt'; }, 2400);
+      }
     });
   </script>
 </body>
