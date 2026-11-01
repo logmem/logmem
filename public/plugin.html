@@ -61,27 +61,24 @@
       <article class="plugin-card">
         <h2>Step 2 · Add skills with Plugin Creator</h2>
         <p>Download and extract the ZIP on your computer. Open ChatGPT Work on the web or desktop. Give Plugin Creator access to the extracted folder or attach the ZIP.</p>
-        <p>Copy this prompt and replace the sample connection ID. The prompt keeps your existing MCP connection.</p>
+        <p>Copy this prompt. Replace the sample connection ID with your real ID. Attach the ZIP or give Plugin Creator its extracted folder.</p>
         <div class="plugin-code"><button type="button" class="lm-btn small" id="copy-prompt">Copy Plugin Creator prompt</button><pre id="creator-prompt">@plugin-creator create a personal ChatGPT and Codex plugin named LogMem Fleet.
 
-Extend my existing personal LogMem MCP plugin with the skills in this package.
-Use its existing ChatGPT MCP connection ID: plugin_asdk_app_REPLACE_WITH_YOURS.
-Do not create a duplicate plugin, MCP connection, or change its authentication settings.
+Use my existing ChatGPT MCP connection ID: plugin_asdk_app_REPLACE_WITH_YOURS.
+Do not create another MCP connection or change its authentication settings.
 
-Use the attached LogMem Fleet v0.1.1 ZIP or its extracted folder. Include all seven skill folders.
-Keep each skill name and file unchanged. Do not combine or remove a skill.
-If you cannot access the package, ask me to attach it. Do not invent missing files.
-Make the updated plugin available in my personal Plugins directory for testing.
-Do not submit it to the public plugin directory.
+Include all seven skill folders from the extracted LogMem Fleet v0.1.1 package.
+Keep their names and contents unchanged. Do not combine or remove any skill.
+Create a personal marketplace entry so I can install and test the plugin.
 
-Preserve the existing connection ID and OAuth setup. Do not use CIMD, static secrets,
-API keys, or bearer tokens. Protected LogMem tools must wait for sign-in and consent.
+Preserve the existing app ID and OAuth setup. Do not use CIMD, static secrets,
+API keys, or bearer tokens. Sign-in and consent must happen before protected
+LogMem tools run.
 
-Verify that the generated plugin uses the existing connection. Do not claim access
-from public initialize or tools/list responses. After install, verify one protected
-LogMem read. Do not write to a space until I confirm it.
+Do not claim access from public initialize or tools/list responses. Verify one
+protected LogMem read after OAuth. Do not write to a space until I confirm it.
 
-Do not change the package manifest or skills. If a change is required, explain it first.
+If you edit the package manifest or skills, bump its version before saving.
 Show validation errors and name the field that needs a fix.</pre></div>
       </article>
       <article class="plugin-card">
