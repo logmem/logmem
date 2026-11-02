@@ -158,6 +158,13 @@ export async function mayRead(req, env = process.env) {
   return true;
 }
 
+/** Preview boundary: preview deployments must not reach customer tenant spaces. */
+export function previewBlocksCustomerSpaces(env = process.env) {
+  if (String(env.VERCEL_ENV || "").toLowerCase() !== "preview") return false;
+  const tenantRe = /^t-[a-z0-9_-]+$/i;
+  return (space) => !tenantRe.test(String(space));
+}
+
 /** Spaces the web app may show. */
 export function viewSpaces(env = process.env) {
   return String(env.LOGMEM_VIEW_SPACES || "fieldnotes,madez").split(",").map((s) => s.trim()).filter(Boolean);
