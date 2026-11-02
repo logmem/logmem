@@ -152,6 +152,38 @@ export async function createSpace({userId,workspaceId,name,requestId},deps) {
  }
  failWorkspace('update_conflict',409);
 }
+/**
+ * Phase 2 bridge: attach an API-created registry space (slug namespace) to a
+ * workspace so /app shows the card. The workspace stays the people authority:
+ * the creator gets an editor grant, managers see it through visibleSpaces,
+ * plain members need a grant like any other space. The record carries
+ * backend:'api' so the journeys know this card's data lives on the main
+ * backend under lm:{slug}:*, not the customer redis jail. Idempotent: the
+ * same slug attached twice returns the existing record.
+ */
+export async function attachSpace({userId,workspaceId,space,requestId},deps) {
+  checkUser(userId);
+  if(!validWorkspace(workspaceId))failWorkspace('not_found',404);
+  const safeReq=String(requestId||'').replace(/[^a-zA-Z0-9_-]/g,'-');
+  const fingerprint=digest({workspaceId,slug:space.slug});
+  const key=requestKey(userId,'space-attach',safeReq);
+  for(let retry=0;retry<20;retry++) {
+    const {w}=await readWorkspace(deps.redis,workspaceId), m=membership(w,userId);
+    if(!['owner','admin','member'].includes(m.role)) failWorkspace('forbidden',403);
+    const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
+    const existing=w.spaces?.[space.slug];
+    if(existing&&existing.registry===space.slug)return {space:existing,attached:false};
+    const now=(deps.now||Date.now)();
+    const rec={id:space.slug,workspaceId,namespace:space.slug,name:space.name||space.slug,status:'active',createdAt:now,registry:space.slug,backend:'api',source:'api'};
+    const next=structuredClone(w); next.spaces[space.slug]=rec; next.version++;
+    next.members[userId].spaces[space.slug]={role:'editor',canApprove:m.role==='owner'};
+    next.audit.push({kind:'space-attached',spaceId:space.slug,by:`human:${userId}`,at:now});
+    const r=await commitWorkspace({before:w,after:next,userId,requestId:safeReq,operation:'space',fingerprint,result:{space:rec,attached:true}},deps);
+    if(r)return r;
+  }
+  failWorkspace('update_conflict',409);
+}
+
 export async function listWorkspaces({userId},deps) {
  checkUser(userId); const out=[];
  for(const workspaceId of await deps.redis('SMEMBERS',userKey(userId))||[]) {

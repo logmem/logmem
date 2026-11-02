@@ -69,9 +69,9 @@ export function registryRedis(env = process.env) {
   return async (...cmd) => nativeRedisCall(uri, ...cmd);
 }
 
-const spaceKey = (slug) => `sp:space:${slug}`;
-const membersKey = (slug) => `sp:space:${slug}:members`;
-const memberIndexKey = (identity) => `sp:member:${identity}`;
+export const spaceKey = (slug) => `sp:space:${slug}`;
+export const membersKey = (slug) => `sp:space:${slug}:members`;
+export const memberIndexKey = (identity) => `sp:member:${identity}`;
 
 /** Create a space and seed the creator as owner. SET NX makes create idempotent-safe: a duplicate is a 409, never an overwrite. */
 export async function createSpace({ slug: rawSlug, name, actor, redis, now = Date.now() }) {

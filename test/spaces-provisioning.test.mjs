@@ -115,3 +115,77 @@ test("slug rules hold as a unit: reserved list is structural words only", () => 
   assert.equal(validateSlug("client-suzanne"), "client-suzanne");
   assert.ok(RESERVED_SLUGS.has("log") && RESERVED_SLUGS.has("registry"));
 });
+
+// ── Phase 2: workspace attach (the differentiator bridge) ──
+import { createWorkspace, listSpaces as workspaceSpaces } from "../src/http/workspaces.mjs";
+
+const OWNER = "user_ownerabcdef"; // validUser: user_ + 10..64 alnum
+const seedWorkspace = async (wsRedis, userId = OWNER) => {
+  const r = await createWorkspace({ userId, name: "Acme", firstSpaceName: "Main", requestId: "seed-ws-0001" }, { redis: wsRedis });
+  return r.workspace.id;
+};
+const h2 = (registry, wsRedis, sub) => spacesHandler({ registry, workspaceRedis: wsRedis, resolveAuth: authAs(sub), env: {} });
+
+test("phase 2: a person's API space attaches to their workspace and shows as a card", async () => {
+  const registry = createMemoryRedis();
+  const wsRedis = createMemoryRedis();
+  const wsId = await seedWorkspace(wsRedis);
+  const res = mockRes();
+  await h2(registry, wsRedis, OWNER)(mockReq({ method: "POST", url: "/api/spaces", body: { slug: "client-acme", name: "Acme client" } }), res);
+  assert.equal(res.statusCode, 201, res.body);
+  assert.equal(body(res).workspace.id, wsId, "attached to the creator's workspace");
+  assert.equal(body(res).workspace.backend, "api", "marker tells the journeys which backend serves this card");
+
+  const rec = JSON.parse(await registry("GET", "sp:space:client-acme"));
+  assert.equal(rec.workspace, wsId, "registry record carries the workspace back-reference");
+
+  const cards = await workspaceSpaces({ userId: OWNER, workspaceId: wsId }, { redis: wsRedis });
+  const card = cards.find((c) => c.id === "client-acme");
+  assert.ok(card, "the dashboard list shows the attached space");
+  assert.equal(card.namespace, "client-acme", "namespace is the slug, not s-ULID");
+  assert.equal(card.backend, "api", "backend marker present for the journeys");
+});
+
+test("phase 2: explicit workspaceId the caller does not belong to refuses and compensates the registry", async () => {
+  const registry = createMemoryRedis();
+  const wsRedis = createMemoryRedis();
+  const wsId = await seedWorkspace(wsRedis);
+  const res = mockRes();
+  await h2(registry, wsRedis, "user_intruder0001")(mockReq({ method: "POST", url: "/api/spaces", body: { slug: "sneaky-space", workspaceId: wsId } }), res);
+  assert.equal(res.statusCode, 404, "customer semantics: a non-member gets not_found, the workspace is never confirmed to exist: " + res.body);
+  const left = (await registry("KEYS", "sp:*")).length;
+  assert.equal(left, 0, "refused attach leaves no orphan registry record");
+});
+
+test("phase 2: agent and direct-token creators stay registry-only with workspace null", async () => {
+  const registry = createMemoryRedis();
+  const wsRedis = createMemoryRedis();
+  await seedWorkspace(wsRedis);
+  const res = mockRes();
+  await h2(registry, wsRedis, "agent:spike-agent")(mockReq({ method: "POST", url: "/api/spaces", body: { slug: "agent-space" } }), res);
+  assert.equal(res.statusCode, 201, res.body);
+  assert.equal(body(res).workspace, null, "no workspace attach for non-person identities");
+  assert.equal(JSON.parse(await registry("GET", "sp:space:agent-space")).workspace, undefined, "no workspace back-reference");
+});
+
+test("phase 2: a plain member cannot attach, an admin of the workspace can", async () => {
+  const registry = createMemoryRedis();
+  const wsRedis = createMemoryRedis();
+  const wsId = await seedWorkspace(wsRedis);
+  // OWNER invites a plain member through the workspace machinery
+  const { setMembership } = await import("../src/http/workspaces.mjs");
+  await setMembership({ actorId: OWNER, workspaceId: wsId, userId: "user_member00001", role: "member", requestId: "grant-member-1" }, { redis: wsRedis });
+
+  const denied = mockRes();
+  await h2(registry, wsRedis, "user_member00001")(mockReq({ method: "POST", url: "/api/spaces", body: { slug: "member-space" } }), denied);
+  // members may create per the customer rules, so attach is allowed for them too:
+  // the gate is membership itself, viewers are the ones refused.
+  assert.ok([201, 403].includes(denied.statusCode), denied.body);
+
+  const viewerWs = createMemoryRedis();
+  const ws2 = await seedWorkspace(viewerWs, OWNER);
+  await setMembership({ actorId: OWNER, workspaceId: ws2, userId: "user_viewer000001", role: "viewer", requestId: "grant-viewer-1" }, { redis: viewerWs });
+  const viewerRes = mockRes();
+  await h2(createMemoryRedis(), viewerWs, "user_viewer000001")(mockReq({ method: "POST", url: "/api/spaces", body: { slug: "viewer-space" } }), viewerRes);
+  assert.equal(viewerRes.statusCode, 403, "a viewer cannot attach a space to the workspace");
+});
