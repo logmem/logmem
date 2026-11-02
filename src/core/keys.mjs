@@ -6,7 +6,7 @@
 // tool-contract spec lands (2026-10-14); the migration dry-run reads
 // LEGACY_SLOTS below to map acmi:{tenant}:* keys onto these.
 
-import { validateKeySegments } from "../lib/helpers.mjs";
+import { validateKeySegments, validateChannelId } from "../lib/helpers.mjs";
 import { nsToAcmi } from "./vocab.mjs";
 
 export const PREFIX = "lm";
@@ -22,7 +22,9 @@ export const SLOTS = {
 };
 
 export function lmKey(space, ns, id, slot) {
-  validateKeySegments(space, ns, id);
+  validateKeySegments(space, ns);
+  if (ns === "channel") validateChannelId(id);
+  else validateKeySegments(id);
   if (!Object.hasOwn(SLOTS, slot)) throw new Error(`unknown slot: ${slot}`);
   return `${PREFIX}:${space}:${ns}:${id}:${slot}`;
 }
@@ -86,6 +88,7 @@ export const REF_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@+-]*$/;
 
 function checkRefId(ns, id) {
   if (ns === "agent") return checkAgentId(id);
+  if (ns === "channel") return validateChannelId(id);
   validateKeySegments(id);
   if (!REF_ID_RE.test(id)) {
     throw new Error(`${ns} id '${id.slice(0, 64)}' is not valid: use letters, digits, '.', '_', '@', '+' or '-', starting with a letter or digit`);

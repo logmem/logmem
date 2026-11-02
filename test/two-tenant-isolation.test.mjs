@@ -229,10 +229,22 @@ describe("two managed tenants cannot see or change each other's data", { concurr
         assert.ok(!body.includes(A_NOTE) && !body.includes(FLEET_NOTE) && !body.includes(PLANTED_A), body);
       }
 
-      for (const where of ["channel:*", "channel:a?x", "channel:a[b]", "channel:has:colon", `channel:t-${A}:secret`]) {
+      for (const where of ["channel:*", "channel:a?x", "channel:a[b]"]) {
         const bad = await tool(customer, authB, "logmem_note", { where, summary: "evilmarker" });
         assert.equal(bad.isError, true, where + " " + JSON.stringify(bad.structuredContent));
       }
+
+      // Nested channel ids are legal now (P0 fix 2026-11-02). The tenant
+      // boundary is the space jail, not the colon: these writes must land
+      // inside B's own space and touch nothing of A's or the fleet's.
+      for (const where of ["channel:has:colon", `channel:t-${A}:secret`]) {
+        const nested = await tool(customer, authB, "logmem_note", { where, summary: "evilmarker" });
+        assert.equal(nested.structuredContent?.ok, true, where + " " + JSON.stringify(nested.structuredContent));
+        const back = await tool(customer, authB, "logmem_view", { ref: where, limit: 5 });
+        assert.equal(back.structuredContent?.ok, true, where + " " + JSON.stringify(back.structuredContent));
+      }
+      assert.equal(await customer("GET", "lm:madez:planted"), FLEET_NOTE, "fleet key untouched by nested writes");
+      assert.equal(await customer("GET", `lm:t-${A}:planted`), PLANTED_A, "tenant A key untouched by nested writes");
 
       // Token space disagrees with the tenant. The store aims at that space; the jail must drop it.
       for (const space of [tenantSpace(A), "madez"]) {
@@ -256,7 +268,25 @@ describe("two managed tenants cannot see or change each other's data", { concurr
       assert.ok(blob.includes(A_NOTE));
       assert.ok(!blob.includes("overwritemarker"));
       assert.ok(!blob.includes("smugglemarker"));
-      assert.ok(!blob.includes("evilmarker"));
+      // evilmarker is legal only inside B's own space: nested channel ids
+      // write there by design (P0 fix 2026-11-02). A's and the fleet's
+      // logs must stay clean of it.
+      for (const prefix of [`lm:t-${A}:channel:`, "lm:madez:channel:"]) {
+        let cur = "0";
+        do {
+          const [next, keys] = await customer("SCAN", cur, "MATCH", `${prefix}*`, "COUNT", "1000");
+          cur = next;
+          for (const k of keys) {
+            if (await customer("TYPE", k) !== "zset") continue;
+            const vals = await customer("ZRANGE", k, 0, -1);
+            for (const v of vals) assert.ok(!String(v).includes("evilmarker"), `${k} must not carry evilmarker`);
+          }
+        } while (cur !== "0");
+      }
+      for (const k of [`lm:t-${B}:channel:has:colon:log`, `lm:t-${B}:channel:t-${A}:secret:log`]) {
+        const vals = await customer("ZRANGE", k, 0, -1);
+        assert.ok(vals.some((v) => String(v).includes("evilmarker")), `${k} holds B's legal nested write`);
+      }
 
       const reread = await tool(customer, authA, "logmem_view", { ref: "channel:aurora-room", limit: 20 });
       assert.equal(reread.structuredContent.ok, true, JSON.stringify(reread.structuredContent));

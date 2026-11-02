@@ -69,6 +69,10 @@ export async function runCoordBackfill(options = {}) {
     const refs = new Map(), legacyRefs = new Set();
     const addRef = (ns, id, legacy = false) => {
       const ref = `${ns}:${id}`;
+      // Legacy ACMI colon identifiers stay manual-migration by policy: their
+      // shape is ambiguous in item records. Live lm: and roster sources may
+      // be nested channels ("client:duane:x"), which parse normally now.
+      if (legacy && id.includes(":")) { warn(`Unsafe source identifier requires manual migration: ${ref}`); return; }
       try { parseRef(ref); }
       catch { warn(`Unsafe source identifier requires manual migration: ${ref}`); return; }
       refs.set(ref, { ns, id });
