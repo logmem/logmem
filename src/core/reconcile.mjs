@@ -33,6 +33,8 @@
 import { randomUUID } from "node:crypto";
 import { stableJson } from "./store.mjs";
 import { registerEvalScript } from "../lib/lua-scripts.mjs";
+import { isHandoffKind, handoffSettlement, makeTrail } from "./tools.mjs";
+import { computeItemId, getCoordItem, settleCoordItem } from "./coord.mjs";
 
 export const RECONCILER = "logmem-reconciler";
 
@@ -370,4 +372,109 @@ export function githubSource({ repo, token, fetchImpl = globalThis.fetch, timeou
       return list.filter((p) => p && p.merged_at).map((p) => ({ number: p.number, merged_at: p.merged_at, merge_commit_sha: p.merge_commit_sha, body: p.body || "", html_url: p.html_url }));
     },
   };
+}
+
+/**
+ * Reconciles and archives stale orphan handoffs that have remained un-settled
+ * for longer than maxAgeMs (default 48h). Appends an immutable decline/feedback entry
+ * to the recipient agent's log and linked where container, clearing them from both
+ * the coordination queue and dogfood health checks.
+ */
+export async function reconcileStaleHandoffs(store, {
+  maxAgeMs = 48 * 3600 * 1000,
+  now = Date.now(),
+  reason = "Auto-reconciled stale orphan handoff (>48h)",
+} = {}) {
+  const agents = await store.list("agent");
+  const reconciled = [];
+
+  for (const agent of agents) {
+    let log = [];
+    try {
+      log = await store.readLog("agent", agent, { reverse: true });
+    } catch {
+      continue;
+    }
+    const settled = new Set(
+      log
+        .filter((e) => e.by === `agent:${agent}` && e.origin && handoffSettlement(e.kind, e.payload))
+        .map((e) => e.origin)
+    );
+
+    const seen = new Set();
+    for (const e of log) {
+      if (!isHandoffKind(e.kind) || e.to !== `agent:${agent}` || !e.trail || settled.has(e.trail) || seen.has(e.trail)) {
+        continue;
+      }
+      seen.add(e.trail);
+
+      const created = Number(e.ts);
+      if (!Number.isFinite(created) || created <= 0 || (now - created) < maxAgeMs) {
+        continue;
+      }
+
+      const id = computeItemId(store.space, "handoff", e.trail, agent);
+      const existing = await getCoordItem(store, store.space, id);
+      if (existing && ["answered", "declined"].includes(existing.response)) {
+        continue;
+      }
+
+      // 1. Canonical coordination settlement if record exists
+      if (existing) {
+        try {
+          await settleCoordItem(store, {
+            space: store.space,
+            id,
+            recipient: agent,
+            response: "declined",
+            settledBy: `agent:${RECONCILER}`,
+            settledAt: now,
+            settlementTrail: `reconcileStale-${randomUUID()}`,
+            disposition: "archived-stale",
+          });
+        } catch (_) {}
+      }
+
+      // 2. Append decline/feedback entry to recipient agent's log
+      const tr = makeTrail("declined", agent, now);
+      const declineEntry = {
+        ts: now,
+        kind: "feedback",
+        by: `agent:${agent}`,
+        via: "reconciler",
+        byline: `${agent} (via reconciler)`,
+        origin: e.trail,
+        trail: tr,
+        summary: `Declined: ${reason}`.slice(0, 1000),
+        payload: { declined: true, reason, auto_reconciled: true },
+      };
+
+      await store.append("agent", agent, declineEntry);
+
+      // 3. If handoff was bound to a job or channel, also append to that entity's log
+      const whereRef = e.job || e.where;
+      if (whereRef && typeof whereRef === "string") {
+        const split = whereRef.indexOf(":");
+        if (split > 0) {
+          const ns = whereRef.slice(0, split);
+          const whereId = whereRef.slice(split + 1);
+          if (["job", "channel"].includes(ns) && whereId) {
+            try {
+              await store.append(ns, whereId, declineEntry);
+            } catch (_) {}
+          }
+        }
+      }
+
+      reconciled.push({
+        trail: e.trail,
+        to: e.to,
+        from: e.by,
+        age_hours: ((now - created) / (3600 * 1000)).toFixed(1),
+        summary: e.summary,
+      });
+    }
+  }
+
+  return { space: store.space, reconciled, count: reconciled.length };
 }

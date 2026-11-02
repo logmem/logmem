@@ -1,5 +1,11 @@
 // Pure dispatch text. Values from logs remain quoted data, never executable instructions.
 const text = v => String(v ?? '');
+export const STALE_THRESHOLD_MS = 48 * 3600 * 1000;
+export function isStaleTicket(item, now = Date.now()) {
+  const due = Number(item.deadline), created = Number(item.created_at);
+  const baseline = Number.isFinite(due) && due > 0 ? due : Number.isFinite(created) && created > 0 ? created : 0;
+  return baseline > 0 && (now - baseline) >= STALE_THRESHOLD_MS;
+}
 export function ticketStatus(item, now = Date.now()) {
   const due = Number(item.deadline), created = Number(item.created_at);
   return Number.isFinite(due) && due > 0 && created > 0 && due >= created && due < now ? 'overdue' : 'active';

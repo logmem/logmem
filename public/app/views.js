@@ -25,7 +25,7 @@ import { blockerKind } from './flow-model.js';
 import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js';
 import {seedCard} from './seed-components.js';
 import {blockerClusters} from './flow-model.js';
-import {ticketPrompt,jobDispatchPrompt} from './dispatch-model.js';
+import {ticketPrompt,jobDispatchPrompt,isStaleTicket} from './dispatch-model.js';
 import {queuePage} from './interactions.js';
 export const pages = {};
 pages.queue=queuePage;
@@ -359,6 +359,8 @@ async function auditPage(route = 'audit') {
   const q = d.pending || { items: [], total: 0, counts: {} };
   const c = q.counts || {};
   const queueItems=q.items||[],filtered=healthQueueItems(queueItems,pf.queueFilter||'all');
+  const activeQueue=filtered.filter(i=>!isStaleTicket(i));
+  const staleQueue=filtered.filter(i=>isStaleTicket(i));
   const selectQueue=filter=>{pf.queueFilter=filter;saveFilt();draw();document.getElementById('health-queue')?.scrollIntoView({block:'nearest'});};
   const selectAudit=filter=>{pf.auditFilter=filter;saveFilt();draw();document.getElementById('health-history')?.scrollIntoView({block:'nearest'});};
   const queue = html`<section class="lmx-stack" id="health-queue">
@@ -367,7 +369,8 @@ async function auditPage(route = 'audit') {
     ${d.coverage !== 'full' ? html`<section class="lmx-coverage-note"><strong>Older handoffs still need indexing</strong><p>Saved requests remain in their source logs. This list combines indexed requests with recent source handoffs.</p><p>Run verified history indexing before treating this as the full backlog. Indexed requests support manager resolution in Inbox.</p></section>` : nothing}
     <div class="lmx-health-filters" role="group" aria-label="Coordination queue filters">${[['all','All',queueItems.length],['overdue','Overdue',queueItems.filter(i=>overdueRequest(i)).length],['unindexed','Not indexed',queueItems.filter(unindexedRequest).length]].map(([value,label,count])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String((pf.queueFilter||'all')===value)} @click=${()=>selectQueue(value)}>${label} (${count})</button>`)}<span class="lmx-meta">Filters cover loaded records.</span></div>
     <p class="lmx-meta">${!pf.queueFilter||pf.queueFilter==='all'?'Showing '+queueItems.length+' of '+num(q.total)+' returned records.':'Showing '+filtered.length+' matching records from '+queueItems.length+' loaded. '+num(q.total)+' reported in total.'}</p>
-    ${filtered.length?html`<div class="lmx-health-requests">${filtered.map(item=>healthRequestRow(item,state.space))}</div>`:emptyState(queueItems.length?'No loaded records match this filter.':'No open records were returned.',queueItems.length?'Choose another filter.':d.coverage==='full'?'No unanswered handoffs, seats or directed requests were found.':'Check coverage before treating this as an empty backlog.')}
+    ${activeQueue.length?html`<div class="lmx-health-requests">${activeQueue.map(item=>healthRequestRow(item,state.space))}</div>`:emptyState(queueItems.length?(staleQueue.length?'Active queue is clear. Older overdue requests are in the backlog drawer below.':'No loaded records match this filter.'):'No open records were returned.',queueItems.length?(staleQueue.length?'Older overdue records are collapsed in the archive drawer below.':'Choose another filter.'):d.coverage==='full'?'No unanswered handoffs, seats or directed requests were found.':'Check coverage before treating this as an empty backlog.')}
+    ${staleQueue.length?html`<details class="lmx-coverage lmx-stale-drawer" aria-label="Older overdue requests backlog"><summary><strong>Older overdue requests (${staleQueue.length})</strong><span class="lmx-meta">Overdue for more than 48 hours</span></summary><div class="lmx-health-requests" style="margin-top:12px">${staleQueue.map(item=>healthRequestRow(item,state.space))}</div></details>`:nothing}
     <a class="lm-btn lm-btn--secondary" href="#/queue">Review requests in Inbox</a>
     ${(d.data_errors || []).length ? html`<p class="muted" style="font-size:12px">${d.data_errors.length} data error(s) flagged: ${d.data_errors.slice(0, 3).map((e) => e.type).join(', ')}</p>` : nothing}</section>`;
   const runs = d.slots || [];
