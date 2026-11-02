@@ -10,7 +10,7 @@
 import { params } from "../core/params.mjs";
 import { parseRef } from "../core/keys.mjs";
 import { entryFromAcmi, entryToAcmi, nsFromAcmi } from "../core/vocab.mjs";
-import { validateKeySegments, validateJson } from "../lib/helpers.mjs";
+import { validateKeySegments, validateChannelId, validateJson } from "../lib/helpers.mjs";
 import { SLOTS, checkAgentId } from "../core/keys.mjs";
 import { HUMAN_ONLY, ASK_ONLY, HANDOFF_ONLY, HANDOFF_WRITE_ONLY, isDecidedKind, isAskKind, isHandoffKind, handoffSettlement, assertDeclinedType, capEntry, capJson, capText, onlyMe, me } from "../core/tools.mjs";
 import { agentRef, byline } from "../core/session.mjs";
@@ -36,8 +36,11 @@ function guardEvent({ kind, summary, correlationId, parentCorrelationId, payload
 
 /** Validate key segments, and the id as an agent id when the namespace is agent. */
 function checkEntity(namespace, id) {
-  validateKeySegments(namespace, id);
-  if (nsFromAcmi(namespace) === "agent") checkAgentId(id, "id");
+  validateKeySegments(namespace);
+  const ns = nsFromAcmi(namespace);
+  if (ns === "agent") { validateKeySegments(id); checkAgentId(id, "id"); }
+  else if (ns === "channel") validateChannelId(id);
+  else validateKeySegments(id);
 }
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
