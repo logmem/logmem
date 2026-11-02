@@ -57,7 +57,7 @@
     "release:prod": "node scripts/release-guard.mjs --full && vercel --prod"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "redis": "^6.3.0",
     "zod": "^4.6.7"
   },
