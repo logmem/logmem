@@ -86,3 +86,52 @@ test("reconcileStaleHandoffs: archives handoffs older than 48h, leaves fresh han
   });
   assert.equal(check.day.unanswered_24h, 0, "No unanswered handoffs >24h flagged by dogfood check");
 });
+
+test("reconcileStaleHandoffs: surfaces settlement failures and aborts writing decline if settlement fails", async () => {
+  const redis = createMemoryRedis();
+  const space = "test-space-fail";
+  const store = createStore(redis, { space });
+
+  const now = 100 * 3600 * 1000;
+  const hOldTs = now - (50 * 3600 * 1000);
+
+  // Setup: Sender 'hermes' sends handoff to recipient 'quill'
+  await store.append("agent", "quill", {
+    ts: hOldTs,
+    kind: "handoff",
+    by: "agent:hermes",
+    to: "agent:quill",
+    trail: "trail-failing-settle-1",
+    summary: "Task that will fail settlement",
+  });
+
+  const { createCoordItem, computeItemId } = await import("../src/core/coord.mjs");
+  const id = computeItemId(space, "handoff", "trail-failing-settle-1", "quill");
+
+  // Create coordination item
+  await createCoordItem(store, {
+    space,
+    type: "handoff",
+    requestTrail: "trail-failing-settle-1",
+    from: "agent:hermes",
+    to: "agent:quill",
+    createdAt: hOldTs,
+  });
+
+  // Corrupt coordination item by deleting its recipient field so CAS fails with wrong_recipient
+  const itemKey = `lm:${space}:coord:item:${id}`;
+  await redis("HSET", itemKey, "to", "agent:someone-else");
+
+  const res = await reconcileStaleHandoffs(store, {
+    maxAgeMs: 48 * 3600 * 1000,
+    now,
+  });
+
+  assert.equal(res.count, 0, "No items reconciled on settlement failure");
+  assert.equal(res.failures.length, 1, "Failure surfaced in res.failures");
+  assert.match(res.failures[0].error, /Settlement failed/);
+
+  // Decline entry was NOT written to quill's log
+  const log = await store.readLog("agent", "quill", { reverse: true });
+  assert.equal(log.filter(e => e.kind === "feedback").length, 0, "No decline entry written on failure");
+});

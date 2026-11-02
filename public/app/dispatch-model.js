@@ -2,9 +2,11 @@
 const text = v => String(v ?? '');
 export const STALE_THRESHOLD_MS = 48 * 3600 * 1000;
 export function isStaleTicket(item, now = Date.now()) {
-  const due = Number(item.deadline), created = Number(item.created_at);
-  const baseline = Number.isFinite(due) && due > 0 ? due : Number.isFinite(created) && created > 0 ? created : 0;
-  return baseline > 0 && (now - baseline) >= STALE_THRESHOLD_MS;
+  const due = Number(item.deadline);
+  // Only tickets with a recorded, finite deadline past the stale threshold are classified as stale.
+  // Undated items remain active in the primary queue and are never auto-collapsed into the overdue drawer.
+  if (!Number.isFinite(due) || due <= 0) return false;
+  return (now - due) >= STALE_THRESHOLD_MS;
 }
 export function ticketStatus(item, now = Date.now()) {
   const due = Number(item.deadline), created = Number(item.created_at);

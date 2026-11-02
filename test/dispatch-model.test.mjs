@@ -28,8 +28,8 @@ test('isStaleTicket detects requests overdue for more than 48 hours', () => {
   assert.equal(isStaleTicket({ deadline: now - (10 * 3600 * 1000), created_at: now - (20 * 3600 * 1000) }, now), false);
   // Future deadline -> not stale
   assert.equal(isStaleTicket({ deadline: now + (10 * 3600 * 1000), created_at: now - (1 * 3600 * 1000) }, now), false);
-  // Created 50 hours ago with no valid deadline -> stale by created_at fallback
-  assert.equal(isStaleTicket({ created_at: now - (50 * 3600 * 1000) }, now), true);
+  // Created 50 hours ago with no deadline -> undated, remains visible/active (NOT stale)
+  assert.equal(isStaleTicket({ created_at: now - (50 * 3600 * 1000) }, now), false);
   // Missing timestamps -> not stale
   assert.equal(isStaleTicket({}, now), false);
 });

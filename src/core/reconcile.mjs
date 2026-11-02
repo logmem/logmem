@@ -387,6 +387,7 @@ export async function reconcileStaleHandoffs(store, {
 } = {}) {
   const agents = await store.list("agent");
   const reconciled = [];
+  const failures = [];
 
   for (const agent of agents) {
     let log = [];
@@ -422,7 +423,7 @@ export async function reconcileStaleHandoffs(store, {
       // 1. Canonical coordination settlement if record exists
       if (existing) {
         try {
-          await settleCoordItem(store, {
+          const settlementRes = await settleCoordItem(store, {
             space: store.space,
             id,
             recipient: agent,
@@ -432,7 +433,25 @@ export async function reconcileStaleHandoffs(store, {
             settlementTrail: `reconcileStale-${randomUUID()}`,
             disposition: "archived-stale",
           });
-        } catch (_) {}
+          if (!settlementRes?.ok) {
+            if (settlementRes?.alreadySettled) {
+              continue;
+            }
+            failures.push({
+              trail: e.trail,
+              to: e.to,
+              error: `Settlement failed: ${settlementRes?.status || "unknown"}`,
+            });
+            continue;
+          }
+        } catch (err) {
+          failures.push({
+            trail: e.trail,
+            to: e.to,
+            error: `Settlement error: ${err.message}`,
+          });
+          continue;
+        }
       }
 
       // 2. Append decline/feedback entry to recipient agent's log
@@ -449,7 +468,16 @@ export async function reconcileStaleHandoffs(store, {
         payload: { declined: true, reason, auto_reconciled: true },
       };
 
-      await store.append("agent", agent, declineEntry);
+      try {
+        await store.append("agent", agent, declineEntry);
+      } catch (err) {
+        failures.push({
+          trail: e.trail,
+          to: e.to,
+          error: `Failed to append decline entry: ${err.message}`,
+        });
+        continue;
+      }
 
       // 3. If handoff was bound to a job or channel, also append to that entity's log
       const whereRef = e.job || e.where;
@@ -476,5 +504,5 @@ export async function reconcileStaleHandoffs(store, {
     }
   }
 
-  return { space: store.space, reconciled, count: reconciled.length };
+  return { space: store.space, reconciled, count: reconciled.length, failures };
 }

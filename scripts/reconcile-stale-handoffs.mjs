@@ -2,7 +2,9 @@
 // reconcile-stale-handoffs.mjs — sweep and archive stale orphan handoffs older than 48h.
 //
 // Usage:
-//   node scripts/reconcile-stale-handoffs.mjs [--space madez] [--max-age-hours 48] [--dry-run]
+//   node scripts/reconcile-stale-handoffs.mjs [--space madez] [--max-age-hours 48] [--apply]
+//
+// By default, runs in dry-run mode without modifying data. Pass --apply to write permanent decline records.
 
 import { createStore } from "../src/core/store.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
@@ -14,7 +16,8 @@ const argv = process.argv.slice(2);
 const arg = (name, def) => (argv.includes(`--${name}`) ? argv[argv.indexOf(`--${name}`) + 1] : def);
 const space = arg("space", "madez");
 const maxAgeHours = Number(arg("max-age-hours", "48")) || 48;
-const dryRun = argv.includes("--dry-run");
+const apply = argv.includes("--apply");
+const dryRun = !apply;
 
 const d = descriptorFromEnv();
 if (!d) {
@@ -28,7 +31,7 @@ const store = createStore(redis, { space, compat: false });
 console.log(`Scanning space '${space}' for orphan handoffs older than ${maxAgeHours} hours...`);
 
 if (dryRun) {
-  console.log("[DRY RUN] No writes will be performed.");
+  console.log("[DRY RUN] No writes will be performed. Pass --apply to execute permanent settlement.");
   // Dry run scan using the same logic without appending
   const agents = await store.list("agent");
   const now = Date.now();
@@ -68,6 +71,12 @@ const res = await reconcileStaleHandoffs(store, {
 console.log(`\nReconciliation complete in space '${res.space}'. Total reconciled: ${res.count}`);
 for (const item of res.reconciled) {
   console.log(`✔ Reconciled [${item.age_hours}h old]: ${item.from} -> ${item.to} (${item.trail})`);
+}
+if (res.failures && res.failures.length > 0) {
+  console.warn(`\n⚠ Failures encountered (${res.failures.length}):`);
+  for (const f of res.failures) {
+    console.warn(`- Failed ${f.to} (${f.trail}): ${f.error}`);
+  }
 }
 
 process.exit(0);
