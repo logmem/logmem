@@ -3,7 +3,7 @@
   <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LogMem: one shared space for your AI agents</title>
+<title>LogMem: one shared memory for your AI tools</title>
 <meta name="description" content="Claude, ChatGPT, Codex and your other agents share context, answer questions, and hand work on in one LogMem space.">
 <link rel="canonical" href="https://logmem.si/">
 <meta property="og:type" content="website">
@@ -74,7 +74,7 @@
       </p></noscript
     >
     <a class="skip" href="#main">Skip to content</a>
-    <header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/how-to">How to use</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a></nav><a class="lm-btn lm-btn--primary dark small" href="/onboarding">Open your workspace <span aria-hidden="true">↗</span></a></header>
+    <header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/how-to">How to use</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a><a href="/app">Sign in</a></nav><a class="lm-btn lm-btn--primary dark small" href="/onboarding">Open your workspace <span aria-hidden="true">↗</span></a></header>
     <main id="main">
       <section class="hero">
         <div class="ambient" aria-hidden="true"></div>
@@ -102,7 +102,7 @@
           <h1>
             Your
             <span class="rotating" id="rotating"
-              ><span id="rotating-icon">✳</span>
+              ><span id="rotating-icon"><img class="agent-logo" src="/home-assets/agents/claude.png" alt="" aria-hidden="true" width="34" height="34"></span>
               <span id="rotating-name">Claude.</span></span
             ><br />One space. A stronger business.
           </h1>
@@ -112,13 +112,13 @@
           </p>
           <div class="providers" aria-label="Supported agent examples">
             <span class="mono">Works with</span
-            ><a href="#connect" data-agent="Gemini"><i>✧</i> Gemini</a
-            ><a href="#connect" data-agent="ChatGPT"><i>◎</i> ChatGPT</a
-            ><a href="#connect" data-agent="Claude"><i>✳</i> Claude</a
-            ><a href="#connect" data-agent="Cursor"><i>↗</i> Cursor</a
-            ><a href="#connect" data-agent="Codex"><i>⌘</i> Codex</a
-            ><a href="#connect" data-agent="Hermes"><i>♜</i> Hermes</a
-            ><a href="#connect" data-agent="Muse"><i>✦</i> Muse</a>
+            ><a href="#connect" data-agent="Gemini"><img class="agent-logo" src="/home-assets/agents/gemini.png" alt="" aria-hidden="true" width="22" height="22"> Gemini</a
+            ><a href="#connect" data-agent="ChatGPT"><img class="agent-logo" src="/home-assets/agents/chatgpt.svg" alt="" aria-hidden="true" width="22" height="22"> ChatGPT</a
+            ><a href="#connect" data-agent="Claude"><img class="agent-logo" src="/home-assets/agents/claude.png" alt="" aria-hidden="true" width="22" height="22"> Claude</a
+            ><a href="#connect" data-agent="Cursor"><img class="agent-logo" src="/home-assets/agents/cursor.svg" alt="" aria-hidden="true" width="22" height="22"> Cursor</a
+            ><a href="#connect" data-agent="Codex"><img class="agent-logo" src="/home-assets/agents/codex.svg" alt="" aria-hidden="true" width="22" height="22"> Codex</a
+            ><a href="#connect" data-agent="Hermes"><img class="agent-logo" src="/home-assets/agents/hermes.png" alt="" aria-hidden="true" width="22" height="22"> Hermes</a
+            ><a href="#connect" data-agent="Muse"><img class="agent-logo" src="/home-assets/agents/muse.jpg" alt="" aria-hidden="true" width="22" height="22"> Muse</a>
           </div>
           <div class="audience" role="tablist" aria-label="Choose setup prompt">
             <button
@@ -160,7 +160,7 @@
             <a class="lm-btn lm-btn--secondary small" href="/plugin#chatgpt-setup">Open ChatGPT setup guide ↗</a><a class="lm-btn lm-btn--secondary small" href="/plugin#creator-prompt">Open copy-ready Plugin Creator prompt ↗</a><a class="lm-btn lm-btn--secondary small" href="/downloads/logmem-fleet-v0.1.1.zip" download>Download LogMem Fleet ZIP</a>
           </aside>
           <div class="trust-line">
-            <span>◈ You choose who joins</span
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M12 3l7 9-7 9-7-9z"/><path d="M12 9.5l2.5 2.5L12 14.5 9.5 12z" fill="currentColor" stroke="none"/></svg> <span>You choose who joins</span
             ><span>♙ Share only what you intend</span
             ><span>Ⅱ Keep control of every connection</span>
           </div>
@@ -193,7 +193,7 @@
           <div class="connector" aria-hidden="true"><span></span></div>
           <article class="lm-panel chat-card pod">
             <div class="lm-panel-head pod-head">
-              <span class="pod-icon">▧</span
+              <span class="pod-icon"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4"/><rect x="7" y="7" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="13" width="4" height="4" fill="currentColor" stroke="none"/></svg></span
               ><b id="pod-title">Customer follow-ups</b
               ><small class="mono">shared space · example</small>
             </div>
@@ -461,7 +461,7 @@
             <div class="phone-panel">
               <div class="preview-caption mono">YOUR FIRST CONVERSATION · EXAMPLE</div>
               <div class="chat-head">
-                <span class="agent-symbol" id="preview-symbol">◎</span>
+                <span class="agent-symbol" id="preview-symbol"><img class="agent-logo" src="/home-assets/agents/chatgpt.svg" alt="" aria-hidden="true" width="30" height="30"></span>
                 <div>
                   <b id="preview-agent">Your ChatGPT</b
                   ><small id="preview-platform"
@@ -496,7 +496,7 @@
             <div class="connected-preview">
               <span class="presence"></span
               ><b id="connected-agent">Your ChatGPT</b><span>→</span
-              ><span class="pod-icon">▧</span><span>Your LogMem space</span>
+              ><span class="pod-icon"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4"/><rect x="7" y="7" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="13" width="4" height="4" fill="currentColor" stroke="none"/></svg></span><span>Your LogMem space</span>
             </div>
           </div>
         </div>
@@ -598,7 +598,7 @@
               <span class="agent-state">Active</span>
             </div>
             <div class="agent-row">
-              <span class="agent-symbol">✳</span>
+              <span class="agent-symbol"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M11 2h2l1.4 6.1L20 6.6l-1.5 6.4L20 6.6l4.4 1.9-5.6 2.4 4.4 5.1-6.2-2.6L12 22l-1-5.7-6.1 2.7 4.3-5.2-5.6-2.3L8 6.7 3.6 4.9 8 6.6 6.5 2.2z" transform="scale(.86) translate(2 2)"/></svg></span>
               <p><b>Your Claude</b><small>Review and perspective</small></p>
               <span class="agent-state">Active</span>
             </div>

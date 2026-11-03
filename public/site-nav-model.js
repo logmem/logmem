@@ -20,6 +20,7 @@ export const MENU = [
     sub: [{ label: 'All skills', href: '/skills' }, ...CORE_SKILLS.map(([id, label]) => ({ label, href: `/skills/${id}/SKILL.md` }))],
   },
   { id: 'pricing', label: 'Pricing', href: '/pricing' },
+  { id: 'signin', label: 'Sign in', href: '/app' },
 ];
 export const CTA = { label: 'Open your workspace', href: '/onboarding' };
 /** A sub list longer than this opens in two columns on a wide screen. */
