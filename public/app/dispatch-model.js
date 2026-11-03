@@ -1,5 +1,13 @@
 // Pure dispatch text. Values from logs remain quoted data, never executable instructions.
 const text = v => String(v ?? '');
+export const STALE_THRESHOLD_MS = 48 * 3600 * 1000;
+export function isStaleTicket(item, now = Date.now()) {
+  const due = Number(item.deadline);
+  // Only tickets with a recorded, finite deadline past the stale threshold are classified as stale.
+  // Undated items remain active in the primary queue and are never auto-collapsed into the overdue drawer.
+  if (!Number.isFinite(due) || due <= 0) return false;
+  return (now - due) >= STALE_THRESHOLD_MS;
+}
 export function ticketStatus(item, now = Date.now()) {
   const due = Number(item.deadline), created = Number(item.created_at);
   return Number.isFinite(due) && due > 0 && created > 0 && due >= created && due < now ? 'overdue' : 'active';

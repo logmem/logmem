@@ -794,6 +794,10 @@
 .lmx-queue .lmx-coverage-note{padding:10px 12px;margin:0}
 .lmx-queue .lmx-coverage-note p{margin:0}
 .lmx-queue>.lmx-stack{gap:8px}
+.lmx-stale-drawer{border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;background:var(--surface-sunken);margin-top:12px}
+.lmx-stale-drawer summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:600;color:var(--text);font-size:13px}
+.lmx-stale-drawer summary::-webkit-details-marker{margin-right:6px}
+.lmx-stale-drawer[open] summary{margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px}
 
 /* Handoff map: waiting strip. Compact cards that scroll on their own and stop on hover or focus. */
 .lmx-marquee-wrap{position:relative;margin:0 0 14px}
