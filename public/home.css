@@ -364,7 +364,7 @@ small {
 }
 .chat-head small {
   display: block;
-  color: #92918e;
+  color: #6f6e6a;
   font-family: monospace;
   font-size: 11px;
   line-height: 1.6;
@@ -676,7 +676,7 @@ small {
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  color: #a7a39c;
+  color: #67655e;
 }
 .send {
   background: var(--text);
@@ -1444,7 +1444,7 @@ dialog::backdrop {
     padding: 0;
   }
   .pod-head small {
-    font-size: 9px;
+    font-size: 11px;
   }
 }
 @media (max-width: 580px) {
@@ -1500,14 +1500,14 @@ dialog::backdrop {
   }
   .blue {
     top: 375px;
-    left: -37px;
+    left: 14px;
     opacity: 0.55;
     width: 90px;
     height: 90px;
   }
   .pink {
     top: 790px;
-    right: -35px;
+    right: 14px;
     opacity: 0.7;
     width: 95px;
     height: 95px;
@@ -2473,7 +2473,7 @@ dialog {
     padding: 5px 15px 15px;
   }
   .screenshot-facts .lm-badge {
-    font-size: 10px;
+    font-size: 11px;
   }
   .dashboard-showcase .lm-panel-head {
     padding: 12px 15px;
@@ -2532,3 +2532,26 @@ dialog {
 /* The shared header (site-nav.css) floats over the hero here, as the old one did. */
 .nav{position:fixed;top:14px;left:4.4%;right:4.4%;margin:0}
 @media (max-width:1000px){.nav{left:12px;right:12px;top:12px}}
+
+/* QA Nov 3 (opencode): mobile fixes — one-line provider scroll, readable preview strip */
+@media (max-width: 580px) {
+  .providers {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    gap: 18px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .providers::-webkit-scrollbar { display: none; }
+  .providers > a { flex: 0 0 auto; }
+  #dashboard-preview {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  #dashboard-preview::-webkit-scrollbar { display: none; }
+  .dashboard-showcase > img { min-width: 640px; }
+  .pod-icon svg,
+  .agent-symbol svg { display: block; }
+}
