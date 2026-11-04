@@ -235,7 +235,10 @@ test("gate math unchanged over 7 cron days: needs 7 consecutive passes + deliver
 test("vercel.json: cron at 13:00 UTC; headers and rewrites intact", async () => {
   const { readFileSync } = await import("node:fs");
   const v = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.deepEqual(v.crons, [{ path: "/api/cron/dogfood-check", schedule: "0 13 * * *" }]);
+  assert.deepEqual(v.crons, [
+    { path: "/api/cron/dogfood-check", schedule: "0 13 * * *" },
+    { path: "/api/cron/fleet-truth", schedule: "0 13,14,17,18,21,22 * * *" },
+  ]);
   assert.ok(v.rewrites.some((r) => r.source === "/mcp"));
   assert.ok(v.headers.some((h) => h.source === "/(.*)"));
 });
