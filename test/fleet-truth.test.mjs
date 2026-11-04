@@ -278,3 +278,52 @@ test("collectObservations scrubs secrets in claims", async () => {
   assert.equal(json.includes("abcdefghijklmnop"), false);
   assert.match(json, /\[REDACTED\]/);
 });
+
+import { ensureWho, publishBoard } from "../src/fleet-truth/publish.mjs";
+
+test("ensureWho writes channel Who for fleet-truth", async () => {
+  const store = await memStore();
+  await ensureWho(store, { nowMs: T });
+  const who = await store.getWho("channel", "fleet-truth");
+  assert.equal(who.schema, "fleet-truth/v1");
+  assert.equal(who.owner, "agent:fleet-truth");
+  assert.match(String(who.cadence), /9/);
+  assert.ok(who.purpose);
+});
+
+test("publishBoard writes Now checkup and coordination pointer", async () => {
+  const store = await memStore();
+  const built = buildBoard({
+    observations: [{
+      section: "infra",
+      fact: makeFact({ claim: "bridge up", status: "verified", observed_at: iso(T), source: "probe:bridge", verified_by: "probe:bridge" }),
+    }],
+    previous: null,
+    nowMs: T,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  const r1 = await publishBoard(store, { ...built, trail: built.now.trail, nowMs: T, seedWho: true });
+  assert.equal(r1.trail, "fleetTruth-20261104-midday");
+  const now = await store.getNow("channel", "fleet-truth");
+  assert.equal(now.trail, r1.trail);
+  assert.ok(now.summary);
+  assert.equal(now.board.schema, "fleet-truth/v1");
+  const checkups = (await store.readLog("channel", "fleet-truth", { reverse: true, limit: 5 })).filter((e) => e.kind === "checkup");
+  assert.equal(checkups[0].by, "agent:fleet-truth");
+  assert.equal(checkups[0].trail, r1.trail);
+  assert.ok(checkups[0].summary.length <= 1000);
+  const pointers = (await store.readLog("channel", "agent-coordination", { reverse: true, limit: 5 })).filter((e) => e.trail === r1.trail);
+  assert.equal(pointers[0].kind, "memo");
+  const r2 = await publishBoard(store, {
+    summary: built.summary,
+    now: { ...built.now, refreshed_at: iso(T + 60_000) },
+    trail: built.now.trail,
+    nowMs: T + 60_000,
+  });
+  const checkups2 = (await store.readLog("channel", "fleet-truth")).filter((e) => e.kind === "checkup");
+  assert.ok(checkups2.length >= 2);
+  const now2 = await store.getNow("channel", "fleet-truth");
+  assert.equal(now2.board.refreshed_at, iso(T + 60_000));
+  assert.ok(r2.checkup_ts);
+});
