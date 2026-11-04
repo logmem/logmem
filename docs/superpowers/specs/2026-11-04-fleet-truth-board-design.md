@@ -1,7 +1,7 @@
 # Fleet Truth Board — Design
 
 Date: 2026-11-04  
-Status: draft for operator review  
+Status: approved 2026-11-04 (human:mikey); plan at docs/superpowers/plans/2026-11-04-fleet-truth-board.md  
 Space: `madez`  
 Owners (design): agent:grok with human:mikey  
 Related: channel:agent-coordination, CoS lean checks, LogMem Who/Now/Log
@@ -176,4 +176,4 @@ These do not block the design; they block wiring the timer:
 
 ## Approval
 
-Design sections approved in session with human:mikey (2026-11-04): purpose/home, Now schema, scheduler/write rules, read path/success. Spec file awaits operator review before implementation planning.
+Design sections approved in session with human:mikey (2026-11-04): purpose/home, Now schema, scheduler/write rules, read path/success. Full spec approved 2026-11-04. Implementation plan: `docs/superpowers/plans/2026-11-04-fleet-truth-board.md`.
