@@ -85,3 +85,105 @@ test("emptyBoard has schema v1 and required section keys", () => {
     assert.ok(Array.isArray(b[k].items), k);
   }
 });
+
+import { buildBoard, FRESHNESS_MS } from "../src/fleet-truth/build.mjs";
+import { CORE_AGENTS, defaultClockClaims } from "../src/fleet-truth/core.mjs";
+
+const iso = (ms) => new Date(ms).toISOString();
+const T = Date.parse("2026-11-04T18:00:00.000Z");
+
+test("buildBoard keeps verified observation with verified_by", () => {
+  const { now } = buildBoard({
+    observations: [{
+      section: "infra",
+      fact: makeFact({
+        claim: "bridge up",
+        status: "verified",
+        observed_at: iso(T),
+        source: "probe:bridge",
+        verified_by: "probe:bridge",
+      }),
+    }],
+    previous: null,
+    nowMs: T,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  assert.equal(now.infra.items[0].status, "verified");
+  assert.equal(now.infra.items[0].verified_by, "probe:bridge");
+});
+
+test("buildBoard keeps recent reported previous fact and stales old ones", () => {
+  const recent = makeFact({
+    claim: "Show HN Wed Nov 18 2026 9:30 ET",
+    status: "reported",
+    observed_at: iso(T - 2 * 3600e3),
+    source: "memo:fleet",
+  });
+  const old = makeFact({
+    claim: "old rumor",
+    status: "reported",
+    observed_at: iso(T - FRESHNESS_MS - 1000),
+    source: "memo:old",
+  });
+  const prev = emptyBoard({ refreshed_at: iso(T - 3600e3), slot: "morning", runner: "agent:fleet-truth", trail: "fleetTruth-20261104-morning" });
+  prev.clock.items = [recent, old];
+  const { now } = buildBoard({ observations: [], previous: prev, nowMs: T, slot: "midday", runner: "agent:fleet-truth" });
+  const byClaim = Object.fromEntries(now.clock.items.map((f) => [f.claim, f]));
+  assert.equal(byClaim[recent.claim].status, "reported");
+  assert.equal(byClaim[old.claim].status, "stale");
+});
+
+test("buildBoard never upgrades reported to verified without observation", () => {
+  const prev = emptyBoard({ refreshed_at: iso(T - 1000), slot: "morning", runner: "agent:fleet-truth", trail: "t" });
+  prev.lanes.items = [makeFact({ claim: "P0=launch", status: "reported", observed_at: iso(T - 1000), source: "job:x" })];
+  const { now } = buildBoard({ observations: [], previous: prev, nowMs: T, slot: "midday", runner: "agent:fleet-truth" });
+  assert.equal(now.lanes.items[0].status, "reported");
+});
+
+test("buildBoard deltas note changes and no material change when identical", () => {
+  const fact = makeFact({ claim: "bridge up", status: "verified", observed_at: iso(T), source: "probe:bridge", verified_by: "probe:bridge" });
+  const first = buildBoard({
+    observations: [{ section: "infra", fact }],
+    previous: null,
+    nowMs: T,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  assert.ok(first.now.deltas.items.some((d) => d.claim.includes("bridge up")));
+  const second = buildBoard({
+    observations: [{ section: "infra", fact: { ...fact, observed_at: iso(T + 1) } }],
+    previous: first.now,
+    nowMs: T + 1,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  // same claim+status → no material change
+  assert.equal(second.now.deltas.items.length, 1);
+  assert.equal(second.now.deltas.items[0].claim, "no material change");
+  assert.equal(second.now.deltas.items[0].status, "verified");
+});
+
+test("buildBoard summary uses P0 top blocker and infra rollup", () => {
+  const { summary } = buildBoard({
+    observations: [
+      { section: "lanes", fact: makeFact({ claim: "P0=launch owner=hermes", status: "verified", observed_at: iso(T), source: "plan:launch", verified_by: "agent:fleet-truth" }) },
+      { section: "blockers", fact: makeFact({ claim: "Cursor GitHub-app gate", status: "verified", observed_at: iso(T), source: "job:x", verified_by: "agent:fleet-truth" }) },
+      { section: "infra", fact: makeFact({ claim: "bridge up", status: "verified", observed_at: iso(T), source: "probe:bridge", verified_by: "probe:bridge" }) },
+    ],
+    previous: null,
+    nowMs: T,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  assert.match(summary, /P0=launch/);
+  assert.match(summary, /Cursor GitHub-app gate/);
+  assert.match(summary, /infra=ok/);
+});
+
+test("core defaults expose agents and Show HN clock seed", () => {
+  assert.ok(CORE_AGENTS.includes("chief-of-staff"));
+  assert.ok(CORE_AGENTS.includes("grok"));
+  const claims = defaultClockClaims(T);
+  assert.ok(claims.some((f) => /Show HN/i.test(f.claim) && f.status === "reported"));
+});
