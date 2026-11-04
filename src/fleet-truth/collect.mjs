@@ -137,11 +137,10 @@ async function collectAgents(store, nowMs, coreAgents) {
         }),
       });
     }
-    const entries = await store.readLog("agent", agentId, { reverse: true, limit: 200, sinceMs: nowMs - HANDOFF_WINDOW_MS });
-    // readLog with reverse returns newest first; unansweredHandoffs needs chronological ok either way
-    const all = await store.readLog("agent", agentId, { sinceMs: nowMs - HANDOFF_WINDOW_MS, limit: 200 });
-    const n = unansweredHandoffs(all.length ? all : entries, agentId, nowMs);
-    out.push({
+    // Newest 200 in the 48h window (reverse + limit), then sort ascending for settle checks.
+    const newest = await store.readLog("agent", agentId, { reverse: true, limit: 200, sinceMs: nowMs - HANDOFF_WINDOW_MS });
+    const all = [...newest].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const n = unansweredHandoffs(all, agentId, nowMs);    out.push({
       section: "agents",
       fact: makeFact({
         claim: `${agentId} unanswered handoffs: ${n}`,

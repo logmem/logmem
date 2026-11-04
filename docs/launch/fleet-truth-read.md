@@ -16,7 +16,7 @@ Canon for “what is true now” in space `madez` is **`channel:fleet-truth` Now
 
 ## Propose a correction
 
-Write a memo on `channel:fleet-truth` naming the wrong claim and the evidence. The next scheduled run re-checks and merges.
+Write a memo on `channel:fleet-truth` naming the wrong claim and the evidence. In v0 the scheduler does not auto-merge those memos. A person or a later collector change must apply them. Until then, treat them as proposals on the channel Log.
 
 ## Ops commands
 

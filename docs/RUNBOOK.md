@@ -274,7 +274,7 @@ Writer: `agent:fleet-truth`. Cadence: America/New_York 09:00 / 13:00 / 17:00
 | Schedule | `vercel.json` `crons`: `/api/cron/fleet-truth`, `0 13,14,17,18,21,22 * * *` (covers ET slots in both DST offsets; non-slot hours no-op) |
 | Handler | `api/cron/fleet-truth.mjs` → `runOnce` in `src/fleet-truth/run.mjs` |
 | Writes | overwrite `channel:fleet-truth` Now; append `checkup` on that channel; pointer `memo` on `channel:agent-coordination` |
-| Lock | `lm:{space}:fleet-truth:lock:{etDate}:{slot}` (10 minutes) |
+| Lock | `lm:{space}:fleet-truth:lock:{etDate}:{slot}` (10 minutes after a successful publish; released early only if the run fails) |
 
 ### Env vars (Vercel, Production)
 

@@ -5,8 +5,7 @@ export const SECTIONS = ["clock", "lanes", "launch", "blockers", "infra", "agent
 
 const REDACT = "[REDACTED]";
 const SECRET_RE =
-  /\bBearer\s+[A-Za-z0-9._\-+/=]{8,}\b|\bsk-[A-Za-z0-9]{16,}\b|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-
+  /\bBearer\s+[A-Za-z0-9._\-+/=]{8,}\b|\bsk-[A-Za-z0-9_-]{16,}\b|\bghp_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b|(?:redis|rediss):\/\/[^/@\s]+:[^@/\s]+@[^\s]+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/gi;
 export function makeFact({ claim, status, observed_at, source, verified_by }) {
   if (!claim || typeof claim !== "string") throw new Error("makeFact: claim required");
   if (!STATUSES.has(status)) throw new Error(`makeFact: bad status (${status})`);
@@ -19,7 +18,9 @@ export function makeFact({ claim, status, observed_at, source, verified_by }) {
 
 export function buildSummary({ refreshed_at, slot, p0, top_blocker, infra }) {
   const blocker = top_blocker && String(top_blocker).trim() ? String(top_blocker).trim() : "none";
-  let s = `fleet-truth ${slot || "?"} ${refreshed_at || "?"} | P0=${p0 || "?"} | top_blocker=${blocker} | infra=${infra || "unknown"}`;
+  let s = scrubSecrets(
+    `fleet-truth ${slot || "?"} ${refreshed_at || "?"} | P0=${p0 || "?"} | top_blocker=${blocker} | infra=${infra || "unknown"}`,
+  );
   if (s.length >= 200) s = `${s.slice(0, 197)}...`;
   return s;
 }

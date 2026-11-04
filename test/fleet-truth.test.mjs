@@ -134,11 +134,18 @@ test("buildBoard keeps recent reported previous fact and stales old ones", () =>
   assert.equal(byClaim[old.claim].status, "stale");
 });
 
-test("buildBoard never upgrades reported to verified without observation", () => {
+test("buildBoard never upgrades reported clock to verified without observation", () => {
+  const prev = emptyBoard({ refreshed_at: iso(T - 1000), slot: "morning", runner: "agent:fleet-truth", trail: "t" });
+  prev.clock.items = [makeFact({ claim: "Show HN seed", status: "reported", observed_at: iso(T - 1000), source: "core:show-hn-seed" })];
+  const { now } = buildBoard({ observations: [], previous: prev, nowMs: T, slot: "midday", runner: "agent:fleet-truth" });
+  assert.equal(now.clock.items.find((f) => f.claim === "Show HN seed").status, "reported");
+});
+
+test("buildBoard drops previous lanes without a fresh observation (snapshot section)", () => {
   const prev = emptyBoard({ refreshed_at: iso(T - 1000), slot: "morning", runner: "agent:fleet-truth", trail: "t" });
   prev.lanes.items = [makeFact({ claim: "P0=launch", status: "reported", observed_at: iso(T - 1000), source: "job:x" })];
   const { now } = buildBoard({ observations: [], previous: prev, nowMs: T, slot: "midday", runner: "agent:fleet-truth" });
-  assert.equal(now.lanes.items[0].status, "reported");
+  assert.equal(now.lanes.items.length, 0);
 });
 
 test("buildBoard deltas note changes and no material change when identical", () => {
@@ -377,4 +384,87 @@ test("runOnce happy path at midday writes Now", async () => {
   const now = await store.getNow("channel", "fleet-truth");
   assert.ok(now.board);
   assert.equal(now.trail, r.trail);
+});
+
+test("buildBoard replaces collected sections so cleared blockers leave Now", () => {
+  const prev = emptyBoard({ refreshed_at: iso(T - 3600e3), slot: "morning", runner: "agent:fleet-truth", trail: "t0" });
+  prev.blockers.items = [makeFact({ claim: "Console: Mikey gate", status: "verified", observed_at: iso(T - 3600e3), source: "job:blocked-1", verified_by: "agent:fleet-truth" })];
+  prev.infra.items = [makeFact({ claim: "no probes configured", status: "unknown", observed_at: iso(T - 3600e3), source: "fleet-truth:probes" })];
+  const { now, summary } = buildBoard({
+    observations: [
+      { section: "infra", fact: makeFact({ claim: "bridge up (HTTP 200)", status: "verified", observed_at: iso(T), source: "probe:bridge", verified_by: "probe:bridge" }) },
+      { section: "lanes", fact: makeFact({ claim: "P0=launch", status: "verified", observed_at: iso(T), source: "plan:launch", verified_by: "agent:fleet-truth" }) },
+    ],
+    previous: prev,
+    nowMs: T,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  assert.equal(now.blockers.items.length, 0);
+  assert.equal(now.infra.items.length, 1);
+  assert.equal(now.infra.items[0].claim, "bridge up (HTTP 200)");
+  assert.match(summary, /infra=ok/);
+  assert.match(summary, /top_blocker=none/);
+});
+
+test("buildBoard ages old verified carried clock facts to stale in same build", () => {
+  const prev = emptyBoard({ refreshed_at: iso(T - FRESHNESS_MS - 5000), slot: "morning", runner: "agent:fleet-truth", trail: "t0" });
+  prev.clock.items = [makeFact({ claim: "old clock", status: "verified", observed_at: iso(T - FRESHNESS_MS - 5000), source: "core:x", verified_by: "agent:fleet-truth" })];
+  const { now } = buildBoard({ observations: [], previous: prev, nowMs: T, slot: "midday", runner: "agent:fleet-truth" });
+  assert.equal(now.clock.items.find((f) => f.claim === "old clock").status, "stale");
+});
+
+test("infraRollup unknown when only no probes configured", () => {
+  const { summary } = buildBoard({
+    observations: [{ section: "infra", fact: makeFact({ claim: "no probes configured", status: "unknown", observed_at: iso(T), source: "fleet-truth:probes" }) }],
+    previous: null,
+    nowMs: T,
+    slot: "midday",
+    runner: "agent:fleet-truth",
+  });
+  assert.match(summary, /infra=unknown/);
+});
+
+test("scrubSecrets redacts sk-ant, ghp_, and redis userinfo", () => {
+  const cleaned = scrubSecrets({
+    a: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+    b: "ghp_abcdefghijklmnopqrstuvwxyz012345",
+    c: "redis://default:s3cr3tpass@host:6379",
+  });
+  const json = JSON.stringify(cleaned);
+  assert.equal(json.includes("abcdefghijklmnopqrstuvwxyz0123456789"), false);
+  assert.equal(json.includes("ghp_abcdefghijklmnopqrstuvwxyz012345"), false);
+  assert.equal(json.includes("s3cr3tpass"), false);
+});
+
+test("runOnce keeps slot lock after success so second same-slot call skips", async () => {
+  const redis = memRedis();
+  const first = await runOnce(redis, { space: "madez", nowMs: T, seedWho: true });
+  assert.equal(first.ok, true);
+  assert.equal(first.skipped, undefined);
+  const second = await runOnce(redis, { space: "madez", nowMs: T + 1000, seedWho: true });
+  assert.equal(second.skipped, "locked");
+  const store = createStore(redis, { space: "madez", compat: false });
+  const checkups = (await store.readLog("channel", "fleet-truth")).filter((e) => e.kind === "checkup");
+  assert.equal(checkups.length, 1);
+});
+
+test("collectAgents counts handoffs from newest log slice", async () => {
+  const store = await memStore();
+  const agent = "grok";
+  await store.setWho("agent", agent, { name: "Infra" });
+  // 250 in-window noise entries (older within 48h), then one newest handoff
+  for (let i = 0; i < 250; i++) {
+    await store.append("agent", agent, { ts: T - 3_600_000 - i, kind: "memo", by: "agent:grok", trail: `old-${i}`, summary: "noise" });
+  }
+  await store.append("agent", agent, {
+    ts: T - 1000,
+    kind: "handoff",
+    by: "agent:hermes",
+    to: "agent:grok",
+    trail: "handoff-new-1",
+    summary: "new work",
+  });
+  const { observations } = await collectObservations(store, { nowMs: T, coreAgents: ["grok"] });
+  assert.ok(observations.some((o) => o.section === "agents" && /unanswered handoffs:\s*1/.test(o.fact.claim)));
 });

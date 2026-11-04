@@ -55,6 +55,7 @@ export async function runOnce(redis, {
     }
   }
 
+  let published = false;
   try {
     const store = createStore(redis, {
       space,
@@ -88,9 +89,12 @@ export async function runOnce(redis, {
       nowMs,
       seedWho,
     });
+    published = true;
     return { ok: true, space, trail, summary: built.summary };
   } finally {
-    if (!dry) {
+    // After a successful publish, keep the slot lock until TTL so a duplicate
+    // cron delivery cannot double-append. Release early only on failure.
+    if (!dry && !published) {
       try {
         if ((await redis("GET", key)) === token) await redis("DEL", key);
       } catch {

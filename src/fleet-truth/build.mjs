@@ -11,16 +11,19 @@ function ageMs(fact, nowMs) {
   return Number.isFinite(t) ? nowMs - t : Number.POSITIVE_INFINITY;
 }
 
+/** Sections the collector fully re-scans each run — previous rows are replaced. */
+export const SNAPSHOT_SECTIONS = new Set(["lanes", "launch", "blockers", "infra", "agents"]);
+
 function carryPrevious(sectionItems, nowMs) {
   const out = [];
   for (const fact of sectionItems || []) {
+    if (ageMs(fact, nowMs) > FRESHNESS_MS) {
+      out.push({ ...fact, status: "stale" });
+      continue;
+    }
     if (fact.status === "verified") {
       // Prior verified without a new observation becomes reported (not silently verified).
       out.push({ ...fact, status: "reported" });
-      continue;
-    }
-    if (fact.status === "reported" && ageMs(fact, nowMs) > FRESHNESS_MS) {
-      out.push({ ...fact, status: "stale" });
       continue;
     }
     out.push({ ...fact });
@@ -30,12 +33,12 @@ function carryPrevious(sectionItems, nowMs) {
 
 function infraRollup(items) {
   if (!items.length) return "unknown";
+  if (items.length === 1 && /no probes configured/i.test(items[0].claim)) return "unknown";
   if (items.some((f) => f.status === "unknown" || f.status === "stale")) return "degraded";
   if (items.every((f) => f.status === "verified" && /up|ok|healthy/i.test(f.claim))) return "ok";
   if (items.some((f) => f.status === "verified")) return "ok";
   return "unknown";
 }
-
 function p0FromLanes(items) {
   for (const f of items || []) {
     const m = String(f.claim).match(/P0=([^\s]+)/i);
@@ -78,30 +81,28 @@ export function buildBoard({ observations, previous, nowMs, slot, runner }) {
   const trail = trailId(etDate(nowMs), slot);
   const board = emptyBoard({ refreshed_at, slot, runner, trail });
 
-  // Start from carried previous (minus deltas).
-  for (const sec of SECTIONS) {
-    if (sec === "deltas") continue;
-    board[sec].items = carryPrevious(previous?.[sec]?.items, nowMs);
-  }
+  // Clock is carried and aged; collector-owned sections are replaced wholesale.
+  board.clock.items = carryPrevious(previous?.clock?.items, nowMs);
+  if (!board.clock.items.length) board.clock.items = defaultClockClaims(nowMs);
 
-  // Seed clock defaults when empty.
-  if (!board.clock.items.length) {
-    board.clock.items = defaultClockClaims(nowMs);
-  }
+  for (const sec of SNAPSHOT_SECTIONS) board[sec].items = [];
 
-  // Apply observations: same claim+source replaces; never invent.
   const index = new Map();
-  for (const sec of SECTIONS) {
-    if (sec === "deltas") continue;
-    for (let i = 0; i < board[sec].items.length; i++) {
-      index.set(`${sec}:${keyOf(board[sec].items[i])}`, { sec, i });
-    }
+  for (let i = 0; i < board.clock.items.length; i++) {
+    index.set(`clock:${keyOf(board.clock.items[i])}`, { sec: "clock", i });
   }
 
   for (const obs of observations || []) {
     const sec = obs.section;
     if (!SECTIONS.includes(sec) || sec === "deltas") continue;
     const fact = scrubSecrets({ ...obs.fact });
+    if (SNAPSHOT_SECTIONS.has(sec)) {
+      // Prefer source-key replacement within this run's snapshot.
+      const bySource = board[sec].items.findIndex((f) => f.source === fact.source);
+      if (bySource >= 0) board[sec].items[bySource] = fact;
+      else board[sec].items.push(fact);
+      continue;
+    }
     const k = `${sec}:${keyOf(fact)}`;
     const hit = index.get(k);
     if (hit) board[hit.sec].items[hit.i] = fact;
@@ -110,7 +111,6 @@ export function buildBoard({ observations, previous, nowMs, slot, runner }) {
       index.set(k, { sec, i: board[sec].items.length - 1 });
     }
   }
-
   board.deltas.items = computeDeltas(previous, board, nowMs);
 
   const summary = buildSummary({
