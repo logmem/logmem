@@ -187,3 +187,94 @@ test("core defaults expose agents and Show HN clock seed", () => {
   const claims = defaultClockClaims(T);
   assert.ok(claims.some((f) => /Show HN/i.test(f.claim) && f.status === "reported"));
 });
+
+import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
+import { createStore } from "../src/core/store.mjs";
+import { collectObservations } from "../src/fleet-truth/collect.mjs";
+
+async function memStore() {
+  const redis = createMemoryRedis();
+  return createStore(redis, { space: "madez", compat: false });
+}
+
+test("collectObservations maps blocked and active jobs plus plan lanes", async () => {
+  const store = await memStore();
+  await store.setWho("job", "blocked-1", { title: "Console access", details: { plan: "launch", lane: "p0" } });
+  await store.setNow("job", "blocked-1", { stage: "blocked", blocked_on: { type: "decision", note: "Mikey Cursor gate" } });
+  await store.setWho("job", "active-1", { title: "Deploy 71e23e2", details: { plan: "launch" } });
+  await store.setNow("job", "active-1", { stage: "active" });
+  const { observations } = await collectObservations(store, { nowMs: T, coreAgents: CORE_AGENTS });
+  const blockers = observations.filter((o) => o.section === "blockers");
+  const launch = observations.filter((o) => o.section === "launch");
+  const lanes = observations.filter((o) => o.section === "lanes");
+  assert.ok(blockers.some((o) => o.fact.source === "job:blocked-1" && o.fact.status === "verified"));
+  assert.ok(launch.some((o) => o.fact.source === "job:active-1" && /Deploy/.test(o.fact.claim)));
+  assert.ok(lanes.some((o) => /launch/i.test(o.fact.claim)));
+});
+
+test("collectObservations emits plan metadata unavailable when no plans", async () => {
+  const store = await memStore();
+  await store.setWho("job", "plain", { title: "No plan" });
+  await store.setNow("job", "plain", { stage: "open" });
+  const { observations } = await collectObservations(store, { nowMs: T, coreAgents: [] });
+  assert.ok(observations.some((o) => o.section === "lanes" && o.fact.claim === "plan metadata unavailable" && o.fact.status === "unknown"));
+});
+
+test("collectObservations counts unanswered handoffs for core agents", async () => {
+  const store = await memStore();
+  const agent = "grok";
+  await store.setWho("agent", agent, { name: "Infra" });
+  await store.append("agent", agent, {
+    ts: T - 3600e3,
+    kind: "handoff",
+    by: "agent:hermes",
+    to: "agent:grok",
+    trail: "handoffX-1",
+    summary: "do the thing",
+  });
+  const { observations } = await collectObservations(store, { nowMs: T, coreAgents: ["grok"] });
+  const agents = observations.filter((o) => o.section === "agents");
+  assert.ok(agents.some((o) => /unanswered handoffs:\s*1/i.test(o.fact.claim) && /grok/.test(o.fact.claim)));
+});
+
+test("collectObservations does not copy coordination feed into observations", async () => {
+  const store = await memStore();
+  await store.append("channel", "agent-coordination", {
+    ts: T - 1000,
+    kind: "memo",
+    by: "agent:codex",
+    trail: "noise-1",
+    summary: "UNIQUE_FEED_NOISE_SHOULD_NOT_APPEAR",
+  });
+  const { observations } = await collectObservations(store, { nowMs: T, coreAgents: [] });
+  assert.equal(observations.some((o) => String(o.fact.claim).includes("UNIQUE_FEED_NOISE_SHOULD_NOT_APPEAR")), false);
+});
+
+test("collectObservations probes: 200 verified, 401 unknown", async () => {
+  const store = await memStore();
+  const probes = [{ id: "bridge", url: "http://example/health", expect_status: 200 }];
+  const ok = await collectObservations(store, {
+    nowMs: T,
+    coreAgents: [],
+    probes,
+    fetchImpl: async () => ({ status: 200 }),
+  });
+  assert.ok(ok.observations.some((o) => o.section === "infra" && o.fact.status === "verified" && /bridge/.test(o.fact.claim)));
+  const bad = await collectObservations(store, {
+    nowMs: T,
+    coreAgents: [],
+    probes,
+    fetchImpl: async () => ({ status: 401 }),
+  });
+  assert.ok(bad.observations.some((o) => o.section === "infra" && o.fact.status === "unknown" && /bridge/.test(o.fact.claim)));
+});
+
+test("collectObservations scrubs secrets in claims", async () => {
+  const store = await memStore();
+  await store.setWho("job", "sec", { title: "Rotate Bearer abcdefghijklmnop now" });
+  await store.setNow("job", "sec", { stage: "active" });
+  const { observations } = await collectObservations(store, { nowMs: T, coreAgents: [] });
+  const json = JSON.stringify(observations);
+  assert.equal(json.includes("abcdefghijklmnop"), false);
+  assert.match(json, /\[REDACTED\]/);
+});
