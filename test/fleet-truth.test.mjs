@@ -327,3 +327,54 @@ test("publishBoard writes Now checkup and coordination pointer", async () => {
   assert.equal(now2.board.refreshed_at, iso(T + 60_000));
   assert.ok(r2.checkup_ts);
 });
+
+import { createMemoryRedis as memRedis } from "../src/lib/memory-redis.mjs";
+import { runOnce, lockKey } from "../src/fleet-truth/run.mjs";
+
+test("runOnce skips when not a slot hour", async () => {
+  const redis = memRedis();
+  const tenEt = Date.parse("2026-11-04T15:00:00.000Z"); // 10:00 ET
+  const r = await runOnce(redis, { space: "madez", nowMs: tenEt });
+  assert.equal(r.skipped, "not_a_slot");
+  const store = createStore(redis, { space: "madez", compat: false });
+  const now = await store.getNow("channel", "fleet-truth");
+  assert.equal(Object.keys(now || {}).length, 0);
+});
+
+test("runOnce manual slot publishes and dry writes nothing", async () => {
+  const redis = memRedis();
+  const dry = await runOnce(redis, { space: "madez", nowMs: T, slot: "manual", dry: true, seedWho: true });
+  assert.equal(dry.ok, true);
+  assert.ok(dry.summary);
+  const store = createStore(redis, { space: "madez", compat: false });
+  assert.equal(Object.keys((await store.getNow("channel", "fleet-truth")) || {}).length, 0);
+
+  const live = await runOnce(redis, { space: "madez", nowMs: T, slot: "manual", seedWho: true });
+  assert.equal(live.ok, true);
+  assert.match(live.trail, /manual$/);
+  const now = await store.getNow("channel", "fleet-truth");
+  assert.ok(now.summary);
+  assert.equal(now.slot, "manual");
+});
+
+test("runOnce lock skips second concurrent publish", async () => {
+  const redis = memRedis();
+  const key = lockKey("madez", "2026-11-04", "midday");
+  await redis("SET", key, "other", "NX", "EX", "600");
+  const r = await runOnce(redis, { space: "madez", nowMs: T, slot: "midday", seedWho: true });
+  assert.equal(r.skipped, "locked");
+  const store = createStore(redis, { space: "madez", compat: false });
+  const logs = await store.readLog("channel", "fleet-truth");
+  assert.equal(logs.filter((e) => e.kind === "checkup").length, 0);
+});
+
+test("runOnce happy path at midday writes Now", async () => {
+  const redis = memRedis();
+  const r = await runOnce(redis, { space: "madez", nowMs: T, seedWho: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.skipped, undefined);
+  const store = createStore(redis, { space: "madez", compat: false });
+  const now = await store.getNow("channel", "fleet-truth");
+  assert.ok(now.board);
+  assert.equal(now.trail, r.trail);
+});
