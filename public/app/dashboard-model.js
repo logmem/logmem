@@ -77,6 +77,20 @@ export function attentionCounts(items = []) {
   return c;
 }
 export const filterAttention = (items = [], kind = 'all') => kind === 'all' ? items : items.filter(item => attentionKind(item) === kind);
+// Needs you drawer. Every item sits in exactly one bucket, so the tabs other than All add up to All.
+export const needsKind = item => ['decision', 'task', 'suggestion'].includes(item?.type) ? item.type : 'other';
+/** Old drawer ids (decisions, tasks) still open the right tab. */
+export const normalizeNeedsTab = id => ({ decisions: 'decision', tasks: 'task' })[id] || id || 'all';
+/** [id, label, count] for each tab. Looks done and Other appear only when they have items. */
+export function needsTabs(items = []) {
+  const counts = { decision: 0, task: 0, suggestion: 0, other: 0 };
+  for (const item of items) counts[needsKind(item)]++;
+  const tabs = [['all', 'All', items.length], ['decision', 'Decisions', counts.decision], ['task', 'Tasks', counts.task]];
+  if (counts.suggestion) tabs.push(['suggestion', 'Looks done?', counts.suggestion]);
+  if (counts.other) tabs.push(['other', 'Other', counts.other]);
+  return tabs;
+}
+export const filterNeedsTab = (items = [], tab = 'all') => tab === 'all' ? items : items.filter(item => needsKind(item) === tab);
 /** Parked, general and empty plans sit behind a toggle. */
 export function splitPlans(plans = []) {
   const empty = plans.filter(p => p.id === 'general' || p.lane?.status === 'parked' || !(Number(p.jobs) > 0));
