@@ -1,9 +1,18 @@
 // ui.js — small display parts shared by every view. All lit-html templates: values are escaped.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { hhmm, ago, agentName, isLate } from './core.js';
+import { hhmm, ago, agentName, isLate, toast } from './core.js';
+import { shortenIds } from './dashboard-model.js';
 
 export { html, nothing };
 export const icon = (n) => html`<i class="lm-i" data-i=${n} aria-hidden="true"></i>`;
+/** A raw id as a short chip. The full id shows on hover and copies on click. */
+export function idChip(value, label = '') {
+  const full = String(value ?? ''), tail = full.slice(-6);
+  const copyFull = () => navigator.clipboard.writeText(full).then(() => toast('Copied'), () => toast('Could not copy. Select the text and copy it.', true));
+  return html`<button type="button" class="lmx-idchip" title=${'Copy ' + full} aria-label=${'Copy full ID ' + full} @click=${copyFull}>${label ? label + ':' : ''}…${tail}</button>`;
+}
+/** Plain text with long ids turned into idChip chips. */
+export const textWithIds = (text) => shortenIds(text).map((p) => (p.chip ? idChip(p.full) : p.text));
 
 const HUES = ['viz-1', 'viz-2', 'viz-3', 'viz-5', 'viz-4', 'viz-6'];
 function hue(name) { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return HUES[h % HUES.length]; }
@@ -30,9 +39,9 @@ export function entry(e) {
   const timestamp = new Date(e.ts), validTime = Number.isFinite(timestamp.getTime());
   return html`<div class="lm-event" data-k=${e.group || ''}>
     <time class="lm-event-time time" datetime=${validTime ? timestamp.toISOString() : nothing}>${hhmm(e.ts)}</time><span class="lm-event-rule" aria-hidden="true"></span>
-    <div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">${e.kind}</span><strong style="font-size:14px">${agentName(e.by)}</strong><span class="lm-event-summary">${e.summary}</span>
+    <div class="lm-event-main"><div class="lm-event-line"><span class="lm-kind">${e.kind}</span><strong style="font-size:14px">${agentName(e.by)}</strong><span class="lm-event-summary">${textWithIds(e.summary)}</span>
       ${e.kind === 'huddle' && e.trail ? html`<button type="button" class="lm-btn lm-btn--ghost" data-open-huddle=${e.trail} data-where=${e.where || ''}>Round table</button>` : nothing}</div>
-    <div class="lm-prov"><span>${e.where}</span>${e.trail ? html`<span>trail ${e.trail}</span>` : nothing}${e.origin ? html`<span>↳ origin ${e.origin}</span>` : nothing}${e.via ? html`<span>via ${e.via}</span>` : nothing}${e.unverified ? html`<span>unverified</span>` : nothing}</div></div></div>`;
+    <div class="lm-prov"><span>${textWithIds(e.where)}</span>${e.trail ? html`<span>${idChip(e.trail, 'trail')}</span>` : nothing}${e.origin ? html`<span>↳ ${idChip(e.origin, 'origin')}</span>` : nothing}${e.via ? html`<span>via ${e.via}</span>` : nothing}${e.unverified ? html`<span>unverified</span>` : nothing}</div></div></div>`;
 }
 export function entries(list, empty) {
   return list && list.length ? html`<div class="lm-events">${list.map(entry)}</div>` : emptyState(empty || 'No entries yet.', 'Connect an agent and its entries will appear here in order. Nothing is invented while you wait.');
