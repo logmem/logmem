@@ -567,6 +567,10 @@
 .lmx-decisions .lm-approval-body{display:flex;flex-direction:column;gap:8px}
 .lmx-proposal-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .lmx-decisions .lm-action{font-family:var(--font-mono);font-size:12.5px;line-height:1.55;max-height:9.5em;overflow:auto;margin:0}
+/* Decision card: the action row stays visible at the bottom while the card scrolls. overflow must not be hidden, or sticky does nothing. */
+.lm-approval{overflow:visible}
+.lm-approval-head{border-radius:calc(var(--radius-lg) - 2px) calc(var(--radius-lg) - 2px) 0 0}
+.lm-approval-foot{position:sticky;bottom:0;z-index:2;background:var(--surface-sunken);border-radius:0 0 calc(var(--radius-lg) - 2px) calc(var(--radius-lg) - 2px)}
 .lmx-decisions .lm-approval-foot{position:sticky;bottom:12px;z-index:2;margin:0 10px 10px;border:1px solid var(--border-strong);border-radius:12px;background:color-mix(in srgb,var(--surface) 82%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 8px 24px -12px rgba(0,0,0,.35)}
 .lmx-flash{animation:lmx-flash 1.8s ease-out}
 @keyframes lmx-flash{0%{box-shadow:0 0 0 4px var(--warning)}100%{box-shadow:0 0 0 0 transparent}}
