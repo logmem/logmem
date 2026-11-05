@@ -10,6 +10,7 @@ import { resolveAuth } from "../src/http/auth.mjs";
 import { createLogmem } from "../src/server.mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { createHandler } from "../api/agent-keys.mjs";
+import { insufficientScope } from "../api/mcp.mjs";
 
 const ENV = { VERCEL_ENV: "production", LOGMEM_SPACES: "madez", LOGMEM_REST_URL: "https://bridge.example/exec", LOGMEM_REST_TOKEN: "t", LOGMEM_ADMIN_PASSWORD: "correct horse" };
 
@@ -46,6 +47,25 @@ test("agent keys: only the deploy's spaces and valid agent ids; junk bearers are
   assert.equal(calls.length, 0);
 });
 
+test("agent keys: scope 'read' is stored, resolved and enforced; anything else is refused", async () => {
+  const redis = oauthRedis();
+  await assert.rejects(() => createAgentKey({ space: "madez", agent: "muse", scope: "write" }, { env: ENV, redis }), AgentKeyError, "only 'read' or empty");
+  await assert.rejects(() => createAgentKey({ space: "madez", agent: "muse", scope: "admin" }, { env: ENV, redis }), AgentKeyError);
+
+  const ro = await createAgentKey({ space: "madez", agent: "logmem-platform", label: "platform app", scope: "read" }, { env: ENV, redis });
+  assert.equal(ro.scope, "read");
+  const rec = await lookupAgentKey(ro.key, { redis });
+  assert.deepEqual(rec, { id: ro.id, space: "madez", agent: "logmem-platform", scope: "read" });
+  const listed = await listAgentKeys({ redis });
+  assert.equal(listed[0].scope, "read", "the admin list shows the scope");
+  assert.ok(!JSON.stringify(listed).includes(ro.key));
+
+  // A full key keeps the historical behaviour: no scopes at all.
+  const full = await createAgentKey({ space: "madez", agent: "muse" }, { env: ENV, redis });
+  const fullRec = await lookupAgentKey(full.key, { redis });
+  assert.ok(!("scope" in fullRec));
+});
+
 test("agent keys: a key authenticates to the server backend, pinned to its space and agent", async () => {
   const redis = oauthRedis();
   __setRedisForTests(redis);
@@ -64,6 +84,34 @@ test("agent keys: a key authenticates to the server backend, pinned to its space
     // Revoked: unauthenticated.
     await revokeAgentKey(k.id, { redis });
     assert.equal((await resolveAuth(req, {}, ENV)).source, "none");
+  } finally {
+    __setRedisForTests(null);
+  }
+});
+
+test("agent keys: a read-scoped key resolves with logmem:read and its write tools are refused", async () => {
+  const redis = oauthRedis();
+  __setRedisForTests(redis);
+  try {
+    const k = await createAgentKey({ space: "madez", agent: "logmem-platform", scope: "read" }, { env: ENV, redis });
+    const req = { headers: { authorization: `Bearer ${k.key}` } };
+    const auth = await resolveAuth(req, {}, ENV);
+    assert.equal(auth.source, "agent-key");
+    assert.deepEqual(auth.scopes, ["logmem:read"], "read-only keys carry the read scope");
+
+    const toolDefs = createLogmem({ redis: async () => null, space: "madez" }).listTools();
+    const call = (name) => ({ method: "tools/call", params: { name } });
+    assert.equal(insufficientScope(auth, call("logmem_note"), toolDefs), true, "writes refused");
+    assert.equal(insufficientScope(auth, call("logmem_recap"), toolDefs), true, "recap refused");
+    assert.equal(insufficientScope(auth, call("logmem_brief"), toolDefs), false, "reads allowed");
+    assert.equal(insufficientScope(auth, call("logmem_feed"), toolDefs), false, "reads allowed");
+    assert.equal(insufficientScope(auth, call("no-such-tool"), toolDefs), true, "unknown tools fail closed");
+
+    // A full key is not limited, exactly as before.
+    const full = await createAgentKey({ space: "madez", agent: "muse" }, { env: ENV, redis });
+    const fullAuth = await resolveAuth({ headers: { authorization: `Bearer ${full.key}` } }, {}, ENV);
+    assert.equal("scopes" in fullAuth, false);
+    assert.equal(insufficientScope(fullAuth, call("logmem_note"), toolDefs), false);
   } finally {
     __setRedisForTests(null);
   }
@@ -105,16 +153,24 @@ test("agent keys API: admin only, intent header on writes, key shown once", asyn
   assert.equal(made.status, 201);
   assert.match(made.body.key, /^lmk_/);
   assert.equal(made.headers["cache-control"], "no-store");
+  assert.equal(made.body.scope, undefined, "no scope means read and write");
+
+  const ro = await call(h, { method: "POST", body: { space: "madez", agent: "logmem-platform", scope: "read" }, headers: w });
+  assert.equal(ro.status, 201);
+  assert.equal(ro.body.scope, "read");
+  assert.equal((await call(h, { method: "POST", body: { space: "madez", agent: "muse", scope: "root" }, headers: w })).status, 400, "bad scope refused");
 
   const listed = await call(h, { headers: auth });
   assert.equal(listed.status, 200);
   assert.deepEqual(listed.body.spaces, ["madez"]);
-  assert.equal(listed.body.keys.length, 1);
+  assert.equal(listed.body.keys.length, 2);
+  assert.equal(listed.body.keys.filter((x) => x.scope === "read").length, 1, "the list shows which keys are read-only");
   assert.ok(!JSON.stringify(listed.body).includes(made.body.key), "GET never returns the key");
 
   assert.equal((await call(h, { method: "POST", body: { space: "nope", agent: "muse" }, headers: w })).status, 400);
   const rv = await call(h, { method: "POST", body: { action: "revoke", id: made.body.id }, headers: w });
   assert.deepEqual(rv.body, { revoked: true });
+  assert.equal((await call(h, { method: "POST", body: { action: "revoke", id: ro.body.id }, headers: w })).body.revoked, true);
   assert.equal((await call(h, { headers: auth })).body.keys.length, 0);
 });
 
