@@ -28,7 +28,7 @@ export function jobCard(b, { route = '', inPanel = false } = {}) {
     : t === 'external' ? html`${noteBox(`unblock:${b.id}`, 'Why it can move now', true)}${btn('Unblock', 'secondary', (e) => doWork(e, 'unblock', b.id))}`
     : html`${noteBox(`nudge:${b.id}`, 'Note to the owner (optional)')}${btn('Ask owner why', 'secondary', (e) => doWork(e, 'nudge', b.id))}`;
   return html`<article class="lmx-card lmx-job ${glow(route, 'job:' + b.id)}" tabindex="0" data-key=${'job:' + b.id} data-w=${t}>
-    <h3>${jobLink(b.id, b.title)}</h3>
+    <h3 title=${b.title}>${jobLink(b.id, b.title)}</h3>
     <div class="lmx-meta">${joinDot([[b.plan, b.track].filter(Boolean).join(' › '), b.owner ? agentName(b.owner) : '', b.since ? 'blocked ' + ago(b.since) : ''])}</div>
     <div class="lmx-why">${why}</div>${acts === nothing ? nothing : html`<div class="lmx-acts">${acts}</div>`}</article>`;
 }

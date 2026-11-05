@@ -898,6 +898,10 @@
 .lmx-tag{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--border);border-radius:999px;padding:1px 8px;font:500 11px/18px var(--font-sans);color:var(--text-muted);background:var(--surface-sunken)}
 .lmx-tag[data-late="true"]{border-color:var(--danger);color:var(--danger)}
 .lmx-bento-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:32px;border-top:1px solid var(--border);padding-top:6px}
+/* Work cards: the age stays on one line; long titles end in an ellipsis (full title on hover). */
+.lmx-bento-foot .lmx-meta{white-space:nowrap;overflow-wrap:normal;flex:0 0 auto}
+.lmx-job h3,.lmx-work-row h3{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.lmx-work-row>div:first-child{min-width:0}
 .lmx-bento-act{opacity:0;transition:opacity .15s}
 .lmx-bento:hover .lmx-bento-act,.lmx-bento:focus-within .lmx-bento-act{opacity:1}
 @media (hover:none){.lmx-bento-act{opacity:1}}
