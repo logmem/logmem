@@ -39,7 +39,10 @@ const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${liv
 const themePicker = () => themeControl(refreshFrame);
 export const workspaceAssistant = route => assistantWidget(route,refreshFrame);
 
-const banner = () => live.storageDown ? html`<div class="lm-alert lm-alert--danger lmx-banner" role="alert">${icon('alert')}<div><strong>LogMem can’t reach its storage.</strong> What you see may be out of date, and nothing you do will save until it is back. The app keeps trying.</div></div>` : nothing;
+// One line, not a tall banner. The full text sits in the title attribute.
+const STORAGE_DOWN = 'LogMem can’t reach its storage. Nothing saves until it is back.';
+const banner = () => live.storageDown ? html`<div class="lmx-strip" data-tone="danger" role="alert" title=${STORAGE_DOWN}>${icon('alert')}<span>${STORAGE_DOWN}</span></div>` : nothing;
+const receiptStrip = receipt => html`<div class="lmx-strip" data-tone="info" role="status" title=${`${receipt.summary} ${receipt.job} · ${receipt.trail}`}>${icon(receipt.verdict === 'approve' ? 'check' : 'defer')}<span><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong> ${receipt.summary}</span></div>`;
 
 function frame(route, crumbs, body) {
   const demo = isSampleSpace(state.space)||Boolean(state.spaceRecords.find(s=>s.id===state.spaceId)?.sampleTemplate);
@@ -55,7 +58,7 @@ function frame(route, crumbs, body) {
       ${headSpace()}${themePicker()}${demo?html`<span class="lm-badge lm-badge--warning">Contains sample content</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${['queue','work','knowledge','agents'].includes(route)?mapViewToggle():nothing}${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
-      <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? html`<div class="lm-alert lmx-decision-receipt" role="status"><div><strong>${receipt.verdict === 'approve' ? 'Approval saved. Completion not verified.' : receipt.verdict === 'reject' ? 'Change request saved.' : 'Decision postponed. It stays open with its original age.'}</strong><p>${receipt.summary}</p><span class="lmx-meta">${receipt.job} · ${receipt.trail}</span></div></div>` : nothing}${body}<p class="lmx-app-tagline">Your business. Your AI team.</p></main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
+      <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? receiptStrip(receipt) : nothing}${body}<p class="lmx-app-tagline">Your business. Your AI team.</p></main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
     <nav class="lmx-tabs" aria-label="LogMem">${NAV.map(n=>tab(n[0],n[1],n[2]))}</nav></div>`;
 }
 

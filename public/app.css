@@ -141,7 +141,14 @@
 .lmx-cmdk-list li[aria-selected="true"]{background:var(--brand-subtle)}
 .lmx-cmdk .lm-cmdk-foot{padding:8px 12px;border-top:1px solid var(--border)}
 .lmx-batch{padding:8px 10px;border:1px dashed var(--border);border-radius:var(--radius-md);margin-bottom:8px}
-.lmx-banner{margin:0}
+/* Status strip: one line at the top of the app. Long text ends in an ellipsis. */
+.lmx-strip{display:flex;align-items:center;gap:8px;min-height:32px;margin:0 0 12px;padding:6px 12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);font-size:13px;line-height:20px;color:var(--text);white-space:nowrap;overflow:hidden}
+.lmx-strip>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.lmx-strip>.lm-i{flex:0 0 auto}
+.lmx-strip[data-tone="danger"]{background:var(--danger-subtle);border-color:transparent}
+.lmx-strip[data-tone="danger"]>.lm-i{color:var(--danger)}
+.lmx-strip[data-tone="info"]{background:var(--info-subtle);border-color:transparent}
+.lmx-strip[data-tone="info"]>.lm-i{color:var(--info)}
 .lmx-seat .lm-badge{white-space:nowrap}
 .lm-approval-head input[type=checkbox]{width:18px;height:18px;accent-color:var(--brand)}
 
