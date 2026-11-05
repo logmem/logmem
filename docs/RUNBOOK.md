@@ -16,6 +16,7 @@ the procedure.
 | CI | `.github/workflows/ci.yml`: `npm ci`, `npm test`, `npm run spec:check`, `npm run conformance` on Node 22 |
 | Redis timeout | `LOGMEM_REDIS_TIMEOUT_MS` (default 5000) per command, REST and native |
 | Dogfood daily check | Vercel Cron, `GET /api/cron/dogfood-check` at 13:00 UTC; scorecard at `lm:{space}:dogfood:scorecard`. See section 7 |
+| Fleet truth board | Vercel Cron, `GET /api/cron/fleet-truth` at 13/14/17/18/21/22 UTC; canon at `channel:fleet-truth`. See section 8 |
 
 ## 1. Deploy and rollback
 
@@ -260,3 +261,52 @@ Running either way more than once on a UTC day is safe: the later run replaces t
   checkup entries. `gate.pass` is the Phase 2 verdict; it is always recomputed, never stored.
 - Raw: `GET lm:madez:dogfood:scorecard` (JSON). Only rows backed by a checkup written by
   `agent:logmem-check` are shown by the API.
+
+## 8. Fleet truth board (Vercel Cron)
+
+Birds-eye source of truth for space `madez`: `channel:fleet-truth` Who / Now / Log.
+Writer: `agent:fleet-truth`. Cadence: America/New_York 09:00 / 13:00 / 17:00
+(`morning` / `midday` / `closeout`). Spec:
+`docs/superpowers/specs/2026-11-04-fleet-truth-board-design.md`.
+
+| What | Where |
+|---|---|
+| Schedule | `vercel.json` `crons`: `/api/cron/fleet-truth`, `0 13,14,17,18,21,22 * * *` (covers ET slots in both DST offsets; non-slot hours no-op) |
+| Handler | `api/cron/fleet-truth.mjs` → `runOnce` in `src/fleet-truth/run.mjs` |
+| Writes | overwrite `channel:fleet-truth` Now; append `checkup` on that channel; pointer `memo` on `channel:agent-coordination` |
+| Lock | `lm:{space}:fleet-truth:lock:{etDate}:{slot}` (10 minutes after a successful publish; released early only if the run fails) |
+
+### Env vars (Vercel, Production)
+
+| Var | Required | Value |
+|---|---|---|
+| `CRON_SECRET` | yes | same secret as dogfood (32+ chars) |
+| `LOGMEM_REST_URL`, `LOGMEM_REST_TOKEN` (or `LOGMEM_REDIS_URI`) | yes | read-write backend |
+| `LOGMEM_FLEET_TRUTH_SPACES` | no | default `madez` |
+| `LOGMEM_FLEET_TRUTH_PROBES` | no | JSON array of `{ "id", "url", "expect_status" }`; unset → infra fact `no probes configured` |
+
+### CLI (laptop with bridge creds)
+
+```sh
+node scripts/fleet-truth.mjs --space madez --slot manual --dry    # print; write nothing
+node scripts/fleet-truth.mjs --space madez --slot manual --seed   # bootstrap Who + Now (needs Mikey GO)
+```
+
+### Trigger by hand
+
+```sh
+read -rs CRON_SECRET   # paste, Enter
+curl -sS -H "Authorization: Bearer $CRON_SECRET" https://<prod-domain>/api/cron/fleet-truth | jq
+unset CRON_SECRET
+```
+
+`200 {ok, ran_at, results: [{space, ok|skipped, trail, summary?}]}`.
+`skipped: "not_a_slot"` outside ET check hours. `skipped: "locked"` if another run holds the slot lock.
+`401` / `503` same meaning as dogfood.
+
+### Read path
+
+Agents on fleet/operator start: read `channel:fleet-truth` Now before treating
+coordination memos as current truth. See `docs/launch/fleet-truth-read.md`.
+
+Live production seed and first cron reliance need an explicit Mikey GO.

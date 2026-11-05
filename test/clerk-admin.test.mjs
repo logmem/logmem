@@ -11,22 +11,33 @@ const ENV = {
   CLERK_PUBLISHABLE_KEY: "pk_test_x",
   VERCEL_ENV: "production",
   LOGMEM_VIEW_SPACES: "fieldnotes,madez",
+  // /api/view reads storage via descriptorFromEnv, not adminDeps.redis.
+  LOGMEM_REST_URL: "memory://test",
+  LOGMEM_REST_TOKEN: "t",
 };
 
 const USER = "user_2abcDEF123ghiJKL";
 const EMAIL = "ada+clerk_test@example.com";
 
-function done() { __setAdminDepsForTests(null); }
+function done() {
+  __setAdminDepsForTests(null);
+  delete globalThis.__lmDevRedis;
+}
+
+function useRedis(redis) {
+  globalThis.__lmDevRedis = redis;
+  return {
+    ready: () => true,
+    session: async () => ({ status: "signed-in", userId: USER, email: EMAIL }),
+    redis: () => redis,
+  };
+}
 
 test("clerk admin: allowlisted user can view /api/view", async () => {
   const redis = createMemoryRedis();
   await withEnv({ ...ENV, LOGMEM_ADMIN_EMAILS: EMAIL }, async () => {
     try {
-      __setAdminDepsForTests({
-        ready: () => true,
-        session: async () => ({ status: "signed-in", userId: USER, email: EMAIL }),
-        redis: () => redis,
-      });
+      __setAdminDepsForTests(useRedis(redis));
       const res = mockRes();
       await viewHandler({ method: "GET", url: "/api/view?space=fieldnotes&what=overview", query: { space: "fieldnotes", what: "overview" }, headers: { host: "logmem.test" } }, res);
       assert.equal(res.statusCode, 200, String(res.body));
@@ -39,11 +50,7 @@ test("clerk admin: non-allowlisted provisioned user can view own tenant space", 
   await inviteMany([EMAIL], { redis });
   await withEnv(ENV, async () => {
     try {
-      __setAdminDepsForTests({
-        ready: () => true,
-        session: async () => ({ status: "signed-in", userId: USER, email: EMAIL }),
-        redis: () => redis,
-      });
+      __setAdminDepsForTests(useRedis(redis));
       const res = mockRes();
       await viewHandler({ method: "GET", url: "/api/view?space=t-placeholder&what=overview", query: { space: "t-placeholder", what: "overview" }, headers: { host: "logmem.test" } }, res);
       // space param will be replaced by first allowed; just ensure not 401

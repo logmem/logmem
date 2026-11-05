@@ -3,7 +3,7 @@
 
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { buildView } from "../src/http/view.mjs";
-import { mayRead, viewSpaces, adminEnabled, clerkViewSpaces } from "../src/http/admin-auth.mjs";
+import { mayRead, viewSpaces, adminEnabled, clerkViewSpaces, previewBlocksCustomerSpaces } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
@@ -20,6 +20,7 @@ export default async function handler(req, res) {
     if (!(await mayRead(req, env))) return res.status(401).json({ error: adminEnabled(env) ? "sign in required" : "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
     allowed = viewSpaces(env);
   }
+  if (previewBlocksCustomerSpaces(env)) allowed = allowed.filter((s) => previewBlocksCustomerSpaces(env)(s));
   const space = String(q.space || (allowed[0] || viewSpaces(env)[0]));
   if (!allowed.includes(space)) return res.status(403).json({ error: `space '${space}' is not shown here`, spaces: allowed });
   const d = descriptorFromEnv();

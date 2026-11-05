@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/dogfood-check",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/fleet-truth",
+      "schedule": "0 13,14,17,18,21,22 * * *"
     }
   ],
   "headers": [
