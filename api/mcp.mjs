@@ -36,8 +36,6 @@ import { SCOPE_WRITE, ALL_SCOPES } from "../src/http/issuer.mjs";
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
 const PROTOCOL_VERSION = "2025-06-18";
-const PUBLIC = new Set(["initialize", "notifications/initialized", "initialized", "tools/list", "resources/list", "prompts/list", "ping"]);
-
 const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "http";
 
 function surfaceFromSession(sid) {
@@ -170,17 +168,13 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-LogMem-Space, X-LogMem-Surface");
-  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
   if (req.method === "OPTIONS") return res.status(204).end();
 
   const wantsSSE = String(req.headers.accept || "").toLowerCase().includes("text/event-stream");
   const toolDefs = () => createLogmem({ redis: async () => null, space: "madez", compat: compatFromEnv(), sessionId: "list" }).listTools();
 
-  if (req.method === "GET") {
-    if (wantsSSE) return res.status(405).json({ error: "GET streams not supported; POST JSON-RPC instead" });
-    return res.status(200).json({ ...SERVER_INFO, protocolVersion: PROTOCOL_VERSION, transport: "streamable-http", toolCount: toolDefs().length, acmi_compat: compatFromEnv() });
-  }
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
     let cfg;
@@ -189,12 +183,16 @@ export default async function handler(req, res) {
     } catch (e) {
       return res.status(400).json({ error: e.message });
     }
-    const msg = req.body;
+    const msg = req.method === "POST" ? req.body : null;
     const auth = await resolveAuth(req, cfg);
     const b = auth.backend && fromDescriptor(auth.backend);
-    if (!b && !PUBLIC.has(msg?.method)) {
+    if (!b) {
       res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: auth.error }));
-      return res.status(401).json({ error: "authentication required for tool calls", hint: "OAuth 2.1 + PKCE via /.well-known/oauth-authorization-server, or ?config=<base64> with restUrl/restToken." });
+      return res.status(401).json({ error: "authentication required", hint: "OAuth 2.1 + PKCE via /.well-known/oauth-authorization-server." });
+    }
+    if (req.method === "GET") {
+      if (wantsSSE) return res.status(405).json({ error: "GET streams not supported; POST JSON-RPC instead" });
+      return res.status(200).json({ ...SERVER_INFO, protocolVersion: PROTOCOL_VERSION, transport: "streamable-http", toolCount: toolDefs().length, acmi_compat: compatFromEnv() });
     }
     // A read-only grant (logmem:read) may call read tools only. 403 lets the
     // client ask the person for logmem:write (MCP step-up authorization).

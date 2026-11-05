@@ -61,24 +61,19 @@ function mockRes() {
   return r;
 }
 
-test("http: tools/list and initialize are public; tools/call needs creds (401 + WWW-Authenticate)", async () => {
-  const init = mockRes();
-  await handler({ method: "POST", url: "/api/mcp", headers: { host: "x", accept: "application/json" }, body: { jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "Claude Web" } } } }, init);
-  const ir = JSON.parse(init.body);
-  assert.equal(ir.result.serverInfo.name, "logmem");
-  assert.match(ir.result.instructions, /Start/);
-  assert.match(init.headers["mcp-session-id"], /^claude-web\./);
+test("http: unauthenticated MCP requests return a browser-readable OAuth challenge", async () => {
+  for (const method of ["initialize", "tools/list", "tools/call"]) {
+    const res = mockRes();
+    await handler({ method: "POST", url: "/api/mcp", headers: { host: "x", accept: "application/json" }, body: { jsonrpc: "2.0", id: 1, method, params: { name: "logmem_brief", arguments: {} } } }, res);
+    assert.equal(res.statusCode, 401, `${method} must start OAuth before discovery or use`);
+    assert.match(res.headers["www-authenticate"], /oauth-protected-resource\/api\/mcp/);
+    assert.match(res.headers["access-control-expose-headers"], /WWW-Authenticate/i);
+  }
 
-  const list = mockRes();
-  await handler({ method: "POST", url: "/api/mcp", headers: { host: "x", accept: "text/event-stream" }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } }, list);
-  assert.match(list.body, /^event: message\ndata: /);
-  const tools = JSON.parse(list.body.split("data: ")[1]).result.tools;
-  assert.ok(tools.every((t) => t.inputSchema && t.outputSchema && t.annotations));
-
-  const call = mockRes();
-  await handler({ method: "POST", url: "/api/mcp", headers: { host: "x" }, body: { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "logmem_brief", arguments: {} } } }, call);
-  assert.equal(call.statusCode, 401);
-  assert.match(call.headers["www-authenticate"], /oauth-protected-resource/);
+  const get = mockRes();
+  await handler({ method: "GET", url: "/mcp?_lm_path=mcp", headers: { host: "x", accept: "application/json" } }, get);
+  assert.equal(get.statusCode, 401, "the MCP GET probe must also start OAuth");
+  assert.match(get.headers["www-authenticate"], /oauth-protected-resource/);
 });
 
 test("http dispatch: surface rides in the session id across stateless calls", async () => {
