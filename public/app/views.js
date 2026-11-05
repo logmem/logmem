@@ -318,7 +318,8 @@ pages.settings = async () => {
   const d = await api('settings');
   if (!ok(d)) return;
   const pingOk = Number.isFinite(Number(d.ping_ms)), spaces = Array.isArray(d.mirror_spaces) ? d.mirror_spaces : [];
-  const sw = (label, on, text) => html`<div class="lmx-control-row"><span>${label}</span><span class="lmx-switch" data-on=${String(on)} role="img" aria-label=${`${label}: ${text}`}><i aria-hidden="true"></i>${text}</span></div>`;
+  // Read-only chip, not a switch: this page cannot change these settings.
+  const sw = (label, on, text) => html`<div class="lmx-control-row"><span>${label}</span><span class="lmx-rochip" data-on=${String(on)}>${text}</span></div>`;
   const control = (title, status, body) => html`<section class="lmx-control"><header><h2>${title}</h2>${status || nothing}</header><div class="lmx-control-body">${body}</div></section>`;
   renderView('settings', ['Settings'], html`${head('Settings', 'Connections and administration for this space.')}
     <nav class="lmx-adminbar" aria-label="Administration">${ADMIN.filter(n=>n[0]!=='settings').map(n=>html`<a href=${n[3] || '#/'+n[0]}>${n[1]}</a>`)}<button type="button" @click=${signOut}>Sign out</button></nav>
