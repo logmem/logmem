@@ -43,7 +43,12 @@ export function createHandler(deps={}) {return async(req,res)=>{
   const workspaces=await listWorkspaces({userId:s.userId},{redis}),spaces=[];
   for(const w of workspaces)spaces.push(...await listSpaces({userId:s.userId,workspaceId:w.id},{redis}));
   const chosen=spaces.find(x=>x.id===url.searchParams.get('spaceId')&&x.workspaceId===url.searchParams.get('workspaceId'))||spaces[0]||null;
-  return res.status(200).json({user:{id:s.userId,email:s.email},workspaces,spaces,selected:chosen?{workspaceId:chosen.workspaceId,spaceId:chosen.id,namespace:chosen.namespace}:null,onboarding:workspaces.length===0});
+  return res.status(200).json({user:{id:s.userId,email:s.email},workspaces,spaces,selected:chosen?{workspaceId:chosen.workspaceId,spaceId:chosen.id,namespace:chosen.namespace}:null,onboarding:workspaces.length===0,clerk:clerkBootstrap(env)});
  }catch(e){return customerError(res,e,'customer-session');}
 };}
+function clerkBootstrap(env){
+ // Public by design: the frontend origin and publishable key are what any page would load.
+ const frontend=clerkFrontendForKey(env.CLERK_PUBLISHABLE_KEY||'');
+ return frontend?{frontend,publishableKey:env.CLERK_PUBLISHABLE_KEY}:null;
+}
 export default createHandler();

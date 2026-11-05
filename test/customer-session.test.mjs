@@ -40,3 +40,13 @@ test('signout requires origin and intent and revokes the actual provider session
  r=mockRes();await handler(mockReq({method:'POST',url:'/api/session',headers:{origin:'https://logmem.test','x-logmem-intent':'session'},body:{action:'signout'}}),r);
  assert.equal(r.statusCode,200);assert.equal(revoked,'sess_test');
 });
+test('session response hands the browser the public Clerk bootstrap and no secret',async()=>{
+ const redis=createMemoryRedis(),key='pk_test_'+Buffer.from('lenient-newt-9425.accounts.dev$').toString('base64');
+ const env={LOGMEM_CUSTOMER_DASHBOARD:'1',LOGMEM_SIGNUP_OPEN:'1',CLERK_PUBLISHABLE_KEY:key,CLERK_SECRET_KEY:'sk_test_hidden'};
+ let r=mockRes();await createHandler({...deps(redis),env})(mockReq({url:'/api/session'}),r);
+ const data=JSON.parse(r.body);
+ assert.equal(data.clerk.publishableKey,key);assert.match(data.clerk.frontend,/^https:\/\/.+accounts\.dev$/);
+ assert.ok(!r.body.includes('sk_test'));
+ r=mockRes();await createHandler(deps(redis))(mockReq({url:'/api/session'}),r);
+ assert.equal(JSON.parse(r.body).clerk,null);
+});

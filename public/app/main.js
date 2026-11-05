@@ -3,7 +3,9 @@
 import {clearInteractions} from './interactions.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { state, live, getJSON, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, toast } from './core.js';
+import { state, live, getJSON, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
+import { refreshSession } from './session-keepalive.js';
+setSessionRefresher(refreshSession);
 import { icon } from './ui.js';
 import { setChangedHook, cancelDialogs } from './actions.js';
 import { drawRender, drawerOpen, closeDrawer, setSyncHook } from './drawer.js';

@@ -3,6 +3,7 @@ import {html,nothing} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {state,live,postJSON,getJSON,switchContext,clearCustomerContext,toast} from './core.js';
 import {renderBare,renderView} from './shell.js';
 import {humanPrompt} from './go-prompt.js';
+import { startKeepAlive } from './session-keepalive.js';
 let ready=()=>{},closePanels=()=>{},formError='',busy=false,model={name:'',spaceName:'Operations',businessType:'',withSample:false};
 let requestId=crypto.randomUUID();
 export function configureAccount(hooks){ready=hooks.ready;closePanels=hooks.closePanels;}
@@ -19,7 +20,7 @@ export async function bootstrapAccount() {
  state.customer=true;
  if(res.status===401){new URLSearchParams(location.search).get('invite')?showInviteSignedOut():showCustomerLogin();return true;}
  if(!res.ok){renderBare(html`<section class="lmx-account-start">${logo()}<h1>Could not open your workspace.</h1><p role="alert">Please retry. Your data stays private.</p><button class="lm-btn" @click=${()=>location.reload()}>Retry</button></section>`);return true;}
- state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;
+ state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;startKeepAlive(data.clerk);
  const invite=new URLSearchParams(location.search).get('invite');
  if(invite){await showInvitation(invite);return true;}
  const entry=new URL(location.href);
