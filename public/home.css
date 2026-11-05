@@ -2536,7 +2536,11 @@ dialog {
 /* QA Nov 3 (opencode): mobile fixes — one-line provider scroll, readable preview strip */
 @media (max-width: 580px) {
   .providers {
-    flex-wrap: nowrap;
+    max-width: 100% !important;
+    width: 100%;
+    padding: 0 16px;
+    box-sizing: border-box;
+    flex-wrap: nowrap !important;
     justify-content: flex-start;
     overflow-x: auto;
     gap: 18px;
@@ -2544,7 +2548,9 @@ dialog {
     -webkit-overflow-scrolling: touch;
   }
   .providers::-webkit-scrollbar { display: none; }
-  .providers > a { flex: 0 0 auto; }
+  .providers > * { flex: 0 0 auto; flex-shrink: 0; }
+  .trust-line svg { vertical-align: middle; flex-shrink: 0; }
+  .control-list svg { vertical-align: middle; }
   #dashboard-preview {
     overflow-x: auto;
     overflow-y: hidden;
