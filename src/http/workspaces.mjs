@@ -159,7 +159,9 @@ export async function createSpace({userId,workspaceId,name,requestId},deps) {
  * plain members need a grant like any other space. The record carries
  * backend:'api' so the journeys know this card's data lives on the main
  * backend under lm:{slug}:*, not the customer redis jail. Idempotent: the
- * same slug attached twice returns the existing record.
+ * same slug attached twice returns the existing record. A slug that collides
+ * with a workspace-created space id is refused with 409: the attach must
+ * never overwrite a record it did not create (codex P1, PR 224).
  */
 export async function attachSpace({userId,workspaceId,space,requestId},deps) {
   checkUser(userId);
@@ -172,7 +174,13 @@ export async function attachSpace({userId,workspaceId,space,requestId},deps) {
     if(!['owner','admin','member'].includes(m.role)) failWorkspace('forbidden',403);
     const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
     const existing=w.spaces?.[space.slug];
-    if(existing&&existing.registry===space.slug)return {space:existing,attached:false};
+    if(existing){
+      if(existing.registry===space.slug)return {space:existing,attached:false};
+      // P1: a workspace-created space id is a valid 24-hex slug. Overwriting
+      // it would swap the record (namespace, backend, name) while every
+      // member grant stays in place. Refuse; the route compensates the registry.
+      failWorkspace('slug_collision',409);
+    }
     const now=(deps.now||Date.now)();
     const rec={id:space.slug,workspaceId,namespace:space.slug,name:space.name||space.slug,status:'active',createdAt:now,registry:space.slug,backend:'api',source:'api'};
     const next=structuredClone(w); next.spaces[space.slug]=rec; next.version++;

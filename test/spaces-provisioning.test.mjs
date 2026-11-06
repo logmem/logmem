@@ -168,6 +168,30 @@ test("phase 2: agent and direct-token creators stay registry-only with workspace
   assert.equal(JSON.parse(await registry("GET", "sp:space:agent-space")).workspace, undefined, "no workspace back-reference");
 });
 
+test("phase 2 P1: a slug colliding with a workspace space id is refused, never overwritten", async () => {
+  const registry = createMemoryRedis();
+  const wsRedis = createMemoryRedis();
+  const wsId = await seedWorkspace(wsRedis);
+  // The seeded workspace's first space carries a 24-hex id, which is a valid slug.
+  const seeded = JSON.parse(await wsRedis("GET", `lm:workspace:record:${wsId}`));
+  const nativeId = Object.keys(seeded.spaces)[0];
+  assert.match(nativeId, /^[0-9a-f]{24}$/, "the native space id looks exactly like a slug");
+
+  const res = mockRes();
+  await h2(registry, wsRedis, OWNER)(mockReq({ method: "POST", url: "/api/spaces", body: { slug: nativeId, name: "collision" } }), res);
+  assert.equal(res.statusCode, 409, "the collision is refused: " + res.body);
+  assert.equal(body(res).error, "slug_collision");
+
+  // The workspace record is untouched: same space, same namespace, no registry marker.
+  const after = JSON.parse(await wsRedis("GET", `lm:workspace:record:${wsId}`));
+  assert.deepEqual(after.spaces[nativeId], seeded.spaces[nativeId], "the workspace space record is byte-for-byte unchanged");
+  assert.equal(after.version, seeded.version, "no version bump on a refused attach");
+
+  // The route compensates the registry, so no orphan record survives.
+  const left = (await registry("KEYS", "sp:*")).length;
+  assert.equal(left, 0, "refused collision leaves no registry record");
+});
+
 test("phase 2: a plain member cannot attach, an admin of the workspace can", async () => {
   const registry = createMemoryRedis();
   const wsRedis = createMemoryRedis();
