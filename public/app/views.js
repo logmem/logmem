@@ -14,6 +14,7 @@ import {observeTelemetry} from './telemetry-state.js';
 import {bentoTaskCard,planProgressTile,terminalActionBanner,taskTree,waitingTeamCard} from './today-components.js';
 import {workspaceAssistant} from './shell.js';
 import { renderView } from './shell.js';
+import { load } from './data.js';
 import { openDrawer, drawerState } from './drawer.js';
 import { ADMIN, signOut, themePicker } from './shell.js';
 import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers, AGENT_MODES, agentMatch, agentCounts, groupDecisions, verdictLabel, agentColor, decisionGraph, splitDecisionRows, BOARD_FILTERS, boardMatch, boardCounts } from './dashboard-model.js';
@@ -38,7 +39,7 @@ const keyed = (list, key, tpl) => repeat(list, key, tpl);
 
 // ─── Today: decisions, waits, source updates, and compact priorities ───
 pages.home = async () => {
-  const d = await api('home');
+  const d = await load('home');
   if (!ok(d)) return;
   live.needs = d.needs_count; live.home = d;
   observeTelemetry(state.space,{decisions:{value:Array.isArray(d.needs_items)?d.needs_items.filter(i=>i.type==='decision').length:null}});
@@ -78,7 +79,7 @@ pages.blockers = async () => { location.replace('#/home'); openDrawer('needs', '
 
 // ─── Lanes: every plan as a lane, P0 first ──────────────────────────
 pages.lanes = async () => {
-  const d = await api('lanes');
+  const d = await load('lanes');
   if (!ok(d)) return;
   const R = 'lanes';
   const by = (st) => d.lanes.filter((l) => (l.lane ? l.lane.status : null) === st && l.id !== 'general');
@@ -94,7 +95,7 @@ pages.lanes = async () => {
 
 // ─── Plans: one lane in detail ───────────────────────────────────────
 pages.plan = async (name) => {
-  const d = await api('plan', name ? { id: name } : {});
+  const d = await load('plan', name ? { id: name } : {});
   if (!ok(d)) return;
   if (!d.plan) { renderView('plan', ['Lanes'], html`${emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')}${seedCard({project:state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space:state.space})}`); return; }
   const items = d.tracks.reduce((a, t) => a.concat(t.items), []);
@@ -215,7 +216,7 @@ pages.write = writerPage;
 pages.walk = playerPage;
 
 pages.agents = async () => {
-  const [d, lg] = await Promise.all([api('agents'), api('log').catch(() => null)]);
+  const [d, lg] = await Promise.all([load('agents'), api('log').catch(() => null)]);
   if (!ok(d)) return;
   const pulseEntries = lg && Array.isArray(lg.entries) ? lg.entries : [];
   const liveN = d.agents.filter((a) => a.seen.state === 'active').length;

@@ -103,7 +103,7 @@ export async function drawRender(first = false) {
 async function drawHuddle(want, first) {
   const d = await api('huddle', { trail: want.id, where: want.where || '' });
   if (drawer !== want) return;
-  if (d.__status !== 200) { shell('Huddle', emptyState('Could not load this huddle.', d.error || '')); return; }
+  if (d.__status !== 200 || !d.huddle) { shell('Huddle', emptyState('Could not load this huddle.', d.error || '')); return; }
   const STATUS = { acked: ['Acked', 'success'], declined: ['Declined', 'danger'], replied: ['Replied', 'info'], pending: ['No reply yet', 'warning'] };
   shell('Round table', html`<section class="lmx-card"><div class="lmx-meta">${agentName(d.huddle.by)} · ${ago(d.huddle.ts)} · ${d.huddle.where}</div><h3>${d.huddle.summary}</h3></section>
     <div class="lmx-meta">${d.participants.filter((p) => p.status !== 'pending').length} of ${d.participants.length} have answered.</div>
