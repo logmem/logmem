@@ -644,8 +644,17 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
       }
     }
     const pick = params.id || channels[0]?.id;
-    const log = pick ? (await store.readLog("channel", pick, { reverse: true, limit: 100 })).map((e) => slim(e, `channel:${pick}`)) : [];
-    return { channels, selected: pick || null, log };
+    // Who and Now ride on the selected channel only, the same way the job
+    // branch reads them: one GET each, null on error. The list stays one read
+    // per channel — a Now hint per row would double the list cost for a hint
+    // no screen asks for yet.
+    const [who, nowSlot, log] = await Promise.all([
+      pick ? store.getWho("channel", pick).catch(() => null) : null,
+      pick ? store.getNow("channel", pick).catch(() => null) : null,
+      pick ? store.readLog("channel", pick, { reverse: true, limit: 100 }) : [],
+    ]);
+    const now = nowSlot && Object.keys(nowSlot).length ? nowSlot : null;
+    return { channels, selected: pick || null, who, now, log: log.map((e) => slim(e, `channel:${pick}`)) };
   }
 
   if (what === "decisions") return withState(await allEntries(store, r, space, { limit: 500 }));
