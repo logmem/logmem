@@ -9,6 +9,7 @@ import { decideBatch } from './actions.js';
 import { drawDiscussion } from './interactions.js';
 import { jobWalkthroughs } from './walk.js';
 import { needsTabs, filterNeedsTab, normalizeNeedsTab } from './dashboard-model.js';
+import { jobDetailPanels } from './job-detail-components.js';
 
 let drawer = null; // { kind: 'needs'|'job'|'huddle', id, where, last, selected: Set }
 let host = null;
@@ -91,7 +92,7 @@ export async function drawRender(first = false) {
   const mine = ((n && n.items) || []).filter((i) => i.job === id && i.type === 'task').concat((d.open_asks || []).map((a) => ({ type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a })));
   const card = now.stage === 'blocked' ? jobCard({ id, title: who.title || id, plan: who.plan, track: who.track, owner: now.owner || who.owner, blocked_on: now.blocked_on, since: now.stage_at }, { inPanel: true }) : nothing;
   const about = [['Plan', [who.plan, who.track].filter(Boolean).join(' › ')], ['Owner', agentName(now.owner || who.owner || '')], ['Milestone', typeof who.milestone === 'string' ? who.milestone : who.gate], ['Due', who.due], ['What', who.desc], ['Evidence', who.evidence]].filter((x) => x[1]);
-  shell(who.title || id, html`${card}${repeat(mine, needKey, (i) => needItem(i))}
+  shell(who.title || id, html`${jobDetailPanels(d)}${card}${repeat(mine, needKey, (i) => needItem(i))}
     ${btn('Comments and actions','secondary',()=>{location.hash='#/discussion/job/'+encodeURIComponent(id);})}
     ${panel('About', html`<dl class="lm-kv"><dt>Stage</dt><dd>${stage(now.stage)}</dd>${about.map((x) => html`<dt>${x[0]}</dt><dd>${x[1]}</dd>`)}</dl>`)}
     ${panel('Tasks',html`<div class="lmx-stack">${(d.tasks||[]).map(t=>html`<div><p>${t.summary}</p><div class="lmx-meta">For ${agentName(t.to)}</div><a href=${'#/discussion/task/'+encodeURIComponent(t.trail)} aria-label=${'Comments for '+t.summary}>Comments and ownership</a></div>`)}</div>`)}
