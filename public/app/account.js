@@ -12,12 +12,22 @@ export function showCustomerLogin(message='') {
  clearCustomerContext();state.customer=true;
  renderBare(html`<section class="lmx-account-start">${logo()}<h1>Your agents. One shared workspace.</h1><p>Sign in to create spaces, track work, and keep your team aligned.</p>${message?html`<p role="alert">${message}</p>`:nothing}<a class="lm-btn lm-btn--primary" href=${'/api/session?signin=1&returnTo='+encodeURIComponent(location.pathname+location.search+location.hash)}>Sign in or create an account</a></section>`);
 }
+// An expired 60s token on a cold load is not a sign-out. When Clerk's own cookie says a
+// session exists, take the server handshake once so it can mint a fresh token, then come back.
+function coldHandshake() {
+ const hint=document.cookie.split('; ').find(c=>c.startsWith('__client_uat='));
+ if(!hint||hint.split('=')[1]==='0')return false;
+ try{const at=Number(sessionStorage.getItem('lm-handshake')||0);if(Date.now()-at<30000)return false;sessionStorage.setItem('lm-handshake',String(Date.now()));}catch{return false;}
+ location.replace('/api/session?signin=1&returnTo='+encodeURIComponent(location.pathname+location.search+location.hash));
+ return true;
+}
 export async function bootstrapAccount() {
  if(new URLSearchParams(location.search).get('operator')==='1')return false;
  const res=await fetch('/api/session',{credentials:'same-origin'}),data=await res.json().catch(()=>({}));
  if(res.status===503&&data.error==='customer_dashboard_disabled')return false;
  if(res.status===404)return false; // Existing local sample server has no customer routes.
  state.customer=true;
+ if(res.status===401&&coldHandshake())return true;
  if(res.status===401){new URLSearchParams(location.search).get('invite')?showInviteSignedOut():showCustomerLogin();return true;}
  if(!res.ok){renderBare(html`<section class="lmx-account-start">${logo()}<h1>Could not open your workspace.</h1><p role="alert">Please retry. Your data stays private.</p><button class="lm-btn" @click=${()=>location.reload()}>Retry</button></section>`);return true;}
  state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;startKeepAlive(data.clerk);

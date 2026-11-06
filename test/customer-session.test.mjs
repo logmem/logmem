@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {createMemoryRedis} from '../src/lib/memory-redis.mjs';
 import {createHandler} from '../api/session.mjs';
 import {mockReq,mockRes} from './oauth-helpers.mjs';
@@ -49,4 +50,15 @@ test('session response hands the browser the public Clerk bootstrap and no secre
  assert.ok(!r.body.includes('sk_test'));
  r=mockRes();await createHandler(deps(redis))(mockReq({url:'/api/session'}),r);
  assert.equal(JSON.parse(r.body).clerk,null);
+});
+test('app CSP lets clerk-js load from the real development host',()=>{
+ const rules=JSON.parse(fs.readFileSync(new URL('../vercel.json',import.meta.url),'utf8')).headers.filter(h=>/\/app/.test(h.source));
+ assert.ok(rules.length>0);
+ for(const rule of rules){const csp=rule.headers.find(h=>h.key==='Content-Security-Policy').value;
+  assert.match(csp,/script-src 'self' https:\/\/\*\.accounts\.dev/);assert.match(csp,/connect-src 'self' https:\/\/\*\.accounts\.dev/);assert.ok(!csp.includes("'unsafe-eval'"));}
+});
+test('cold start takes one handshake when Clerk says a session exists, and mutations retry once',()=>{
+ const account=fs.readFileSync(new URL('../public/app/account.js',import.meta.url),'utf8'),core=fs.readFileSync(new URL('../public/app/core.js',import.meta.url),'utf8');
+ assert.match(account,/__client_uat=/);assert.match(account,/\/api\/session\?signin=1&returnTo=/);assert.match(account,/res\.status===401&&coldHandshake\(\)/);
+ assert.match(core,/r\.status===401&&sessionRefresher&&await sessionRefresher\(\)\)r=await send\(\)/);
 });
