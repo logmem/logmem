@@ -1,3 +1,4 @@
+import { getSecret } from "../lib/secrets.mjs";
 import { lookupWorkspaceAgentKey } from './workspace-agent-keys.mjs';
 import { authorizeSpace } from './workspaces.mjs';
 import { customerRedis as workspaceRedis } from './jail.mjs';
@@ -106,7 +107,7 @@ export async function resolveAuth(req, cfg = {}, env = process.env, opts = {}) {
   const cu = cfg.redisUri || cfg.REDIS_URI;
   if (cu) return out({ kind: "redis", uri: cu }, "config");
   const curl = cfg.restUrl || cfg.acmiBridgeUrl || cfg.upstashRedisRestUrl || cfg.UPSTASH_REDIS_REST_URL;
-  const ctok = cfg.restToken || cfg.acmiBridgeToken || cfg.upstashRedisRestToken || cfg.UPSTASH_REDIS_REST_TOKEN;
+  const ctok = cfg.restToken || cfg.acmiBridgeToken || cfg.upstashRedisRestToken || getSecret("UPSTASH_REDIS_REST_TOKEN", cfg);
   if (curl && ctok) return out({ url: curl, token: ctok }, "config");
 
   return bearerAuth(req, env, out, defaultSpace, opts);
@@ -172,7 +173,7 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
         // fall through: an unreadable key store is unauthenticated, never open
       }
     }
-    if (env.LOGMEM_DIRECT_AUTH_TOKEN && safeEqual(bearer, String(env.LOGMEM_DIRECT_AUTH_TOKEN))) {
+    if (getSecret("LOGMEM_DIRECT_AUTH_TOKEN", env) && safeEqual(bearer, String(getSecret("LOGMEM_DIRECT_AUTH_TOKEN", env)))) {
       const d = descriptorFromEnv(env);
       if (d) return out(d, "env-authed");
     }

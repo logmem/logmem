@@ -1,3 +1,4 @@
+import { getSecret } from "../lib/secrets.mjs";
 import { listManagedApps, revokeManagedApp } from '../../api/oauth/_lib/storage.mjs';
 // One customer boundary shared by every browser data route.
 import {resolveViewer} from './viewer.mjs';
@@ -30,7 +31,7 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
   if(req.method==='GET') {
    if(path==='view')return result({ok:true,spaces:[space],generated_at:Date.now(),...await buildView(v.redis,space,q.what||'home',{...q,person:v.person})});
    if(op==='pulse')return result({rev:Number(await v.redis('GET',revKey(space))||0)});
-   if(op==='needs')return result(await needsView(store,v.redis,space,{person:v.person,secret:env.LOGMEM_DECIDE_SECRET}));
+   if(op==='needs')return result(await needsView(store,v.redis,space,{person:v.person,secret:getSecret("LOGMEM_DECIDE_SECRET", env)}));
    if(path==='scorecard')return result(await buildScorecard(v.redis,space));
    if(path==='blockers'||path==='tasks') {
     if(q.trail){const blocker=await getBlocker(store,q.trail);if(!blocker||(blocker.to!==v.person&&blocker.by!==v.person))throw new WorkspaceError('not_found',404);return result({blocker});}

@@ -8,6 +8,7 @@
 // The real-Redis run uses a fresh space per run (lm:conformance-<ts>:*) and
 // never touches lm:madez:* or acmi:*.
 
+import { getSecret } from "../src/lib/secrets.mjs";
 import { pathToFileURL } from "node:url";
 import { LogmemAcmiAdapter } from "../src/compat/acmi-adapter.mjs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
@@ -19,9 +20,9 @@ const { runConformanceTests } = suitePath
 
 let factory;
 let cleanup = async () => {};
-if (process.env.LOGMEM_REDIS_URI) {
+if (getSecret("LOGMEM_REDIS_URI")) {
   const { nativeRedisCall } = await import("../src/lib/redis-native.mjs");
-  const uri = process.env.LOGMEM_REDIS_URI;
+  const uri = getSecret("LOGMEM_REDIS_URI");
   const space = `conformance-${Date.now()}`;
   // Each test gets a sub-space so tests stay independent, like fresh adapters.
   let n = 0;

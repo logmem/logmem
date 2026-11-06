@@ -11,6 +11,7 @@
 //   { status: "handshake", headers }          send these headers with a 307 (Clerk sets its cookies)
 //   { status: "signed-out", signInUrl }       redirect here; Clerk returns to `url`
 
+import { getSecret } from "../lib/secrets.mjs";
 import { createClerkClient } from "@clerk/backend";
 import { AuthStatus, createRedirect } from "@clerk/backend/internal";
 
@@ -21,7 +22,7 @@ export class ClerkConfigError extends Error {
   }
 }
 
-export const clerkConfigured = (env = process.env) => Boolean(env.CLERK_SECRET_KEY && env.CLERK_PUBLISHABLE_KEY);
+export const clerkConfigured = (env = process.env) => Boolean(getSecret("CLERK_SECRET_KEY", env) && env.CLERK_PUBLISHABLE_KEY);
 
 /** Return the Clerk Account Portal origin named by a public publishable key. */
 export function clerkFrontendForKey(key = "") {
@@ -68,7 +69,7 @@ export function partyOrigins(publishableKey = "") {
 
 export async function clerkSession(req, { env = process.env, url, client } = {}) {
   if (!clerkConfigured(env)) throw new ClerkConfigError("Clerk keys are not set on this deploy");
-  const clerk = client || createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  const clerk = client || createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
   const origin = new URL(url).origin;
   const parties = [origin];
   for (const p of partyOrigins(env.CLERK_PUBLISHABLE_KEY)) if (!parties.includes(p)) parties.push(p);
@@ -128,12 +129,12 @@ export async function customerSession(req, options = {}) {
   const session = await clerkSession(req, options);
   if (session.status !== "signed-in") return session;
   const env = options.env || process.env;
-  const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  const clerk = createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
   const current = session.sessionId ? await clerk.sessions.getSession(session.sessionId) : null;
   if (!current || current.status !== "active" || current.userId !== session.userId) return { status: "signed-out" };
   return session;
 }
 export async function revokeCustomerSession(sessionId, env = process.env) {
-  const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  const clerk = createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
   return clerk.sessions.revokeSession(sessionId);
 }
