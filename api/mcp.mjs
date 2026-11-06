@@ -117,8 +117,9 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
 }
 
 /**
- * true when an OAuth token without logmem:write calls a tool that is not
- * read only (unknown tools included). Agent keys and break-glass carry no
+ * true when a credential without logmem:write calls a tool that is not
+ * read only (unknown tools included). Applies to OAuth tokens and to agent
+ * keys minted with scope "read"; full agent keys and break-glass carry no
  * scopes and are not limited here.
  */
 export function insufficientScope(auth, msg, toolDefs) {
@@ -198,7 +199,10 @@ export default async function handler(req, res) {
     // client ask the person for logmem:write (MCP step-up authorization).
     if (insufficientScope(auth, msg, toolDefs())) {
       res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: "insufficient_scope", scope: ALL_SCOPES }));
-      return res.status(403).json({ error: "insufficient_scope", hint: "This connection can only read. Reconnect and allow logmem:write to write." });
+      const hint = auth.source === "agent-key"
+        ? "This key is read-only. Mint a full-scope key to write."
+        : "This connection can only read. Reconnect and allow logmem:write to write.";
+      return res.status(403).json({ error: "insufficient_scope", hint });
     }
 
     const headers = { "X-LogMem-Cred-Source": auth.source, "X-LogMem-Space": auth.space };

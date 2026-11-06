@@ -8,14 +8,15 @@ import { customerRedis as workspaceRedis } from './jail.mjs';
 //                (legacy x-upstash-url/-token and x-acmi-bridge-url/-token accepted)
 //   2. ?config=<base64 JSON> (Smithery): redisUri | restUrl+restToken (legacy names accepted)
 //   3. OAuth 2.1 Bearer from /api/oauth/token  -> backend + space bound to the token
-//   4. Agent key Bearer (lmk_...) -> server env backend, pinned to one space and one agent
+//   4. Agent key Bearer (lmk_...) -> server env backend, pinned to one space and one agent.
+//      A key minted with scope "read" also carries scopes [logmem:read], so write tools are refused.
 //   5. Break-glass Bearer LOGMEM_DIRECT_AUTH_TOKEN -> server env backend
 //
 // Audience: an OAuth token is bound to one resource (<issuer>/mcp). A token
 // minted for another resource resolves as unauthenticated with
 // error "invalid_token". Tokens minted before resource binding carry none and
-// count as this server's. `scopes` is set for OAuth tokens only; other
-// credentials are not limited by scope.
+// count as this server's. `scopes` is set for OAuth tokens and read-scoped
+// agent keys; other credentials are not limited by scope.
 //
 // Space: a token-bound space always wins and cannot be overridden. Otherwise
 // x-logmem-space header, config.space, or LOGMEM_SPACE (default madez). The
@@ -32,7 +33,7 @@ import { descriptorFromEnv } from "../lib/backend.mjs";
 import { assertPublicTarget } from "./net-guard.mjs";
 import { lookupAgentKey, keySpaces, AGENT_KEY_PREFIX } from "./agent-keys.mjs";
 import { customerRedisUri } from "./jail.mjs";
-import { canonicalResource, resourceMetadataUrl, scopesOf, ALL_SCOPES } from "./issuer.mjs";
+import { canonicalResource, resourceMetadataUrl, scopesOf, ALL_SCOPES, SCOPE_READ } from "./issuer.mjs";
 
 const TARGET_CACHE_MS = 60_000;
 const targetCache = new Map(); // sha256(target) -> { ok, until }
@@ -164,7 +165,9 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
       try {
         const k = await (opts.lookupAgentKey || lookupAgentKey)(bearer);
         const d = k && keySpaces(env).includes(k.space) ? descriptorFromEnv(env) : null;
-        if (d) return out(d, "agent-key", { space: k.space, sub: `agent:${k.agent}`, agent: k.agent, keyId: k.id });
+        // A key minted with scope "read" resolves with logmem:read only, so the
+        // MCP route (insufficientScope) refuses its write tools.
+        if (d) return out(d, "agent-key", { space: k.space, sub: `agent:${k.agent}`, agent: k.agent, keyId: k.id, ...(k.scope === "read" ? { scopes: [SCOPE_READ] } : {}) });
       } catch {
         // fall through: an unreadable key store is unauthenticated, never open
       }

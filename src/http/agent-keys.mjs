@@ -40,8 +40,14 @@ export function keySpaces(env = process.env) {
   return String(env.LOGMEM_SPACES || env.LOGMEM_SPACE || "madez").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-/** Mint a key. Returns { id, key, space, agent, label, created_at }. The key is shown once. */
-export async function createAgentKey({ space, agent, label = "", by = "human:admin", owner = "" }, { env = process.env, redis = deployRedis(), now = Date.now } = {}) {
+/**
+ * Mint a key. Returns { id, key, space, agent, label, created_at, scope? }.
+ * The key is shown once. `scope: "read"` makes the key read-only: the server
+ * resolves it with the logmem:read scope, so write tools are refused with
+ * insufficient_scope (api/mcp.mjs). Empty scope keeps the historical
+ * read-and-write behaviour.
+ */
+export async function createAgentKey({ space, agent, label = "", by = "human:admin", owner = "", scope = "" }, { env = process.env, redis = deployRedis(), now = Date.now } = {}) {
   const s = String(space || "").trim().toLowerCase();
   try {
     validateKeySegments(s);
@@ -55,9 +61,11 @@ export async function createAgentKey({ space, agent, label = "", by = "human:adm
   } catch (e) {
     throw new AgentKeyError(`agent: ${e.message}`);
   }
+  const sc = String(scope || "").trim().toLowerCase();
+  if (sc && sc !== "read") throw new AgentKeyError("scope must be 'read' or empty");
   const key = `${AGENT_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
   const id = `ak_${randomBytes(6).toString("hex")}`;
-  const rec = { id, space: s, agent: a, label: String(label || "").slice(0, LABEL_MAX), created_at: now(), created_by: String(by), ...(owner ? { owner: String(owner).slice(0, 64) } : {}) };
+  const rec = { id, space: s, agent: a, label: String(label || "").slice(0, LABEL_MAX), created_at: now(), created_by: String(by), ...(owner ? { owner: String(owner).slice(0, 64) } : {}), ...(sc ? { scope: sc } : {}) };
   const h = sha256hex(key);
   await redis("SET", K.byHash(h), JSON.stringify(rec));
   await redis("SET", K.byId(id), h);
@@ -87,7 +95,7 @@ export async function revokeAgentKey(id, { redis = deployRedis() } = {}) {
   return true;
 }
 
-/** Resolve a bearer to { id, space, agent }, or null. Only lmk_ bearers are looked up. */
+/** Resolve a bearer to { id, space, agent, scope? }, or null. Only lmk_ bearers are looked up. */
 export async function lookupAgentKey(bearer, { redis } = {}) {
   const b = String(bearer || "");
   if (!b.startsWith(AGENT_KEY_PREFIX) || b.length < AGENT_KEY_PREFIX.length + 40) return null;
@@ -106,5 +114,5 @@ export async function lookupAgentKey(bearer, { redis } = {}) {
       if (await isSuspendedSafe(rec.owner, customerRedis())) return null;
     } catch { /* customer store unavailable: keep legacy behavior */ }
   }
-  return { id: rec.id, space: rec.space, agent: rec.agent, ...(rec.owner ? { owner: rec.owner } : {}) };
+  return { id: rec.id, space: rec.space, agent: rec.agent, ...(rec.owner ? { owner: rec.owner } : {}), ...(rec.scope ? { scope: rec.scope } : {}) };
 }

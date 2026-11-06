@@ -1,8 +1,9 @@
 import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // /api/agent-keys — a person creates, lists and revokes per-agent LogMem keys.
 //
-//   GET                         -> { keys: [{ id, space, agent, label, created_at, created_by }] }
-//   POST { space, agent, label } -> { id, key, space, agent, ... }   (the key is shown once)
+//   GET                         -> { keys: [{ id, space, agent, label, created_at, created_by, scope? }] }
+//   POST { space, agent, label, scope? } -> { id, key, space, agent, ... }   (the key is shown once)
+//                                  scope: "read" mints a read-only key (write tools 403 insufficient_scope)
 //   POST { action: "revoke", id } -> { revoked: true|false }
 //   GET also returns web: [{ fid, app, agent, space, created_at, last_used }], the web
 //   clients an admin connected to a fleet space through the OAuth sign-in page.
@@ -59,7 +60,7 @@ export function createHandler({ env = process.env, redis = () => deployRedis(), 
       if (b.action === "revoke") return res.status(200).json({ revoked: await revokeAgentKey(b.id, { redis: redis() }) });
       if (b.action === "disconnect") return res.status(200).json({ disconnected: !!(await revokeManagedApp(FLEET_OWNER, String(b.fid || ""))) });
       const by = `human:${String(env.LOGMEM_ADMIN_ID || "admin")}`;
-      const out = await createAgentKey({ space: b.space, agent: b.agent, label: b.label, by, ...(typeof b.owner === "string" ? { owner: b.owner } : {}) }, { env, redis: redis(), ...(now ? { now } : {}) });
+      const out = await createAgentKey({ space: b.space, agent: b.agent, label: b.label, by, ...(typeof b.owner === "string" ? { owner: b.owner } : {}), ...(b.scope ? { scope: b.scope } : {}) }, { env, redis: redis(), ...(now ? { now } : {}) });
       return res.status(201).json(out);
     } catch (e) {
       if (e instanceof AgentKeyError) return res.status(400).json({ error: e.message });
