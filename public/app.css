@@ -1291,3 +1291,14 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   :root .lmx-head .lm-crumbs a{position:relative;display:inline-block}
   :root .lmx-head .lm-crumbs a::after{content:"";position:absolute;left:-6px;right:-6px;top:50%;height:44px;transform:translateY(-50%)}
 }
+
+/* ── Activity filters fold on a phone; on a wide screen the summary reads as a quiet label ── */
+.lmx-filter-fold>summary{cursor:pointer;font:600 13px var(--font-sans);color:var(--text-muted);margin:4px 0}
+@media (min-width:640px){.lmx-filter-fold>summary{display:none}}
+
+/* ── phone: the drawer (decisions, tasks, jobs) reaches 44 px too ── */
+@media (max-width:639px){
+  :root .lmx-drawer button:not(.lmx-idchip):not(.lmx-linkish),:root .lmx-drawer .lm-input,:root .lmx-drawer select,:root .lmx-drawer summary{min-height:44px;box-sizing:border-box}
+  :root .lmx-drawer .lmx-x{min-width:44px}
+  :root .lmx-drawer .lm-approval-foot{flex-wrap:wrap}
+}

@@ -41,3 +41,19 @@ test('phone css gives chips and crumbs a 44px hit area',()=>{
  const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
  assert.match(css,/\.lmx-idchip::after\{content:""/);assert.match(css,/lmx-main button:not\(\.lmx-idchip\):not\(\.lmx-linkish\)\{min-height:44px\}/);
 });
+test('decision card shows three answers and tucks Comments and Copy behind More',()=>{
+ const cards=fs.readFileSync(new URL('../public/app/cards.js',import.meta.url),'utf8');
+ const card=cards.slice(cards.indexOf('export function askCard'),cards.indexOf('suggestionCard'));
+ assert.match(card,/moreMenu\(\[btn\('Comments'/);
+ const main=card.split("moreMenu([")[1].split('])')[1];
+ assert.equal((main.match(/\$\{btn\('/g)||[]).length,3);
+ assert.ok(!card.includes("lmx-proposal-head\"><div class=\"lm-eyebrow\">Exact proposed action</div>${btn("));
+});
+test('activity filters fold behind one summary on a phone',()=>{
+ const v=fs.readFileSync(new URL('../public/app/views.js',import.meta.url),'utf8');
+ assert.match(v,/lmx-filter-fold" \?open=\$\{!matchMedia\('\(max-width:639px\)'\)\.matches\}><summary>Filters/);
+});
+test('phone css covers the drawer as well as the main column',()=>{
+ const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
+ assert.match(css,/:root \.lmx-drawer button:not\(\.lmx-idchip\)/);
+});
