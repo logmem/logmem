@@ -1247,3 +1247,12 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   :root[data-app-theme] .lmx-rail{padding-top:8px;padding-bottom:8px;gap:2px}
   :root[data-app-theme] .lmx-rail .lm-nav-item{min-height:40px}
 }
+
+/* ── phone header: at most four controls (space, workspace, search, settings). Theme lives in More; live status is a dot. ── */
+@media (max-width:639px){
+  .lmx-head>.lmx-theme-picker{display:none}
+  .lmx-head>.lmx-live{font-size:0;gap:0;min-width:20px;justify-content:center}
+  .lmx-head>.lmx-live::before{width:10px;height:10px}
+  .lmx-head>.lmx-searchbtn,.lmx-head>.lmx-mobile-settings{min-height:44px;min-width:44px}
+  .lmx-head .lmx-headspace summary,.lmx-head .lmx-account-switch-head select{min-height:44px}
+}

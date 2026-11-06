@@ -39,7 +39,7 @@ function navItem(n, route) {
   return html`<a href=${n[3] || '#/' + n[0]} class="lm-nav-item" aria-current=${cur ? 'page' : nothing} style=${cur ? 'background:var(--brand-subtle);color:var(--brand)' : ''} title=${n[1]}>${icon(n[2])}<span>${n[1]}</span></a>`;
 }
 const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
-const themePicker = () => themeControl(refreshFrame);
+export const themePicker = () => themeControl(refreshFrame);
 export const workspaceAssistant = route => assistantWidget(route,refreshFrame);
 
 // One line, not a tall banner. The full text sits in the title attribute.
