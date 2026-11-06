@@ -1307,3 +1307,6 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 :root[data-route-busy]::before{content:"";position:fixed;left:0;top:0;height:3px;width:40%;background:var(--brand);z-index:9999;animation:lmx-busy 1.1s ease-in-out infinite}
 @keyframes lmx-busy{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
 @media (prefers-reduced-motion:reduce){:root[data-route-busy]::before{animation:none;width:100%;opacity:.5}}
+
+/* Settings repeats the admin links that More already lists. Hide the links on phones, keep Sign out. */
+@media (max-width:639px){.lmx-adminbar a{display:none}}

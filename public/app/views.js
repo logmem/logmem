@@ -3,7 +3,7 @@
 import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { live as liveDir } from '/vendor/lit-html-3.2.1/directives/live.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
-import { api, getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
+import { getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
 import { icon, agent, seenTag, fresh, stage, decision, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
 import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink, askCard, copy } from './cards.js';
 import { invite } from './actions.js';
@@ -98,17 +98,17 @@ pages.plan = async (name) => {
   const d = await load('plan', name ? { id: name } : {});
   if (!ok(d)) return;
   if (!d.plan) { renderView('plan', ['Lanes'], html`${emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')}${seedCard({project:state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space:state.space})}`); return; }
-  const items = d.tracks.reduce((a, t) => a.concat(t.items), []);
+  const items = (d.tracks || []).reduce((a, t) => a.concat(t.items || []), []);
   const lateFn = (i) => isLate(i.due, i.stage);
   const done = items.filter((i) => i.stage === 'done').length;
   const late = items.filter(lateFn);
   const blocked = items.filter((i) => i.stage === 'blocked').length;
   const waiting = items.filter((i) => planMatch(i, 'waiting'));
   const toward = (m) => items.filter((i) => i.milestone && (i.milestone === m.id || String(m.title).indexOf(i.milestone + ':') === 0));
-  const msName = (k) => { const m = d.milestones.find((x) => x.id === k); return m ? m.title + (m.date ? ' · ' + m.date : '') : k; };
-  const tracks = mergeTracks(d.tracks), counts = planCounts(items, lateFn), pf = filt('plan:' + d.plan);
+  const msName = (k) => { const m = (d.milestones || []).find((x) => x.id === k); return m ? m.title + (m.date ? ' · ' + m.date : '') : k; };
+  const tracks = mergeTracks(d.tracks || []), counts = planCounts(items, lateFn), pf = filt('plan:' + d.plan);
   const draw = () => {
-    const mode = pf.mode || 'all', ms = d.milestones.find((m) => m.id === pf.ms);
+    const mode = pf.mode || 'all', ms = (d.milestones || []).find((m) => m.id === pf.ms);
     const inMs = ms ? new Set(toward(ms).map((i) => i.id)) : null;
     const plain = mode === 'all' && !inMs;
     const keep = (i) => planMatch(i, mode, lateFn) && (!inMs || inMs.has(i.id));
@@ -205,7 +205,7 @@ function drawJobs() {
       ${unknown.length ? html`<section><h2 class="lmx-section-title">Unrecognized stages</h2>${unknown.map(row)}</section>` : nothing}`}
     <p class="lmx-meta">${list.length} matching work items. Milestones are listed under Plans and milestones. Done work from the last seven days appears here.</p></div>`);
 }
-pages.jobs = async () => { const d = await api('jobs'); if (!ok(d)) return false; live.jobs = d.jobs; drawJobs(); return true; };
+pages.jobs = async () => { const d = await load('jobs'); if (!ok(d)) return false; live.jobs = d.jobs || []; drawJobs(); return true; };
 pages.work = pages.jobs;
 // Signed out, the sign-in form shows and no panel opens over it.
 pages.job = async (id) => { if (!(await pages.jobs())) return; const ds = drawerState(); if (!ds || ds.id !== id) openDrawer('job', id); };
@@ -216,10 +216,10 @@ pages.write = writerPage;
 pages.walk = playerPage;
 
 pages.agents = async () => {
-  const [d, lg] = await Promise.all([load('agents'), api('log').catch(() => null)]);
+  const [d, lg] = await Promise.all([load('agents'), load('log').catch(() => null)]);
   if (!ok(d)) return;
   const pulseEntries = lg && Array.isArray(lg.entries) ? lg.entries : [];
-  const liveN = d.agents.filter((a) => a.seen.state === 'active').length;
+  const liveN = (d.agents || []).filter((a) => a.seen?.state === 'active').length;
   const pf = filt('agents:' + state.space), counts = agentCounts(d.agents), open = (pf.open = pf.open || {});
   const draw = () => {
     const mode = AGENT_MODES.some(([k]) => k === pf.mode) ? pf.mode : 'fleet';
@@ -235,7 +235,7 @@ pages.agents = async () => {
   draw();
 };
 pages.agent = async (id) => {
-  const d = await api('agent', { id });
+  const d = await load('agent', { id });
   if (!ok(d)) return;
   const pf = filt('agent:' + state.space + ':' + id);
   const draw = () => renderView('agent', [html`<a href="#/agents">Agents</a>`, id], agentProfile({ d, id, pf, space: state.space, redraw: () => { saveFilt(); draw(); } }));
@@ -258,18 +258,18 @@ function drawLog() {
     <section class="lm-panel" style="padding:8px 16px 16px">${f.allEvents ? entries(list) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${entries(g.entries)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.</p></section>`);
 }
 pages.activity = () => pages.log();
-pages.log = async () => { live.recall = null; const d = await api('log'); if (!ok(d)) return; live.log = d.entries; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
+pages.log = async () => { live.recall = null; const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
 pages.recall = async (q) => {
   const query = q || '';
-  const [l, r] = await Promise.all([api('log'), query ? api('recall', { q: query }) : Promise.resolve({ results: [] })]);
+  const [l, r] = await Promise.all([load('log'), query ? load('recall', { q: query }) : Promise.resolve({ results: [] })]);
   if (!ok(l)) return;
-  live.log = l.entries; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
+  live.log = l.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
 };
 pages.channels = async (id) => { filt('log').where = id ? 'channel:' + id : 'channel'; saveFilt(); return pages.log(); };
 
 // Knowledge keeps decisions and discussions attached to their existing sources.
 pages.knowledge = async () => {
-  const [d, c, fleet] = await Promise.all([api('decisions'), api('channels'), api('agents').catch(() => null)]);
+  const [d, c, fleet] = await Promise.all([load('decisions'), load('channels'), load('agents').catch(() => null)]);
   if (!ok(d) || !ok(c)) return;
   const waiting = d.waiting || [], decided = d.decided || [];
   const pf = filt('knowledge:' + state.space);
@@ -316,7 +316,7 @@ pages.knowledge = async () => {
 
 // ─── Admin pages ─────────────────────────────────────────────────────
 pages.settings = async () => {
-  const d = await api('settings');
+  const d = await load('settings');
   if (!ok(d)) return;
   const pingOk = Number.isFinite(Number(d.ping_ms)), spaces = Array.isArray(d.mirror_spaces) ? d.mirror_spaces : [];
   // Read-only chip, not a switch: this page cannot change these settings.
@@ -339,7 +339,7 @@ const slotCell = (cell) => {
   return html`<td>${decision(ic, label)}${n ? html` <span class="muted mono" style="font-size:12px">${n} ${n === 1 ? 'run' : 'runs'}</span>` : nothing}</td>`;
 };
 pages.slots = async (date) => {
-  const d = await api('slots', date ? { date } : {});
+  const d = await load('slots', date ? { date } : {});
   if (!ok(d)) return;
   const rows = (d.agents || []).map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td>${SLOT_ORDER.map((s) => slotCell(a.slots && a.slots[s]))}</tr>`);
   renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Review coordination receipts by day. An empty slot past its window reads Missed.')}
@@ -348,7 +348,7 @@ pages.slots = async (date) => {
     ${rows.length ? table(['Agent', 'Morning', 'Midday', 'Closeout'], rows) : emptyState('No agents yet.', 'Slots appear once agents are in this space.')}`);
 };
 async function auditPage(route = 'audit') {
-  const d = await api('audit');
+  const d = await load('audit');
   if (!ok(d)) return;
   const pf=filt('health:'+state.space);
   const observedAudit=d.days?.at(-1);

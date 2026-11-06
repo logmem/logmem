@@ -32,3 +32,26 @@ test('route shows a busy bar while it loads and offers Try again on failure',()=
  assert.match(main,/setBusy\(true\)/);assert.match(main,/\.finally\(\(\) => setBusy\(false\)\)/);assert.match(main,/Try again/);
  assert.match(css,/:root\[data-route-busy\]::before/);assert.match(css,/prefers-reduced-motion:reduce\)\{:root\[data-route-busy\]/);
 });
+const src=(f)=>fs.readFileSync(new URL('../public/app/'+f,import.meta.url),'utf8');
+test('views, drawer and search no longer call api() directly',()=>{
+ for(const f of ['views.js','drawer.js','search.js']){
+  assert.doesNotMatch(src(f),/\bapi\('/,f+' still calls api()');
+  assert.doesNotMatch(src(f),/import \{[^}]*\bapi\b[^}]*\} from '\.\/core\.js'/,f+' still imports api');
+ }
+ assert.match(src('data.js'),/await api\(what, extra\)/);
+});
+test('KEYS covers every what that views, drawer and search load',()=>{
+ const used=new Set();
+ for(const f of ['views.js','drawer.js','search.js'])for(const m of src(f).matchAll(/\bload(?:Data)?\('([a-z]+)'/g))used.add(m[1]);
+ assert.ok(used.size>=12,'found '+used.size);
+ for(const w of used)assert.ok(w in KEYS,'KEYS is missing '+w);
+});
+test('plan and huddle defaults cover fields the views index',()=>{
+ assert.deepEqual(withDefaults('plan',{}).milestones,[]);
+ assert.deepEqual(withDefaults('huddle',{huddle:{}}).replies,[]);
+});
+test('settings link cluster hides on phones only',()=>{
+ const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
+ assert.match(css.slice(css.lastIndexOf('@media (max-width:639px)')),/^@media \(max-width:639px\)\{\.lmx-adminbar a\{display:none\}\}/);
+ assert.doesNotMatch(css,/^\.lmx-adminbar a\{[^}]*display:none/m);
+});

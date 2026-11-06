@@ -2,7 +2,8 @@
 // huddle's round table. Rendered with lit-html into one overlay node.
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
-import { api, getJSON, state, live, agentName, ago } from './core.js';
+import { load } from './data.js';
+import { getJSON, state, live, agentName, ago } from './core.js';
 import { emptyState, panel, entries, stage, btn, kv } from './ui.js';
 import { decideBatch } from './actions.js';
 import { drawDiscussion } from './interactions.js';
@@ -82,12 +83,12 @@ export async function drawRender(first = false) {
   if (want.kind === 'discussion') return drawDiscussion(want,(title,body)=>{shell(title,body);focusHead(first);first=false;},()=>drawer===want);
   if (want.kind === 'huddle') return drawHuddle(want, first);
   const id = want.id;
-  const [d, n] = await Promise.all([api('job', { id }), getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''))]);
+  const [d, n] = await Promise.all([load('job', { id }), getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''))]);
   if (drawer !== want) return;
   if (d.__status !== 200) { shell(id, emptyState('Could not load this job.', d.error || '')); return; }
   const who = d.who || {}, now = d.now || {};
   // Decisions come from the job view's open_asks: the server decides what is still open, never the browser.
-  const mine = (n.items || []).filter((i) => i.job === id && i.type === 'task').concat((d.open_asks || []).map((a) => ({ type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a })));
+  const mine = ((n && n.items) || []).filter((i) => i.job === id && i.type === 'task').concat((d.open_asks || []).map((a) => ({ type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a })));
   const card = now.stage === 'blocked' ? jobCard({ id, title: who.title || id, plan: who.plan, track: who.track, owner: now.owner || who.owner, blocked_on: now.blocked_on, since: now.stage_at }, { inPanel: true }) : nothing;
   const about = [['Plan', [who.plan, who.track].filter(Boolean).join(' › ')], ['Owner', agentName(now.owner || who.owner || '')], ['Milestone', typeof who.milestone === 'string' ? who.milestone : who.gate], ['Due', who.due], ['What', who.desc], ['Evidence', who.evidence]].filter((x) => x[1]);
   shell(who.title || id, html`${card}${repeat(mine, needKey, (i) => needItem(i))}
@@ -101,7 +102,7 @@ export async function drawRender(first = false) {
 
 /** A huddle's round table (from acmi-console's RoundTable): who was asked, who replied, who acked. */
 async function drawHuddle(want, first) {
-  const d = await api('huddle', { trail: want.id, where: want.where || '' });
+  const d = await load('huddle', { trail: want.id, where: want.where || '' });
   if (drawer !== want) return;
   if (d.__status !== 200 || !d.huddle) { shell('Huddle', emptyState('Could not load this huddle.', d.error || '')); return; }
   const STATUS = { acked: ['Acked', 'success'], declined: ['Declined', 'danger'], replied: ['Replied', 'info'], pending: ['No reply yet', 'warning'] };

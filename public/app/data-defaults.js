@@ -4,7 +4,7 @@ export const CONTRACT = 1;
 export const KEYS = {
   home: { blocked: [], agents: [], needs_items: [], lanes: [] },
   lanes: { lanes: [] },
-  plan: { tracks: [], plan: null },
+  plan: { tracks: [], plan: null, milestones: [] },
   jobs: { jobs: [] },
   agents: { agents: [] },
   agent: {},
@@ -15,7 +15,7 @@ export const KEYS = {
   settings: {},
   slots: { slots: [] },
   audit: {},
-  huddle: { participants: [] },
+  huddle: { participants: [], replies: [] },
   job: {},
 };
 const fresh = (v) => (Array.isArray(v) ? [] : v && typeof v === 'object' ? { ...v } : v);
