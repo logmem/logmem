@@ -3,7 +3,7 @@
 import {clearInteractions} from './interactions.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { state, live, getJSON, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
+import { state, live, getJSON, api, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
 import { refreshSession } from './session-keepalive.js';
 setSessionRefresher(refreshSession);
 import { icon } from './ui.js';
@@ -69,6 +69,12 @@ setShellHooks({
 });
 
 // ─── router ──────────────────────────────────────────────────────────
+/** A cold load of any screen other than Today has no space yet. Ask once, so pages that read state.space at start see it. */
+async function primeSpace() {
+  const d = await api('home');
+  if (!ok(d)) return false;
+  return Boolean(state.space);
+}
 function route() {
   cancelWalkLoads();
   invalidateLoads();
@@ -77,7 +83,8 @@ function route() {
   if(state.customer&&location.hash==='#/new-task')return showNewTask();
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
-  return Promise.resolve(page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined)).catch((e) => {
+  const start = () => page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined);
+  return Promise.resolve(state.customer || state.space || parts[0] === 'home' || !parts[0] ? start() : primeSpace().then((ready) => (ready ? start() : undefined))).catch((e) => {
     renderBare(html`<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">${icon('alert')}<div><strong>Couldn’t reach LogMem.</strong> ${e.message}</div></div></div>`);
   });
 }

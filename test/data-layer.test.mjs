@@ -21,3 +21,8 @@ test('every view that indexes lists loads through data.js',()=>{
  for(const w of ['home','lanes','plan','agents'])assert.match(views,new RegExp(`load\\('${w}'`));
  assert.ok(CONTRACT>=1&&KEYS.home);
 });
+test('a cold load primes the space before a page reads it',()=>{
+ const main=fs.readFileSync(new URL('../public/app/main.js',import.meta.url),'utf8');
+ assert.match(main,/async function primeSpace/);assert.match(main,/state\.customer \|\| state\.space \|\| parts\[0\] === 'home'/);
+ assert.match(main,/import \{ state, live, getJSON, api,/);
+});

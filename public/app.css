@@ -1276,3 +1276,8 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   :root[data-app-theme] .lmx-map-toggle button,:root .lmx-map-toggle button{min-height:44px}
   :root .lmx-main .lm-select,:root .lmx-main .lm-input{min-height:44px}
 }
+
+/* ── phone: stage filter chips on Work reach 44 px ── */
+@media (max-width:639px){
+  :root .lmx-stagechips button{min-height:44px}
+}
