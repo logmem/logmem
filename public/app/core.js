@@ -58,10 +58,18 @@ function customerUrl(url) {
   if(state.spaceId)u.searchParams.set('spaceId',state.spaceId);
   return u.pathname+u.search;
 }
+// Clerk session tokens last 60 seconds. A 401 may only mean the cookie went stale,
+// so a customer gets one silent refresh and one retry before being signed out.
+let sessionRefresher=null;
+export const setSessionRefresher=fn=>{sessionRefresher=fn;};
+const fetchJSON=url=>fetch(customerUrl(url), {credentials:'same-origin',headers:state.customer?{'X-LogMem-Viewer':'customer'}:{},signal:pendingController.signal}).then(asJSON);
 export async function getJSON(url) {
   const requestedSpace=state.space,requestedEpoch=epoch;
   let value;
-  try{value=await fetch(customerUrl(url), {credentials:'same-origin',headers:state.customer?{'X-LogMem-Viewer':'customer'}:{},signal:pendingController.signal}).then(asJSON);}
+  try{
+    value=await fetchJSON(url);
+    if(state.customer&&value.__status===401&&sessionRefresher&&await sessionRefresher())value=await fetchJSON(url);
+  }
   catch(e){if(requestedEpoch!==epoch||e.name==='AbortError')return {__stale:true,__status:0};throw e;}
   if(requestedSpace!==state.space||requestedEpoch!==epoch){value.__stale=true;return value;}
   if(state.customer&&[401,403,404].includes(value.__status)){
@@ -80,7 +88,9 @@ export function api(what, extra) {
 /** POST with the intent header; resolves the JSON on 2xx, throws the server's message otherwise. */
 export async function postJSON(url, intent, body) {
   const requestedEpoch=epoch;
-  const r = await fetch(customerUrl(url), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent, ...(state.customer?{'X-LogMem-Viewer':'customer'}:{}) }, body: JSON.stringify(Object.assign({ space: state.space }, body, state.customer?{workspaceId:state.workspaceId,spaceId:state.spaceId}:{})) });
+  const send = () => fetch(customerUrl(url), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-LogMem-Intent': intent, ...(state.customer?{'X-LogMem-Viewer':'customer'}:{}) }, body: JSON.stringify(Object.assign({ space: state.space }, body, state.customer?{workspaceId:state.workspaceId,spaceId:state.spaceId}:{})) });
+  let r = await send();
+  if(state.customer&&r.status===401&&sessionRefresher&&await sessionRefresher())r=await send();
   const j = await asJSON(r);
   if(requestedEpoch!==epoch){const e=new Error('Space changed. Check the original space before retrying.');e.stale=true;throw e;}
   if(state.customer&&[401,403,404].includes(r.status)){

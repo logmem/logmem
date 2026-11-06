@@ -101,7 +101,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+          "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://*.accounts.dev; connect-src 'self' https://*.accounts.dev; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         },
         {
           "key": "Cache-Control",
@@ -114,7 +114,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+          "value": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://*.accounts.dev; connect-src 'self' https://*.accounts.dev; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         }
       ]
     },
