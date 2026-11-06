@@ -20,6 +20,7 @@
 // Nothing secret is ever logged: not the token hash, not the Redis URL.
 // Zero runtime dependencies: the native path is cloud/bridge/resp.mjs.
 
+import { getSecret } from "../../src/lib/secrets.mjs";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -59,7 +60,7 @@ async function runnerFor(url, token, name, { commandTimeoutMs, maxReplyBytes }) 
 
 /** Build the canonical Redis runner (tenant commands) from ACMI_REDIS_URL. */
 export async function redisFromEnv(env = process.env, { commandTimeoutMs = DEFAULT_LIMITS.commandTimeoutMs, maxReplyBytes } = {}) {
-  return runnerFor(env.ACMI_REDIS_URL || "", env.ACMI_REDIS_TOKEN, "ACMI_REDIS_URL", { commandTimeoutMs, maxReplyBytes });
+  return runnerFor(env.ACMI_REDIS_URL || "", getSecret("ACMI_REDIS_TOKEN", env), "ACMI_REDIS_URL", { commandTimeoutMs, maxReplyBytes });
 }
 
 /**
@@ -76,7 +77,7 @@ export async function meterRedisFromEnv(env = process.env, tenantRedis, { comman
     return tenantRedis;
   }
   if (url === env.ACMI_REDIS_URL) throw new Error("ACMI_METER_REDIS_URL must be a different Redis user than ACMI_REDIS_URL");
-  const r = await runnerFor(url, env.ACMI_METER_REDIS_TOKEN, "ACMI_METER_REDIS_URL", { commandTimeoutMs });
+  const r = await runnerFor(url, getSecret("ACMI_METER_REDIS_TOKEN", env), "ACMI_METER_REDIS_URL", { commandTimeoutMs });
   return r.kind === "resp" ? meterRunner(r) : r;
 }
 
@@ -246,7 +247,7 @@ export function limitsFromEnv(env = process.env) {
 
 export async function start(env = process.env) {
   const tenant = env.ACMI_TENANT;
-  const tokenSha256 = env.ACMI_BRIDGE_TOKEN_SHA256;
+  const tokenSha256 = getSecret("ACMI_BRIDGE_TOKEN_SHA256", env);
   const port = num(env.ACMI_BRIDGE_PORT) ?? 8080;
   const host = env.ACMI_BRIDGE_HOST || "0.0.0.0";
   const limits = limitsFromEnv(env);

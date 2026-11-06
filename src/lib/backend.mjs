@@ -6,6 +6,7 @@
 //      (ACMI_BRIDGE_URL/_TOKEN and UPSTASH_REDIS_REST_URL/_TOKEN accepted)
 //   3. nothing reachable                                 -> in-memory (degraded)
 
+import { getSecret } from "./secrets.mjs";
 import { createRedis } from "./redis-rest.mjs";
 import { createMemoryRedis } from "./memory-redis.mjs";
 
@@ -26,10 +27,10 @@ export function fromDescriptor(d) {
 }
 
 export function descriptorFromEnv(env = process.env) {
-  const uri = env.LOGMEM_REDIS_URI || env.ACMI_REDIS_URI;
+  const uri = getSecret("LOGMEM_REDIS_URI", env) || getSecret("ACMI_REDIS_URI", env);
   if (uri) return { kind: "redis", uri };
   const url = env.LOGMEM_REST_URL || env.ACMI_BRIDGE_URL || env.UPSTASH_REDIS_REST_URL;
-  const token = env.LOGMEM_REST_TOKEN || env.ACMI_BRIDGE_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
+  const token = getSecret("LOGMEM_REST_TOKEN", env) || getSecret("ACMI_BRIDGE_TOKEN", env) || getSecret("UPSTASH_REDIS_REST_TOKEN", env);
   if (url && token) return { url, token };
   return null;
 }

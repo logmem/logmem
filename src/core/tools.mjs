@@ -13,6 +13,7 @@
 // the admin login). Every write is size-capped (LIMITS) because entry text
 // is shown to other agents and must stay data, not a prompt channel.
 
+import { getSecret } from "../lib/secrets.mjs";
 import { PERSON_RE, normalizeWalkthrough, createBlocker, getBlocker, blockersFrom } from "./blockers.mjs";
 import { planForJob, createPlan, listPlans, getPlan, setLane, laneText, LANE_STATUS, PlanError } from "./plans.mjs";
 import { checkBlockedOn, linkOpen, linkClose, jobOf, BlockedError } from "./links.mjs";
@@ -1396,7 +1397,7 @@ export const NO_SECRET =
   "decisions are disabled: LOGMEM_DECIDE_SECRET is not set (or shorter than 32 characters). Set it on the server (e.g. `openssl rand -hex 32`); nothing was written";
 
 /** The decide secret for a tool context: an explicit ctx.decideSecret, else the env. */
-export const decideSecret = (ctx) => (ctx && ctx.decideSecret !== undefined ? ctx.decideSecret : process.env.LOGMEM_DECIDE_SECRET);
+export const decideSecret = (ctx) => (ctx && ctx.decideSecret !== undefined ? ctx.decideSecret : getSecret("LOGMEM_DECIDE_SECRET"));
 const usableSecret = (secret) => typeof secret === "string" && secret.length >= DECIDE_SECRET_MIN;
 
 /**
@@ -1705,7 +1706,7 @@ async function readTrail(store, ns, id, ts) {
  * refusing a shadow copy on another agent's log and copies that disagree.
  * Legacy acmi:* rows are never asks.
  */
-export async function findAsk(store, trail, { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+export async function findAsk(store, trail, { secret = getSecret("LOGMEM_DECIDE_SECRET") } = {}) {
   let key;
   try {
     key = lmAskKey(store.space, trail);
@@ -1821,7 +1822,7 @@ async function findAskTwins(store, trail, ts) {
  *
  * Throws DecisionError: bad_request, misconfigured, forbidden, confirm_required, not_found, not_pending, ambiguous.
  */
-export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, reclaim = false, expectedHash, secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+export async function writeDecision(store, askTrail, { verdict, note, by, via = "web", now = Date.now, confirm = false, reclaim = false, expectedHash, secret = getSecret("LOGMEM_DECIDE_SECRET") } = {}) {
   if (!usableSecret(secret)) throw new DecisionError("misconfigured", NO_SECRET);
   if (typeof askTrail !== "string" || !askTrail || askTrail.length > LIMITS.trail) throw new DecisionError("bad_request", `trail must be a string of 1..${LIMITS.trail} characters`);
   if (!VERDICTS.includes(verdict)) throw new DecisionError("bad_request", `verdict must be one of ${VERDICTS.join(", ")}`);

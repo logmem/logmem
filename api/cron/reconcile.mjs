@@ -14,6 +14,7 @@
 // "madezmedia/logmem"), LOGMEM_GITHUB_TOKEN (optional, read-only; without it
 // the public API is used, and if GitHub can't be read the PR signal is off).
 
+import { getSecret } from "../../src/lib/secrets.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../../src/lib/backend.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
 import { isAdmin } from "../../src/http/admin-auth.mjs";
@@ -40,7 +41,7 @@ export function createHandler({ env = process.env, resolveRedis = defaultRedis, 
   return async function handler(req, res) {
     const t0 = Date.now();
     res.setHeader("Cache-Control", "no-store");
-    const secret = env.CRON_SECRET;
+    const secret = getSecret("CRON_SECRET", env);
     const viaCron = !!secret && String(secret).length >= CRON_SECRET_MIN && cronAuthorized(req, secret);
     const viaAdmin = !viaCron && isAdmin(req, env);
     if (!viaCron && !viaAdmin) return res.status(401).json({ error: "unauthorized" });
