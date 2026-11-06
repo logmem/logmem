@@ -13,6 +13,7 @@
 // are reached by server code through customerRedis() directly, never through a
 // user's jailed runner.
 
+import { getSecret } from "../lib/secrets.mjs";
 import { checkCommand, inJail, DEFAULT_LIMITS } from "../../cloud/bridge/bridge.mjs";
 import { jailSafeScript } from "../lib/lua-scripts.mjs";
 import { namespaceFor } from "../../cloud/tenants/index.mjs";
@@ -93,7 +94,7 @@ function checkEval(args, opts) {
 
 /** The customer Redis URI. rediss:// is required outside local dev. */
 export function customerRedisUri(env = process.env) {
-  const uri = String(env.LOGMEM_CUSTOMER_REDIS_URI || "").trim();
+  const uri = String(getSecret("LOGMEM_CUSTOMER_REDIS_URI", env) || "").trim();
   if (!uri) throw new CustomerRedisConfigError("LOGMEM_CUSTOMER_REDIS_URI is not set");
   if (/^rediss:\/\//i.test(uri)) return uri;
   if (/^redis:\/\//i.test(uri) && insecureAllowed(env)) return uri;

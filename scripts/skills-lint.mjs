@@ -12,6 +12,7 @@
 //
 // Usage: node scripts/skills-lint.mjs [skills-dir]
 
+import { getSecret } from "../src/lib/secrets.mjs";
 import { readdirSync, readFileSync, existsSync, statSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +21,7 @@ export const RAW_REDIS_ALLOWED = new Set(["logmem-self-host", "logmem-read-path-
 const RAW_REDIS_RE = /\b(redis-cli|ZADD|HSET|ZRANGEBYSCORE|SCAN 0|UPSTASH_[A-Z_]+)\b|\/bridge\/exec/;
 const ACMI_CALL_RE = /\bacmi_[a-z_]+\b/;
 // The live fleet token is never written here. Set ACMI_BRIDGE_TOKEN to catch copies of it.
-const FLEET_BRIDGE_TOKEN = (process.env.ACMI_BRIDGE_TOKEN || "").trim();
+const FLEET_BRIDGE_TOKEN = (getSecret("ACMI_BRIDGE_TOKEN") || "").trim();
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const SECRET_RES = [
   [/\blmk_[A-Za-z0-9_-]{20,}/, "LogMem agent key"],

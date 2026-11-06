@@ -7,6 +7,7 @@
 // Backend from the env (LOGMEM_REST_URL + LOGMEM_REST_TOKEN, or LOGMEM_REDIS_URI),
 // the same as the stdio server. The fleet's scheduler runs it every 15 minutes;
 // Vercel Cron runs api/cron/reconcile daily. Output is one JSON report.
+import { getSecret } from "../src/lib/secrets.mjs";
 import { pathToFileURL } from "node:url";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { createLogmem, compatFromEnv, mirrorConfigFromEnv } from "../src/server.mjs";
@@ -20,9 +21,9 @@ export async function runReconcile(redis, { space, apply = false, env = process.
     defaultAgent: RECONCILER, lockedAgent: RECONCILER,
     // Same view and mirror as the server, so legacy jobs count and writes reach ACMI too.
     compat: compatFromEnv(env), mirror: mirrorConfigFromEnv(env),
-    decideSecret: env.LOGMEM_DECIDE_SECRET,
+    decideSecret: getSecret("LOGMEM_DECIDE_SECRET", env),
   });
-  const github = githubSource({ repo: env.LOGMEM_GITHUB_REPO || "madezmedia/logmem", token: env.LOGMEM_GITHUB_TOKEN, ...(fetchImpl ? { fetchImpl } : {}) });
+  const github = githubSource({ repo: env.LOGMEM_GITHUB_REPO || "madezmedia/logmem", token: getSecret("LOGMEM_GITHUB_TOKEN", env), ...(fetchImpl ? { fetchImpl } : {}) });
   const store = lm.store;
   const plan = await planCloses(store, {
     now, github,
