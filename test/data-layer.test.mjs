@@ -26,3 +26,9 @@ test('a cold load primes the space before a page reads it',()=>{
  assert.match(main,/async function primeSpace/);assert.match(main,/state\.customer \|\| state\.space \|\| parts\[0\] === 'home'/);
  assert.match(main,/import \{ state, live, getJSON, api,/);
 });
+test('route shows a busy bar while it loads and offers Try again on failure',()=>{
+ const main=fs.readFileSync(new URL('../public/app/main.js',import.meta.url),'utf8');
+ const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
+ assert.match(main,/setBusy\(true\)/);assert.match(main,/\.finally\(\(\) => setBusy\(false\)\)/);assert.match(main,/Try again/);
+ assert.match(css,/:root\[data-route-busy\]::before/);assert.match(css,/prefers-reduced-motion:reduce\)\{:root\[data-route-busy\]/);
+});

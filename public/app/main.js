@@ -84,10 +84,13 @@ function route() {
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
   const start = () => page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined);
+  setBusy(true);
   return Promise.resolve(state.customer || state.space || parts[0] === 'home' || !parts[0] ? start() : primeSpace().then((ready) => (ready ? start() : undefined))).catch((e) => {
-    renderBare(html`<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">${icon('alert')}<div><strong>Couldn’t reach LogMem.</strong> ${e.message}</div></div></div>`);
-  });
+    renderBare(html`<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">${icon('alert')}<div><strong>Couldn’t reach LogMem.</strong> ${e.message} <button type="button" class="lm-btn lm-btn--secondary" style="margin-left:8px" @click=${() => route()}>Try again</button></div></div></div>`);
+  }).finally(() => setBusy(false));
 }
+/** A thin bar and aria-busy while a screen loads, so a slow call never looks like a frozen page. */
+function setBusy(on) { document.documentElement.toggleAttribute('data-route-busy', on); const m = document.getElementById('root'); if (m) m.setAttribute('aria-busy', String(on)); }
 
 // ─── live: the pulse (live app spec, section 6) ──────────────────────
 function syncCount() { refreshFrame(); }
