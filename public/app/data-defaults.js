@@ -11,7 +11,7 @@ export const KEYS = {
   log: { entries: [] },
   channels: { channels: [] },
   decisions: { decisions: [] },
-  recall: { entries: [] },
+  recall: { entries: [], results: [] },
   settings: {},
   slots: { slots: [] },
   audit: {},

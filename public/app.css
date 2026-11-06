@@ -1310,3 +1310,48 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 
 /* Settings repeats the admin links that More already lists. Hide the links on phones, keep Sign out. */
 @media (max-width:639px){.lmx-adminbar a{display:none}}
+
+/* canvas-inbox */
+.lmx-tabs a,.lmx-tabs button{min-height:44px}
+.lmx-tabs a b{pointer-events:none}
+.lmx-ticket-agents{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
+.lmx-agentchip{display:inline-flex;align-items:center;gap:6px;min-height:24px;padding:0 8px 0 2px;border:1px solid var(--border);border-radius:999px;background:var(--surface-sunken);color:var(--text);font:500 11px/1 var(--font-sans)}
+.lmx-avatar--sm{width:20px;height:20px;font-size:9px}
+.lmx-ticket[data-status="overdue"] .lmx-ticket-status{padding:2px 8px;border-radius:999px;background:var(--danger-subtle,var(--surface-sunken));border:1px solid var(--danger)}
+.lmx-queue-map{margin-top:16px;border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:0 12px}
+.lmx-queue-map>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none}
+.lmx-queue-map>summary::-webkit-details-marker{display:none}
+.lmx-queue-map[open]{padding-bottom:12px}
+.lmx-inbox-layout{display:block}
+.lmx-tile-sub{display:block;margin-top:2px;font:500 11px/1.2 var(--font-sans);color:var(--text-subtle)}
+.lmx-space-picker .lm-i,.lmx-ticket-expand .lm-i,.lmx-dispatch-button .lm-i{width:14px;height:14px;vertical-align:-2px}
+@media(max-width:639px){.lmx-ticket-expand,.lmx-queue-map>summary{min-height:44px}.lmx-ticket-actions a{display:inline-flex;align-items:center;min-height:44px}}
+
+/* canvas-log: Log inspector, group-by, shift markers, Recall result anatomy */
+.lmx-groupbar{display:flex;align-items:center;gap:8px;margin:8px 0}
+.lmx-log-layout{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.lmx-log-layout>.lmx-log-list{flex:999 1 520px;min-width:0}
+.lmx-log-layout>.lmx-inspector{flex:1 1 340px;min-width:0;order:2}
+.lmx-logrow{cursor:pointer;border-radius:var(--radius-md,8px)}
+.lmx-logrow[aria-pressed="true"]{background:var(--brand-subtle)}
+.lmx-logrow:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.lmx-inspector-body{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
+.lmx-inspector-summary{margin:0;font-size:15px}
+.lmx-inspector-chain{display:flex;flex-direction:column;gap:8px}
+.lmx-tech{margin:8px 0 0;font-size:12px;background:var(--surface-sunken);padding:10px;border-radius:var(--radius-sm,6px);white-space:pre-wrap;overflow-wrap:anywhere}
+.lmx-recall-note{margin:12px 16px}
+.lmx-recall-when{margin-left:auto}
+.lmx-recall-quote,.lmx-recall .lm-recall-quote{padding:8px 12px;border-left:3px solid var(--border-strong);background:var(--surface-sunken);border-radius:0 var(--radius-sm,6px) var(--radius-sm,6px) 0;font-size:14px;overflow-wrap:anywhere}
+.lmx-recall mark{background:var(--brand-subtle);color:inherit;font-weight:600;border-radius:2px;padding:0 2px}
+.lmx-recall-open{margin-left:auto}
+@media (max-width: 639px){
+  .lmx-log-layout{display:flex;flex-direction:column;gap:12px}
+  .lmx-log-layout>.lmx-inspector{order:-1;width:100%;flex:none}
+  .lmx-log-layout>.lmx-log-list{width:100%;flex:none}
+  :root .lmx-groupbar .lm-seg button,:root .lmx-inspector button,:root .lmx-inspector .lm-btn,:root .lmx-inspector summary,:root .lmx-recall-open{min-height:44px;min-width:44px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
+  :root .lmx-inspector summary{justify-content:flex-start}
+  :root .lmx-logrow{min-height:44px}
+  :root .lmx-inspector .lmx-idchip{min-height:44px}
+  :root .lmx-recall-panel input,:root .lmx-recall-panel .lm-input{font-size:16px}
+  :root .lmx-filters .lm-input,:root .lmx-filters select{font-size:16px}
+}

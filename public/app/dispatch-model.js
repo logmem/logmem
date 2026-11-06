@@ -12,6 +12,18 @@ export function ticketStatus(item, now = Date.now()) {
   const due = Number(item.deadline), created = Number(item.created_at);
   return Number.isFinite(due) && due > 0 && created > 0 && due >= created && due < now ? 'overdue' : 'active';
 }
+/** Age of a request from its creation time, for example "26h" or "3d". Empty when the time is unknown. */
+export function ageLabel(created, now = Date.now()) {
+  const t = Number(created); if (!Number.isFinite(t) || t <= 0 || t > now) return '';
+  const h = Math.floor((now - t) / 3600000);
+  return h < 1 ? Math.max(1, Math.floor((now - t) / 60000)) + 'm' : h < 48 ? h + 'h' : Math.floor(h / 24) + 'd';
+}
+/** Badge text for a ticket card, for example "Overdue · 26h unanswered". */
+export function ticketAgeBadge(item, now = Date.now()) {
+  const age = ageLabel(item.created_at, now), overdue = ticketStatus(item, now) === 'overdue';
+  if (!age) return overdue ? 'Overdue' : 'Awaiting response';
+  return overdue ? `Overdue · ${age} unanswered` : `Awaiting · ${age}`;
+}
 export function dispatchPrompt({space, refs = [], sender, recipient, deadline, summary = ''}) {
   const quoted = text(summary).split(/\r?\n/).map(line => '> ' + line).join('\n');
   return ['LogMem dispatch', `Space: ${text(space) || 'unknown'}`, ...refs.map(ref => `Record: ${text(ref)}`),
