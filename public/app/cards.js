@@ -9,6 +9,7 @@ import {agentDispatchButton} from './dispatch-components.js';
 import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
 import { AGENT_CLIENTS } from './agent-clients.js';
+import { approveObject, reversibleLine } from './canvas-detail-model.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
 /** One name for a job everywhere: its title when the loaded board has it, else the id. */
@@ -74,14 +75,16 @@ export function copy(text) { navigator.clipboard.writeText(text).then(() => toas
 export function askCard(a, { select } = {}) {
   const p = a.payload || {};
   const approvalProblem = decisionProblem(a, 'approve') || (!a.ask_digest ? 'Reload to verify the action version.' : null);
+  const revLine = reversibleLine(a);
   const rev = p.reversible === true ? 'Yes' : p.reversible === false ? 'No' : 'Not stated (treated as no)';
   return html`<section class="lm-approval" aria-label="Decision" data-key=${'decision:' + a.trail}>
     <div class="lm-approval-head">${select ? html`<input type="checkbox" .checked=${select.checked} @change=${(e) => select.onChange(a, e.target.checked)} aria-label="Select for a batch answer">` : nothing}${icon('decisions')}<strong>${agentName(a.by)} asks: ${a.summary}</strong><span style="margin-left:auto">${a.deferred ? decision('deferred') : decision('pending')}</span></div>
     <div class="lm-approval-body"><div class="lmx-proposal-head"><div class="lm-eyebrow">Exact proposed action</div></div><pre class="lm-action">${p.action || '(not given)'}</pre>
+      ${revLine ? html`<p class="lmx-reversible" data-reversible=${String(p.reversible)}><strong>${revLine.label} ${revLine.value}.</strong> ${revLine.note}</p>` : nothing}
       <p class="lmx-meta">${approvalProblem || 'Approval permits this action. Completion needs separate evidence.'}</p><details><summary>Request details and source</summary><dl class="lm-kv"><dt>Where</dt><dd>${textWithIds(a.where)}</dd><dt>Asked</dt><dd>${ago(a.ts)} via ${a.via || ''}</dd><dt>Reversible</dt><dd>${rev}</dd>${a.to ? html`<dt>For</dt><dd>${agentName(a.to)}</dd>` : nothing}<dt>trail</dt><dd><button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></dd>
       ${a.deferred ? html`<dt>Deferred</dt><dd>${ago(a.deferred.at)} by ${agentName(a.deferred.by)}${a.deferred.note ? ': ' + a.deferred.note : ''} (still open, original age retained)</dd>` : nothing}</dl></details></div>
     <div class="lm-approval-foot"><input class="lm-input" data-note-for=${'ask:' + a.trail} maxlength="1000" autocomplete="off" placeholder="Note, required when requesting changes" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">
-      ${moreMenu([btn('Comments','ghost',()=>{location.hash='#/discussion/decision/'+encodeURIComponent(a.trail);}),btn('Copy proposed text','ghost',()=>copy(p.action||''))])}${btn('Approve', 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
+      ${moreMenu([btn('Comments','ghost',()=>{location.hash='#/discussion/decision/'+encodeURIComponent(a.trail);}),btn('Copy proposed text','ghost',()=>copy(p.action||''))])}${btn('Approve' + approveObject(a), 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
 }
 /** A "looks done?" suggestion from the reconciler: the evidence, then Close it or Still open. */
 export function suggestionCard(i) {

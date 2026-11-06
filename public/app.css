@@ -1360,3 +1360,21 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 @media (max-width: 639px){
   :root .lmx-head>.lmx-map-toggle,:root[data-app-theme] .lmx-head>.lmx-map-toggle{display:none}
 }
+
+/* canvas-detail */
+.lmx-next-step{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--decision,#6B3FA0);background:var(--decision-subtle,transparent);border-radius:var(--radius-md,10px);padding:12px 14px;font-size:14px}
+.lmx-next-step[data-who="blocked"]{border-color:var(--warning,#b45309);background:var(--warning-subtle,transparent)}
+.lmx-handoff-body{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.lmx-handoff-panel .lm-handoff{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lmx-handoff-agent{font-weight:600}
+.lmx-handoff-msg{margin:0;font-size:14px;overflow-wrap:anywhere}
+.lmx-reversible{margin:6px 0 0;font-size:14px}
+.lmx-reversible[data-reversible="false"] strong{color:var(--danger,#b42318)}
+.lmx-shift-end{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lmx-earliest{display:block}
+.lmx-evidence{margin:4px 0 0;padding-left:18px}
+@media (max-width: 639px){
+  :root .lmx-evidence a,:root .lmx-handoff-panel a{display:inline-flex;align-items:center;min-height:44px}
+  :root .lmx-reversible{font-size:15px}
+  :root .lmx-next-step,:root .lmx-handoff-msg{font-size:15px}
+}
