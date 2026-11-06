@@ -17,6 +17,7 @@ export const KEYS = {
   audit: {},
   huddle: { participants: [], replies: [] },
   job: {},
+  needs: { items: [], count: 0, stale: [] },
 };
 const fresh = (v) => (Array.isArray(v) ? [] : v && typeof v === 'object' ? { ...v } : v);
 /** Fill the lists a view indexes without a guard. Keeps every field the server sent, including __status and __stale. */
@@ -31,4 +32,18 @@ export function envelope(what, reply) {
   const d = withDefaults(what, reply);
   const status = d.__status == null ? 200 : d.__status;
   return { ok: status >= 200 && status < 300 && !d.__stale, stale: !!d.__stale, error: status >= 300 ? (d.error || 'Could not load this view.') : null, data: d };
+}
+/** Why a reply cannot be used, or null. A reply must be a plain object, carry a matching contract version when it names one, and send arrays where lists belong. */
+export function contractProblem(what, reply) {
+  if (!reply || typeof reply !== 'object' || Array.isArray(reply)) return 'LogMem sent a reply this page cannot read.';
+  const v = reply.contract != null ? reply.contract : reply.__contract;
+  if (v != null && Number(v) !== CONTRACT) return 'This page and the LogMem server do not match. Reload the page.';
+  const want = KEYS[what] || {};
+  for (const k of Object.keys(want)) if (Array.isArray(want[k]) && reply[k] != null && !Array.isArray(reply[k])) return 'LogMem sent a reply this page cannot read.';
+  return null;
+}
+/** The reply a view gets when the network or the contract fails: safe defaults, marked stale, never a throw. */
+export function failed(what, error) {
+  const data = withDefaults(what, {});
+  return Object.assign({}, data, { ok: false, stale: true, error, data, __status: 0, __stale: true });
 }

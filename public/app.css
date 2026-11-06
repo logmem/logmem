@@ -1355,3 +1355,8 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   :root .lmx-recall-panel input,:root .lmx-recall-panel .lm-input{font-size:16px}
   :root .lmx-filters .lm-input,:root .lmx-filters select{font-size:16px}
 }
+
+/* ── phone header, map routes: four controls at most (space, live dot, search, settings). The layout toggle stays on tablet and desktop. ── */
+@media (max-width: 639px){
+  :root .lmx-head>.lmx-map-toggle,:root[data-app-theme] .lmx-head>.lmx-map-toggle{display:none}
+}

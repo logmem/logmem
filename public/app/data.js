@@ -2,10 +2,17 @@
 // load(what, extra): the reply with defaults filled, same shape the views already use (ok(d) keeps working).
 // read(what, extra): {ok, stale, error, data}. A thrown network error becomes {ok:false, error}.
 import { api } from './core.js';
-import { withDefaults, envelope, KEYS, CONTRACT } from './data-defaults.js';
+import { withDefaults, envelope, contractProblem, failed, KEYS, CONTRACT } from './data-defaults.js';
 export { KEYS, CONTRACT };
-export async function load(what, extra) { return withDefaults(what, await api(what, extra)); }
+export async function load(what, extra) {
+  let reply;
+  try { reply = await api(what, extra); }
+  catch (e) { return failed(what, e && e.message ? e.message : 'Could not reach LogMem.'); }
+  const bad = contractProblem(what, reply);
+  if (bad) return failed(what, bad);
+  return withDefaults(what, reply);
+}
 export async function read(what, extra) {
-  try { return envelope(what, await api(what, extra)); }
+  try { const reply = await api(what, extra); const bad = contractProblem(what, reply); return bad ? { ok: false, stale: true, error: bad, data: withDefaults(what, {}) } : envelope(what, reply); }
   catch (e) { return { ok: false, stale: false, error: e && e.message ? e.message : 'Could not reach LogMem.', data: withDefaults(what, {}) }; }
 }

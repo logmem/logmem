@@ -3,7 +3,7 @@
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
 import { load } from './data.js';
-import { getJSON, state, live, agentName, ago } from './core.js';
+import { state, live, agentName, ago } from './core.js';
 import { emptyState, panel, entries, stage, btn, kv } from './ui.js';
 import { decideBatch } from './actions.js';
 import { drawDiscussion } from './interactions.js';
@@ -60,7 +60,7 @@ export async function drawRender(first = false) {
   const want = drawer;
   const { needItem, jobCard } = await import('./cards.js');
   if (want.kind === 'needs') {
-    const n = await getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''));
+    const n = await load('needs');
     if (drawer !== want) return;
     if (n.__status !== 200) { shell('Needs you', emptyState('Could not load.', n.error || '')); return; }
     live.needs = n.count; syncHook();
@@ -83,7 +83,7 @@ export async function drawRender(first = false) {
   if (want.kind === 'discussion') return drawDiscussion(want,(title,body)=>{shell(title,body);focusHead(first);first=false;},()=>drawer===want);
   if (want.kind === 'huddle') return drawHuddle(want, first);
   const id = want.id;
-  const [d, n] = await Promise.all([load('job', { id }), getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''))]);
+  const [d, n] = await Promise.all([load('job', { id }), load('needs')]);
   if (drawer !== want) return;
   if (d.__status !== 200) { shell(id, emptyState('Could not load this job.', d.error || '')); return; }
   const who = d.who || {}, now = d.now || {};
