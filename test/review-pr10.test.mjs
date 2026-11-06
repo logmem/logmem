@@ -415,7 +415,7 @@ test("medium 2: rotation does not verify until an admin re-answer; an altered as
     assert.equal((await decidedRows(redis)).length, 1, "the failed re-answer kept nothing new");
     assert.equal(JSON.parse(await redis("GET", lmDecisionKey("fieldnotes", ask.trail))).verdict, "approve");
 
-    const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_ID: "admin" };
+    const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_ID: "admin", LOGMEM_ADMIN_SECRET: "admin-secret-pr10-test" };
     const cookie = issueCookie(env).split(";")[0];
     const res = mockRes();
     await decide(

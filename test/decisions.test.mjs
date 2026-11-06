@@ -162,7 +162,7 @@ function mockRes() {
   r.end = () => r;
   return r;
 }
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes,madez" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes,madez", LOGMEM_ADMIN_SECRET: "admin-secret-decisions-test" };
 const cookie = issueCookie(ENV).split(";")[0];
 const post = (body, headers = {}) => ({
   method: "POST",

@@ -9,7 +9,7 @@ import { runDay } from "../scripts/fieldnotes-day.mjs";
 // Test-only HMAC key for human decisions (writeDecision fails closed without one).
 process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
 
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_ADMIN_SECRET: "admin-secret-site-test" };
 const req = (cookie) => ({ headers: cookie ? { cookie } : {} });
 
 test("admin auth: password check, signed cookie, expiry, tamper, production gate", () => {

@@ -9,7 +9,8 @@
 
 import { inviteMany, listInvites, signupOpen, InviteError } from "../src/http/invites.mjs";
 import { customerRedis, CustomerRedisConfigError } from "../src/http/jail.mjs";
-import { isAdmin } from "../src/http/admin-auth.mjs";
+import { adminIdentity } from "../src/http/admin-auth.mjs";
+import { requireAdminAuth, BREAK_GLASS, SuspensionStoreError } from "../src/http/admin-roles.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
@@ -37,8 +38,12 @@ function body(req) {
 export function createHandler({ env = process.env, redis = () => customerRedis(env), now } = {}) {
   return async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
-    if (!isAdmin(req, env)) return res.status(401).json({ error: "sign in required" });
+    const actorId = adminIdentity(req, env);
+    if (!actorId) return res.status(401).json({ error: "sign in required" });
     try {
+      const r = actorId === BREAK_GLASS ? null : redis();
+      const auth = await requireAdminAuth(actorId, r, { allowedRoles: ["admin"] });
+      if (!auth.ok) return res.status(auth.status).json({ error: auth.error, hint: auth.hint });
       if (req.method === "GET") return res.status(200).json({ open: signupOpen(env), invites: await listInvites({ redis: redis() }) });
       if (req.method !== "POST") return res.status(405).json({ error: "method not allowed" });
       if (String(req.headers?.["x-logmem-intent"] || "") !== INTENT || !sameOrigin(req)) {
@@ -51,6 +56,7 @@ export function createHandler({ env = process.env, redis = () => customerRedis(e
     } catch (e) {
       if (e instanceof InviteError) return res.status(400).json({ error: e.message });
       if (e instanceof CustomerRedisConfigError) return res.status(503).json({ error: "the customer Redis is not configured on this deploy" });
+      if (e instanceof SuspensionStoreError || e?.status === 503) return res.status(503).json({ error: "suspension store unavailable" });
       return sendServerError(res, "invites", e);
     }
   };

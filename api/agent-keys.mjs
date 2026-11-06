@@ -16,7 +16,9 @@ import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 
 import { createAgentKey, listAgentKeys, revokeAgentKey, AgentKeyError, keySpaces } from "../src/http/agent-keys.mjs";
 import { deployRedis, StorageConfigError, listManagedApps, revokeManagedApp, FLEET_OWNER } from "./oauth/_lib/storage.mjs";
-import { isAdmin } from "../src/http/admin-auth.mjs";
+import { adminIdentity } from "../src/http/admin-auth.mjs";
+import { requireAdminAuth, BREAK_GLASS, SuspensionStoreError } from "../src/http/admin-roles.mjs";
+import { customerRedis, CustomerRedisConfigError } from "../src/http/jail.mjs";
 import { sendServerError } from "../src/http/log.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 15 };
@@ -41,11 +43,15 @@ function body(req) {
   }
 }
 
-export function createHandler({ env = process.env, redis = () => deployRedis(), now } = {}) {
+export function createHandler({ env = process.env, redis = () => deployRedis(), rolesRedis = () => customerRedis(env), now } = {}) {
   return async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
-    if (!isAdmin(req, env)) return res.status(401).json({ error: "sign in required" });
+    const actorId = adminIdentity(req, env);
+    if (!actorId) return res.status(401).json({ error: "sign in required" });
     try {
+      const r = actorId === BREAK_GLASS ? null : rolesRedis();
+      const auth = await requireAdminAuth(actorId, r, { allowedRoles: ["admin"] });
+      if (!auth.ok) return res.status(auth.status).json({ error: auth.error, hint: auth.hint });
       if (req.method === "GET") {
         // Web connections live in the OAuth store; if it is not set up, the keys list still works.
         const web = (await listManagedApps(FLEET_OWNER).catch(() => [])).map((a) => ({ fid: a.fid, app: a.client_name || "App", agent: a.agent, space: a.space || null, created_at: a.created_at, last_used: a.last_used }));
@@ -65,6 +71,8 @@ export function createHandler({ env = process.env, redis = () => deployRedis(), 
     } catch (e) {
       if (e instanceof AgentKeyError) return res.status(400).json({ error: e.message });
       if (e instanceof StorageConfigError) return res.status(503).json({ error: "key storage is not configured on this deploy" });
+      if (e instanceof CustomerRedisConfigError) return res.status(503).json({ error: "customer redis is not configured on this deploy" });
+      if (e instanceof SuspensionStoreError || e?.status === 503) return res.status(503).json({ error: "suspension store unavailable" });
       return sendServerError(res, "agent-keys", e);
     }
   };
