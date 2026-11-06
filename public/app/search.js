@@ -1,14 +1,14 @@
 // search.js — quick search (Cmd or Ctrl K), a crossover from acmi-console's entity search.
 // Jump to any job, agent, lane or view; the last row searches the whole log with Recall.
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { api } from './core.js';
+import { load as loadData } from './data.js';
 import { openDrawer } from './drawer.js';
 
 let host = null, open = false, items = null, q = '', pick = 0;
 const VIEWS = [['Home', '#/home'], ['Lanes', '#/lanes'], ['Jobs', '#/jobs'], ['Agents', '#/agents'], ['Log', '#/log'], ['Settings', '#/settings'], ['Audit', '#/audit'], ['Waitlist', '#/waitlist']];
 
 async function load() {
-  const [jobs, agents, lanes] = await Promise.all([api('jobs'), api('agents'), api('lanes')]);
+  const [jobs, agents, lanes] = await Promise.all([loadData('jobs'), loadData('agents'), loadData('lanes')]);
   items = [
     ...(jobs.jobs || []).map((j) => ({ kind: 'Job', label: j.title, sub: [j.plan, j.track, j.id].filter(Boolean).join(' › '), go: () => openDrawer('job', j.id) })),
     ...(agents.agents || []).map((a) => ({ kind: 'Agent', label: a.id, sub: (a.now && a.now.doing) || '', go: () => { location.hash = '#/agent/' + encodeURIComponent(a.id); } })),

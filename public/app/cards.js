@@ -2,15 +2,18 @@
 // chip, one task card, one decision card, one lane card. Every view is built from these.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live, isLate } from './core.js';
-import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot } from './ui.js';
+import { icon, agent, seenTag, stage, decision, btn, moreMenu, dueTag, waitsTag, laneBadge, joinDot, textWithIds } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
 import { decisionProblem, shortenIds, jobName, initials } from './dashboard-model.js';
 import {agentDispatchButton} from './dispatch-components.js';
 import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
 import { AGENT_CLIENTS } from './agent-clients.js';
+import { approveObject, reversibleLine } from './canvas-detail-model.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
+/** One name for a job everywhere: its title when the loaded board has it, else the id. */
+const jobTitle = (id) => (live.jobs || []).find((j) => j.id === id)?.title || id;
 const jobLink = (id, title) => html`<a href=${`#/job/${encodeURIComponent(id)}`} @click=${openJob(id)}>${title}</a>`;
 /** Overdue with no entry for 48 hours (the reconciler's last report). */
 export const staleTag = (id) => ((live.stale || []).includes(id) ? html`<span class="lm-badge lm-badge--warning" title="Overdue, and nothing written for 48 hours">Stale</span>` : nothing);
@@ -28,7 +31,7 @@ export function jobCard(b, { route = '', inPanel = false } = {}) {
     : t === 'external' ? html`${noteBox(`unblock:${b.id}`, 'Why it can move now', true)}${btn('Unblock', 'secondary', (e) => doWork(e, 'unblock', b.id))}`
     : html`${noteBox(`nudge:${b.id}`, 'Note to the owner (optional)')}${btn('Ask owner why', 'secondary', (e) => doWork(e, 'nudge', b.id))}`;
   return html`<article class="lmx-card lmx-job ${glow(route, 'job:' + b.id)}" tabindex="0" data-key=${'job:' + b.id} data-w=${t}>
-    <h3>${jobLink(b.id, b.title)}</h3>
+    <h3 title=${b.title}>${jobLink(b.id, b.title)}</h3>
     <div class="lmx-meta">${joinDot([[b.plan, b.track].filter(Boolean).join(' › '), b.owner ? agentName(b.owner) : '', b.since ? 'blocked ' + ago(b.since) : ''])}</div>
     <div class="lmx-why">${why}</div>${acts === nothing ? nothing : html`<div class="lmx-acts">${acts}</div>`}</article>`;
 }
@@ -46,7 +49,7 @@ export function planCard(p, route) {
 export function agentChip(a, route) {
   const since = !a.seen || a.seen.since === 'never' ? 'never wrote' : a.seen.since === '0m' ? 'wrote just now' : `wrote ${a.seen.since} ago`;
   return html`<a class="lmx-card lmx-agent ${glow(route, 'agent:' + a.id)}" tabindex="0" data-key=${'agent:' + a.id} data-p=${a.seen?.state || ''} href=${`#/agent/${encodeURIComponent(a.id)}`} style="text-decoration:none;color:inherit">
-    <span class="lmx-dot" aria-hidden="true"></span><div style="min-width:0"><h3>${a.id}</h3>
+    <span class="lmx-dot" aria-hidden="true"></span><div style="min-width:0"><h3>${agentName(a.id)}</h3>
     <div class="lmx-why">${a.doing ? a.doing : html`<span class="lmx-flag">No Now set</span>`}</div>
     <div class="lmx-meta">${joinDot([since, a.blocked === true ? 'blocked' : ''])}</div></div></a>`;
 }
@@ -72,14 +75,16 @@ export function copy(text) { navigator.clipboard.writeText(text).then(() => toas
 export function askCard(a, { select } = {}) {
   const p = a.payload || {};
   const approvalProblem = decisionProblem(a, 'approve') || (!a.ask_digest ? 'Reload to verify the action version.' : null);
+  const revLine = reversibleLine(a);
   const rev = p.reversible === true ? 'Yes' : p.reversible === false ? 'No' : 'Not stated (treated as no)';
   return html`<section class="lm-approval" aria-label="Decision" data-key=${'decision:' + a.trail}>
     <div class="lm-approval-head">${select ? html`<input type="checkbox" .checked=${select.checked} @change=${(e) => select.onChange(a, e.target.checked)} aria-label="Select for a batch answer">` : nothing}${icon('decisions')}<strong>${agentName(a.by)} asks: ${a.summary}</strong><span style="margin-left:auto">${a.deferred ? decision('deferred') : decision('pending')}</span></div>
-    <div class="lm-approval-body"><div class="lmx-proposal-head"><div class="lm-eyebrow">Exact proposed action</div>${btn('Copy proposed text', 'ghost', () => copy(p.action || ''))}</div><pre class="lm-action">${p.action || '(not given)'}</pre>
-      <p class="lmx-meta">${approvalProblem || 'Approval permits this action. Completion needs separate evidence.'}</p><details><summary>Request details and source</summary><dl class="lm-kv"><dt>Where</dt><dd>${a.where}</dd><dt>Asked</dt><dd>${ago(a.ts)} via ${a.via || ''}</dd><dt>Reversible</dt><dd>${rev}</dd>${a.to ? html`<dt>For</dt><dd>${agentName(a.to)}</dd>` : nothing}<dt>trail</dt><dd><button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></dd>
+    <div class="lm-approval-body"><div class="lmx-proposal-head"><div class="lm-eyebrow">Exact proposed action</div></div><pre class="lm-action">${p.action || '(not given)'}</pre>
+      ${revLine ? html`<p class="lmx-reversible" data-reversible=${String(p.reversible)}><strong>${revLine.label} ${revLine.value}.</strong> ${revLine.note}</p>` : nothing}
+      <p class="lmx-meta">${approvalProblem || 'Approval permits this action. Completion needs separate evidence.'}</p><details><summary>Request details and source</summary><dl class="lm-kv"><dt>Where</dt><dd>${textWithIds(a.where)}</dd><dt>Asked</dt><dd>${ago(a.ts)} via ${a.via || ''}</dd><dt>Reversible</dt><dd>${rev}</dd>${a.to ? html`<dt>For</dt><dd>${agentName(a.to)}</dd>` : nothing}<dt>trail</dt><dd><button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></dd>
       ${a.deferred ? html`<dt>Deferred</dt><dd>${ago(a.deferred.at)} by ${agentName(a.deferred.by)}${a.deferred.note ? ': ' + a.deferred.note : ''} (still open, original age retained)</dd>` : nothing}</dl></details></div>
     <div class="lm-approval-foot"><input class="lm-input" data-note-for=${'ask:' + a.trail} maxlength="1000" autocomplete="off" placeholder="Note, required when requesting changes" aria-label="Note for the agent" style="flex:1 1 220px;width:auto">
-      ${btn('Comments','ghost',()=>{location.hash='#/discussion/decision/'+encodeURIComponent(a.trail);})}${btn('Approve', 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
+      ${moreMenu([btn('Comments','ghost',()=>{location.hash='#/discussion/decision/'+encodeURIComponent(a.trail);}),btn('Copy proposed text','ghost',()=>copy(p.action||''))])}${btn('Approve' + approveObject(a), 'primary', (e) => decide(e, a, 'approve'), {disabled:!!approvalProblem})}${btn('Request changes', 'danger', (e) => decide(e, a, 'reject'))}${btn('Decide later', 'secondary', (e) => decide(e, a, 'defer'))}</div></section>`;
 }
 /** A "looks done?" suggestion from the reconciler: the evidence, then Close it or Still open. */
 export function suggestionCard(i) {
@@ -141,12 +146,12 @@ export function agentCard(a, opts = {}) {
   return html`<article class="lmx-card lmx-agent-card" tabindex="0" data-key=${'agent:' + a.id} data-state=${a.seen?.state || 'unknown'}>
     <div class="lmx-agent-head">
       <span class="lmx-avatar lmx-agent-avatar" data-state=${activity} data-agent=${id} aria-hidden="true">${provider?.asset ? html`<img src=${'/home-assets/agents/' + provider.asset} alt="" loading="lazy">` : initials(a.id)}</span>
-      <div class="lmx-agent-identity"><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${a.id}</a>${providerName ? html`<span class="lmx-agent-provider">${providerName}</span>` : nothing}</div>
+      <div class="lmx-agent-identity"><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${agentName(a.id)}</a>${providerName ? html`<span class="lmx-agent-provider">${providerName}</span>` : nothing}</div>
       <span class="lmx-agent-seen" title="Recent writing activity">${seenTag(a.seen)}</span>
     </div>
     <div class="lmx-agent-body lmx-agent-bento">
       <div class="lmx-agent-now lmx-agent-tile"><span class="lmx-label">NOW</span>${now.doing ? html`<p class=${'lmx-clamp3' + (open ? ' is-open' : '')}>${parts.map((p) => (p.chip ? idChip(p) : p.text))}</p>${now.doing.length > 140 ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(open)} @click=${opts.toggle}>${open ? 'Show less' : 'Show more'}</button>` : nothing}` : html`<span class="lmx-flag">No Now set</span>`}</div>
-      ${job || now.next ? html`<div class="lmx-nextbox lmx-agent-tile"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)}>${job}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${nextParts.map((p) => (p.chip ? idChip(p) : p.text))}</p>` : nothing}</div>` : nothing}
+      ${job || now.next ? html`<div class="lmx-nextbox lmx-agent-tile"><span class="lmx-label">NEXT UP</span>${job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(job)} title=${job}>${jobTitle(job)}</a>` : nothing}${now.next ? html`<p class="lmx-clamp2">${nextParts.map((p) => (p.chip ? idChip(p) : p.text))}</p>` : nothing}</div>` : nothing}
       ${r ? html`<details class="lmx-recap-box"><summary><span class="lmx-recap-label">Last recap</span><span class="lmx-recap-line">${recapLine}</span></summary><div class="lmx-recap-scroll"><p>${r.summary}</p></div></details>` : nothing}
     </div>
     <div class="lmx-agent-foot">${gaps.length ? gaps.map((g) => html`<span class="lmx-checkpill" data-ok="0">${g}</span>`) : html`<span class="lmx-checkpill" data-ok="1" title="Now is set and a recap exists">On track</span>`}${r ? html`<span class="lmx-meta lmx-recap-age" title="When the last recap was written">recap ${ago(r.ended_at)}</span>` : nothing}<span class="lmx-foot-spacer"></span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
@@ -155,11 +160,12 @@ export function agentCard(a, opts = {}) {
 // ─── lanes ───────────────────────────────────────────────────────────
 function laneActs(l) {
   const st = l.lane ? l.lane.status : null;
-  return html`<div class="lmx-acts">
-    ${!st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing}
-    ${st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing}
-    ${st === 'parked' ? btn('Unpark', 'primary', (e) => doLane(e, l.id, 'active')) : nothing}
-    ${st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing}</div>`;
+  const main = st === 'parked' ? btn('Unpark', 'primary', (e) => doLane(e, l.id, 'active'))
+    : !st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing;
+  const more = [st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing,
+    st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing];
+  const rest = more.filter((x) => x !== nothing);
+  return html`<div class="lmx-acts">${main}${main === nothing && rest.length === 1 ? rest : moreMenu(rest)}</div>`;
 }
 const laneJobRow = (j) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}>${jobLink(j.id, j.title)}<span class="lmx-meta">${agentName(j.owner || '')}${j.since ? ' · ' + ago(j.since) : ''}</span></div>`;
 const parkedRow = (j) => { const b = j.blocked_on || {}; return html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}><div>${jobLink(j.id, j.title)}<div class="lmx-meta">${b.note || ''}</div></div><span class="lmx-meta">${joinDot([b.until ? 'until ' + b.until : '', j.owner ? agentName(j.owner) : ''])}</span></div>`; };

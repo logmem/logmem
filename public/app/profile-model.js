@@ -1,5 +1,6 @@
 // profile-model.js — pure helpers for the agent profile page. No DOM. Every function takes the rows
 // the agent view returns and gives back plain data, so node can test it.
+import { shiftEnds } from './canvas-detail-model.js';
 const FOCUS = ['doing', 'current', 'job', 'lane', 'next', 'waiting_on', 'blocked_on', 'blocked'];
 const META = ['updated_at'];
 const clip = (v, n = 220) => { const s = String(v ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
@@ -58,9 +59,9 @@ export const followCounts = g => ({ all: g.job.length + g.channel.length + g.oth
 export const FOLLOW_SHOW = 12;
 
 /** Shift rows newest first, filtered by how the shift started. */
-export function shiftRows(list, filter = 'all') {
+export function shiftRows(list, filter = 'all', extra = {}) {
   const shifts = list || [];
-  const rows = shifts.map(s => ({ shift: String(s.shift || ''), host: String(s.surface || ''), ts: Number(s.ts) || 0, auto: !!s.auto })).sort((a, b) => b.ts - a.ts);
+  const rows = shifts.map(s => ({ shift: String(s.shift || ''), host: String(s.surface || ''), ts: Number(s.ts) || 0, auto: !!s.auto, ...shiftEnds(s.shift, extra && extra.recap, extra && extra.log) })).sort((a, b) => b.ts - a.ts);
   const counts = { all: rows.length, auto: rows.filter(r => r.auto).length, manual: rows.filter(r => !r.auto).length };
   return { rows: filter === 'auto' ? rows.filter(r => r.auto) : filter === 'manual' ? rows.filter(r => !r.auto) : rows, counts };
 }

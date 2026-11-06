@@ -3,7 +3,7 @@
 import {clearInteractions} from './interactions.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { state, live, getJSON, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
+import { state, live, getJSON, api, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
 import { refreshSession } from './session-keepalive.js';
 setSessionRefresher(refreshSession);
 import { icon } from './ui.js';
@@ -11,6 +11,7 @@ import { setChangedHook, cancelDialogs } from './actions.js';
 import { drawRender, drawerOpen, closeDrawer, setSyncHook } from './drawer.js';
 import { renderView, refreshFrame, renderBare, setShellHooks, currentRoute, setTitle, LIVE_LABEL } from './shell.js';
 import { pages, setOkHook } from './views.js';
+import { registerDecisions } from './decisions-view.js';
 import { openSearch, searchOpen, closeSearch } from './search.js';
 import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 
@@ -47,6 +48,7 @@ function login(msg) {
   draw();
 }
 setOkHook(ok);
+registerDecisions(pages, ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 let customerAccessRefreshPending=false;
@@ -69,6 +71,12 @@ setShellHooks({
 });
 
 // ─── router ──────────────────────────────────────────────────────────
+/** A cold load of any screen other than Today has no space yet. Ask once, so pages that read state.space at start see it. */
+async function primeSpace() {
+  const d = await api('home');
+  if (!ok(d)) return false;
+  return Boolean(state.space);
+}
 function route() {
   cancelWalkLoads();
   invalidateLoads();
@@ -77,10 +85,14 @@ function route() {
   if(state.customer&&location.hash==='#/new-task')return showNewTask();
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
-  return Promise.resolve(page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined)).catch((e) => {
-    renderBare(html`<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">${icon('alert')}<div><strong>Couldn’t reach LogMem.</strong> ${e.message}</div></div></div>`);
-  });
+  const start = () => page(parts[1] ? decodeURIComponent(parts.slice(1).join('/')) : undefined);
+  setBusy(true);
+  return Promise.resolve(state.customer || state.space || parts[0] === 'home' || !parts[0] ? start() : primeSpace().then((ready) => (ready ? start() : undefined))).catch((e) => {
+    renderBare(html`<div class="wrap" style="padding-top:48px"><div class="lm-alert lm-alert--danger">${icon('alert')}<div><strong>Couldn’t reach LogMem.</strong> ${e.message} <button type="button" class="lm-btn lm-btn--secondary" style="margin-left:8px" @click=${() => route()}>Try again</button></div></div></div>`);
+  }).finally(() => setBusy(false));
 }
+/** A thin bar and aria-busy while a screen loads, so a slow call never looks like a frozen page. */
+function setBusy(on) { document.documentElement.toggleAttribute('data-route-busy', on); const m = document.getElementById('root'); if (m) m.setAttribute('aria-busy', String(on)); }
 
 // ─── live: the pulse (live app spec, section 6) ──────────────────────
 function syncCount() { refreshFrame(); }

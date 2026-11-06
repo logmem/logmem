@@ -2,11 +2,14 @@
 // huddle's round table. Rendered with lit-html into one overlay node.
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
-import { api, getJSON, state, live, agentName, ago } from './core.js';
+import { load } from './data.js';
+import { state, live, agentName, ago } from './core.js';
 import { emptyState, panel, entries, stage, btn, kv } from './ui.js';
 import { decideBatch } from './actions.js';
 import { drawDiscussion } from './interactions.js';
 import { jobWalkthroughs } from './walk.js';
+import { needsTabs, filterNeedsTab, normalizeNeedsTab } from './dashboard-model.js';
+import { jobDetailPanels } from './job-detail-components.js';
 
 let drawer = null; // { kind: 'needs'|'job'|'huddle', id, where, last, selected: Set }
 let host = null;
@@ -58,15 +61,14 @@ export async function drawRender(first = false) {
   const want = drawer;
   const { needItem, jobCard } = await import('./cards.js');
   if (want.kind === 'needs') {
-    const n = await getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''));
+    const n = await load('needs');
     if (drawer !== want) return;
     if (n.__status !== 200) { shell('Needs you', emptyState('Could not load.', n.error || '')); return; }
     live.needs = n.count; syncHook();
-    const tab = want.id === 'tasks' ? 'task' : want.id === 'decisions' ? 'decision' : 'all';
-    const items = n.items.filter((i) => tab === 'all' || i.type === tab);
-    const count = (t) => n.items.filter((i) => t === 'all' || i.type === t).length;
+    const tab = normalizeNeedsTab(want.id);
+    const items = filterNeedsTab(n.items, tab);
     const setTab = (id) => () => { want.id = id; want.selected.clear(); drawRender(); };
-    const tb = (id, t, label) => html`<button type="button" role="tab" aria-selected=${tab === t} @click=${setTab(id)}>${label} ${count(t)}</button>`;
+    const tb = ([id, label, count]) => html`<button type="button" role="tab" aria-selected=${tab === id} @click=${setTab(id)}>${label} ${count}</button>`;
     // Batch answers (from the sales agent's approvals): pick decisions, answer them in one go.
     const asks = items.filter((i) => i.type === 'decision').map((i) => i.ask);
     const sel = asks.filter((a) => want.selected.has(a.trail));
@@ -74,7 +76,7 @@ export async function drawRender(first = false) {
     const batch = asks.length > 1 ? html`<div class="lmx-acts lmx-batch">
       <label class="lmx-meta"><input type="checkbox" .checked=${sel.length === asks.length} @change=${(e) => { asks.forEach((a) => (e.target.checked ? want.selected.add(a.trail) : want.selected.delete(a.trail))); drawRender(); }}> Select all ${asks.length} decisions</label>
       ${btn(`Approve ${sel.length || ''} selected`, 'primary', () => decideBatch(sel, 'approve'), { disabled: !sel.length })}${btn('Reject selected', 'danger', () => decideBatch(sel, 'reject'), { disabled: !sel.length })}</div>` : nothing;
-    shell('Needs you', html`<div class="lmx-tabsbar" role="tablist">${tb('all', 'all', 'All')}${tb('decisions', 'decision', 'Decisions')}${tb('tasks', 'task', 'Tasks')}</div>${batch}
+    shell('Needs you', html`<div class="lmx-tabsbar" role="tablist">${needsTabs(n.items).map(tb)}</div>${batch}
       ${items.length ? repeat(items, needKey, (i) => needItem(i, i.type === 'decision' && asks.length > 1 ? { select: { ...select, checked: want.selected.has(i.trail) } } : {})) : emptyState('Nothing needs you.', 'When an agent asks a decision or hands you a task, it shows here.')}`);
     focusHead(first);
     return;
@@ -82,15 +84,15 @@ export async function drawRender(first = false) {
   if (want.kind === 'discussion') return drawDiscussion(want,(title,body)=>{shell(title,body);focusHead(first);first=false;},()=>drawer===want);
   if (want.kind === 'huddle') return drawHuddle(want, first);
   const id = want.id;
-  const [d, n] = await Promise.all([api('job', { id }), getJSON('/api/needs?space=' + encodeURIComponent(state.space || ''))]);
+  const [d, n] = await Promise.all([load('job', { id }), load('needs')]);
   if (drawer !== want) return;
   if (d.__status !== 200) { shell(id, emptyState('Could not load this job.', d.error || '')); return; }
   const who = d.who || {}, now = d.now || {};
   // Decisions come from the job view's open_asks: the server decides what is still open, never the browser.
-  const mine = (n.items || []).filter((i) => i.job === id && i.type === 'task').concat((d.open_asks || []).map((a) => ({ type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a })));
+  const mine = ((n && n.items) || []).filter((i) => i.job === id && i.type === 'task').concat((d.open_asks || []).map((a) => ({ type: 'decision', trail: a.trail, job: id, plan: who.plan, ask: a })));
   const card = now.stage === 'blocked' ? jobCard({ id, title: who.title || id, plan: who.plan, track: who.track, owner: now.owner || who.owner, blocked_on: now.blocked_on, since: now.stage_at }, { inPanel: true }) : nothing;
   const about = [['Plan', [who.plan, who.track].filter(Boolean).join(' › ')], ['Owner', agentName(now.owner || who.owner || '')], ['Milestone', typeof who.milestone === 'string' ? who.milestone : who.gate], ['Due', who.due], ['What', who.desc], ['Evidence', who.evidence]].filter((x) => x[1]);
-  shell(who.title || id, html`${card}${repeat(mine, needKey, (i) => needItem(i))}
+  shell(who.title || id, html`${jobDetailPanels(d)}${card}${repeat(mine, needKey, (i) => needItem(i))}
     ${btn('Comments and actions','secondary',()=>{location.hash='#/discussion/job/'+encodeURIComponent(id);})}
     ${panel('About', html`<dl class="lm-kv"><dt>Stage</dt><dd>${stage(now.stage)}</dd>${about.map((x) => html`<dt>${x[0]}</dt><dd>${x[1]}</dd>`)}</dl>`)}
     ${panel('Tasks',html`<div class="lmx-stack">${(d.tasks||[]).map(t=>html`<div><p>${t.summary}</p><div class="lmx-meta">For ${agentName(t.to)}</div><a href=${'#/discussion/task/'+encodeURIComponent(t.trail)} aria-label=${'Comments for '+t.summary}>Comments and ownership</a></div>`)}</div>`)}
@@ -101,9 +103,9 @@ export async function drawRender(first = false) {
 
 /** A huddle's round table (from acmi-console's RoundTable): who was asked, who replied, who acked. */
 async function drawHuddle(want, first) {
-  const d = await api('huddle', { trail: want.id, where: want.where || '' });
+  const d = await load('huddle', { trail: want.id, where: want.where || '' });
   if (drawer !== want) return;
-  if (d.__status !== 200) { shell('Huddle', emptyState('Could not load this huddle.', d.error || '')); return; }
+  if (d.__status !== 200 || !d.huddle) { shell('Huddle', emptyState('Could not load this huddle.', d.error || '')); return; }
   const STATUS = { acked: ['Acked', 'success'], declined: ['Declined', 'danger'], replied: ['Replied', 'info'], pending: ['No reply yet', 'warning'] };
   shell('Round table', html`<section class="lmx-card"><div class="lmx-meta">${agentName(d.huddle.by)} · ${ago(d.huddle.ts)} · ${d.huddle.where}</div><h3>${d.huddle.summary}</h3></section>
     <div class="lmx-meta">${d.participants.filter((p) => p.status !== 'pending').length} of ${d.participants.length} have answered.</div>

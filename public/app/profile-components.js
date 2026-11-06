@@ -27,7 +27,7 @@ export function agentProfile({ d, id, pf, redraw, space }) {
   const folMode = FOLLOW_FILTERS.some(([k]) => k === pf.fol) ? pf.fol : 'all';
   const folRows = (folMode === 'all' ? [...groups.job, ...groups.channel, ...groups.other] : groups[folMode]);
   const folShown = pf.folAll ? folRows : folRows.slice(0, FOLLOW_SHOW);
-  const shiftMode = SHIFT_FILTERS.some(([k]) => k === pf.shift) ? pf.shift : 'all', shifts = shiftRows(d.shifts, shiftMode);
+  const shiftMode = SHIFT_FILTERS.some(([k]) => k === pf.shift) ? pf.shift : 'all', shifts = shiftRows(d.shifts, shiftMode, { recap: d.recap, log: d.log });
   const set = (k, v) => () => { pf[k] = v; redraw(); };
   const open = k => pf.open?.[k] === true;
   const drawer = (k, title, count, body) => html`<details class="lmx-prof-drawer" ?open=${open(k)} @toggle=${e => { (pf.open = pf.open || {})[k] = e.currentTarget.open; }}><summary><span>${title}</span>${count == null ? nothing : html`<span class="lmx-tag">${count}</span>`}</summary><div class="lmx-prof-drawerbody">${body}</div></details>`;
@@ -78,7 +78,7 @@ export function agentProfile({ d, id, pf, redraw, space }) {
         <div class="lmx-prof-follows">${folShown.map(f => html`<span class="lmx-prof-follow"><span class="mono">${f.id}</span>${f.role ? html`<span class="lm-badge">${f.role}</span>` : nothing}</span>`)}</div>
         ${folRows.length > FOLLOW_SHOW ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(!!pf.folAll)} @click=${set('folAll', !pf.folAll)}>${pf.folAll ? 'Show fewer' : `Show ${folRows.length - FOLLOW_SHOW} more`}</button>` : nothing}` : emptyState('Follows nothing.', 'Handoffs and logmem_follow add channels and jobs here.'))}
       ${drawer('shifts', 'Recent shifts', shifts.counts.all, shifts.counts.all ? html`<div class="lmx-filter" role="group" aria-label="Filter shifts">${SHIFT_FILTERS.map(([k, l]) => pill(`${l} (${shifts.counts[k]})`, shiftMode === k, set('shift', k)))}</div>
-        <ol class="lmx-prof-timeline">${shifts.rows.map(s => html`<li><span class="mono">${hhmm(s.ts)}</span><span class="lmx-tag">${s.auto ? 'auto' : 'manual'}</span><span>${s.host}</span><span class="mono lmx-meta">${s.shift}</span></li>`)}</ol>${shifts.rows.length ? nothing : html`<p class="lmx-meta">No shifts match this filter.</p>`}` : emptyState('No shifts.', ''))}
+        <ol class="lmx-prof-timeline">${shifts.rows.map(s => html`<li><span class="mono">${hhmm(s.ts)}</span><span class="lmx-tag">${s.auto ? 'auto' : 'manual'}</span><span>${s.host}</span><span class="mono lmx-meta">${s.shift}</span>${s.endedBy || s.entries != null ? html`<span class="lmx-shift-end">${s.endedBy ? html`<span class="lmx-tag">Ended by ${s.endedBy}${s.endedAt ? ' ' + hhmm(s.endedAt) : ''}</span>` : nothing}${s.entries != null ? html`<span class="lmx-meta">${s.entries} ${s.entries === 1 ? 'entry' : 'entries'}</span>` : nothing}</span>` : nothing}</li>`)}</ol>${shifts.rows.length ? nothing : html`<p class="lmx-meta">No shifts match this filter.</p>`}` : emptyState('No shifts.', ''))}
       ${drawer('log', 'Log', d.log.length, entries(d.log))}
     </div>
 

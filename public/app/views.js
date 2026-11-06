@@ -3,19 +3,23 @@
 import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { live as liveDir } from '/vendor/lit-html-3.2.1/directives/live.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
-import { api, getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
+import { getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
 import { icon, agent, seenTag, fresh, stage, decision, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
 import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink, askCard, copy } from './cards.js';
 import { invite } from './actions.js';
 import {launchpad} from './launchpad.js';
+import {groupControl,logList,inspector,recallCard,recallExplainer} from './log-components.js';
+import {groupByMode,logRows,entryKey,matchTerms} from './log-model.js';
+import {earliestPass} from './canvas-detail-model.js';
 import {healthQueueItems,auditDays,overdueRequest,unindexedRequest} from './health-model.js';
 import {healthRequestRow,auditBreakdownCard} from './health-components.js';
 import {observeTelemetry} from './telemetry-state.js';
-import {bentoTaskCard,planProgressTile,terminalActionBanner,taskTree,waitingTeamCard} from './today-components.js';
+import {bentoTaskCard,planProgressTile,terminalActionBanner,waitingTeamCard} from './today-components.js';
 import {workspaceAssistant} from './shell.js';
 import { renderView } from './shell.js';
+import { load } from './data.js';
 import { openDrawer, drawerState } from './drawer.js';
-import { ADMIN, signOut } from './shell.js';
+import { ADMIN, signOut, themePicker } from './shell.js';
 import { briefFor, prioritizeWork, workFilterKey, groupUpdates, canAnswerDecision, splitHeadline, attentionKind, attentionCounts, filterAttention, splitPlans, PLAN_MODES, planMatch, planCounts, mergeTracks, dueState, WORK_MODES, workMatch, workCounts, trackKey, trackLabels, blockerNote, sharedBlockers, AGENT_MODES, agentMatch, agentCounts, groupDecisions, verdictLabel, agentColor, decisionGraph, splitDecisionRows, BOARD_FILTERS, boardMatch, boardCounts } from './dashboard-model.js';
 import { writerPage, playerPage } from './walk.js';
 import { handoffMap, timeScrubber, fleetPulse, blockerMap } from './flow-views.js';
@@ -38,7 +42,7 @@ const keyed = (list, key, tpl) => repeat(list, key, tpl);
 
 // ─── Today: decisions, waits, source updates, and compact priorities ───
 pages.home = async () => {
-  const d = await api('home');
+  const d = await load('home');
   if (!ok(d)) return;
   live.needs = d.needs_count; live.home = d;
   observeTelemetry(state.space,{decisions:{value:Array.isArray(d.needs_items)?d.needs_items.filter(i=>i.type==='decision').length:null}});
@@ -59,7 +63,7 @@ pages.home = async () => {
       <div class="lmx-hero-note"><img src="/ds/logos/logmem-symbol.svg" alt="" width="34" height="24"><p>Counts describe the records loaded in this view. Open Inbox for unanswered coordination.</p></div></div>
       <a class="lm-btn lm-btn--secondary" href="#/queue">Open Inbox</a></div>
     ${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}
-    <div class="lmx-triage-strip" role="group" aria-label="Workspace status filters">${[['decision',b.decisions,'Decisions'],['task',b.tasks,'Tasks'],['waiting',b.blocked,'Waiting'],['done',b.done+' / '+b.total,'Done']].map(([kind,value,label])=>html`<button type="button" aria-pressed=${String(pf.attn===kind)} @click=${setAttn(pf.attn===kind?'all':kind)}><strong>${value??'Unknown'}</strong><span>${label}</span></button>`)}<span class="lmx-meta">Loaded workspace records · ${d.generated_at?ago(d.generated_at):'this read'}</span></div>
+    <div class="lmx-triage-strip" role="group" aria-label="Workspace status filters">${[['decision',b.decisions,'Decisions'],['task',b.tasks,'Tasks'],['waiting',b.blocked,'Waiting'],['done',b.done,'Done']].map(([kind,value,label])=>html`<button type="button" aria-pressed=${String(pf.attn===kind)} @click=${setAttn(pf.attn===kind?'all':kind)}><strong>${value??'Unknown'}</strong><span>${label}${Number.isFinite(b.total)&&b.total>0&&Number.isFinite(value)?html`<small class="lmx-tile-sub">of ${b.total} items</small>`:nothing}</span></button>`)}<span class="lmx-meta">Loaded workspace records · ${d.generated_at?ago(d.generated_at):'this read'}</span></div>
     ${terminalActionBanner({item:needs.find(i=>i.type==='decision'),space:state.space,review:()=>review(needs.find(i=>i.type==='decision'))})}
     <details class="lmx-coverage"><summary>What this view covers</summary><p>This summary reads a bounded set of records. Open Inbox for unanswered coordination and Health for receipt coverage. Counts describe this view only.</p>
       ${(d.coverage?.notes || []).map(n => html`<p>${n}</p>`)}${(d.coverage?.errors || []).map(e => html`<p role="alert">${e.source}: ${e.message}</p>`)}</details>
@@ -67,7 +71,7 @@ pages.home = async () => {
       <section id="today-board">${pf.attn==='waiting'?html`<h2 class="lmx-section-title">Waiting work <span>${d.blocked.length}</span></h2><div class="lmx-stack">${d.blocked.length?d.blocked.map(j=>jobCard(j,{route:'home'})):emptyState('No waiting work was returned.','This view covers loaded records only.')}</div>`:pf.attn==='done'?html`<h2 class="lmx-section-title">Completion by plan</h2><p class="lmx-meta">${b.done} of ${b.total} loaded work items are done. Open a plan for its completed work.</p><div class="lmx-stack">${(d.plans||[]).filter(p=>Number(p.done)>0).map(planProgressTile)}</div>`:html`<div class="lmx-board-head"><h2 class="lmx-section-title">Needs your attention <span>${needs.length}</span></h2><div class="lmx-filter" role="group" aria-label="Filter by type">${pills.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String((pf.attn || 'all') === k)} @click=${setAttn(k)}>${l} (${counts[k]})</button>`)}</div></div><div class="lmx-attention-grid">${shown.length ? keyed(shown, i => state.space + ':' + i.type + ':' + i.trail, attention) : needs.length ? emptyState('Nothing of this type.', 'Pick All to see every request.') : emptyState('No personal requests were returned.', 'The coordination backlog may contain other unanswered requests. See coverage above.') }</div>`}</section>
       ${!pf.attn||pf.attn==='all'?html`<section id="today-waiting"><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-waiting-list">${waits.length ? keyed(waits, j => j.id, waitingTeamCard) : emptyState('No other blocked jobs were returned.', 'This is not a complete handoff backlog.')}</div></section>`:nothing}
       <section id="today-updates"><h2 class="lmx-section-title">Recent job updates</h2><div class="lmx-card lmx-update-list">${groupUpdates(d.recent || []).groups.slice(0,6).map(g => g.entries[0]).map(e => html`<div class="lmx-update"><div class="lmx-update-source"><span class="lmx-update-agent">${agentName(e.by)}</span><time class="lmx-meta">${hhmm(e.ts)}</time><span class="lmx-chip">${e.kind}</span></div><p>${e.summary}</p><a href=${'#/job/' + encodeURIComponent(e.where.replace(/^job:/,''))}>Open work →</a></div>`)}${!d.recent?.length ? html`<p class="lmx-meta">No recent job updates were returned. See coverage above.</p>` : nothing}</div><a href="#/activity" class="lmx-text-link">View Activity →</a></section>
-    </div><details class="lmx-operations" ?open=${pf.operations!==false} @toggle=${e=>{pf.operations=e.currentTarget.open;saveFilt();}}><summary><strong>Operations</strong><span>Plans, team and workspace guidance</span></summary><div class="lmx-operations-body">${taskTree({done:b.done,total:b.total,blocked:b.blocked})}<section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(plans.active, p => p.id, p => planProgressTile(p))}</div>${plans.empty.length ? html`<details class="lmx-parked-plans"><summary>Show ${plans.empty.length} parked ${plans.empty.length === 1 ? 'plan' : 'plans'}</summary><div class="lmx-stack">${keyed(plans.empty, p => p.id, p => planProgressTile(p))}</div></details>` : nothing}<a href="#/work" class="lmx-text-link">Open all work →</a></section>
+    </div><details class="lmx-operations" ?open=${pf.operations!==false} @toggle=${e=>{pf.operations=e.currentTarget.open;saveFilt();}}><summary><strong>Operations</strong><span>Plans, team and workspace guidance</span></summary><div class="lmx-operations-body"><section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(plans.active, p => p.id, p => planProgressTile(p))}</div>${plans.empty.length ? html`<details class="lmx-parked-plans"><summary>Show ${plans.empty.length} parked ${plans.empty.length === 1 ? 'plan' : 'plans'}</summary><div class="lmx-stack">${keyed(plans.empty, p => p.id, p => planProgressTile(p))}</div></details>` : nothing}<a href="#/work" class="lmx-text-link">Open all work →</a></section>
       <p class="lmx-meta">${d.agents.length} agents have records. Reporting activity does not prove a running process. <a href="#/agents">Review team →</a></p><details class="lmx-operations-assistant"><summary>Workspace guidance</summary>${workspaceAssistant('home')}</details></div></details></div>`);
   };
   draw();
@@ -78,7 +82,7 @@ pages.blockers = async () => { location.replace('#/home'); openDrawer('needs', '
 
 // ─── Lanes: every plan as a lane, P0 first ──────────────────────────
 pages.lanes = async () => {
-  const d = await api('lanes');
+  const d = await load('lanes');
   if (!ok(d)) return;
   const R = 'lanes';
   const by = (st) => d.lanes.filter((l) => (l.lane ? l.lane.status : null) === st && l.id !== 'general');
@@ -94,20 +98,20 @@ pages.lanes = async () => {
 
 // ─── Plans: one lane in detail ───────────────────────────────────────
 pages.plan = async (name) => {
-  const d = await api('plan', name ? { id: name } : {});
+  const d = await load('plan', name ? { id: name } : {});
   if (!ok(d)) return;
   if (!d.plan) { renderView('plan', ['Lanes'], html`${emptyState('No plans yet.', 'Agents open jobs in a plan with logmem_assign and details.plan.')}${seedCard({project:state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space:state.space})}`); return; }
-  const items = d.tracks.reduce((a, t) => a.concat(t.items), []);
+  const items = (d.tracks || []).reduce((a, t) => a.concat(t.items || []), []);
   const lateFn = (i) => isLate(i.due, i.stage);
   const done = items.filter((i) => i.stage === 'done').length;
   const late = items.filter(lateFn);
   const blocked = items.filter((i) => i.stage === 'blocked').length;
   const waiting = items.filter((i) => planMatch(i, 'waiting'));
   const toward = (m) => items.filter((i) => i.milestone && (i.milestone === m.id || String(m.title).indexOf(i.milestone + ':') === 0));
-  const msName = (k) => { const m = d.milestones.find((x) => x.id === k); return m ? m.title + (m.date ? ' · ' + m.date : '') : k; };
-  const tracks = mergeTracks(d.tracks), counts = planCounts(items, lateFn), pf = filt('plan:' + d.plan);
+  const msName = (k) => { const m = (d.milestones || []).find((x) => x.id === k); return m ? m.title + (m.date ? ' · ' + m.date : '') : k; };
+  const tracks = mergeTracks(d.tracks || []), counts = planCounts(items, lateFn), pf = filt('plan:' + d.plan);
   const draw = () => {
-    const mode = pf.mode || 'all', ms = d.milestones.find((m) => m.id === pf.ms);
+    const mode = pf.mode || 'all', ms = (d.milestones || []).find((m) => m.id === pf.ms);
     const inMs = ms ? new Set(toward(ms).map((i) => i.id)) : null;
     const plain = mode === 'all' && !inMs;
     const keep = (i) => planMatch(i, mode, lateFn) && (!inMs || inMs.has(i.id));
@@ -185,7 +189,7 @@ function drawJobs() {
   const clusters = blockerClusters(list).filter(c=>c.jobs.length>=3);
   if(f.group===undefined&&clusters.length) f.group='blocker';
   const row = j => { const due = dueState(j, lateFn), note = blockerNote(j), why = j.blocked_on?.note || j.last?.summary || 'No next step recorded.';
-    return html`<article class="lmx-work-row" data-key=${j.id}><div><h3><a href=${'#/job/' + encodeURIComponent(j.id)}>${j.title}</a></h3><div class="lmx-meta lmx-rowmeta"><span class="lmx-chip lmx-chip--lane">${j.plan || 'No plan'}</span>${j.track ? html`<span>${j.track}</span>` : nothing}<span class="lmx-chip">${j.owner ? agentName(j.owner) : 'Owner not assigned'}</span></div></div>
+    return html`<article class="lmx-work-row" data-key=${j.id}><div><h3 title=${j.title}><a href=${'#/job/' + encodeURIComponent(j.id)}>${j.title}</a></h3><div class="lmx-meta lmx-rowmeta"><span class="lmx-chip lmx-chip--lane">${j.plan || 'No plan'}</span>${j.track ? html`<span>${j.track}</span>` : nothing}<span class="lmx-chip">${j.owner ? agentName(j.owner) : 'Owner not assigned'}</span></div></div>
     <div>${stage(j.stage)}${j.blocked_on?.parked ? html`<span class="lm-badge">Parked</span>` : nothing}${note && shared.has(note) ? html` <span class="lmx-chip" title=${note}>Same blocker ×${shared.get(note)}</span>` : nothing}</div><div class="lmx-why lmx-why-clamp" title=${why}>${why}</div><div class="lmx-due" data-kind=${due.kind}>${due.kind === 'late' ? html`<span class="lmx-flag">${due.text}</span>` : html`<span class="lmx-meta">${due.text}</span>`}${j.stage==='blocked'?html`<span class="lmx-work-copy">${agentDispatchButton(jobDispatchPrompt(j,state.space),'Copy unblock prompt')}</span>`:nothing}</div></article>`; };
   const grouped = () => { const groupedIds=new Set(clusters.flatMap(c=>c.jobs.map(j=>j.id)));
     return html`${clusters.map(c=>clusterBlockerGroup(c,state.space))}${list.filter(j=>!groupedIds.has(j.id)).map(row)}`;
@@ -204,7 +208,7 @@ function drawJobs() {
       ${unknown.length ? html`<section><h2 class="lmx-section-title">Unrecognized stages</h2>${unknown.map(row)}</section>` : nothing}`}
     <p class="lmx-meta">${list.length} matching work items. Milestones are listed under Plans and milestones. Done work from the last seven days appears here.</p></div>`);
 }
-pages.jobs = async () => { const d = await api('jobs'); if (!ok(d)) return false; live.jobs = d.jobs; drawJobs(); return true; };
+pages.jobs = async () => { const d = await load('jobs'); if (!ok(d)) return false; live.jobs = d.jobs || []; drawJobs(); return true; };
 pages.work = pages.jobs;
 // Signed out, the sign-in form shows and no panel opens over it.
 pages.job = async (id) => { if (!(await pages.jobs())) return; const ds = drawerState(); if (!ds || ds.id !== id) openDrawer('job', id); };
@@ -215,10 +219,10 @@ pages.write = writerPage;
 pages.walk = playerPage;
 
 pages.agents = async () => {
-  const [d, lg] = await Promise.all([api('agents'), api('log').catch(() => null)]);
+  const [d, lg] = await Promise.all([load('agents'), load('log').catch(() => null)]);
   if (!ok(d)) return;
   const pulseEntries = lg && Array.isArray(lg.entries) ? lg.entries : [];
-  const liveN = d.agents.filter((a) => a.seen.state === 'active').length;
+  const liveN = (d.agents || []).filter((a) => a.seen?.state === 'active').length;
   const pf = filt('agents:' + state.space), counts = agentCounts(d.agents), open = (pf.open = pf.open || {});
   const draw = () => {
     const mode = AGENT_MODES.some(([k]) => k === pf.mode) ? pf.mode : 'fleet';
@@ -234,7 +238,7 @@ pages.agents = async () => {
   draw();
 };
 pages.agent = async (id) => {
-  const d = await api('agent', { id });
+  const d = await load('agent', { id });
   if (!ok(d)) return;
   const pf = filt('agent:' + state.space + ':' + id);
   const draw = () => renderView('agent', [html`<a href="#/agents">Agents</a>`, id], agentProfile({ d, id, pf, space: state.space, redraw: () => { saveFilt(); draw(); } }));
@@ -248,27 +252,36 @@ function drawLog() {
   const places = ['job', 'channel', 'agent'].concat(uniq(all.map((e) => (/^channel:/.test(e.where || '') ? e.where : null))));
   let rq = rc ? rc.q : '';
   const grouped = groupUpdates(list);
+  const mode = groupByMode(f.group), terms = rc ? matchTerms(rc.q) : [];
+  const sel = (live.logSel && (all.find((e) => entryKey(e) === entryKey(live.logSel)) || live.logSel)) || null, selKey = sel ? entryKey(sel) : '';
+  const pick = (e) => { live.logSel = e; drawLog(); if (matchMedia('(max-width:639px)').matches) requestAnimationFrame(() => document.querySelector('.lmx-inspector')?.scrollIntoView({ block: 'start' })); };
+  const openOriginal = (r) => {
+    live.logSel = all.find((e) => String(e.trail || '') === r.trail && Number(e.ts) === r.ts) || { ts: r.ts, kind: r.kind, summary: r.summary, trail: r.trail || undefined, where: r.from, by: r.by || undefined, group: all.find((e) => e.kind === r.kind)?.group };
+    f.where = f.agent = f.kind = f.q = ''; f.allEvents = true; saveFilt(); live.recall = null;
+    if (location.hash !== '#/log') location.hash = '#/log'; else drawLog();
+  };
   renderView('log', ['Activity'], html`${head('Activity', 'Recent source entries. This bounded window is not the full coordination backlog.')}<div class="lmx-tabsbar" role="group" aria-label="Activity detail"><button type="button" aria-pressed=${!f.allEvents} @click=${()=>{f.allEvents=false;saveFilt();drawLog();}}>Work updates</button><button type="button" aria-pressed=${!!f.allEvents} @click=${()=>{f.allEvents=true;saveFilt();drawLog();}}>All events</button></div>
     <form class="lmx-filters" role="search" @submit=${(e) => { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(e.target.q.value); }}>
       <label class="lmx-f lmx-f-q"><span>Recall</span><input class="lm-input" name="q" .value=${liveDir(rq)} placeholder="what did we decide about…"></label><button class="lm-btn lm-btn--primary" style="align-self:flex-end">Recall</button></form>
-    <div class="lmx-filters">${selectBox('log', 'where', 'Where', places, drawLog)}${selectBox('log', 'agent', 'Who', uniq(all.map((e) => agentName(e.by))), drawLog)}${selectBox('log', 'kind', 'Kind', uniq(all.map((e) => e.group)), drawLog)}${searchBox('log', 'Words in the entry', drawLog)}</div>
-    ${rc ? html`<section class="lmx-card"><h3>Recall: “${rc.q}”</h3>${rc.results.length ? rc.results.map((r) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto"><div><span class="lm-kind">${r.kind}</span> ${r.summary}<div class="lmx-meta mono">${r.from} · trail ${r.trail || ''}</div></div><span class="lmx-meta">${ago(r.ts)}</span></div>`) : html`<p class="lmx-meta">No matches. Try fewer or different words.</p>`}</section>` : nothing}
+    <details class="lmx-filter-fold" ?open=${!matchMedia('(max-width:639px)').matches}><summary>Filters</summary><div class="lmx-filters">${selectBox('log', 'where', 'Where', places, drawLog)}${selectBox('log', 'agent', 'Who', uniq(all.map((e) => agentName(e.by))), drawLog)}${selectBox('log', 'kind', 'Kind', uniq(all.map((e) => e.group)), drawLog)}${searchBox('log', 'Words in the entry', drawLog)}</div></details>
+    ${rc ? html`<section class="lm-panel lmx-recall-panel" aria-label="Recall results"><div class="lm-panel-head"><h3 class="lm-title-3" style="margin:0;font-size:14px">Recall: “${rc.q}”</h3><span class="lm-spacer"></span><span class="lmx-meta">${(rc.results || []).length} ${(rc.results || []).length === 1 ? 'result' : 'results'}</span></div>${recallExplainer()}${(rc.results || []).length ? (rc.results || []).map((r) => recallCard(r, terms, openOriginal)) : html`<p class="lmx-meta" style="padding:12px 16px">No matches. Try fewer or different words.</p>`}</section>` : nothing}
+    <div class="lmx-groupbar"><span class="lmx-meta">Group by</span>${groupControl(mode, (k) => { f.group = k; saveFilt(); drawLog(); })}</div>
     ${timeScrubber({ entries: all, t: f.scrubT ?? null, scrub: (t) => { f.scrubT = t; drawLog(); } })}
-    <section class="lm-panel" style="padding:8px 16px 16px">${f.allEvents ? entries(list) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${entries(g.entries)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.</p></section>`);
+    <div class="lmx-log-layout${sel ? ' has-sel' : ''}">${inspector({ sel, all, close: () => { live.logSel = null; drawLog(); } })}<section class="lm-panel lmx-log-list" style="padding:8px 16px 16px">${mode !== 'time' || f.allEvents ? (list.length ? logList(logRows(list, mode), selKey, pick) : emptyState('No entries match.', 'Clear a filter. This is a bounded read window.')) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${logList(g.entries.map((e) => ({ type: 'entry', e })), selKey, pick)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.${mode === 'shift' || (mode === 'time' && f.allEvents) ? ' Shift markers come from entry times: a new writer or a gap over 30 minutes starts a shift.' : ''}</p></section></div>`);
 }
 pages.activity = () => pages.log();
-pages.log = async () => { live.recall = null; const d = await api('log'); if (!ok(d)) return; live.log = d.entries; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
+pages.log = async () => { live.recall = null; const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
 pages.recall = async (q) => {
   const query = q || '';
-  const [l, r] = await Promise.all([api('log'), query ? api('recall', { q: query }) : Promise.resolve({ results: [] })]);
+  const [l, r] = await Promise.all([load('log'), query ? load('recall', { q: query }) : Promise.resolve({ results: [] })]);
   if (!ok(l)) return;
-  live.log = l.entries; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
+  live.log = l.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
 };
 pages.channels = async (id) => { filt('log').where = id ? 'channel:' + id : 'channel'; saveFilt(); return pages.log(); };
 
 // Knowledge keeps decisions and discussions attached to their existing sources.
 pages.knowledge = async () => {
-  const [d, c, fleet] = await Promise.all([api('decisions'), api('channels'), api('agents').catch(() => null)]);
+  const [d, c, fleet] = await Promise.all([load('decisions'), load('channels'), load('agents').catch(() => null)]);
   if (!ok(d) || !ok(c)) return;
   const waiting = d.waiting || [], decided = d.decided || [];
   const pf = filt('knowledge:' + state.space);
@@ -315,10 +328,11 @@ pages.knowledge = async () => {
 
 // ─── Admin pages ─────────────────────────────────────────────────────
 pages.settings = async () => {
-  const d = await api('settings');
+  const d = await load('settings');
   if (!ok(d)) return;
   const pingOk = Number.isFinite(Number(d.ping_ms)), spaces = Array.isArray(d.mirror_spaces) ? d.mirror_spaces : [];
-  const sw = (label, on, text) => html`<div class="lmx-control-row"><span>${label}</span><span class="lmx-switch" data-on=${String(on)} role="img" aria-label=${`${label}: ${text}`}><i aria-hidden="true"></i>${text}</span></div>`;
+  // Read-only chip, not a switch: this page cannot change these settings.
+  const sw = (label, on, text) => html`<div class="lmx-control-row"><span>${label}</span><span class="lmx-rochip" data-on=${String(on)}>${text}</span><span class="lm-badge lm-badge--info">Planned</span></div>`;
   const control = (title, status, body) => html`<section class="lmx-control"><header><h2>${title}</h2>${status || nothing}</header><div class="lmx-control-body">${body}</div></section>`;
   renderView('settings', ['Settings'], html`${head('Settings', 'Connections and administration for this space.')}
     <nav class="lmx-adminbar" aria-label="Administration">${ADMIN.filter(n=>n[0]!=='settings').map(n=>html`<a href=${n[3] || '#/'+n[0]}>${n[1]}</a>`)}<button type="button" @click=${signOut}>Sign out</button></nav>
@@ -337,7 +351,7 @@ const slotCell = (cell) => {
   return html`<td>${decision(ic, label)}${n ? html` <span class="muted mono" style="font-size:12px">${n} ${n === 1 ? 'run' : 'runs'}</span>` : nothing}</td>`;
 };
 pages.slots = async (date) => {
-  const d = await api('slots', date ? { date } : {});
+  const d = await load('slots', date ? { date } : {});
   if (!ok(d)) return;
   const rows = (d.agents || []).map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td>${SLOT_ORDER.map((s) => slotCell(a.slots && a.slots[s]))}</tr>`);
   renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Review coordination receipts by day. An empty slot past its window reads Missed.')}
@@ -346,13 +360,13 @@ pages.slots = async (date) => {
     ${rows.length ? table(['Agent', 'Morning', 'Midday', 'Closeout'], rows) : emptyState('No agents yet.', 'Slots appear once agents are in this space.')}`);
 };
 async function auditPage(route = 'audit') {
-  const d = await api('audit');
+  const d = await load('audit');
   if (!ok(d)) return;
   const pf=filt('health:'+state.space);
   const observedAudit=d.days?.at(-1);
   observeTelemetry(state.space,{mirror:{value:d.source_status?.audit==='error'||observedAudit?.mirror_checked===false?null:typeof observedAudit?.mirror_mismatches==='number'?observedAudit.mirror_mismatches:null,label:d.source_status?.audit==='error'?'Unavailable':observedAudit?.mirror_checked===false?'Not enabled':'Unknown'}});
   const draw=()=>{
-  const g = d.gate || {}, last7 = (d.days || []).slice(-7);
+  const g = d.gate || {}, last7 = (d.days || []).slice(-7), earliest = earliestPass(d.days, g);
   const strip = Array.from({ length: 7 }, (_, i) => { const x = last7[i - (7 - last7.length)]; const st = !x ? 'background:var(--surface-sunken);color:var(--text-subtle)' : x.pass ? 'background:var(--success-subtle);color:var(--success)' : 'background:var(--danger-subtle);color:var(--danger)'; return html`<div style=${'display:flex;flex-direction:column;align-items:center;padding:10px 4px;border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;' + st}><span>${x ? x.date.slice(5) : '—'}</span><span>${x ? (x.paused ? 'PAUSED' : x.pass===true ? 'PASS' : x.pass===false ? 'FAIL' : 'UNKNOWN') : '—'}</span></div>`; });
   const rows = auditDays(d.days||[],pf.auditFilter||'all');
   // The coordination queue: open handoffs, seats and directed requests, sorted by how overdue they are.
@@ -388,9 +402,9 @@ async function auditPage(route = 'audit') {
     ${d.source_status?.receipts === 'error' ? html`<p role="alert">Receipt storage could not be read. Retry this page.</p>` : runRows.length ? table(['Agent', 'Date', 'Morning', 'Midday', 'Closeout'], runRows) : html`<p>No coordination receipts were saved for this date. Agent execution and scheduling need a separate runner.</p>`}
     <a href="#/slots">Open receipt calendar</a></details>`;
   renderView(route, [route === 'health' ? 'Health' : 'Audit'], html`${route === 'health' ? html`${head('Health', 'See missing receipts and unresolved coordination before work falls through.')}<div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" href="#/slots">Daily receipt calendar</a><a class="lm-btn lm-btn--secondary" href="#/activity">Source Activity</a><a class="lm-btn lm-btn--secondary" href="#/agents">Team records</a></div><section class="lmx-health-metrics" aria-label="Coordination health summary">${[['Open coordination',q.total,'all'],['Overdue responses',c.overdue,'overdue'],['Agents with saved checks',d.source_status?.receipts==='error'?'Unavailable':recordedRuns.length,'receipts'],['Missing compatibility copies',mirrorValue,'mirror']].map(([label,value,filter])=>html`<button type="button" data-tone=${filter} @click=${()=>{if(filter==='receipts'){const el=document.querySelector('[aria-label="Saved coordination checks"]');if(el){el.open=true;el.scrollIntoView({block:'nearest'});}}else if(filter==='mirror')selectAudit('mirror');else selectQueue(filter);}}><strong>${value??'Unknown'}</strong><span>${label}</span></button>`)}</section><p class="lmx-meta">Updated ${d.generated_at ? hhmm(d.generated_at) : 'with this request'} · ${d.coverage || 'partial'} index coverage. Mirror counts describe the latest audit window.</p><details class="lmx-coverage"><summary>About missing compatibility copies</summary>${d.source_status?.audit === 'error' ? html`<p role="alert">Audit history could not be read. Retry this page.</p>` : latestAudit ? html`<p>Audit date: ${latestAudit.date}. ${latestAudit.window ? 'Window: '+new Date(latestAudit.window[0]).toLocaleString()+' to '+new Date(latestAudit.window[1]).toLocaleString()+'.' : 'The saved audit has no exact window metadata.'}</p><p>This counts log rows without an ACMI copy in that window. It does not measure a cumulative backlog or prove the original LogMem entry was lost.</p><p>Intentional mirror opt-outs: ${num(latestAudit.mirror_opt_out)}. Diagnose the writer policy and retry queue before replaying records.</p>` : html`<p>No audit result is available.</p>`}</details><details class="lmx-coverage"><summary>Runtime, billing and usage coverage</summary><p>This page has no live provider usage, billing, runner or schedule feed. Receipt records show saved checks only.</p></details>` : nothing}${queue}${dailyRuns}${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}
-    <section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span></div>
+    <section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span>${earliest?html`<span class="lmx-earliest" style="font-size:13px">${earliest.restart?html`The run restarts ${earliest.restart}. `:nothing}Earliest pass: <strong>${earliest.earliest}</strong>, if every day passes.</span>`:nothing}</div>
       <div style="flex:2 1 420px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${strip}</div><div style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">Deliverable</span>${stage((d.deliverable || {}).stage)}<span class="mono subtle" style="font-size:12px">job:${(d.deliverable || {}).job || ''}</span></div></section>
-    <section id="health-history"><h2 class="lmx-section-title">Audit history</h2><div class="lmx-filter" role="group" aria-label="Audit failure filters">${[['all','All days'],['mirror','Missing copies'],['unanswered','Unanswered'],['degraded','Degraded']].map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String((pf.auditFilter||'all')===value)} @click=${()=>selectAudit(value)}>${label} (${auditDays(d.days||[],value).length})</button>`)}</div><div class="lmx-audit-history">${rows.length?rows.map(auditBreakdownCard):emptyState((d.days||[]).length?'No saved days match this filter.':'No checks yet.',(d.days||[]).length?'Choose All days to inspect every returned audit.':'The first daily check writes its result here.')}</div></section>`);
+    <section id="health-history"><h2 class="lmx-section-title">Audit history</h2><div class="lmx-filter" role="group" aria-label="Audit failure filters">${[['all','All days'],['mirror','Missing copies'],['unanswered','Unanswered'],['degraded','Degraded']].map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String((pf.auditFilter||'all')===value)} @click=${()=>selectAudit(value)}>${label} (${auditDays(d.days||[],value).length})</button>`)}</div><div class="lmx-audit-history">${rows.length?rows.map(day=>auditBreakdownCard(day)):emptyState((d.days||[]).length?'No saved days match this filter.':'No checks yet.',(d.days||[]).length?'Choose All days to inspect every returned audit.':'The first daily check writes its result here.')}</div></section>`);
   };
   draw();
 }
@@ -416,7 +430,8 @@ pages.waitlist = async () => {
     ${rows.length ? table(['Email', 'Plan', 'Agents', 'Source', 'Referrer', 'First sign-up', 'Times', 'Beta'], rows) : emptyState('No sign-ups yet.', 'Sign-ups from /onboarding appear here.')}`);
 };
 pages.more = async () => {
+  const d = await load('home'); if (!ok(d)) return; // sets the space, so the picker names it
   const link = (n) => html`<a class="lmx-card" style="text-decoration:none;color:inherit;flex-direction:row;align-items:center;gap:10px" href=${n[3] || '#/' + n[0]}>${icon(n[2])}<h3>${n[1]}</h3></a>`;
-  renderView('more', ['More'], html`<div class="lmx-stack">${[['agents', 'Agents', 'agents'], ['log', 'Log', 'timeline'], ['recall', 'Recall', 'recall']].map(link)}<h2 class="lmx-colhead" style="margin-top:12px">Admin</h2>${ADMIN.map(link)}<button type="button" class="lm-btn lm-btn--secondary" style="margin-top:12px" @click=${signOut}>Sign out</button></div>`);
+  renderView('more', ['More'], html`<div class="lmx-stack">${[['decisions', 'Decisions', 'decisions'], ['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye'], ['log', 'Log', 'timeline'], ['recall', 'Recall', 'recall']].map(link)}<h2 class="lmx-colhead" style="margin-top:12px">Admin</h2>${ADMIN.map(link)}<h2 class="lmx-colhead" style="margin-top:12px">Appearance</h2><div class="lmx-more-theme">${themePicker()}</div><button type="button" class="lm-btn lm-btn--secondary" style="margin-top:12px;min-height:44px" @click=${signOut}>Sign out</button></div>`);
 };
 export { jobLink, waitsTag, dueTag, state };
