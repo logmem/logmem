@@ -11,6 +11,9 @@ import { themeControl } from './theme-controls.js';
 import { mapViewToggle } from './map-preference.js';
 
 export const NAV = [['home', 'Today', 'overview'], ['queue', 'Inbox', 'handoff'], ['work', 'Work', 'work'], ['agents', 'Team', 'agents'], ['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye']];
+// Phone: five tabs at most, Inbox in the middle. Everything else lives under More.
+export const PHONE_NAV = [['home', 'Today', 'overview'], ['work', 'Work', 'work'], ['queue', 'Inbox', 'handoff'], ['agents', 'Team', 'agents'], ['more', 'More', 'settings']];
+const PHONE_TAB = { overview: 'home' };
 export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['activity', 'Activity', 'timeline', '#/activity'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
 const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
 export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting…', paused: 'Updates paused' };
@@ -47,7 +50,7 @@ const receiptStrip = receipt => html`<div class="lmx-strip" data-tone="info" rol
 function frame(route, crumbs, body) {
   const demo = isSampleSpace(state.space)||Boolean(state.spaceRecords.find(s=>s.id===state.spaceId)?.sampleTemplate);
   const receipt = receiptForSpace(live.decisionReceipt, state.space);
-  const tab = (id, label, ic) => { const cur = id === (ROUTE_NAV[route] || route); return html`<a href=${'#/' + id} aria-current=${cur ? 'page' : nothing}>${icon(ic)}${label}</a>`; };
+  const phoneTab = (id, label, ic) => { const here = PHONE_TAB[ROUTE_NAV[route] || route] || ROUTE_NAV[route] || route; const cur = id === (PHONE_NAV.some(n=>n[0]===here) ? here : 'more'); return html`<a href=${'#/' + id} aria-current=${cur ? 'page' : nothing}>${icon(ic)}${label}</a>`; };
   return html`<div class="lmx"><nav class="lmx-rail" aria-label="LogMem">
       <div class="lm-rail-brand"><a href="/" style="display:flex"><img class="logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" style="height:26px;width:auto"><img class="logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="LogMem" style="height:26px;width:auto"></a></div>
       ${state.customer?html`<div class="lmx-account-switch">${workspaceSelect()}</div>`:nothing}
@@ -59,7 +62,7 @@ function frame(route, crumbs, body) {
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${['queue','work','knowledge','agents'].includes(route)?mapViewToggle():nothing}${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
       <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? receiptStrip(receipt) : nothing}${body}<p class="lmx-app-tagline">Your business. Your AI team.</p></main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
-    <nav class="lmx-tabs" aria-label="LogMem">${NAV.map(n=>tab(n[0],n[1],n[2]))}</nav></div>`;
+    <nav class="lmx-tabs" aria-label="LogMem">${PHONE_NAV.map(n=>phoneTab(n[0],n[1],n[2]))}</nav></div>`;
 }
 
 let last = { route: null, crumbs: [], body: nothing };
