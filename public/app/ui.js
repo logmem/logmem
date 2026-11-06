@@ -62,6 +62,9 @@ export function head(title, sub, right) {
 }
 export const btn = (label, kind, onClick, extra = {}) => html`<button type="button" class="lm-btn lm-btn--${kind}" @click=${onClick} ?disabled=${!!extra.disabled} aria-label=${extra.label || nothing}>${label}</button>`;
 
+/** Extra actions behind one button, so a card never shows more than three. */
+export const moreMenu = (items, label = 'More') => items.length ? html`<details class="lmx-more"><summary class="lm-btn lm-btn--ghost" aria-label=${label + ' actions'}>${label}</summary><div class="lmx-more-list">${items}</div></details>` : nothing;
+
 // ─── work words ──────────────────────────────────────────────────────
 export function dueTag(due, st) { return due ? (isLate(due, st) ? html`<span class="lmx-flag">late · ${due}</span>` : html`due ${due}`) : nothing; }
 const WAIT_SHORT = { task: 'waits on a task', decision: 'waits on a decision', external: 'waits outside' };

@@ -20,3 +20,14 @@ test('phone header drops theme into More and keeps targets at 44px',()=>{
  const views=fs.readFileSync(new URL('../public/app/views.js',import.meta.url),'utf8');
  assert.match(views,/themePicker\(\)/);
 });
+test('lane card keeps one visible action and puts the rest in a menu',()=>{
+ const cards=fs.readFileSync(new URL('../public/app/cards.js',import.meta.url),'utf8');
+ const ui=fs.readFileSync(new URL('../public/app/ui.js',import.meta.url),'utf8');
+ assert.match(ui,/export const moreMenu/);
+ const lane=cards.slice(cards.indexOf('function laneActs'),cards.indexOf('const laneJobRow'));
+ assert.match(lane,/moreMenu\(/);assert.ok((lane.match(/btn\('/g)||[]).length<=4);
+});
+test('cards.js imports moreMenu from ui.js',()=>{
+ const cards=fs.readFileSync(new URL('../public/app/cards.js',import.meta.url),'utf8');
+ assert.match(cards.split('\n').find(l=>l.includes("from './ui.js'")),/moreMenu/);
+});

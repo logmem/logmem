@@ -2,7 +2,7 @@
 // chip, one task card, one decision card, one lane card. Every view is built from these.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live, isLate } from './core.js';
-import { icon, agent, seenTag, stage, decision, btn, dueTag, waitsTag, laneBadge, joinDot, textWithIds } from './ui.js';
+import { icon, agent, seenTag, stage, decision, btn, moreMenu, dueTag, waitsTag, laneBadge, joinDot, textWithIds } from './ui.js';
 import { doWork, doStep, doTask, doLane, decide } from './actions.js';
 import { decisionProblem, shortenIds, jobName, initials } from './dashboard-model.js';
 import {agentDispatchButton} from './dispatch-components.js';
@@ -157,11 +157,11 @@ export function agentCard(a, opts = {}) {
 // ─── lanes ───────────────────────────────────────────────────────────
 function laneActs(l) {
   const st = l.lane ? l.lane.status : null;
-  return html`<div class="lmx-acts">
-    ${!st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing}
-    ${st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing}
-    ${st === 'parked' ? btn('Unpark', 'primary', (e) => doLane(e, l.id, 'active')) : nothing}
-    ${st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing}</div>`;
+  const main = st === 'parked' ? btn('Unpark', 'primary', (e) => doLane(e, l.id, 'active'))
+    : !st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing;
+  const more = [st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing,
+    st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing];
+  return html`<div class="lmx-acts">${main}${moreMenu(more.filter((x) => x !== nothing))}</div>`;
 }
 const laneJobRow = (j) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}>${jobLink(j.id, j.title)}<span class="lmx-meta">${agentName(j.owner || '')}${j.since ? ' · ' + ago(j.since) : ''}</span></div>`;
 const parkedRow = (j) => { const b = j.blocked_on || {}; return html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}><div>${jobLink(j.id, j.title)}<div class="lmx-meta">${b.note || ''}</div></div><span class="lmx-meta">${joinDot([b.until ? 'until ' + b.until : '', j.owner ? agentName(j.owner) : ''])}</span></div>`; };
