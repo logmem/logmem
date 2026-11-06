@@ -1281,3 +1281,13 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 @media (max-width:639px){
   :root .lmx-stagechips button{min-height:44px}
 }
+
+/* ── phone: remaining targets. Copy chips keep their size but get a 44 px hit area. ── */
+@media (max-width:639px){
+  :root .lmx-main button:not(.lmx-idchip):not(.lmx-linkish){min-height:44px}
+  :root .lmx-main .lmx-spatial-node{min-height:44px}
+  :root .lmx-idchip{position:relative}
+  :root .lmx-idchip::after{content:"";position:absolute;left:-4px;right:-4px;top:50%;height:44px;transform:translateY(-50%)}
+  :root .lmx-head .lm-crumbs a{position:relative;display:inline-block}
+  :root .lmx-head .lm-crumbs a::after{content:"";position:absolute;left:-6px;right:-6px;top:50%;height:44px;transform:translateY(-50%)}
+}

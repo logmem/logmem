@@ -37,3 +37,7 @@ test('phone css lifts buttons, chips, summaries and picker rows to 44px',()=>{
  for(const s of ['.lmx-main .lm-btn','typepill','.lmx-space-options button','.lmx-main summary','lmx-task-tree-pet'])assert.ok(tail.includes(s),s);
  assert.equal((tail.match(/min-height:44px/g)||[]).length>=4,true);
 });
+test('phone css gives chips and crumbs a 44px hit area',()=>{
+ const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
+ assert.match(css,/\.lmx-idchip::after\{content:""/);assert.match(css,/lmx-main button:not\(\.lmx-idchip\):not\(\.lmx-linkish\)\{min-height:44px\}/);
+});
