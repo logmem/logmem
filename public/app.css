@@ -1393,3 +1393,11 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   :root .lmx-dec-foot .lm-input{font-size:16px;min-height:44px;flex-basis:auto}
   :root .lmx-dec-acts .lm-btn,:root .lmx-dec-action summary,:root .lmx-work-toolbar a{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
 }
+/* canvas-inbox-centre: Inbox is the app's main purpose, so its phone tab is a filled round button */
+@media (max-width: 639px) {
+  :root .lmx-tabs a:nth-child(3){position:relative;font-weight:600;color:var(--text)}
+  :root .lmx-tabs a:nth-child(3)::before{content:"";position:absolute;top:4px;left:50%;width:40px;height:40px;margin-left:-20px;border-radius:50%;background:var(--text)}
+  :root .lmx-tabs a:nth-child(3)[aria-current="page"]::before{background:var(--brand)}
+  :root .lmx-tabs a:nth-child(3) .lm-i{position:relative;z-index:1;width:22px;height:22px;margin:7px 0;color:var(--surface)}
+  :root .lmx-tabs a:nth-child(3) b{z-index:2;top:0;left:calc(50% + 12px)}
+}
