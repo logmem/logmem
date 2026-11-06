@@ -236,7 +236,11 @@ test("vercel.json: daily crons (dogfood 13:00, reconcile 13:30 UTC); headers and
   const { readFileSync } = await import("node:fs");
   const v = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
   // Daily only: a sub-daily schedule fails deploys on plans that don't allow it.
-  assert.deepEqual(v.crons, [{ path: "/api/cron/dogfood-check", schedule: "0 13 * * *" }, { path: "/api/cron/reconcile", schedule: "30 13 * * *" }]);
+  assert.deepEqual(v.crons, [
+    { path: "/api/cron/dogfood-check", schedule: "0 13 * * *" },
+    { path: "/api/cron/reconcile", schedule: "30 13 * * *" },
+    { path: "/api/cron/fleet-truth", schedule: "0 13,14,17,18,21,22 * * *" },
+  ]);
   assert.ok(v.rewrites.some((r) => r.source === "/mcp"));
   assert.ok(v.headers.some((h) => h.source === "/(.*)"));
 });
