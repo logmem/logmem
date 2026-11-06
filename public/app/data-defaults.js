@@ -9,7 +9,7 @@ export const KEYS = {
   agents: { agents: [] },
   agent: {},
   log: { entries: [] },
-  channels: { channels: [] },
+  channels: { channels: [], who: null, now: null, log: [], selected: null },
   decisions: { decisions: [] },
   recall: { entries: [], results: [] },
   settings: {},
