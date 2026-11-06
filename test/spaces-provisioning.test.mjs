@@ -117,7 +117,7 @@ test("slug rules hold as a unit: reserved list is structural words only", () => 
 });
 
 // ── Phase 2: workspace attach (the differentiator bridge) ──
-import { createWorkspace, listSpaces as workspaceSpaces } from "../src/http/workspaces.mjs";
+import { createWorkspace, attachSpace, listSpaces as workspaceSpaces } from "../src/http/workspaces.mjs";
 
 const OWNER = "user_ownerabcdef"; // validUser: user_ + 10..64 alnum
 const seedWorkspace = async (wsRedis, userId = OWNER) => {
@@ -190,6 +190,34 @@ test("phase 2 P1: a slug colliding with a workspace space id is refused, never o
   // The route compensates the registry, so no orphan record survives.
   const left = (await registry("KEYS", "sp:*")).length;
   assert.equal(left, 0, "refused collision leaves no registry record");
+});
+
+test("phase 2 P2: attach replay uses one operation key and never collides with a native create", async () => {
+  const registry = createMemoryRedis();
+  const wsRedis = createMemoryRedis();
+  const wsId = await seedWorkspace(wsRedis);
+
+  // 1. Attach is idempotent against its own replay record: same requestId and
+  //    same slug twice must return the first result, not commit a second time.
+  const first = await attachSpace({ userId: OWNER, workspaceId: wsId, space: { slug: "replay-me", name: "Replay" }, requestId: "replay-attach-1" }, { redis: wsRedis });
+  assert.equal(first.attached, true);
+  const again = await attachSpace({ userId: OWNER, workspaceId: wsId, space: { slug: "replay-me", name: "Replay" }, requestId: "replay-attach-1" }, { redis: wsRedis });
+  assert.equal(again.created, false, "the replay returns with created false");
+  assert.deepEqual(again.space, first.space, "the replay returns the same record");
+  const w1 = JSON.parse(await wsRedis("GET", `lm:workspace:record:${wsId}`));
+  assert.equal(Object.keys(w1.spaces).filter((k) => k === "replay-me").length, 1, "one record, no duplicate");
+  const attaches = w1.audit.filter((e) => e.kind === "space-attached");
+  assert.equal(attaches.length, 1, "one audit entry: the replay committed nothing");
+
+  // 2. A native createSpace with the SAME requestId must not read attach's
+  //    replay record (different fingerprints would 409 as idempotency_conflict).
+  const { createSpace: nativeCreate } = await import("../src/http/workspaces.mjs");
+  const created = await nativeCreate({ userId: OWNER, workspaceId: wsId, name: "Native twin", requestId: "replay-attach-1" }, { redis: wsRedis });
+  assert.ok(created.space.id, "the native create runs: attach and create never share a replay key");
+
+  // 3. And the reverse: a native create replay still works after an attach.
+  const createdAgain = await nativeCreate({ userId: OWNER, workspaceId: wsId, name: "Native twin", requestId: "replay-attach-1" }, { redis: wsRedis });
+  assert.equal(createdAgain.created, false, "the native replay still hits its own key");
 });
 
 test("phase 2: a plain member cannot attach, an admin of the workspace can", async () => {

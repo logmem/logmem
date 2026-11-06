@@ -186,7 +186,7 @@ export async function attachSpace({userId,workspaceId,space,requestId},deps) {
     const next=structuredClone(w); next.spaces[space.slug]=rec; next.version++;
     next.members[userId].spaces[space.slug]={role:'editor',canApprove:m.role==='owner'};
     next.audit.push({kind:'space-attached',spaceId:space.slug,by:`human:${userId}`,at:now});
-    const r=await commitWorkspace({before:w,after:next,userId,requestId:safeReq,operation:'space',fingerprint,result:{space:rec,attached:true}},deps);
+    const r=await commitWorkspace({before:w,after:next,userId,requestId:safeReq,operation:'space-attach',fingerprint,result:{space:rec,attached:true}},deps);
     if(r)return r;
   }
   failWorkspace('update_conflict',409);
