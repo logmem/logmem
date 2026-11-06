@@ -12,6 +12,7 @@ import { drawRender, drawerOpen, closeDrawer, setSyncHook } from './drawer.js';
 import { renderView, refreshFrame, renderBare, setShellHooks, currentRoute, setTitle, LIVE_LABEL } from './shell.js';
 import { pages, setOkHook } from './views.js';
 import { registerDecisions } from './decisions-view.js';
+import { registerFleetTruth } from './fleet-truth-view.js';
 import { openSearch, searchOpen, closeSearch } from './search.js';
 import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 
@@ -49,6 +50,7 @@ function login(msg) {
 }
 setOkHook(ok);
 registerDecisions(pages, ok);
+registerFleetTruth(pages, ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 let customerAccessRefreshPending=false;
