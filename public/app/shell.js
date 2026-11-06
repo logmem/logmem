@@ -61,7 +61,7 @@ function frame(route, crumbs, body) {
       ${headSpace()}${themePicker()}${demo?html`<span class="lm-badge lm-badge--warning">DEMO DATA</span>`:nothing}<span class="lmx-live" data-s=${live.status}>${LIVE_LABEL[live.status]}</span>
       <button type="button" class="lmx-searchbtn" @click=${openSearch} aria-label="Search (Ctrl or Cmd K)">${icon('search')}<span>Search</span><kbd class="lm-kbd">⌘K</kbd></button>
       ${['queue','work','knowledge','agents'].includes(route)?mapViewToggle():nothing}${needsBtn()}<a class="lmx-mobile-settings lm-btn lm-btn--ghost" href=${state.customer?"#/account":"#/settings"} aria-label="Settings">${icon('settings')}</a></header>
-      <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? receiptStrip(receipt) : nothing}${body}<p class="lmx-app-tagline">Your business. Your AI team.</p></main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
+      <div class="lmx-workarea" data-route=${route}><main class="lmx-main" id="main">${banner()}${receipt ? receiptStrip(receipt) : nothing}${body}</main>${route==='home'||route==='overview'?nothing:workspaceAssistant(route)}</div></div>
     <nav class="lmx-tabs" aria-label="LogMem">${PHONE_NAV.map(n=>phoneTab(n[0],n[1],n[2]))}</nav></div>`;
 }
 

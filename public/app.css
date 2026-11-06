@@ -1137,7 +1137,6 @@ dl.lmx-prof-sub dd{margin:0}
 :root[data-app-theme] .lmx-workarea .lm-empty{border-style:dashed;border-color:var(--fun-teal);border-radius:16px 11px 18px 10px / 11px 17px 10px 16px;background:transparent}
 :root[data-app-theme] .lmx-workarea .lm-empty::before{content:"\2734";display:block;color:var(--fun-amber);font-size:16px;margin-bottom:4px}
 :root[data-app-theme] .lmx-workarea .lmx-typepill[aria-pressed="true"],:root[data-app-theme] .lmx-workarea .lmx-triage-strip>button[aria-pressed="true"]{border-radius:14px 10px 15px 10px / 10px 14px 10px 13px}
-.lmx-app-tagline{margin:36px 0 4px;font-size:12px;color:var(--text-subtle)}
 @media (max-width:760px){.lmx-hero-note{display:none}.lmx-workarea h1{font-size:32px}.lmx-hero h1{font-size:38px;margin:18px 0 14px}.lmx-workarea .lmx-card{padding:16px}.lmx-workarea .lmx-terminal-action::before,:root[data-app-theme] .lmx-workarea .lmx-launchpad::before,:root[data-app-theme] .lmx-workarea .lmx-operations::before{inset:-3px}}
 :root[data-app-theme] .lmx-hero h1::after{margin-top:16px}
 
@@ -1377,4 +1376,20 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   :root .lmx-evidence a,:root .lmx-handoff-panel a{display:inline-flex;align-items:center;min-height:44px}
   :root .lmx-reversible{font-size:15px}
   :root .lmx-next-step,:root .lmx-handoff-msg{font-size:15px}
+}
+
+/* canvas-decisions */
+.lmx-decisions{display:flex;flex-direction:column;gap:16px}
+.lmx-dec-section{display:flex;flex-direction:column;gap:8px}
+.lmx-dec-card{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-md,10px)}
+.lmx-dec-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lmx-dec-head .lm-decision{margin-left:auto}
+.lmx-dec-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lmx-dec-foot .lm-input{flex:1 1 220px;width:auto}
+.lmx-dec-acts{display:flex;flex-wrap:wrap;gap:8px}
+.lmx-dec-done{gap:6px}
+@media (max-width: 639px){
+  :root .lmx-dec-foot,:root .lmx-dec-acts{flex-direction:column;align-items:stretch}
+  :root .lmx-dec-foot .lm-input{font-size:16px;min-height:44px;flex-basis:auto}
+  :root .lmx-dec-acts .lm-btn,:root .lmx-dec-action summary,:root .lmx-work-toolbar a{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
 }
