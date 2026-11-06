@@ -31,3 +31,9 @@ test('cards.js imports moreMenu from ui.js',()=>{
  const cards=fs.readFileSync(new URL('../public/app/cards.js',import.meta.url),'utf8');
  assert.match(cards.split('\n').find(l=>l.includes("from './ui.js'")),/moreMenu/);
 });
+test('phone css lifts buttons, chips, summaries and picker rows to 44px',()=>{
+ const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
+ const tail=css.slice(css.lastIndexOf('phone: every button'));
+ for(const s of ['.lmx-main .lm-btn','typepill','.lmx-space-options button','.lmx-main summary','lmx-task-tree-pet'])assert.ok(tail.includes(s),s);
+ assert.equal((tail.match(/min-height:44px/g)||[]).length>=4,true);
+});

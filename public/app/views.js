@@ -418,6 +418,7 @@ pages.waitlist = async () => {
     ${rows.length ? table(['Email', 'Plan', 'Agents', 'Source', 'Referrer', 'First sign-up', 'Times', 'Beta'], rows) : emptyState('No sign-ups yet.', 'Sign-ups from /onboarding appear here.')}`);
 };
 pages.more = async () => {
+  const d = await load('home'); if (!ok(d)) return; // sets the space, so the picker names it
   const link = (n) => html`<a class="lmx-card" style="text-decoration:none;color:inherit;flex-direction:row;align-items:center;gap:10px" href=${n[3] || '#/' + n[0]}>${icon(n[2])}<h3>${n[1]}</h3></a>`;
   renderView('more', ['More'], html`<div class="lmx-stack">${[['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye'], ['log', 'Log', 'timeline'], ['recall', 'Recall', 'recall']].map(link)}<h2 class="lmx-colhead" style="margin-top:12px">Admin</h2>${ADMIN.map(link)}<h2 class="lmx-colhead" style="margin-top:12px">Appearance</h2><div class="lmx-more-theme">${themePicker()}</div><button type="button" class="lm-btn lm-btn--secondary" style="margin-top:12px;min-height:44px" @click=${signOut}>Sign out</button></div>`);
 };

@@ -161,7 +161,8 @@ function laneActs(l) {
     : !st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing;
   const more = [st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing,
     st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing];
-  return html`<div class="lmx-acts">${main}${moreMenu(more.filter((x) => x !== nothing))}</div>`;
+  const rest = more.filter((x) => x !== nothing);
+  return html`<div class="lmx-acts">${main}${main === nothing && rest.length === 1 ? rest : moreMenu(rest)}</div>`;
 }
 const laneJobRow = (j) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}>${jobLink(j.id, j.title)}<span class="lmx-meta">${agentName(j.owner || '')}${j.since ? ' · ' + ago(j.since) : ''}</span></div>`;
 const parkedRow = (j) => { const b = j.blocked_on || {}; return html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}><div>${jobLink(j.id, j.title)}<div class="lmx-meta">${b.note || ''}</div></div><span class="lmx-meta">${joinDot([b.until ? 'until ' + b.until : '', j.owner ? agentName(j.owner) : ''])}</span></div>`; };

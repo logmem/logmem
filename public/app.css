@@ -1250,9 +1250,29 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 
 /* ── phone header: at most four controls (space, workspace, search, settings). Theme lives in More; live status is a dot. ── */
 @media (max-width:639px){
-  .lmx-head>.lmx-theme-picker{display:none}
+  :root .lmx-head>.lmx-theme-picker,:root[data-app-theme] .lmx-head>.lmx-theme-picker{display:none}
   .lmx-head>.lmx-live{font-size:0;gap:0;min-width:20px;justify-content:center}
   .lmx-head>.lmx-live::before{width:10px;height:10px}
   .lmx-head>.lmx-searchbtn,.lmx-head>.lmx-mobile-settings{min-height:44px;min-width:44px}
   .lmx-head .lmx-headspace summary,.lmx-head .lmx-account-switch-head select{min-height:44px}
+}
+
+/* ── phone: every button and tap-able chip reaches 44 px ── */
+@media (max-width:639px){
+  .lmx-main .lm-btn,.lmx-main button.lmx-typepill,.lmx-main a.lmx-typepill,.lmx-main .lmx-acts .lm-input{min-height:44px}
+  .lmx-main button.lmx-typepill,.lmx-main a.lmx-typepill{display:inline-flex;align-items:center}
+}
+
+/* ── phone: space picker rows, disclosure summaries and small pets reach 44 px ── */
+@media (max-width:639px){
+  .lmx-space-options button,.lmx-space-actions a{min-height:44px;display:flex;align-items:center}
+  .lmx-main summary{min-height:44px;box-sizing:border-box;padding-block:10px}
+  .lmx-main .lmx-task-tree-pet{min-height:44px;min-width:44px}
+}
+
+/* ── phone: space menu rows, the layout toggle and selects reach 44 px (higher specificity than the theme rules) ── */
+@media (max-width:639px){
+  :root :where(.lmx-head,.lmx-main) .lmx-space-options button,:root :where(.lmx-head,.lmx-main) .lmx-space-actions a{min-height:44px;box-sizing:border-box}
+  :root[data-app-theme] .lmx-map-toggle button,:root .lmx-map-toggle button{min-height:44px}
+  :root .lmx-main .lm-select,:root .lmx-main .lm-input{min-height:44px}
 }
