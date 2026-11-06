@@ -37,7 +37,7 @@ test('only the fleet-truth channel is special; other channels keep the old page'
 });
 
 test('More lists Fleet truth and no new top-level nav entry appears', () => {
-  assert.match(app('views.js'), /\['channels\/fleet-truth', 'Fleet truth', 'eye'\]/);
+  assert.match(app('nav-model.js'), /\['channels\/fleet-truth', 'Fleet truth', 'eye'\]/);
   const shell = app('shell.js');
   assert.doesNotMatch(shell, /fleet-truth/);
   assert.equal(shell.match(/PHONE_NAV = \[(.*)\];/)[1].split('],').length, 5);

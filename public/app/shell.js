@@ -9,12 +9,13 @@ import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
 import {assistantWidget} from './assistant-widget.js';
 import { themeControl } from './theme-controls.js';
 import { mapViewToggle } from './map-preference.js';
+import { ADMIN } from './nav-model.js';
 
 export const NAV = [['home', 'Today', 'overview'], ['queue', 'Inbox', 'handoff'], ['work', 'Work', 'work'], ['agents', 'Team', 'agents'], ['knowledge', 'Knowledge', 'brief'], ['health', 'Health', 'eye']];
 // Phone: five tabs at most, Inbox in the middle. Everything else lives under More.
 export const PHONE_NAV = [['home', 'Today', 'overview'], ['work', 'Work', 'work'], ['queue', 'Inbox', 'handoff'], ['agents', 'Team', 'agents'], ['more', 'More', 'settings']];
 const PHONE_TAB = { overview: 'home' };
-export const ADMIN = [['settings', 'Settings', 'settings', '#/settings'], ['audit', 'Audit', 'eye', '#/audit'], ['waitlist', 'Waitlist', 'globe', '#/waitlist'], ['activity', 'Activity', 'timeline', '#/activity'], ['keys', 'Agent keys', 'link', '/keys'], ['connections', 'Connections', 'link', '/connections']];
+export { ADMIN };
 const ROUTE_NAV = { plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
 export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting…', paused: 'Updates paused' };
 
