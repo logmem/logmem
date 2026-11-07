@@ -4,6 +4,7 @@
 // write even though the deploy holds read-write bridge creds. Views return
 // plain JSON shaped for the pages; nothing secret (no tokens, no full URLs).
 
+import { getSecret } from "../lib/secrets.mjs";
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
 import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, isHandoffKind, handoffSettlement, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
@@ -551,7 +552,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   };
 }
 
-export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = process.env.LOGMEM_DECIDE_SECRET } = {}) {
+export async function buildView(redis, space, what, params = {}, now = Date.now(), { secret = getSecret("LOGMEM_DECIDE_SECRET") } = {}) {
   const r = readOnly(redis);
   const verify = { secret, space };
   const store = createStore(r, { space });

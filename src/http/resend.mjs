@@ -1,3 +1,4 @@
+import { getSecret } from "../lib/secrets.mjs";
 const API_URL = "https://api.resend.com/emails";
 
 function escapeHtml(value) {
@@ -29,7 +30,7 @@ export async function sendEmail({ to, subject, text, html, idempotencyKey }, {
   env = process.env,
   fetchImpl = fetch,
 } = {}) {
-  const apiKey = env.RESEND_API_KEY;
+  const apiKey = getSecret("RESEND_API_KEY", env);
   const from = env.RESEND_FROM_EMAIL;
   if (!apiKey || !from) throw new ResendConfigError();
 

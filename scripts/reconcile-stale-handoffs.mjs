@@ -6,11 +6,14 @@
 //
 // By default, runs in dry-run mode without modifying data. Pass --apply to write permanent decline records.
 
+import { getSecret } from "../src/lib/secrets.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { reconcileStaleHandoffs } from "../src/core/reconcile.mjs";
 
-process.env.LOGMEM_REDIS_URI = process.env.LOGMEM_CUSTOMER_REDIS_URI || process.env.LOGMEM_REDIS_URI;
+// Alias the customer URI onto the main one. The LHS is env cleanup (a write);
+// the two reads go through the loader like every other secret read.
+process.env.LOGMEM_REDIS_URI = getSecret("LOGMEM_CUSTOMER_REDIS_URI") || getSecret("LOGMEM_REDIS_URI");
 
 const argv = process.argv.slice(2);
 const arg = (name, def) => (argv.includes(`--${name}`) ? argv[argv.indexOf(`--${name}`) + 1] : def);

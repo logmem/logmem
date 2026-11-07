@@ -34,6 +34,11 @@ test('load checks the server contract and shape before it trusts a reply',()=>{
  assert.ok(contractProblem('jobs',[]));
  assert.ok(contractProblem('jobs','<html>'));
 });
+test('api/view.mjs sends the FE CONTRACT version on success',()=>{
+ const src=fs.readFileSync(new URL('../api/view.mjs',import.meta.url),'utf8');
+ assert.match(src,/import \{ CONTRACT \} from ["']\.\.\/public\/app\/data-defaults\.js["']/);
+ assert.match(src,/contract:\s*CONTRACT/);
+});
 test('phone header shows at most four controls on map routes',()=>{
  assert.match(css,/@media \(max-width: 639px\)\{\s*:root \.lmx-head>\.lmx-map-toggle[^}]*display:none/);
  assert.match(css.slice(css.lastIndexOf("@media (max-width:639px)")),/^@media \(max-width:639px\)\{\.lmx-adminbar a\{display:none\}\}/);

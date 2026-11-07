@@ -55,6 +55,7 @@
 // Token contents bind a backend AND a space: the MCP route restores the
 // user's Redis creds and pins the connection to that one space.
 
+import { getSecret } from "../../../src/lib/secrets.mjs";
 import { randomBytes, createHash, createHmac, createCipheriv, createDecipheriv, timingSafeEqual, hkdfSync } from "node:crypto";
 import { restEndpoint } from "../../../src/lib/redis-rest.mjs";
 
@@ -149,7 +150,7 @@ export function deployRedis() {
   const env = process.env;
   const fallback = insecureAllowed(env);
   // Official Redis over TCP first. TLS (rediss://) is required outside local dev.
-  const uri = String(env.LOGMEM_DEPLOY_REDIS_URI || "").trim();
+  const uri = String(getSecret("LOGMEM_DEPLOY_REDIS_URI", env) || "").trim();
   if (uri) {
     if (!/^rediss:\/\//i.test(uri) && !(fallback && /^redis:\/\//i.test(uri))) {
       throw new StorageConfigError("LOGMEM_DEPLOY_REDIS_URI must start with rediss:// (TLS)");
@@ -160,10 +161,10 @@ export function deployRedis() {
     };
   }
   let url = env.LOGMEM_DEPLOY_REST_URL;
-  let token = env.LOGMEM_DEPLOY_REST_TOKEN;
+  let token = getSecret("LOGMEM_DEPLOY_REST_TOKEN", env);
   if (fallback) {
     url = url || env.UPSTASH_REDIS_REST_URL;
-    token = token || env.UPSTASH_REDIS_REST_TOKEN;
+    token = token || getSecret("UPSTASH_REDIS_REST_TOKEN", env);
   }
   if (!url || !token) {
     throw new StorageConfigError(
