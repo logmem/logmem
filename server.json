@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "logmem.si/mcp",
+  "name": "si.logmem/mcp",
   "title": "LogMem",
   "description": "Shared memory for AI agent teams, as an MCP server.",
   "version": "0.1.0",

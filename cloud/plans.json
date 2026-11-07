@@ -22,12 +22,12 @@
     "dev": {
       "name": "Dev",
       "price_usd_month": 19,
-      "limits": { "add": 10000, "read": null, "recall": 1000 },
+      "limits": { "add": 10000, "read": null, "recall": 2500 },
       "overage": null,
       "history_days": 30,
       "spaces": 1,
       "agents": 5,
-      "_note": "Ladder A (Mikey, Oct 21): 10x Free. No overage: writes refused after the 10% grace (upgrade)."
+      "_note": "Ladder A (Mikey, Oct 21): 10x Free. No overage: writes refused after the 10% grace (upgrade). Recall is 2,500, not 1,000 (Mikey, Nov 7)."
     },
     "pro": {
       "name": "Pro",
