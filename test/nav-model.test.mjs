@@ -12,12 +12,12 @@ test('operator keeps every admin link', () => {
 test('customer never sees operator pages', () => {
   for (const role of ['owner', 'admin', 'member', 'viewer', undefined]) {
     const got = ids(moreGroups({ customer: true, role }, ADMIN));
-    for (const bad of ['audit', 'waitlist', 'activity', 'keys', 'settings']) assert.ok(!got.includes(bad), `${role} sees ${bad}`);
+    for (const bad of ['audit', 'waitlist', 'activity', 'keys', 'connections', 'settings']) assert.ok(!got.includes(bad), `${role} sees ${bad}`);
   }
 });
-test('only workspace managers keep Connections', () => {
-  assert.deepEqual(ids(moreGroups({ customer: true, role: 'owner' }, ADMIN)), ['connections']);
-  assert.deepEqual(ids(moreGroups({ customer: true, role: 'admin' }, ADMIN)), ['connections']);
+test('only workspace managers keep Agent access', () => {
+  assert.deepEqual(ids(moreGroups({ customer: true, role: 'owner' }, ADMIN)), ['access']);
+  assert.deepEqual(ids(moreGroups({ customer: true, role: 'admin' }, ADMIN)), ['access']);
   assert.deepEqual(ids(moreGroups({ customer: true, role: 'member' }, ADMIN)), []);
   assert.deepEqual(ids(moreGroups({ customer: true, role: 'viewer' }, ADMIN)), []);
 });
