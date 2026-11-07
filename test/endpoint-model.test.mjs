@@ -44,6 +44,7 @@ test('404, 405 and 501 mean not built yet, not a failure', () => {
   }
 });
 test('401, 403 and 5xx give a plain error and safe defaults', () => {
+  assert.match(interpret('sessions', 403, {}).error, /do not have access/);
   for (const code of [401, 403, 500, 502, 503]) {
     const r = interpret('sessions', code, { error: 'not_found' });
     assert.equal(r.ok, false); assert.equal(r.available, true);
@@ -70,6 +71,7 @@ test('routes are registered, say not available yet, and are not linked from nav'
   const v = src('endpoint-view.js');
   assert.match(v, /Not available yet\./);
   assert.doesNotMatch(v, /JSON\.stringify/);
+  assert.doesNotMatch(v, /ago\(Date\.parse\(iso\)\) \+ ' ago'/, 'ago() already says ago');
   assert.match(src('data.js'), /export async function readEndpoint/);
   const nav = src('nav-model.js') + src('shell.js');
   for (const k of ENDPOINT_KEYS) assert.ok(!nav.includes(`#/${k}`) && !nav.includes(`['${k}'`), `${k} must not be linked yet`);

@@ -7,7 +7,7 @@ import { ENDPOINTS, ENDPOINT_KEYS, STATUS_WORD } from './endpoint-model.js';
 import { head, table, emptyState } from './ui.js';
 import { renderView } from './shell.js';
 
-const when = (iso) => (iso ? ago(Date.parse(iso)) + ' ago' : 'Not recorded');
+const when = (iso) => (iso ? ago(Date.parse(iso)) : 'Not recorded');
 const count = (n) => (n == null ? '—' : String(n));
 
 const BODIES = {

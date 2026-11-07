@@ -46,7 +46,8 @@ export function interpret(key, httpStatus, body) {
   if (!def) return { ok: false, available: false, stale: false, error: 'Unknown screen.', data: {} };
   const empty = def.defaults();
   if ([404, 405, 501].includes(httpStatus)) return { ok: false, available: false, stale: false, error: null, data: empty };
-  if (httpStatus === 401 || httpStatus === 403) return { ok: false, available: true, stale: false, error: noticeLine({ status: httpStatus }), data: empty };
+  if (httpStatus === 401) return { ok: false, available: true, stale: false, error: noticeLine({ status: 401 }), data: empty };
+  if (httpStatus === 403) return { ok: false, available: true, stale: false, error: 'You do not have access to this screen. Ask a workspace owner if you need it.', data: empty };
   if (!(httpStatus >= 200 && httpStatus < 300)) return { ok: false, available: true, stale: false, error: 'Could not load this screen. Try again in a minute.', data: empty };
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, available: true, stale: true, error: 'LogMem sent a reply this page cannot read.', data: empty };
   const v = body.contract != null ? body.contract : body.__contract;
