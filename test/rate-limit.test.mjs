@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   ROUTE_CLASSES,
   DEFAULT_LIMITS,
@@ -146,4 +147,19 @@ test("rate limit: applyRateLimit sets headers and sends 429 when exhausted", asy
   assert.ok(headers["Retry-After"]);
   assert.equal(jsonBody.ok, false);
   assert.equal(jsonBody.error, "rate_limit_exceeded");
+});
+
+test("mcp unauth path honors applyRateLimit 429 before OAuth challenge", () => {
+  const src = fs.readFileSync(new URL("../api/mcp.mjs", import.meta.url), "utf8");
+  const i = src.indexOf("if (!b) {");
+  assert.ok(i >= 0);
+  const chunk = src.slice(i, i + 420);
+  assert.match(chunk, /const rateOk = await applyRateLimit/);
+  assert.match(chunk, /if \(!rateOk\) return/);
+});
+
+test("secret scanner findings omit matched secret text", () => {
+  const src = fs.readFileSync(new URL("../scripts/scan-git-secrets.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /findings\.push\(\{[^}]*line:\s*text/);
+  assert.match(src, /f\.file \|\| "\?"/);
 });

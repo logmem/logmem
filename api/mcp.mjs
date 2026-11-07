@@ -189,7 +189,9 @@ export default async function handler(req, res) {
     const auth = await resolveAuth(req, cfg);
     const b = auth.backend && fromDescriptor(auth.backend);
     if (!b) {
-      await applyRateLimit(req, res, { routeClass: ROUTE_CLASSES.MCP, auth: null });
+      // Unauthenticated MCP still counts against the unauth bucket. Honor 429.
+      const rateOk = await applyRateLimit(req, res, { routeClass: ROUTE_CLASSES.MCP, auth: null });
+      if (!rateOk) return;
       res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: auth.error }));
       return res.status(401).json({ error: "authentication required", hint: "OAuth 2.1 + PKCE via /.well-known/oauth-authorization-server." });
     }

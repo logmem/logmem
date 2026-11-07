@@ -76,7 +76,8 @@ export function scanGitHistory(depth = 30) {
           if (text.includes("${") || text.includes("<") || text.includes("REDACTED") || text.includes("mock-")) continue;
           for (const rule of SECRET_RULES) {
             if (rule.re.test(text)) {
-              findings.push({ commit: commitSha, file: currentFile, rule: rule.name, line: text.trim().slice(0, 80) });
+              // Never print the matched secret text. File + rule + commit is enough.
+              findings.push({ commit: commitSha, file: currentFile, rule: rule.name });
             }
           }
         }
@@ -98,7 +99,7 @@ export function main() {
   }
   console.error(`[FAIL] Found ${historyFindings.length} potential secrets in git history:`);
   for (const f of historyFindings) {
-    console.error(`  - [${f.commit || "file"}] ${f.rule}: ${f.line || f.error}`);
+    console.error(`  - [${f.commit || "file"}] ${f.file || "?"}: ${f.rule || f.error}`);
   }
   return 1;
 }

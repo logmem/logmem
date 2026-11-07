@@ -106,3 +106,32 @@ test("space export: full export generates checksum and uncompressed/compressed p
   assert.equal(parsedGz.space, "myteam");
   assert.equal(parsedGz.checksum, res.checksum);
 });
+
+test("space export: Who/Now hashes and Log zsets are exported under other", async () => {
+  const hashes = new Map([
+    ["lm:madez:job:demo:who", ["title", JSON.stringify("Demo")]],
+    ["lm:madez:job:demo:now", ["stage", JSON.stringify("active")]],
+  ]);
+  const zsets = new Map([
+    ["lm:madez:job:demo:log", [JSON.stringify({ summary: "progress" }), "1790000001"]],
+  ]);
+  const mockRedis = async (cmd, ...args) => {
+    if (cmd === "SCAN") return ["0", [...hashes.keys(), ...zsets.keys()]];
+    if (cmd === "TYPE") {
+      if (hashes.has(args[0])) return "hash";
+      if (zsets.has(args[0])) return "zset";
+      return "none";
+    }
+    if (cmd === "HGETALL") return hashes.get(args[0]) || [];
+    if (cmd === "ZRANGE") return zsets.get(args[0]) || [];
+    throw new Error(`mock unhandled: ${cmd}`);
+  };
+  const res = await exportSpace(mockRedis, "madez", { dryRun: false, now: 1790000000000 });
+  const parsed = JSON.parse(res.json);
+  assert.equal(parsed.counts.other, 3);
+  assert.equal(parsed.data.other["job:demo:who"].__type, "hash");
+  assert.deepEqual(parsed.data.other["job:demo:who"].fields, { title: "Demo" });
+  assert.equal(parsed.data.other["job:demo:now"].__type, "hash");
+  assert.equal(parsed.data.other["job:demo:log"].__type, "zset");
+  assert.equal(parsed.data.other["job:demo:log"].entries.length, 1);
+});

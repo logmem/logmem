@@ -76,6 +76,7 @@ export async function exportSpace(redis, space, {
     else if (sub.startsWith("signals:")) categorized.signals.push(k);
     else if (sub.startsWith("timeline:") || sub.startsWith("t:")) categorized.timelines.push(k);
     else if (sub.startsWith("decision:") || sub.startsWith("ask:")) categorized.decisions.push(k);
+    // Who/Now hashes and Log zsets (lm:{space}:{kind}:{id}:who|now|log) land in other.
     else categorized.other.push(k);
   }
 
@@ -168,8 +169,34 @@ export async function exportSpace(redis, space, {
 
   for (const k of categorized.other) {
     const type = String(await redis("TYPE", k)).toLowerCase();
+    const short = k.slice(prefix.length);
     if (type === "string") {
-      data.other[k.slice(prefix.length)] = await redis("GET", k);
+      data.other[short] = await redis("GET", k);
+    } else if (type === "hash") {
+      // Who and Now slots are hashes. Export field map so restore can HSET.
+      const entries = await redis("HGETALL", k);
+      const parsed = {};
+      if (Array.isArray(entries)) {
+        for (let i = 0; i < entries.length; i += 2) {
+          try { parsed[entries[i]] = JSON.parse(entries[i + 1]); }
+          catch { parsed[entries[i]] = entries[i + 1]; }
+        }
+      }
+      data.other[short] = { __type: "hash", fields: parsed };
+    } else if (type === "zset") {
+      // Log slots are zsets. Export members with scores.
+      const entries = await redis("ZRANGE", k, "0", "-1", "WITHSCORES");
+      const list = [];
+      if (Array.isArray(entries)) {
+        for (let i = 0; i < entries.length; i += 2) {
+          list.push({ member: entries[i], score: Number(entries[i + 1]) });
+        }
+      }
+      data.other[short] = { __type: "zset", entries: list };
+    } else if (type === "list") {
+      data.other[short] = { __type: "list", entries: await redis("LRANGE", k, "0", "-1") };
+    } else {
+      data.other[short] = { __type: type || "unknown", skipped: true };
     }
   }
 
@@ -183,6 +210,7 @@ export async function exportSpace(redis, space, {
       signals: categorized.signals.length,
       timelines: categorized.timelines.length,
       decisions: categorized.decisions.length,
+      other: categorized.other.length,
     },
     data,
   };
