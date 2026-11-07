@@ -37,12 +37,6 @@ export function memberRows(members, { userId, owner, totalSpaces }) {
   }));
 }
 
-export function agentRows(keys, apps) {
-  const key = arr(keys).map((k) => ({ id: str(k.id), fid: '', name: str(k.agent, 'agent'), kind: 'Key', access: k.scope === 'read' ? 'Read only' : 'Read and write', created: str(k.created_at ? new Date(k.created_at).toISOString().slice(0, 10) : '', '—') }));
-  const app = arr(apps).map((a) => ({ id: str(a.id), fid: str(a.fid), name: str(a.agent, str(a.app, 'app')), kind: 'App', access: a.scope === 'read' ? 'Read only' : 'Read and write', created: '—' }));
-  return [...key, ...app];
-}
-
 export function inviteRows(invitations) {
   return arr(invitations).map((i) => ({ id: str(i.id), roleText: roleLabel(i.role) }));
 }

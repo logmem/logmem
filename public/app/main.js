@@ -14,6 +14,7 @@ import { renderView, refreshFrame, renderBare, setShellHooks, currentRoute, setT
 import { pages, setOkHook } from './views.js';
 import { registerDecisions } from './decisions-view.js';
 import { registerFleetTruth } from './fleet-truth-view.js';
+import { registerAccess } from './access-view.js';
 import { openSearch, searchOpen, closeSearch } from './search.js';
 import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 
@@ -52,6 +53,7 @@ function login(msg) {
 setOkHook(ok);
 registerDecisions(pages, ok);
 registerFleetTruth(pages, ok);
+registerAccess(pages);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 let customerAccessRefreshPending=false;
