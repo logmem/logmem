@@ -12,6 +12,7 @@ Skills that teach an agent to use LogMem. Each folder holds one skill (`SKILL.md
 | `logmem-track-outage` | Scheduled trackers: write on change, stay silent otherwise, one outage report |
 | `logmem-self-host` | Running LogMem on your own Redis, deploy settings, moving from ACMI |
 | `logmem-sdk-primitives` | Building apps on LogMem (MCP over HTTP, or the JavaScript store) |
+| `logmem-github-dev-team` | Syncing LogMem jobs and plans with GitHub Projects, milestones, labels, issues and pull requests |
 
 ## Install
 
