@@ -13,7 +13,7 @@ export function createHandler(deps={}){return async(req,res)=>{
   if(b.action==='create-workspace'&&!await isInvited(s.email,{redis,env}))throw new WorkspaceError('signup_closed',403);
   const options={redis,limits:deps.limits};
   let result;
-  if(b.action==='create-workspace')result=await createWorkspace({userId:s.userId,name:b.name,firstSpaceName:b.firstSpaceName,requestId:b.requestId,businessType:b.businessType||'',withSample:b.withSample===true,userLabel:s.email,plan:b.plan||'free'},options);
+  if(b.action==='create-workspace')result=await createWorkspace({userId:s.userId,name:b.name,firstSpaceName:b.firstSpaceName,requestId:b.requestId,businessType:b.businessType||'',withSample:b.withSample===true,userLabel:s.email,plan:'free'},options);
   else if(b.action==='create-space')result=await createSpace({userId:s.userId,workspaceId:b.workspaceId,name:b.name,requestId:b.requestId},options);
   else if(b.action==='rename-space')result=await renameSpace({userId:s.userId,workspaceId:b.workspaceId,spaceId:b.spaceId,name:b.name,requestId:b.requestId},options);
   else if(b.action==='archive-space')result=await archiveSpace({userId:s.userId,workspaceId:b.workspaceId,spaceId:b.spaceId,requestId:b.requestId},options);

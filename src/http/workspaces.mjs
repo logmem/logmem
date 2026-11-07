@@ -100,6 +100,7 @@ export function membership(w,u) {
 export function planSpaces(w, depsLimits) {
   if (typeof depsLimits?.spaces === 'number') return depsLimits.spaces;
   const plan = w?.plan;
+  // Deliberate legacy amnesty: workspaces created prior to explicit plan attribute keep 10 spaces.
   if (!plan) return 10;
   try {
     const p = planFor(plan);

@@ -10,6 +10,7 @@ test('workspace handler requires verified session, signup access, intent and ide
  let r=mockRes();await createHandler({...deps,session:async()=>({status:'signed-out'})})(mockReq(request),r);assert.equal(r.statusCode,401);
  r=mockRes();await createHandler({...deps,env:{LOGMEM_CUSTOMER_DASHBOARD:'1'}})(mockReq(request),r);assert.equal(r.statusCode,403);
  r=mockRes();await createHandler(deps)(mockReq(request),r);assert.equal(r.statusCode,200);const result=JSON.parse(r.body);assert.ok(result.workspace.id);assert.ok(!r.body.includes('members'));
+ r=mockRes();await createHandler(deps)(mockReq({...request,body:{...request.body,plan:'scale',requestId:'create-002'}}),r);assert.equal(r.statusCode,200);const scaled=JSON.parse(r.body);assert.equal(scaled.workspace.plan,'free');
  r=mockRes();await createHandler(deps)(mockReq({...request,headers:{...request.headers,origin:'https://evil.test'}}),r);assert.equal(r.statusCode,403);
 });
 test('optional business samples use the new private namespace and seed only once',async()=>{
