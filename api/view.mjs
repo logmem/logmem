@@ -6,6 +6,7 @@ import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { buildView } from "../src/http/view.mjs";
 import { mayRead, viewSpaces, adminEnabled } from "../src/http/admin-auth.mjs";
 import { sendServerError } from "../src/http/log.mjs";
+import { CONTRACT } from "../public/app/data-defaults.js";
 
 export const config = { runtime: "nodejs", maxDuration: 30 };
 
@@ -26,7 +27,8 @@ async function handler(req, res) {
       recipient: q.recipient, type: q.type, plan: q.plan,
       overdue: bool(q.overdue), cursor: q.cursor, limit: q.limit, date: q.date,
     });
-    res.status(200).json({ ok: true, space, person, spaces: viewSpaces(), generated_at: Date.now(), ...data });
+    // Always name the FE contract version so clients can refuse a mismatch.
+    res.status(200).json({ ok: true, contract: CONTRACT, space, person, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
     if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });
     sendServerError(res, "/api/view", e);
