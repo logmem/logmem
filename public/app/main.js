@@ -1,6 +1,7 @@
 // main.js — the LogMem web app: hash routes, sign-in, the live pulse and keyboard shortcuts.
 // Every view renders through lit-html (escaped templates); no file in public/app writes raw HTML.
 import {clearInteractions} from './interactions.js';
+import { NOTICE } from './session-states.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { state, live, getJSON, api, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
@@ -54,14 +55,14 @@ registerFleetTruth(pages, ok);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 let customerAccessRefreshPending=false;
-setCustomerAccessChangedHook(async()=>{
+setCustomerAccessChangedHook(async(msg)=>{
   if(customerAccessRefreshPending)return;
   customerAccessRefreshPending=true;
   closeDrawer();closeSearch();cancelDialogs();
   try{
     const handled=await bootstrapAccount();
     if(!handled){route();refreshNeeds();schedule(0);}
-    toast('Workspace access refreshed.');
+    toast(typeof msg==='string'&&msg?msg:'Workspace access refreshed.');
   }catch{
     toast('Could not refresh workspace access. Reload the page to try again.',true);
   }finally{customerAccessRefreshPending=false;}
@@ -162,7 +163,7 @@ document.addEventListener('click', (e) => {
 
 configureAccount({ready:()=>{route();refreshNeeds();schedule(0);},closePanels:()=>{closeDrawer();closeSearch();cancelDialogs();cancelWalkLoads();}});
 window.addEventListener('hashchange',route);
-window.addEventListener('storage',e=>{if(state.customer&&e.key==='lm-account-event')login('You signed out in another tab.');});
+window.addEventListener('storage',e=>{if(state.customer&&e.key==='lm-account-event')login(NOTICE.otherTab);});
 (async()=>{const handled=await bootstrapAccount();if(!handled){route();if(state.space)refreshNeeds();schedule(4000);}})().catch(e=>login('Could not connect. Please retry.'));
 
 export { setTitle, renderView, LIVE_LABEL };

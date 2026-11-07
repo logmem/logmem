@@ -1,5 +1,6 @@
 // core.js — shared state, data access, formatting and toasts for the LogMem web app.
 // Every page is a lit-html template: values are escaped by lit, never concatenated into HTML.
+import { notice, noticeLine } from './session-states.js';
 
 export const state = { space: null, spaces: [], customer:false, user:null, workspaceId:null, spaceId:null, workspaces:[], spaceRecords:[] };
 let epoch=0,viewEpoch=0;
@@ -74,8 +75,8 @@ export async function getJSON(url) {
   if(requestedSpace!==state.space||requestedEpoch!==epoch){value.__stale=true;return value;}
   if(state.customer&&[401,403,404].includes(value.__status)){
     clearCustomerContext();
-    if(value.__status===401)onSignedOut(value.error||'Your sign-in expired.');
-    else onCustomerAccessChanged(value.error||'Your workspace access changed.');
+    if(value.__status===401)onSignedOut(notice({status:401,code:value.error}));
+    else onCustomerAccessChanged(noticeLine({status:value.__status,code:value.error}));
     value.__stale=true;
   }
   return value;
@@ -95,8 +96,8 @@ export async function postJSON(url, intent, body) {
   if(requestedEpoch!==epoch){const e=new Error('Space changed. Check the original space before retrying.');e.stale=true;throw e;}
   if(state.customer&&[401,403,404].includes(r.status)){
     clearCustomerContext();
-    if(r.status===401)onSignedOut(j.error||'Your sign-in expired.');
-    else onCustomerAccessChanged(j.error||'Your workspace access changed.');
+    if(r.status===401)onSignedOut(notice({status:401,code:j.error,intent}));
+    else onCustomerAccessChanged(noticeLine({status:r.status,code:j.error}));
     const e=new Error(j.error||'Access changed.');e.status=r.status;e.stale=true;throw e;
   }
   if(!state.customer&&r.status===401)onSignedOut(j.error);
