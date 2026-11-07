@@ -1445,3 +1445,8 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   .lmx-table td[data-label]::before{content:attr(data-label) ": ";color:var(--text-muted);font-size:12px}
   .lmx-table .lm-btn,.lmx-idchip{min-height:44px}
 }
+/* admin-phase4: mode strip and bulk confirm */
+.lmx-modestrip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0;padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface-sunken);color:var(--text-muted);font-size:14px;line-height:1.5}
+.lmx-modestrip[data-mode=risk]{border-color:var(--warning)}
+.lmx-confirm{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
+.lmx-confirm .lm-btn{min-height:44px}
