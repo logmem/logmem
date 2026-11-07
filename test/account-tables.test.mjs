@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { spaceRows, spaceAccessSummary, memberRows, agentRows, inviteRows, roleLabel, RENAME_REASON } from '../public/app/account-model.js';
+import { spaceRows, spaceAccessSummary, memberRows, inviteRows, roleLabel, RENAME_REASON } from '../public/app/account-model.js';
 
 const src = (f) => readFileSync(new URL('../public/app/' + f, import.meta.url), 'utf8');
 const SPACES = [{ id: 'sp_1', namespace: 'fieldnotes', name: 'Field Notes', workspaceId: 'w1' }, { id: 'sp_2', namespace: 'ops', name: 'Ops', workspaceId: 'w1', sampleTemplate: 'trades' }, { id: 'sp_3', namespace: 'other', name: 'Other', workspaceId: 'w2' }];
@@ -21,7 +21,6 @@ test('row builders survive missing and wrong-type input', () => {
   for (const bad of [null, undefined, 'x', 5, {}]) {
     assert.deepEqual(spaceRows(bad, 'w1'), []);
     assert.deepEqual(memberRows(bad, { userId: 'u', owner: false, totalSpaces: 0 }), []);
-    assert.deepEqual(agentRows(bad, bad), []);
     assert.deepEqual(inviteRows(bad), []);
   }
   assert.equal(roleLabel(undefined), 'Unknown');
@@ -40,11 +39,6 @@ test('memberRows marks you and locks owners from non-owners', () => {
   assert.equal(asAdmin[1].roleText, 'Editor');
   assert.equal(memberRows(m, { userId: 'u2', owner: true, totalSpaces: 1 })[0].locked, false);
 });
-test('agentRows says read only or read and write, for keys and apps', () => {
-  const r = agentRows([{ id: 'k1', agent: 'codex', scope: 'read', created_at: 0 }, { id: 'k2', agent: 'claude' }], [{ id: 'a1', fid: 'f1', app: 'Claude web' }]);
-  assert.deepEqual(r.map((x) => [x.name, x.kind, x.access]), [['codex', 'Key', 'Read only'], ['claude', 'Key', 'Read and write'], ['Claude web', 'App', 'Read and write']]);
-  assert.equal(r[2].fid, 'f1');
-});
 test('Rename stays disabled with a stated reason', () => {
   assert.match(RENAME_REASON, /not available/i);
   const t = src('account-tables.js');
@@ -53,10 +47,11 @@ test('Rename stays disabled with a stated reason', () => {
 });
 test('Settings uses the tables and keeps every existing action', () => {
   const a = src('account.js');
-  for (const act of ["action:'set'", "action:'remove'", "action:'revoke-invitation'", "'disconnect':'revoke'"]) assert.ok(a.includes(act), act);
+  for (const act of ["action:'set'", "action:'remove'", "action:'revoke-invitation'"]) assert.ok(a.includes(act), act);
   assert.match(a, /spacesTable\(/);
   assert.match(a, /membersTable\(/);
-  assert.match(a, /agentsTable\(/);
+  assert.match(a, /href="#\/access"/, 'agent keys and apps live on the Agent access screen');
+  assert.doesNotMatch(a, /connection-list|connectAgent/);
   assert.match(a, /id="spaces-table"/);
   assert.doesNotMatch(a, /createElement\('details'\)/, 'old DOM-built member list is gone');
 });

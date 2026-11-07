@@ -1450,3 +1450,8 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-modestrip[data-mode=risk]{border-color:var(--warning)}
 .lmx-confirm{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
 .lmx-confirm .lm-btn{min-height:44px}
+
+/* agent-access */
+.lmx-fresh{padding:16px;display:grid;gap:10px;border-color:var(--brand)}
+.lmx-accessnew{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end;max-width:none}
+.lmx-accessnew .lm-btn{min-height:44px}
