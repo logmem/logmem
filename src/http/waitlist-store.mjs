@@ -17,6 +17,7 @@
 // Old rows ({email, hash, agents, plan, ts, exp}) still parse. A repeat
 // rewrites them in the new shape without EX, which clears the old expiry.
 
+import { getSecret } from "../lib/secrets.mjs";
 import { createHash } from "node:crypto";
 import { KEYS } from "./onboarding.mjs";
 import { logRequest } from "./log.mjs";
@@ -154,7 +155,7 @@ export async function saveSignup(redis, { email, agents = null, plan = null, att
  * connected. The SDK loads only when a token is set.
  */
 export function envBlobPut(env = process.env) {
-  if (!env.BLOB_READ_WRITE_TOKEN) return null;
+  if (!getSecret("BLOB_READ_WRITE_TOKEN", env)) return null;
   return async (path, body) => {
     const { put } = await import("@vercel/blob");
     await put(path, body, { access: "private", contentType: "application/json", addRandomSuffix: false });

@@ -1,3 +1,4 @@
+import { getSecret } from "../src/lib/secrets.mjs";
 import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 // /api/work — the live app's person endpoints, one function behind rewrites:
 //   GET  /api/pulse?space=            -> { rev }                 the change counter
@@ -64,7 +65,7 @@ export function createHandler({ env = process.env, redis, now } = {}) {
         if (!viewSpaces(env).includes(space)) return res.status(403).json({ error: `space '${space}' is not shown here` });
         const r = readOnly(runner);
         if (op === "pulse") return res.status(200).json({ space, rev: Number((await r("GET", revKey(space))) || 0) });
-        if (op === "needs") return res.status(200).json({ space, spaces: viewSpaces(env), ...(await needsView(createStore(r, { space }), r, space, { person, secret: env.LOGMEM_DECIDE_SECRET })) });
+        if (op === "needs") return res.status(200).json({ space, spaces: viewSpaces(env), ...(await needsView(createStore(r, { space }), r, space, { person, secret: getSecret("LOGMEM_DECIDE_SECRET", env) })) });
         return res.status(404).json({ error: "unknown op" });
       }
       if (req.method !== "POST") return res.status(405).json({ error: "method not allowed" });
