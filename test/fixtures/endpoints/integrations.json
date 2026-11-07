@@ -1,0 +1,4 @@
+{"contract":1,"integrations":[
+ {"id":"clerk","name":"Clerk","status":"degraded","checked_at":"2026-11-07T09:00:00Z","last_error":"Development instance","api_key":"sk_live_SHOULD_NEVER_SHOW","token":"abc"},
+ {"id":"redis","name":"Redis","status":"ok","checked_at":"2026-11-07T09:00:00Z","last_error":""},
+ {"id":"odd","name":"Odd","status":"on fire","checked_at":"not a date"}]}

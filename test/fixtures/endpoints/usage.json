@@ -1,0 +1,1 @@
+{"plan":{"id":"free","name":"Free","spaces_limit":1,"stripe_customer":"cus_SHOULD_NEVER_SHOW"},"usage":[{"metric":"Spaces","used":1,"limit":1},{"metric":"Entries this month","used":"many","limit":null}]}
