@@ -29,6 +29,7 @@ export async function customerIdentity(req,deps={}) {
 }
 export function customerError(res,e,context) {
  if(e instanceof WorkspaceError)return res.status(e.status).json({error:e.code});
+ if(e?.status === 503 || e?.name === 'SuspensionStoreError')return res.status(503).json({error:'backend_unavailable',hint:e.message});
  return sendServerError(res,context,e);
 }
 export const customerRequest=req=>req.headers?.['x-logmem-viewer']==='customer';

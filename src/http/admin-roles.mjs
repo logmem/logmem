@@ -73,8 +73,17 @@ export async function setRole({ actorId, userId, role, redis }) {
  */
 export async function activeRole(actorId, redis) {
   if (actorId === BREAK_GLASS) return { role: "operator", suspended: false, breakglass: true };
-  const [role, suspended] = [await getRole(actorId, redis), await isSuspended(actorId, redis)];
+  const [role, suspended] = [await getRole(actorId, redis), await isSuspendedSafe(actorId, redis)];
   return { role: role?.role || null, suspended, breakglass: false };
+}
+
+export class SuspensionStoreError extends Error {
+  constructor(message = "suspension store unavailable") {
+    super(message);
+    this.name = "SuspensionStoreError";
+    this.status = 503;
+    this.code = "backend_unavailable";
+  }
 }
 
 export async function isSuspended(userId, redis) {
@@ -83,19 +92,40 @@ export async function isSuspended(userId, redis) {
 }
 
 /**
- * Front-door variant: a suspension-store error (NOPERM, timeout, outage) must
- * never break sessions or agent-key validation. It warns loudly in the request
- * log and treats the account as not suspended. Admin routes keep the strict
- * read through activeRole and fail closed instead. With the store healthy the
- * two behave identically, so enforcement is exact once the ACL allows
- * lm:admin:* again.
+ * Front-door variant (fail closed on store errors with 503, Option A):
+ * A suspension-store error (NOPERM, timeout, outage) fails closed by throwing
+ * SuspensionStoreError (status 503) so unauthorized or suspended actors cannot
+ * bypass enforcement during store outages.
  */
 export async function isSuspendedSafe(userId, redis) {
   try {
     return await isSuspended(userId, redis);
   } catch (e) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), level: "warn", route: "suspension-guard", code: String(e?.message || e).slice(0, 120), note: "suspension store unavailable, treating as not suspended" }));
-    return false;
+    console.log(JSON.stringify({ ts: new Date().toISOString(), level: "warn", route: "suspension-guard", code: String(e?.message || e).slice(0, 120), note: "suspension store unavailable, failing closed with 503" }));
+    throw new SuspensionStoreError(e?.message || "suspension store unavailable");
+  }
+}
+
+/**
+ * Live role check for admin routes (Layer 1 backend contracts):
+ * Verifies live role and suspension state from redis on every request.
+ */
+export async function requireAdminAuth(actorId, redis, { allowedRoles = null } = {}) {
+  if (!actorId) return { ok: false, status: 401, error: "sign in required" };
+  if (actorId === BREAK_GLASS) return { ok: true, actorId, role: "operator", breakglass: true };
+  if (!redis) return { ok: false, status: 503, error: "roles_backend_unavailable" };
+  try {
+    const me = await activeRole(actorId, redis);
+    if (me.suspended) return { ok: false, status: 403, error: "account_suspended" };
+    if (!me.breakglass) {
+      if (!me.role) return { ok: false, status: 403, error: "no_role", hint: "an admin must set-role this account first" };
+      if (allowedRoles && !allowedRoles.includes(me.role)) {
+        return { ok: false, status: 403, error: "role_not_authorized", role: me.role };
+      }
+    }
+    return { ok: true, actorId, ...me };
+  } catch (e) {
+    return { ok: false, status: 503, error: "suspension_store_unavailable", hint: e?.message || "backend unavailable" };
   }
 }
 

@@ -3,7 +3,7 @@ import {createHandler} from '../api/interactions.mjs';
 import {createMemoryRedis} from '../src/lib/memory-redis.mjs';import {createStore} from '../src/core/store.mjs';
 import {createWorkspace,setMembership} from '../src/http/workspaces.mjs';
 import {mockReq,mockRes} from './oauth-helpers.mjs';import {issueCookie} from '../src/http/admin-auth.mjs';
-const env={LOGMEM_ADMIN_PASSWORD:'test-password',LOGMEM_VIEW_SPACES:'test',LOGMEM_ADMIN_ID:'Admin',VERCEL_ENV:'production'};
+const env={LOGMEM_ADMIN_PASSWORD:'test-password',LOGMEM_VIEW_SPACES:'test',LOGMEM_ADMIN_ID:'Admin',VERCEL_ENV:'production',LOGMEM_ADMIN_SECRET:'admin-secret-interaction-test'};
 const headers={host:'logmem.test',origin:'https://logmem.test','x-logmem-intent':'interactions'};
 async function call(h,{method='GET',url='/api/interactions?space=test&type=job&id=a',body,extra={}}={}){const r=mockRes();await h(mockReq({method,url,body,headers:{...headers,...extra}}),r);return {status:r.statusCode,data:JSON.parse(r.body)};}
 const comment={space:'test',target:{type:'job',id:'a'},action:'comment',text:'Check this.',requestId:'request-0001',by:'human:Forged'};

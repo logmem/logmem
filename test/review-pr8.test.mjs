@@ -262,7 +262,7 @@ test("item 1: /api/decide answers 503 with a clear message when the secret is mi
   const now = clock();
   const { redis, q } = await team({ now });
   const ask = await sc(q, "logmem_ask", { question: "Send?", action: "send", reversible: true });
-  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_SECRET: "admin-secret-review-test" };
   const cookie = issueCookie(env).split(";")[0];
   const req = { method: "POST", headers: { host: "h", origin: "https://h", cookie, "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail: ask.trail, verdict: "approve" } };
   const saved = process.env.LOGMEM_DECIDE_SECRET;
@@ -364,7 +364,7 @@ test("item 4: logmem_ask refuses a to that is not a person (an agent, or the ask
 test("item 4: /api/decide decides as human:<LOGMEM_ADMIN_ID> and answers 403 for an ask addressed to someone else", async () => {
   const { redis, q } = await team();
   const forMikey = await sc(q, "logmem_ask", { question: "Send?", action: "send", reversible: true, to: "human:mikey" });
-  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_SECRET: "admin-secret-review-test" };
   const run = async (e, trail) => {
     const res = mockRes();
     await decide({ method: "POST", headers: { host: "h", origin: "https://h", cookie: issueCookie(e).split(";")[0], "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail, verdict: "reject" } }, res, { env: e, redis });
@@ -413,7 +413,7 @@ test("item 7: approving an irreversible (or unstated) ask needs confirm; reject/
 test("item 7: /api/decide needs confirm:'approve' to approve an irreversible ask (428 otherwise)", async () => {
   const { redis, q } = await team();
   const ask = await sc(q, "logmem_ask", { question: "Send?", action: "send" });
-  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_SECRET: "admin-secret-review-test" };
   const cookie = issueCookie(env).split(";")[0];
   const run = async (extra) => {
     const res = mockRes();
@@ -518,7 +518,7 @@ test("item 9: sendServerError answers a generic 500 with a ref and logs the deta
 test("item 9: /api/decide, /api/inbox, /api/view and /api/scorecard never echo an exception on 500", async () => {
   // /api/decide with a backend that throws.
   {
-    const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+    const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_SECRET: "admin-secret-review-test" };
     const cookie = issueCookie(env).split(";")[0];
     const res = mockRes();
     const logs = await captureLogs(() => decide({ method: "POST", headers: { host: "h", cookie, "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail: "approvalQuill-1791712800000-" + "a".repeat(24), verdict: "reject" } }, res, { env, redis: boom }));
@@ -559,7 +559,7 @@ test("item 9: /api/decide, /api/inbox, /api/view and /api/scorecard never echo a
 test("item 9: expected refusals keep their specific messages (only 500s are generic)", async () => {
   const { redis, q } = await team();
   const ask = await sc(q, "logmem_ask", { question: "Send?", action: "send" });
-  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes" };
+  const env = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "fieldnotes", LOGMEM_ADMIN_SECRET: "admin-secret-review-test" };
   const cookie = issueCookie(env).split(";")[0];
   const res = mockRes();
   await decide({ method: "POST", headers: { host: "h", cookie, "x-logmem-intent": "decide" }, body: { space: "fieldnotes", trail: ask.trail, verdict: "approve" } }, res, { env, redis });
