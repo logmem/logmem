@@ -1427,3 +1427,21 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   .lmx-ft-acts .lmx-more-list .lm-btn{min-height:44px}
   .lmx-ft-section>summary{min-height:44px;display:flex}
 }
+/* admin-phase2: Settings tables */
+.lmx-tablewrap{overflow-x:auto}
+.lmx-table{width:100%;border-collapse:collapse;font-size:14px}
+.lmx-table th,.lmx-table td{text-align:left;padding:10px 12px;border-top:1px solid var(--border);vertical-align:middle}
+.lmx-table thead th{font-size:12px;font-weight:600;color:var(--text-muted);border-top:0}
+.lmx-table tbody th{font-weight:600}
+.lmx-idchip{min-height:32px;padding:2px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-sunken);color:var(--text);cursor:pointer}
+.lmx-rowedit{display:inline-block;margin-right:8px}
+.lmx-rowedit>summary{list-style:none;cursor:pointer}
+.lmx-accessform{display:grid;gap:10px;padding:12px 0}
+@media(max-width:639px){
+  .lmx-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .lmx-table,.lmx-table tbody,.lmx-table tr,.lmx-table th,.lmx-table td{display:block}
+  .lmx-table tr{border-top:1px solid var(--border);padding:8px 0}
+  .lmx-table th,.lmx-table td{border-top:0;padding:4px 0}
+  .lmx-table td[data-label]::before{content:attr(data-label) ": ";color:var(--text-muted);font-size:12px}
+  .lmx-table .lm-btn,.lmx-idchip{min-height:44px}
+}
