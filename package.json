@@ -54,6 +54,7 @@
     "test:e2e": "playwright test",
     "smoke": "node scripts/smoke.mjs",
     "release:check": "node scripts/release-guard.mjs",
+    "scan:secrets": "node scripts/scan-git-secrets.mjs",
     "release:prod": "node scripts/release-guard.mjs --full && vercel --prod"
   },
   "dependencies": {

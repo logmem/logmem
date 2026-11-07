@@ -12,6 +12,7 @@ import { checkPassword, issueCookie, issueIdentityCookie, isAdmin, adminEnabled 
 import { customerSession } from "../src/http/clerk.mjs";
 import { getRole, ROLES } from "../src/http/admin-roles.mjs";
 import { customerRedis } from "../src/http/jail.mjs";
+import { applyRateLimit, ROUTE_CLASSES } from "../src/http/rate-limit.mjs";
 
 export const config = { runtime: "nodejs" };
 
@@ -23,6 +24,8 @@ export function createLoginHandler({ session = customerSession, roleLookup = get
     res.setHeader("Cache-Control", "no-store");
     if (req.method === "GET") return res.status(200).json({ enabled: adminEnabled(), signedIn: isAdmin(req, env), production: env.VERCEL_ENV === "production" });
     if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+    const rateOk = await applyRateLimit(req, res, { redis: redis || customerRedis(env), routeClass: ROUTE_CLASSES.AUTH });
+    if (!rateOk) return;
     if (!adminEnabled(env)) return res.status(503).json({ error: "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
     const password = (req.body && req.body.password) || "";
 

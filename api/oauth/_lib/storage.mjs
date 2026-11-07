@@ -223,17 +223,66 @@ const isRawToken = (t) => /^[0-9a-f]{64}$/.test(t);
 
 // ───── Credential envelope ─────
 
-/** Parse LOGMEM_OAUTH_KEK (32 bytes, hex or base64). null if unset; throws if malformed. */
-export function loadKek(env = process.env) {
-  const raw = String(env.LOGMEM_OAUTH_KEK || "").trim();
+export function parseKekEntry(str, defaultKid = "k1") {
+  const raw = String(str || "").trim();
   if (!raw) return null;
+  let kid = defaultKid;
+  let keyPart = raw;
+  const colonIdx = raw.indexOf(":");
+  if (colonIdx > 0 && colonIdx < raw.length - 1) {
+    const candidateKid = raw.slice(0, colonIdx).trim();
+    const candidateKey = raw.slice(colonIdx + 1).trim();
+    if (/^[a-zA-Z0-9_-]+$/.test(candidateKid)) {
+      kid = candidateKid;
+      keyPart = candidateKey;
+    }
+  }
   let buf = null;
-  if (/^[0-9a-fA-F]{64}$/.test(raw)) buf = Buffer.from(raw, "hex");
-  else if (/^[A-Za-z0-9+/_-]+={0,2}$/.test(raw)) buf = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  if (/^[0-9a-fA-F]{64}$/.test(keyPart)) buf = Buffer.from(keyPart, "hex");
+  else if (/^[A-Za-z0-9+/_-]+={0,2}$/.test(keyPart)) buf = Buffer.from(keyPart.replace(/-/g, "+").replace(/_/g, "/"), "base64");
   if (!buf || buf.length !== 32) {
     throw new StorageConfigError("LOGMEM_OAUTH_KEK must be 32 bytes, hex or base64");
   }
-  return buf;
+  return { kid, key: buf };
+}
+
+/**
+ * Parse LOGMEM_OAUTH_KEK (active) and LOGMEM_OAUTH_KEK_PREVIOUS (fallbacks).
+ * Format: "kid:key" or bare "key" (default kid "k1").
+ * Returns { active, previous: [...], keyMap: Map, allKeys: [...] } or null if unset.
+ */
+export function loadKekConfig(env = process.env) {
+  const activeRaw = String(env.LOGMEM_OAUTH_KEK || "").trim();
+  if (!activeRaw) return null;
+  const active = parseKekEntry(activeRaw, "k1");
+  const previousList = [];
+  const prevRaw = String(env.LOGMEM_OAUTH_KEK_PREVIOUS || "").trim();
+  if (prevRaw) {
+    const parts = prevRaw.split(",").map((s) => s.trim()).filter(Boolean);
+    let idx = 0;
+    for (const p of parts) {
+      idx += 1;
+      try {
+        const parsed = parseKekEntry(p, `k_prev_${idx}`);
+        if (parsed) previousList.push(parsed);
+      } catch (e) {
+        throw new StorageConfigError(`LOGMEM_OAUTH_KEK_PREVIOUS contains invalid key: ${e.message}`);
+      }
+    }
+  }
+  const keyMap = new Map();
+  keyMap.set(active.kid, active.key);
+  for (const prev of previousList) {
+    if (!keyMap.has(prev.kid)) keyMap.set(prev.kid, prev.key);
+  }
+  const allKeys = [active.key, ...previousList.map((p) => p.key)];
+  return { active, previous: previousList, keyMap, allKeys };
+}
+
+/** Parse LOGMEM_OAUTH_KEK (active key Buffer). null if unset; throws if malformed. */
+export function loadKek(env = process.env) {
+  const conf = loadKekConfig(env);
+  return conf ? conf.active.key : null;
 }
 
 /** Throws KekMissingError when tokens cannot be minted (no KEK outside local dev). */
@@ -284,16 +333,23 @@ export function recordAad(kind, keyHash, plain) {
 /** Seal the credential blob under `aad` (see recordAad). Throws KekMissingError without a KEK outside local dev. */
 export function sealCreds(creds, aad, env = process.env) {
   if (!Buffer.isBuffer(aad) || aad.length === 0) throw new Error("sealCreds requires record-bound AAD");
-  const kek = loadKek(env);
-  if (!kek) {
+  const kekConf = loadKekConfig(env);
+  if (!kekConf) {
     if (!insecureAllowed(env)) throw new KekMissingError();
     return { enc: "none", warning: "LOGMEM_OAUTH_KEK unset: credentials stored unencrypted (local dev only)", data: creds };
   }
   const iv = randomBytes(GCM_IV_BYTES);
-  const cipher = createCipheriv("aes-256-gcm", kek, iv, { authTagLength: GCM_TAG_BYTES });
+  const cipher = createCipheriv("aes-256-gcm", kekConf.active.key, iv, { authTagLength: GCM_TAG_BYTES });
   cipher.setAAD(aad);
   const ct = Buffer.concat([cipher.update(JSON.stringify(creds), "utf8"), cipher.final()]);
-  return { enc: "aes-256-gcm", v: ENVELOPE_V, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ct: ct.toString("base64") };
+  return {
+    enc: "aes-256-gcm",
+    v: ENVELOPE_V,
+    kid: kekConf.active.kid,
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ct: ct.toString("base64"),
+  };
 }
 
 /**
@@ -302,6 +358,11 @@ export function sealCreds(creds, aad, env = process.env) {
  * legacy envelope (no `v`, constant v1 AAD) opens only before LEGACY_CUTOFF_MS.
  * That path is for access-token lookup. consumeRefresh and consumeAuthCode
  * refuse v1 outright so a copied blob cannot be exchanged for a v2 grant.
+ *
+ * Supports key rotation with fallback:
+ *   1. If `envelope.kid` matches a loaded key, tries it first.
+ *   2. Tries the active key.
+ *   3. Tries each previous key in LOGMEM_OAUTH_KEK_PREVIOUS in order.
  */
 export function openCreds(envelope, aad, env = process.env) {
   if (!envelope || typeof envelope !== "object") throw new Error("no credential envelope");
@@ -321,17 +382,35 @@ export function openCreds(envelope, aad, env = process.env) {
   } else {
     throw new Error("unknown credential envelope version");
   }
-  const kek = loadKek(env);
-  if (!kek) throw new KekMissingError();
+  const kekConf = loadKekConfig(env);
+  if (!kekConf) throw new KekMissingError();
   const iv = Buffer.from(String(envelope.iv), "base64");
   const tag = Buffer.from(String(envelope.tag), "base64");
   if (iv.length !== GCM_IV_BYTES) throw new Error("bad envelope iv length");
   if (tag.length !== GCM_TAG_BYTES) throw new Error("bad envelope tag length");
-  const decipher = createDecipheriv("aes-256-gcm", kek, iv, { authTagLength: GCM_TAG_BYTES });
-  decipher.setAAD(useAad);
-  decipher.setAuthTag(tag);
-  const pt = Buffer.concat([decipher.update(Buffer.from(String(envelope.ct), "base64")), decipher.final()]);
-  return JSON.parse(pt.toString("utf8"));
+  const ctBuf = Buffer.from(String(envelope.ct), "base64");
+
+  const candidateKeys = [];
+  if (envelope.kid && kekConf.keyMap.has(envelope.kid)) {
+    candidateKeys.push(kekConf.keyMap.get(envelope.kid));
+  }
+  for (const k of kekConf.allKeys) {
+    if (!candidateKeys.includes(k)) candidateKeys.push(k);
+  }
+
+  let lastError = null;
+  for (const key of candidateKeys) {
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_TAG_BYTES });
+      decipher.setAAD(useAad);
+      decipher.setAuthTag(tag);
+      const pt = Buffer.concat([decipher.update(ctBuf), decipher.final()]);
+      return JSON.parse(pt.toString("utf8"));
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error("Failed to decrypt envelope with any available KEK");
 }
 
 const CRED_FIELDS = new Set(["backend", "upstash_url", "upstash_token"]);
