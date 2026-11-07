@@ -27,3 +27,18 @@ test('an invited workspace member can create a space while public signup stays c
  await handler(mockReq({method:'POST',url:'/api/workspaces',headers:{origin:'https://logmem.test','x-logmem-intent':'workspace'},body:{action:'create-space',workspaceId:w.id,name:'Team work',requestId:'new-space-01'}}),res);
  assert.equal(res.statusCode,200,res.body);
 });
+
+test('workspace handler supports rename-space, archive-space, and unarchive-space actions',async()=>{
+ const {createWorkspace}=await import('../src/http/workspaces.mjs');const redis=createMemoryRedis();
+ const {workspace:w,space:s}=await createWorkspace({userId,name:'Business',firstSpaceName:'Ops',requestId:'create-001'},{redis});
+ const handler=createHandler({redis,limits:{spaces:5},env:{LOGMEM_CUSTOMER_DASHBOARD:'1'},session:async()=>({status:'signed-in',userId,email:'owner@example.com'})});
+ let res=mockRes();
+ await handler(mockReq({method:'POST',url:'/api/workspaces',headers:{origin:'https://logmem.test','x-logmem-intent':'workspace'},body:{action:'rename-space',workspaceId:w.id,spaceId:s.id,name:'Operations',requestId:'rename-01'}}),res);
+ assert.equal(res.statusCode,200,res.body);assert.equal(JSON.parse(res.body).space.name,'Operations');
+ res=mockRes();
+ await handler(mockReq({method:'POST',url:'/api/workspaces',headers:{origin:'https://logmem.test','x-logmem-intent':'workspace'},body:{action:'archive-space',workspaceId:w.id,spaceId:s.id,requestId:'archive-01'}}),res);
+ assert.equal(res.statusCode,200,res.body);assert.equal(JSON.parse(res.body).space.status,'archived');
+ res=mockRes();
+ await handler(mockReq({method:'POST',url:'/api/workspaces',headers:{origin:'https://logmem.test','x-logmem-intent':'workspace'},body:{action:'unarchive-space',workspaceId:w.id,spaceId:s.id,requestId:'unarchive-01'}}),res);
+ assert.equal(res.statusCode,200,res.body);assert.equal(JSON.parse(res.body).space.status,'active');
+});
