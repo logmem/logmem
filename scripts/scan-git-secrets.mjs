@@ -16,8 +16,9 @@
 //   node scripts/scan-git-secrets.mjs [--depth 50] [--staged]
 
 import { execSync } from "node:child_process";
+import { getSecret } from "../src/lib/secrets.mjs";
 
-const FLEET_BRIDGE_TOKEN = (process.env.ACMI_BRIDGE_TOKEN || "").trim();
+const FLEET_BRIDGE_TOKEN = (getSecret("ACMI_BRIDGE_TOKEN") || "").trim();
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const SECRET_RULES = [
@@ -46,7 +47,7 @@ export function scanText(text, filename = "") {
     if (line.includes("${") || line.includes("<placeholder>") || line.includes("REDACTED") || line.includes("mock-")) continue;
     for (const rule of SECRET_RULES) {
       if (rule.re.test(line)) {
-        findings.push({ line: i + 1, rule: rule.name, match: line.trim().slice(0, 80) });
+        findings.push({ line: i + 1, rule: rule.name });
       }
     }
   }

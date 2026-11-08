@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { scanText } from "../scripts/scan-git-secrets.mjs";
 import {
   ROUTE_CLASSES,
   DEFAULT_LIMITS,
@@ -161,5 +162,12 @@ test("mcp unauth path honors applyRateLimit 429 before OAuth challenge", () => {
 test("secret scanner findings omit matched secret text", () => {
   const src = fs.readFileSync(new URL("../scripts/scan-git-secrets.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(src, /findings\.push\(\{[^}]*line:\s*text/);
+  assert.doesNotMatch(src, /findings\.push\(\{[^}]*match:/);
   assert.match(src, /f\.file \|\| "\?"/);
+
+  const findings = scanText("const key = 'sk_live_0123456789abcdef';", "app.js");
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].line, 1);
+  assert.equal(findings[0].rule, "Live/test provider secret key");
+  assert.equal(findings[0].match, undefined);
 });
