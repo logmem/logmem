@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { issueCookie, issueIdentityCookie, adminIdentity, isAdmin } from "../src/http/admin-auth.mjs";
+import { issueCookie, issueIdentityCookie, adminIdentity, isAdmin, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
 import { createLoginHandler } from "../api/login.mjs";
 import { createHandler as adminUsersHandler } from "../api/admin-users.mjs";
 import { setRole, getRole, isSuspended, isSuspendedSafe, activeRole, requireAdminAuth, BREAK_GLASS, SuspensionStoreError } from "../src/http/admin-roles.mjs";
@@ -179,13 +179,45 @@ test("suspension guard: store errors fail closed with 503 backend unavailable (O
   assert.equal(ok, false, "healthy store reads normally through the safe wrapper");
 });
 
-test("cookie secret: production requires LOGMEM_ADMIN_SECRET (Option A)", () => {
+test("cookie secret: production requires LOGMEM_ADMIN_SECRET (Option A)", async () => {
   const prodWithoutSecret = { VERCEL_ENV: "production", LOGMEM_ADMIN_PASSWORD: "pw" };
-  assert.equal(adminIdentity(mockReq({ headers: { cookie: "lm_admin=123.456" } }), prodWithoutSecret), null, "adminIdentity returns null without throwing in req handler");
+  assert.throws(
+    () => adminIdentity(mockReq({ headers: { cookie: "lm_admin=123.456" } }), prodWithoutSecret),
+    AdminSecretMissingError,
+    "adminIdentity throws AdminSecretMissingError instead of hiding it as 401"
+  );
   const prodWithSecret = { VERCEL_ENV: "production", LOGMEM_ADMIN_PASSWORD: "pw", LOGMEM_ADMIN_SECRET: "prod-secret-hex" };
   const cookie = issueIdentityCookie(prodWithSecret, ADMIN_USER);
   const req = mockReq({ headers: { cookie: cookieOf(cookie) } });
   assert.equal(adminIdentity(req, prodWithSecret), ADMIN_USER, "verifies with LOGMEM_ADMIN_SECRET in production");
+
+  // Route mapping: password login with missing secret maps to 503, not 500
+  const login = createLoginHandler({ env: prodWithoutSecret });
+  const pwRes = mockRes();
+  await login(mockReq({ method: "POST", body: { password: "pw" } }), pwRes);
+  assert.equal(pwRes.statusCode, 503, "password login returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(pwRes.body).error, "admin_secret_missing");
+
+  // Route mapping: admin-users returns 503 when admin secret missing in prod
+  const adminUsers = adminUsersHandler({ env: prodWithoutSecret });
+  const auRes = mockRes();
+  await adminUsers(mockReq({ method: "GET", headers: { cookie: "lm_admin=123.456" } }), auRes);
+  assert.equal(auRes.statusCode, 503, "admin-users returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(auRes.body).error, "admin_secret_missing");
+
+  // Route mapping: invites returns 503 when admin secret missing in prod
+  const invites = invitesHandler({ env: prodWithoutSecret });
+  const invRes = mockRes();
+  await invites(mockReq({ method: "GET", headers: { cookie: "lm_admin=123.456" } }), invRes);
+  assert.equal(invRes.statusCode, 503, "invites returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(invRes.body).error, "admin_secret_missing");
+
+  // Route mapping: agent-keys returns 503 when admin secret missing in prod
+  const agentKeys = agentKeysHandler({ env: prodWithoutSecret });
+  const akRes = mockRes();
+  await agentKeys(mockReq({ method: "GET", headers: { cookie: "lm_admin=123.456" } }), akRes);
+  assert.equal(akRes.statusCode, 503, "agent-keys returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(akRes.body).error, "admin_secret_missing");
 });
 
 test("break-glass: 1-hour expiration enforced", () => {

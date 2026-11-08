@@ -65,12 +65,7 @@ export function adminIdentity(req, env = process.env, now = Date.now()) {
   const v = readCookie(req);
   if (!v) return null;
   const parts = String(v).split(".");
-  let key;
-  try {
-    key = secret(env);
-  } catch {
-    return null;
-  }
+  const key = secret(env);
   if (!key) return null;
 
   if (parts.length === 3) {

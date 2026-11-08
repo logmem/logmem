@@ -16,7 +16,7 @@ import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 
 import { createAgentKey, listAgentKeys, revokeAgentKey, AgentKeyError, keySpaces } from "../src/http/agent-keys.mjs";
 import { deployRedis, StorageConfigError, listManagedApps, revokeManagedApp, FLEET_OWNER } from "./oauth/_lib/storage.mjs";
-import { adminIdentity } from "../src/http/admin-auth.mjs";
+import { adminIdentity, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
 import { requireAdminAuth, BREAK_GLASS, SuspensionStoreError } from "../src/http/admin-roles.mjs";
 import { customerRedis, CustomerRedisConfigError } from "../src/http/jail.mjs";
 import { sendServerError } from "../src/http/log.mjs";
@@ -46,9 +46,9 @@ function body(req) {
 export function createHandler({ env = process.env, redis = () => deployRedis(), rolesRedis = () => customerRedis(env), now } = {}) {
   return async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
-    const actorId = adminIdentity(req, env);
-    if (!actorId) return res.status(401).json({ error: "sign in required" });
     try {
+      const actorId = adminIdentity(req, env);
+      if (!actorId) return res.status(401).json({ error: "sign in required" });
       const r = actorId === BREAK_GLASS ? null : rolesRedis();
       const auth = await requireAdminAuth(actorId, r, { allowedRoles: ["admin"] });
       if (!auth.ok) return res.status(auth.status).json({ error: auth.error, hint: auth.hint });
@@ -69,6 +69,7 @@ export function createHandler({ env = process.env, redis = () => deployRedis(), 
       const out = await createAgentKey({ space: b.space, agent: b.agent, label: b.label, by, ...(typeof b.owner === "string" ? { owner: b.owner } : {}), ...(b.scope ? { scope: b.scope } : {}) }, { env, redis: redis(), ...(now ? { now } : {}) });
       return res.status(201).json(out);
     } catch (e) {
+      if (e instanceof AdminSecretMissingError || e?.code === "admin_secret_missing") return res.status(503).json({ error: "admin_secret_missing", hint: e.message });
       if (e instanceof AgentKeyError) return res.status(400).json({ error: e.message });
       if (e instanceof StorageConfigError) return res.status(503).json({ error: "key storage is not configured on this deploy" });
       if (e instanceof CustomerRedisConfigError) return res.status(503).json({ error: "customer redis is not configured on this deploy" });

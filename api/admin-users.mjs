@@ -13,7 +13,7 @@
 // so the audit never claims a person who has not been identified.
 import { customerRedis } from "../src/http/jail.mjs";
 import { WorkspaceError } from "../src/http/workspaces.mjs";
-import { adminIdentity } from "../src/http/admin-auth.mjs";
+import { adminIdentity, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
 import { ROLES, getRole, setRole, suspendUser, unsuspendUser, listRoles, suspendedList, audit, activeRole, SuspensionStoreError } from "../src/http/admin-roles.mjs";
 import { createClerkClient } from "@clerk/backend";
 import { deployRedis } from "./oauth/_lib/storage.mjs";
@@ -104,6 +104,7 @@ export function createHandler({ env = process.env, redis = () => customerRedis(e
       }
       throw new WorkspaceError("invalid_action", 400);
     } catch (e) {
+      if (e instanceof AdminSecretMissingError || e?.code === "admin_secret_missing") return res.status(503).json({ error: "admin_secret_missing", hint: e.message });
       if (e instanceof WorkspaceError) return res.status(e.status).json({ error: e.code });
       if (e instanceof RangeError || /invalid user id|invalid role/.test(String(e?.message))) return res.status(400).json({ error: String(e.message).slice(0, 120) });
       if (e instanceof SuspensionStoreError || e?.status === 503) return res.status(503).json({ error: "suspension store unavailable" });
