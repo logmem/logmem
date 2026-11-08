@@ -272,10 +272,17 @@ test("site: both pages load /attrib.js in the head, and onboarding.js sends attr
     const html = readFileSync(join(root, page), "utf8");
     const head = html.slice(html.indexOf("<head>"), html.indexOf("</head>"));
     assert.ok(head.includes('<script src="/attrib.js" defer></script>'), `${page} loads attrib.js in <head>`);
-    assert.ok(!html.includes("gtm.js") && !html.includes("googletagmanager.com"), `${page} has no Google tag`);
+    assert.ok(html.includes('src="/consent.js"') && html.includes('src="/vendor/cookieconsent/cookieconsent.umd.js"'), `${page} loads the cookie banner`);
+    assert.ok(html.indexOf('src="/gtm.js"') < html.indexOf('src="/consent.js"'), `${page} loads gtm.js before consent.js`);
+    assert.ok(!html.includes("googletagmanager.com"), `${page} has no inline Google tag`);
   }
   const appHtml = readFileSync(join(root, "public/app.html"), "utf8");
   assert.ok(!appHtml.includes("gtm.js") && !appHtml.includes("googletagmanager.com"), "/app stays free of GTM");
+  const gtm = readFileSync(join(root, "public/gtm.js"), "utf8");
+  assert.match(gtm, /window\.logmemLoadGoogleTags = function/, "gtm.js only defines the loader");
+  assert.ok(!/^\s*(gtag\(|head\.appendChild)/m.test(gtm.split("window.logmemLoadGoogleTags")[0]), "gtm.js loads nothing before consent");
+  const consent = readFileSync(join(root, "public/consent.js"), "utf8");
+  assert.match(consent, /acceptedCategory\('analytics'\)[\s\S]*logmemLoadGoogleTags/, "tags load only after analytics consent");
   const js = readFileSync(join(root, "public/onboarding.js"), "utf8");
   const post = js.slice(js.indexOf("fetch('/api/onboarding/waitlist'"), js.indexOf("}).then(", js.indexOf("fetch('/api/onboarding/waitlist'")));
   assert.match(post, /attribution: window\.lmAttribution \? window\.lmAttribution\(\) : null/);
