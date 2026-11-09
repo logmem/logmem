@@ -39,6 +39,7 @@ test('membership and role denials are not treated as a missing page signal', () 
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name === '.next') continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) walk(path, out);
     else if (/\.(ts|tsx|mjs)$/.test(name)) out.push(path);
