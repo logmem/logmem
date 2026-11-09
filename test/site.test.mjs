@@ -288,6 +288,40 @@ test("site: both pages load /attrib.js in the head, and onboarding.js sends attr
   assert.match(post, /attribution: window\.lmAttribution \? window\.lmAttribution\(\) : null/);
 });
 
+test("site: privacy and terms drop Google tags and keep the reviewed legal lines", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const read = (page) => readFileSync(join(root, page), "utf8");
+  for (const page of ["public/privacy.html", "public/terms.html"]) {
+    const html = read(page);
+    assert.ok(!html.includes('src="/gtm.js"') && !html.includes("googletagmanager.com") && !html.includes("cookieconsent") && !html.includes('src="/consent.js"'), `${page} does not load Google tags or the cookie banner`);
+    assert.ok(!html.includes("110%"), `${page} has no 110% grace line`);
+    assert.ok(!/CONFIRM|VERIFY|\[MIKEY PICK/.test(html), `${page} has no unresolved markers`);
+    assert.match(html, /November 9, 2026/);
+    assert.match(html, /hello@logmem\.si/);
+    assert.match(html, /Mad EZ Media Partners LLC/);
+    assert.ok(!html.includes("Technology Partners"), `${page} does not switch the legal name`);
+  }
+  const terms = read("public/terms.html");
+  assert.match(terms, /Every plan has a hard entry cap, with no overage billing\. We warn you at 80% of your limit and prompt you at 100%\./);
+  assert.match(terms, /at least 18/);
+  assert.match(terms, /limited to US \$100/);
+  assert.match(terms, /Mecklenburg County, North Carolina/);
+  assert.match(terms, /Do not store passwords, API keys, tokens, or other secrets as memory content\./);
+  const privacy = read("public/privacy.html");
+  assert.match(privacy, /Waitlist entries: up to 180 days, then we delete them unless you open an account\./);
+  assert.match(privacy, /That 180-day expiry is not set on waitlist sign-ups in the current store/);
+  assert.match(privacy, /how many agents you plan to run/);
+  assert.match(privacy, /Do not store passwords, API keys, tokens, or other secrets as memory content\./);
+  assert.match(privacy, /do not share one Clerk host/);
+  assert.match(privacy, /https:\/\/clerk\.logmem\.si/);
+  assert.match(privacy, /https:\/\/\*\.accounts\.dev/);
+  assert.match(privacy, /We do not use Google Analytics, Google Tag Manager, or advertising cookies\./);
+  assert.ok(!privacy.includes("Accept analytics"));
+});
+
 test("site: attrib.js keeps the first visit's source in sessionStorage, host only, and never breaks without storage", async () => {
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
