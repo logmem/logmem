@@ -1,8 +1,8 @@
 // apps/dashboard/lib/server/auth.ts
 // N1: real server-side authorization for the dashboard.
 // Identity is the Clerk session cookie, checked in-process by the same
-// customerSession the root /api/session route uses. Sign-in itself stays on
-// the root /api/session?signin=1 route (it owns the Clerk handshake cookies).
+// customerSession the root /api/session route uses (it also asks Clerk whether
+// the session was revoked). Sign-in is the Clerk <SignIn /> page at /sign-in.
 // Denied is not hidden: a signed-in person outside the space gets notFound().
 import 'server-only';
 import { headers } from 'next/headers';
@@ -30,7 +30,7 @@ export function safeReturnTo(path: string): string {
 }
 
 export function signInHref(returnTo: string): string {
-  return `/api/session?signin=1&returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;
+  return `/sign-in?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;
 }
 
 /** Verified session, or a redirect to sign-in. Expired auth is never shown as "denied". */

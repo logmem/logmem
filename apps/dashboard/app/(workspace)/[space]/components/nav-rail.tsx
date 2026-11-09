@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { UserButton } from '@clerk/nextjs';
 import { Inbox, Briefcase, Bot, Activity, KeyRound, Settings, ChevronDown, CalendarDays } from 'lucide-react';
 
 interface NavRailProps {
@@ -79,8 +80,8 @@ export function NavRail({ space }: NavRailProps) {
 
         {/* Footer */}
         <div className="p-3 border-t border-[#D3DAD8] dark:border-[#2B3835] flex items-center justify-between text-xs text-[#5C6966] font-['IBM_Plex_Mono']">
-          <span className="truncate">madez</span>
-          <a href="/api/logout" className="hover:text-[#121A19] dark:hover:text-[#E9EEEC]">Sign out</a>
+          <span className="truncate">{space}</span>
+          <UserButton afterSignOutUrl="/sign-in" />
         </div>
       </aside>
 
