@@ -85,7 +85,7 @@ table.compare td.hl { font-weight: 600; }
   .compare-scroll { display: none; }
   .plan-cards { display: grid; gap: 14px; }
   .plan-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow-1); }
-  .plan-card h3 { margin: 0; font-size: 19px; color: var(--text); }
+  .plan-card h2 { margin: 0; font-size: 19px; color: var(--text); }
   .plan-card .price { font-weight: 600; color: var(--brand); margin: 2px 0 12px; }
   .plan-card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14.5px; }
   .plan-card dt { color: var(--text-subtle); }
