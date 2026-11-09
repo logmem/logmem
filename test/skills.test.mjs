@@ -78,6 +78,10 @@ test("skills CLI: absolute paths with spaces and symlink entry points execute", 
   const scripts = join(root, "scripts");
   const skills = fixture("cli-skill", OK);
   mkdirSync(scripts);
+  // skills-lint reads secrets through src/lib/secrets.mjs (the one reader);
+  // mirror that dependency the way the npm archive ships it.
+  mkdirSync(join(root, "src", "lib"), { recursive: true });
+  copyFileSync(fileURLToPath(new URL("../src/lib/secrets.mjs", import.meta.url)), join(root, "src", "lib", "secrets.mjs"));
   symlinkSync(skills, join(root, "skills"), "dir");
   for (const script of ["skills-lint.mjs", "skills-link.mjs"]) {
     const copied = join(scripts, script);

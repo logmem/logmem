@@ -11,6 +11,7 @@
 // workspace keys and sessions die at their choke points on the next request.
 // Attribution is "break-glass" until the identity cookie lands in slice 2,
 // so the audit never claims a person who has not been identified.
+import { getSecret } from "../src/lib/secrets.mjs";
 import { customerRedis } from "../src/http/jail.mjs";
 import { WorkspaceError } from "../src/http/workspaces.mjs";
 import { adminIdentity, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
@@ -77,7 +78,7 @@ export function createHandler({ env = process.env, redis = () => customerRedis(e
         return res.status(403).json({ error: "role_not_authorized", role: me.role, needs: need });
       }
       if (b.action === "sessions") {
-        const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+        const clerk = createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
         const page = await clerk.sessions.getSessionList({});
         const sessions = (page?.data || []).map((x) => ({ id: x.id, user_id: x.userId ?? x.user_id, status: x.status, last_active_at: x.lastActiveAt ?? x.last_active_at, created_at: x.createdAt ?? x.created_at }));
         await audit(redis(), { action: "sessions:list", count: sessions.length, by: actorId });
@@ -85,7 +86,7 @@ export function createHandler({ env = process.env, redis = () => customerRedis(e
       }
       if (b.action === "revoke_session") {
         if (!b.sessionId || !/^sess_/.test(String(b.sessionId))) throw new WorkspaceError("invalid_session", 400);
-        const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+        const clerk = createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
         await clerk.sessions.revokeSession(String(b.sessionId));
         await audit(redis(), { action: "session:revoke", target: String(b.sessionId), by: actorId });
         return res.status(200).json({ ok: true, revoked: b.sessionId });

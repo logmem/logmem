@@ -25,7 +25,7 @@ test('splitDecisions puts deferred asks in their own section', async () => {
 });
 test('decisions is linked from Inbox and More, not from top-level nav', () => {
   assert.match(app('interactions.js'), /href="#\/decisions"/);
-  assert.match(app('views.js'), /\['decisions', 'Decisions', 'decisions'\]/);
+  assert.match(app('nav-model.js'), /\['decisions', 'Decisions', 'decisions'\]/);
   const shell = app('shell.js');
   assert.doesNotMatch(shell.match(/export const NAV = .*/)[0], /decisions/);
   assert.doesNotMatch(shell.match(/export const PHONE_NAV = .*/)[0], /decisions/);

@@ -10,8 +10,9 @@ test('phone bar has five tabs with Inbox in the middle and More last',()=>{
 });
 test('More lists the screens the phone bar leaves out',()=>{
  const views=fs.readFileSync(new URL('../public/app/views.js',import.meta.url),'utf8');
- const more=views.slice(views.indexOf('pages.more'));
- for(const id of ["'knowledge'","'health'"])assert.ok(more.slice(0,900).includes(id));
+ const model=fs.readFileSync(new URL('../public/app/nav-model.js',import.meta.url),'utf8');
+ assert.ok(views.includes('pages.more')&&views.includes('moreGroups('));
+ for(const id of ["'knowledge'","'health'"])assert.ok(model.includes(id));
 });
 test('phone header drops theme into More and keeps targets at 44px',()=>{
  const css=fs.readFileSync(new URL('../public/app.css',import.meta.url),'utf8');

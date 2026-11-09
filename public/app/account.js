@@ -1,16 +1,19 @@
 // Customer account screens. All data remains escaped by lit-html.
-import {html,nothing} from '/vendor/lit-html-3.2.1/lit-html.js';
+import {html,nothing,render} from '/vendor/lit-html-3.2.1/lit-html.js';
+import {spaceRows,memberRows,inviteRows,roleLabel} from './account-model.js';
+import {spacesTable,membersTable,invitesTable} from './account-tables.js';
 import {state,live,postJSON,getJSON,switchContext,clearCustomerContext,toast} from './core.js';
 import {renderBare,renderView} from './shell.js';
 import {humanPrompt} from './go-prompt.js';
 import { startKeepAlive } from './session-keepalive.js';
+import { NOTICE, isDevInstance, DEV_INSTANCE } from './session-states.js';
 let ready=()=>{},closePanels=()=>{},formError='',busy=false,model={name:'',spaceName:'Operations',businessType:'',withSample:false};
 let requestId=crypto.randomUUID();
 export function configureAccount(hooks){ready=hooks.ready;closePanels=hooks.closePanels;}
 const logo=()=>html`<a href="/"><img src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="150"></a>`;
 export function showCustomerLogin(message='') {
  clearCustomerContext();state.customer=true;
- renderBare(html`<section class="lmx-account-start">${logo()}<h1>Your agents. One shared workspace.</h1><p>Sign in to create spaces, track work, and keep your team aligned.</p>${message?html`<p role="alert">${message}</p>`:nothing}<a class="lm-btn lm-btn--primary" href=${'/api/session?signin=1&returnTo='+encodeURIComponent(location.pathname+location.search+location.hash)}>Sign in or create an account</a></section>`);
+ renderBare(html`<section class="lmx-account-start">${logo()}${message&&typeof message==='object'?html`<h1>${message.title}</h1><p role="alert">${message.body}</p>`:html`<h1>Pick up where you left off.</h1><p>Sign in to your workspace. Signing in does not connect or launch an agent.</p>${message?html`<p role="alert">${message}</p>`:nothing}`}<a class="lm-btn lm-btn--primary" href=${'/api/session?signin=1&returnTo='+encodeURIComponent(location.pathname+location.search+location.hash)}>${message&&typeof message==='object'?message.action:'Sign in or create an account'}</a>${message&&typeof message==='object'?nothing:html`<p class="lmx-invite-note">No account yet? The same button creates one.</p>`}</section>`);
 }
 // An expired 60s token on a cold load is not a sign-out. When Clerk's own cookie says a
 // session exists, take the server handshake once so it can mint a fresh token, then come back.
@@ -29,8 +32,8 @@ export async function bootstrapAccount() {
  state.customer=true;
  if(res.status===401&&coldHandshake())return true;
  if(res.status===401){new URLSearchParams(location.search).get('invite')?showInviteSignedOut():showCustomerLogin();return true;}
- if(!res.ok){renderBare(html`<section class="lmx-account-start">${logo()}<h1>Could not open your workspace.</h1><p role="alert">Please retry. Your data stays private.</p><button class="lm-btn" @click=${()=>location.reload()}>Retry</button></section>`);return true;}
- state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;startKeepAlive(data.clerk);
+ if(!res.ok){renderBare(html`<section class="lmx-account-start">${logo()}<h1>${res.status===503?NOTICE.unreachable.title:'Could not open your workspace.'}</h1><p role="alert">${res.status===503?NOTICE.unreachable.body:'Please retry. Your data stays private.'}</p><button class="lm-btn" @click=${()=>location.reload()}>Retry</button></section>`);return true;}
+ state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;state.clerkDev=isDevInstance(data.clerk);startKeepAlive(data.clerk);
  const invite=new URLSearchParams(location.search).get('invite');
  if(invite){await showInvitation(invite);return true;}
  const entry=new URL(location.href);
@@ -77,8 +80,10 @@ export async function signOutCustomer() {
 export function showAccount() {
  const w=state.workspaces.find(w=>w.id===state.workspaceId),manager=['owner','admin'].includes(w?.role);
  renderView('account',['Settings'],html`<a class="lm-btn lm-btn--secondary" href="#/home">Return to Today</a><section class="lmx-account-settings"><h1 class="lm-title-1">Settings</h1><section class="lm-panel lmx-profile-card"><div class="lmx-profile-mark" aria-hidden="true">${String(state.user?.email||'L').slice(0,1).toUpperCase()}</div><div class="lmx-profile-copy"><span class="lm-eyebrow">LOGMEM ACCOUNT</span><h2>Your profile</h2><p>Signed in as <strong>${state.user?.email}</strong></p><p>Manage your name, profile details, sign-in methods and security with Clerk.</p></div><a class="lm-btn lm-btn--primary" href="/api/session?profile=1">Manage profile and security <span aria-hidden="true">↗</span></a></section><section class="lm-panel lmx-account-form"><h2>${w?.name||'Workspace'} settings</h2><p>Manage spaces, people and agent access for this workspace.</p><div class="lmx-account-actions"><button class="lm-btn" @click=${showCreateWorkspace}>Create another workspace</button>${w?.role!=='viewer'?html`<button class="lm-btn" @click=${showCreateSpace}>Create space</button>`:nothing}<button class="lm-btn lm-btn--ghost" @click=${signOutCustomer}>Sign out</button></div>
- ${manager?html`<section class="lm-panel lmx-account-form"><h2>Invite a teammate</h2><p>They will see only the spaces you grant. LogMem will email the invitation and show you a copyable link.</p><form @submit=${invitePerson}><label class="lm-field"><span class="lm-label">Email</span><input class="lm-input" type="email" name="email" required></label><label class="lm-field"><span class="lm-label">Access to this space</span><select class="lm-select" name="role"><option value="member">Editor</option><option value="contributor">Contributor</option><option value="viewer">Viewer</option></select></label><button class="lm-btn lm-btn--primary">Create and email invitation</button></form><div id="invitation-result" role="status"></div></section><section class="lm-panel lmx-account-form"><h2>Connect an agent</h2><p>Keys grant access to this space only. Keep each key private.</p><form @submit=${connectAgent}><label class="lm-field"><span class="lm-label">Agent name</span><input class="lm-input" name="agent" placeholder="codex" pattern="[a-z][a-z0-9_.-]*" required></label><button class="lm-btn">Create agent key</button></form><div id="agent-key-result" role="status"></div><div id="connection-list"></div></section><section class="lm-panel lmx-account-form"><h2>People and access</h2><div id="membership-list">Loading members…</div></section>`:html`<p>Your workspace owner manages invitations and agent access.</p>`}</section>`);
- if(manager){loadMembers();loadConnections();}
+ ${manager&&state.clerkDev?html`<div class="lm-alert lm-alert--warning" role="status"><div><strong>${DEV_INSTANCE.title}</strong> ${DEV_INSTANCE.body}</div></div>`:nothing}<h3 class="lmx-colhead">Spaces</h3><div id="spaces-table"></div>
+ ${manager?html`<section class="lm-panel lmx-account-form"><h2>Invite a teammate</h2><p>They will see only the spaces you grant. LogMem will email the invitation and show you a copyable link.</p><form @submit=${invitePerson}><label class="lm-field"><span class="lm-label">Email</span><input class="lm-input" type="email" name="email" required></label><label class="lm-field"><span class="lm-label">Access to this space</span><select class="lm-select" name="role"><option value="member">Editor</option><option value="contributor">Contributor</option><option value="viewer">Viewer</option></select></label><button class="lm-btn lm-btn--primary">Create and email invitation</button></form><div id="invitation-result" role="status"></div></section><section class="lm-panel lmx-account-form"><h2>Agent access</h2><p>Create keys and manage the apps that can use this space.</p><a class="lm-btn lm-btn--primary" href="#/access">Manage agent access</a></section><section class="lm-panel lmx-account-form"><h2>People and access</h2><div id="membership-list">Loading members…</div></section>`:html`<p>Your workspace owner manages invitations and agent access.</p>`}</section>`);
+ memberCache=null;paintSpaces();
+ if(manager){loadMembers();}
 }
 function showSecret(container,text,label) {
  const el=document.getElementById(container);if(!el)return;el.replaceChildren();const p=document.createElement('p');p.textContent=label;const input=document.createElement('input');input.className='lm-input';input.readOnly=true;input.value=text;input.setAttribute('aria-label',label);const copy=document.createElement('button');copy.className='lm-btn';copy.textContent='Copy';copy.onclick=()=>navigator.clipboard.writeText(text).then(()=>toast('Copied.')).catch(()=>{input.select();toast('Select and copy the text.');});el.append(p,input,copy);
@@ -88,40 +93,24 @@ async function invitePerson(e) {
  try{const role=f.elements.role.value,r=await postJSON('/api/memberships','memberships',{action:'invite',email:f.elements.email.value,role,spaces:{[state.spaceId]:{role:role==='viewer'?'viewer':'editor',canApprove:false}},requestId:crypto.randomUUID()});showSecret('invitation-result',location.origin+'/app?invite='+encodeURIComponent(r.token),r.emailSent?'Invitation email sent. Link expires in seven days.':`Email could not be sent. Copy and share this link. Link expires in seven days.`);loadMembers();}
  catch(err){toast(err.message,true);}
 }
-async function connectAgent(e) {
- e.preventDefault();try{const r=await postJSON('/api/agent-keys','agent-keys',{agent:e.currentTarget.elements.agent.value,requestId:crypto.randomUUID()});showSecret('agent-key-result',r.key,'Agent key. Shown once.');loadConnections();}catch(err){toast(err.message,true);}
-}
-async function loadConnections() {
- try{const r=await getJSON('/api/agent-keys');if(r.__stale||r.__status!==200)return;const el=document.getElementById('connection-list');if(!el)return;el.replaceChildren();
- for(const c of [...r.keys,...r.apps]){const row=document.createElement('p');row.textContent=c.agent+' ';const b=document.createElement('button');b.className='lm-btn lm-btn--ghost';b.textContent='Disconnect';b.onclick=async()=>{try{await postJSON('/api/agent-keys','agent-keys',{action:c.fid?'disconnect':'revoke',id:c.id,fid:c.fid,requestId:crypto.randomUUID()});loadConnections();}catch(e){toast(e.message,true);}};row.append(b);el.append(row);}}
- catch(e){toast(e.message,true);}
-}
+const paint=(el,tpl)=>{if(!el)return;if(!el._$litPart$)el.replaceChildren();render(tpl,el);};
+let memberCache=null;
+const wsSpaces=()=>state.spaceRecords.filter(s=>s.workspaceId===state.workspaceId);
+function paintSpaces(){paint(document.getElementById('spaces-table'),spacesTable(spaceRows(state.spaceRecords,state.workspaceId,memberCache),toast));}
 async function loadMembers() {
  try{
   const r=await getJSON('/api/memberships');if(r.__stale||r.__status!==200)return;
-  const el=document.getElementById('membership-list');if(!el)return;el.replaceChildren();
   const owner=state.workspaces.find(w=>w.id===state.workspaceId)?.role==='owner';
-  for(const m of r.members){
-   const panel=document.createElement('details'),heading=document.createElement('summary');
-   heading.textContent=(m.userId===state.user.id?'You':m.label||'Member '+m.userId.slice(-6))+' · '+m.role;panel.append(heading);
-   const form=document.createElement('form'),roleLabel=document.createElement('label'),select=document.createElement('select');
-   roleLabel.textContent='Workspace role';select.className='lm-select';select.setAttribute('aria-label','Workspace role');
-   for(const role of owner?['owner','admin','member','viewer','contributor']:['admin','member','viewer','contributor']){const option=document.createElement('option');option.value=role;option.textContent=role;option.selected=role===m.role;select.append(option);}
-   select.disabled=m.role==='owner'&&!owner;roleLabel.append(select);form.append(roleLabel);
-   const inputs=[];
-   for(const space of state.spaceRecords.filter(s=>s.workspaceId===state.workspaceId)){
-    const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=Boolean(m.spaces?.[space.id]);label.append(check,document.createTextNode(' Access to '+space.name));form.append(label);
-    const approvalLabel=document.createElement('label'),approval=document.createElement('input');approval.type='checkbox';approval.checked=Boolean(m.spaces?.[space.id]?.canApprove);approval.disabled=!owner;approvalLabel.append(approval,document.createTextNode(' May answer decisions in '+space.name));form.append(approvalLabel);inputs.push({id:space.id,check,approval});
-   }
-   const save=document.createElement('button');save.className='lm-btn';save.textContent='Save access';save.disabled=m.role==='owner'&&!owner;form.append(save);
-   form.onsubmit=async event=>{event.preventDefault();const spaces={};for(const i of inputs)if(i.check.checked)spaces[i.id]={role:select.value==='viewer'?'viewer':'editor',canApprove:select.value!=='viewer'&&i.approval.checked};
-    try{await postJSON('/api/memberships','memberships',{action:'set',userId:m.userId,role:select.value,spaces,requestId:crypto.randomUUID()});if(m.userId===state.user.id)await reloadContext();else loadMembers();toast('Access saved.');}catch(e){toast(e.message,true);}
-   };
-   const remove=document.createElement('button');remove.type='button';remove.className='lm-btn lm-btn--ghost';remove.textContent='Remove member';remove.disabled=m.role==='owner'&&!owner;
-   remove.onclick=async()=>{try{await postJSON('/api/memberships','memberships',{action:'remove',userId:m.userId,requestId:crypto.randomUUID()});if(m.userId===state.user.id){clearCustomerContext();await bootstrapAccount();}else loadMembers();}catch(e){toast(e.message,true);}};
-   form.append(remove);panel.append(form);el.append(panel);
-  }
-  for(const invite of r.invitations||[]){const row=document.createElement('p');row.textContent='Pending '+invite.role+' invitation. ';const cancel=document.createElement('button');cancel.textContent='Revoke invitation';cancel.className='lm-btn lm-btn--ghost';cancel.onclick=async()=>{try{await postJSON('/api/memberships','memberships',{action:'revoke-invitation',invitationId:invite.id,requestId:crypto.randomUUID()});loadMembers();}catch(e){toast(e.message,true);}};row.append(cancel);el.append(row);}
+  const raw=new Map(r.members.map(m=>[m.userId,m]));
+  memberCache=r.members;paintSpaces();
+  const rows=memberRows(r.members,{userId:state.user.id,owner,totalSpaces:wsSpaces().length});
+  const save=async(event,row)=>{event.preventDefault();const f=event.currentTarget,role=f.elements.role.value,spaces={};
+   for(const sp of wsSpaces())if(f.elements['access:'+sp.id]?.checked)spaces[sp.id]={role:role==='viewer'?'viewer':'editor',canApprove:role!=='viewer'&&Boolean(f.elements['approve:'+sp.id]?.checked)};
+   try{await postJSON('/api/memberships','memberships',{action:'set',userId:row.userId,role,spaces,requestId:crypto.randomUUID()});if(row.you)await reloadContext();else loadMembers();toast('Access saved.');}catch(e){toast(e.message,true);}};
+  const form=row=>html`<form class="lmx-accessform" @submit=${e=>save(e,row)}><label class="lm-field"><span class="lm-label">Workspace role</span><select class="lm-select" name="role" aria-label="Workspace role" ?disabled=${row.locked}>${(owner?['owner','admin','member','viewer','contributor']:['admin','member','viewer','contributor']).map(role=>html`<option value=${role} ?selected=${role===row.role}>${roleLabel(role)}</option>`)}</select></label>${wsSpaces().map(sp=>html`<label><input type="checkbox" name=${'access:'+sp.id} ?checked=${Boolean(raw.get(row.userId)?.spaces?.[sp.id])}> Access to ${sp.name}</label><label><input type="checkbox" name=${'approve:'+sp.id} ?checked=${Boolean(raw.get(row.userId)?.spaces?.[sp.id]?.canApprove)} ?disabled=${!owner}> May answer decisions in ${sp.name}</label>`)}<button class="lm-btn" ?disabled=${row.locked}>Save access</button></form>`;
+  const onRemove=async row=>{try{await postJSON('/api/memberships','memberships',{action:'remove',userId:row.userId,requestId:crypto.randomUUID()});if(row.you){clearCustomerContext();await bootstrapAccount();}else loadMembers();}catch(e){toast(e.message,true);}};
+  const onRevoke=async row=>{try{await postJSON('/api/memberships','memberships',{action:'revoke-invitation',invitationId:row.id,requestId:crypto.randomUUID()});loadMembers();}catch(e){toast(e.message,true);}};
+  paint(document.getElementById('membership-list'),html`${membersTable(rows,{onRemove,form})}${invitesTable(inviteRows(r.invitations),{onRevoke})}`);
  }catch(e){toast(e.message,true);}
 }
 

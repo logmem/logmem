@@ -4,6 +4,7 @@
 // env. Never in the repo, never in chat. A correct password gets an HMAC-signed,
 // HttpOnly cookie valid for 12 hours. No password set = the admin app is off.
 
+import { getSecret } from "../lib/secrets.mjs";
 import { createHmac, timingSafeEqual, createHash } from "node:crypto";
 
 export const COOKIE = "lm_admin";
@@ -20,11 +21,12 @@ export class AdminSecretMissingError extends Error {
 }
 
 export function secret(env = process.env) {
-  if (env.VERCEL_ENV === "production" && !env.LOGMEM_ADMIN_SECRET) {
+  const adminSecret = getSecret("LOGMEM_ADMIN_SECRET", env);
+  if (env.VERCEL_ENV === "production" && !adminSecret) {
     throw new AdminSecretMissingError();
   }
-  const base = env.LOGMEM_ADMIN_SECRET || "";
-  const pw = env.LOGMEM_ADMIN_PASSWORD || "";
+  const base = adminSecret || "";
+  const pw = getSecret("LOGMEM_ADMIN_PASSWORD", env) || "";
   if (!base && !pw) return "";
   if (base && pw) {
     return createHash("sha256").update(`logmem-admin:${base}:${pw}`).digest("hex");
@@ -42,12 +44,12 @@ function safeEqual(a, b) {
 }
 
 export function adminEnabled(env = process.env) {
-  return Boolean(env.LOGMEM_ADMIN_PASSWORD);
+  return Boolean(getSecret("LOGMEM_ADMIN_PASSWORD", env));
 }
 
 export function checkPassword(given, env = process.env) {
   if (!adminEnabled(env)) return false;
-  return safeEqual(createHash("sha256").update(String(given)).digest(), createHash("sha256").update(env.LOGMEM_ADMIN_PASSWORD).digest());
+  return safeEqual(createHash("sha256").update(String(given)).digest(), createHash("sha256").update(getSecret("LOGMEM_ADMIN_PASSWORD", env)).digest());
 }
 
 /**

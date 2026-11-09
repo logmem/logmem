@@ -1,5 +1,6 @@
 // GET/POST /api/cron/fleet-truth — scheduled birds-eye refresh for channel:fleet-truth.
 // Auth: Authorization: Bearer ${CRON_SECRET} (min 32 chars). Fail closed.
+import { getSecret } from "../../src/lib/secrets.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { fromDescriptor, descriptorFromEnv } from "../../src/lib/backend.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
@@ -37,7 +38,7 @@ export function createHandler({ env = process.env, resolveRedis = defaultRedis, 
   return async function handler(req, res) {
     const t0 = Date.now();
     res.setHeader("Cache-Control", "no-store");
-    const secret = env.CRON_SECRET;
+    const secret = getSecret("CRON_SECRET", env);
     if (!secret || String(secret).length < CRON_SECRET_MIN) {
       return res.status(503).json({ error: "cron disabled: CRON_SECRET is not set on this deployment" });
     }
