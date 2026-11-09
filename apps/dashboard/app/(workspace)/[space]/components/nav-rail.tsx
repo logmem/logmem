@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { UserButton } from '@clerk/nextjs';
-import { Inbox, Briefcase, Bot, Activity, KeyRound, Settings, ChevronDown, CalendarDays } from 'lucide-react';
+import { Inbox, Mail, Briefcase, Bot, Activity, KeyRound, Settings, ChevronDown, CalendarDays } from 'lucide-react';
 
 interface NavRailProps {
   space: string;
@@ -13,10 +13,11 @@ export function NavRail({ space }: NavRailProps) {
   const pathname = usePathname();
 
   const links = [
-    { href: `/${space}/today`, label: 'Today', icon: Inbox, badge: '1', badgeColor: 'bg-[#6B3FA0] text-white' },
-    { href: `/${space}/schedule`, label: 'Schedule', icon: CalendarDays, badge: '3', badgeColor: 'bg-[#0E6863] text-white' },
-    { href: `/${space}/work`, label: 'Work', icon: Briefcase, badge: '12', badgeColor: 'bg-surface-sunken text-text-subtle' },
-    { href: `/${space}/agents`, label: 'Agents', icon: Bot, badge: '5', badgeColor: 'bg-surface-sunken text-text-subtle' },
+    { href: `/${space}/today`, label: 'Today', icon: Inbox },
+    { href: `/${space}/inbox`, label: 'Inbox', icon: Mail },
+    { href: `/${space}/schedule`, label: 'Schedule', icon: CalendarDays },
+    { href: `/${space}/work`, label: 'Work', icon: Briefcase },
+    { href: `/${space}/agents`, label: 'Agents', icon: Bot },
     { href: `/${space}/activity`, label: 'Activity', icon: Activity },
     { href: `/${space}/access`, label: 'Agent access', icon: KeyRound },
   ];
@@ -68,11 +69,6 @@ export function NavRail({ space }: NavRailProps) {
                   <Icon className={`w-4 h-4 ${active ? 'text-[#0E6863] dark:text-[#4FC3B8]' : 'text-[#5C6966]'}`} />
                   <span>{link.label}</span>
                 </div>
-                {link.badge && (
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-['IBM_Plex_Mono'] font-bold ${link.badgeColor || 'bg-[#EAEEEC] text-[#46534F]'}`}>
-                    {link.badge}
-                  </span>
-                )}
               </Link>
             );
           })}

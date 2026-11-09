@@ -5,6 +5,7 @@
 // the session was revoked). Sign-in is the Clerk <SignIn /> page at /sign-in.
 // Denied is not hidden: a signed-in person outside the space gets notFound().
 import 'server-only';
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { customerSession } from '../../../../src/http/clerk.mjs';
@@ -58,10 +59,12 @@ export async function listMySpaces(returnTo = '/app') {
 }
 
 /**
- * Authorizes one space for one action. Signed out -> sign-in. Not a member,
+ * Authorizes one space for one action. Cached per request, so the layout and the
+ * page share one Clerk check.
+ * Signed out -> sign-in. Not a member,
  * or no such space -> 404. Same answer for both, so ids do not leak.
  */
-export async function requireSpace(space: string, action: 'read' | 'write' | 'approve' = 'read') {
+export const requireSpace = cache(async (space: string, action: 'read' | 'write' | 'approve' = 'read') => {
   const { req, session } = await requireSession(`/app/${space}/today`);
   const workspaces = await listViewerWorkspaces(session.userId);
   const workspace = workspaces.find((w) => w.spaces.some((s) => s.id === space));
@@ -74,4 +77,4 @@ export async function requireSpace(space: string, action: 'read' | 'write' | 'ap
   } catch {
     notFound();
   }
-}
+});
