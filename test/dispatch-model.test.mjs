@@ -33,3 +33,11 @@ test('isStaleTicket detects requests overdue for more than 48 hours', () => {
   // Missing timestamps -> not stale
   assert.equal(isStaleTicket({}, now), false);
 });
+
+test("mailRange: footer range label for the mail-style inbox", async () => {
+  const { mailRange } = await import("../public/app/dispatch-model.js");
+  assert.equal(mailRange(0, 30, true), "1–30 (more)");
+  assert.equal(mailRange(30, 12, false), "31–42");
+  assert.equal(mailRange(0, 0, false), "No requests");
+  assert.equal(mailRange("x", -3, false), "No requests");
+});
