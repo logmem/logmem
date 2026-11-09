@@ -9,10 +9,30 @@ import { createHmac, timingSafeEqual, createHash } from "node:crypto";
 
 export const COOKIE = "lm_admin";
 const TTL_S = 12 * 3600;
+export const BREAK_GLASS_TTL_S = 3600; // 1 hour emergency break-glass token
 
-function secret(env) {
-  const s = getSecret("LOGMEM_ADMIN_SECRET", env) || (getSecret("LOGMEM_ADMIN_PASSWORD", env) ? createHash("sha256").update(`logmem-admin:${getSecret("LOGMEM_ADMIN_PASSWORD", env)}`).digest("hex") : "");
-  return s;
+export class AdminSecretMissingError extends Error {
+  constructor(msg = "LOGMEM_ADMIN_SECRET is required in production") {
+    super(msg);
+    this.name = "AdminSecretMissingError";
+    this.status = 503;
+    this.code = "admin_secret_missing";
+  }
+}
+
+export function secret(env = process.env) {
+  const adminSecret = getSecret("LOGMEM_ADMIN_SECRET", env);
+  if (env.VERCEL_ENV === "production" && !adminSecret) {
+    throw new AdminSecretMissingError();
+  }
+  const base = adminSecret || "";
+  const pw = getSecret("LOGMEM_ADMIN_PASSWORD", env) || "";
+  if (!base && !pw) return "";
+  if (base && pw) {
+    return createHash("sha256").update(`logmem-admin:${base}:${pw}`).digest("hex");
+  }
+  if (base) return base;
+  return createHash("sha256").update(`logmem-admin:${pw}`).digest("hex");
 }
 
 const sign = (payload, key) => createHmac("sha256", key).update(payload).digest("base64url");
@@ -37,10 +57,9 @@ export function checkPassword(given, env = process.env) {
  * action can attribute to a real account instead of the shared password.
  *   legacy:  {exp}.{mac}                     -> "break-glass" attribution
  *   identity: {exp}.{identity}.{mac}          -> the account id (user_...)
- * Both formats stay valid for their 12h TTL, so rolling a login never
- * invalidates sessions in flight.
+ * Identity cookies stay valid for 12h TTL. Break-glass emergency cookies expire in 1h.
  */
-const BREAK_GLASS = "break-glass";
+export const BREAK_GLASS = "break-glass";
 
 /** The verified admin identity on this request, or null when not an admin. */
 export function adminIdentity(req, env = process.env, now = Date.now()) {
@@ -48,15 +67,20 @@ export function adminIdentity(req, env = process.env, now = Date.now()) {
   const v = readCookie(req);
   if (!v) return null;
   const parts = String(v).split(".");
+  const key = secret(env);
+  if (!key) return null;
+
   if (parts.length === 3) {
     const [exp, identity, mac] = parts;
     if (!identity || Number(exp) * 1000 < now) return null;
-    return safeEqual(mac, sign(`${exp}.${identity}`, secret(env))) ? identity : null;
+    return safeEqual(mac, sign(`${exp}.${identity}`, key)) ? identity : null;
   }
   if (parts.length === 2) {
     const [exp, mac] = parts;
-    if (Number(exp) * 1000 < now) return null;
-    return safeEqual(mac, sign(exp, secret(env))) ? BREAK_GLASS : null;
+    const expMs = Number(exp) * 1000;
+    if (expMs < now) return null;
+    if (expMs > now + BREAK_GLASS_TTL_S * 1000) return null; // expire legacy over-long tokens
+    return safeEqual(mac, sign(exp, key)) ? BREAK_GLASS : null;
   }
   return null;
 }
@@ -70,9 +94,9 @@ export function issueIdentityCookie(env = process.env, identity, now = Date.now(
 }
 
 export function issueCookie(env = process.env, now = Date.now()) {
-  const exp = Math.floor(now / 1000) + TTL_S;
+  const exp = Math.floor(now / 1000) + BREAK_GLASS_TTL_S;
   const value = `${exp}.${sign(String(exp), secret(env))}`;
-  return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${TTL_S}`;
+  return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${BREAK_GLASS_TTL_S}`;
 }
 
 export const clearCookie = () => `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;

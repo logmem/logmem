@@ -74,7 +74,7 @@ test("blockers: the dogfood check does not count handoffs to people", async () =
   assert.equal(day.unanswered_24h, 0, "a slow person never fails the agents' health check");
 });
 
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_MIRROR_ACMI: "1", LOGMEM_MIRROR_SPACES: "madez" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_MIRROR_ACMI: "1", LOGMEM_MIRROR_SPACES: "madez", LOGMEM_ADMIN_SECRET: "admin-secret-blockers-test" };
 const cookie = issueCookie(ENV).split(";")[0];
 const call = async (h, { method = "GET", url = "/api/blockers?space=madez", body, headers = {} } = {}) => {
   const req = mockReq({ method, url, body, headers: { host: "logmem.si", ...headers } });

@@ -58,7 +58,7 @@ test("parked jobs: blocked on purpose, shown as parked, not as Blocked on Home",
 test("lane API: a person sets lanes; intent header required; logged by the person", async () => {
   const { lm, redis } = setup();
   await sc(lm, "logmem_plan", { action: "create", plan: "entry", title: "Entry" });
-  const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_ADMIN_ID: "mikey" };
+  const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_ADMIN_ID: "mikey", LOGMEM_ADMIN_SECRET: "admin-secret-lanes-test" };
   const cookie = issueCookie(ENV).split(";")[0];
   const h = createHandler({ env: ENV, redis });
   const post = async (body, headers) => { const res = mockRes(); await h(mockReq({ method: "POST", url: "/api/work?op=lane", body: { space: "madez", ...body }, headers: { host: "logmem.si", cookie, ...headers } }), res); return { status: res.statusCode, body: JSON.parse(res.body) }; };

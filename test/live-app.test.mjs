@@ -14,7 +14,7 @@ import { createHandler } from "../api/work.mjs";
 
 process.env.LOGMEM_DECIDE_SECRET ||= "test-only-decide-key-0123456789abcdef";
 const SECRET = process.env.LOGMEM_DECIDE_SECRET;
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_DECIDE_SECRET: SECRET, LOGMEM_MIRROR_ACMI: "1", LOGMEM_MIRROR_SPACES: "madez" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_DECIDE_SECRET: SECRET, LOGMEM_MIRROR_ACMI: "1", LOGMEM_MIRROR_SPACES: "madez", LOGMEM_ADMIN_SECRET: "admin-secret-live-app-test" };
 const cookie = issueCookie(ENV).split(";")[0];
 const W = { cookie, "x-logmem-intent": "work", origin: "https://logmem.si" };
 const WT = { steps: [{ title: "Open Vercel" }, { title: "Tick Preview" }] };
