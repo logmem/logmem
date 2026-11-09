@@ -167,6 +167,45 @@ test("oauth storage: AES-256-GCM envelope round trip, hex and base64 KEKs", () =
   assert.throws(() => loadKek({ LOGMEM_OAUTH_KEK: "tooshort" }), StorageConfigError);
 });
 
+test("oauth storage: KEK key ID and rotation fallback with LOGMEM_OAUTH_KEK_PREVIOUS", () => {
+  const blob = { backend: { kind: "redis", uri: "rediss://:pw@h:6379" }, upstash_url: null, upstash_token: null };
+  const aad = recordAad("access", "c".repeat(64), { client_id: "cli_rot", space: "s" });
+
+  const key1 = "11".repeat(32);
+  const key2 = "22".repeat(32);
+  const key3 = "33".repeat(32);
+
+  // Seal with key 1 under explicit kid "k1"
+  const envKey1 = { LOGMEM_OAUTH_KEK: `k1:${key1}` };
+  const sealed1 = sealCreds(blob, aad, envKey1);
+  assert.equal(sealed1.kid, "k1");
+  assert.deepEqual(openCreds(sealed1, aad, envKey1), blob);
+
+  // Rotate active key to key2, key1 is in PREVIOUS
+  const envRotated = {
+    LOGMEM_OAUTH_KEK: `k2:${key2}`,
+    LOGMEM_OAUTH_KEK_PREVIOUS: `k1:${key1},k0:${key3}`,
+  };
+
+  // Sealed1 (keyed to k1) opens cleanly via fallback
+  assert.deepEqual(openCreds(sealed1, aad, envRotated), blob);
+
+  // New seal uses active kid "k2"
+  const sealed2 = sealCreds(blob, aad, envRotated);
+  assert.equal(sealed2.kid, "k2");
+  assert.deepEqual(openCreds(sealed2, aad, envRotated), blob);
+
+  // Legacy seal without kid opens via active key or previous fallback
+  const legacySealed = { ...sealed1 };
+  delete legacySealed.kid;
+  assert.deepEqual(openCreds(legacySealed, aad, envRotated), blob);
+
+  // Rotation to completely unknown key without fallback throws
+  const envNoMatch = { LOGMEM_OAUTH_KEK: `k9:${"99".repeat(32)}` };
+  assert.throws(() => openCreds(sealed1, aad, envNoMatch));
+  assert.throws(() => openCreds(legacySealed, aad, envNoMatch));
+});
+
 test("oauth storage: stored token record has {enc,iv,tag,ct} and no plaintext creds", async () => {
   await withEnv({ LOGMEM_OAUTH_KEK: TEST_KEK_HEX, VERCEL_ENV: undefined }, async () => {
     const r = oauthRedis();

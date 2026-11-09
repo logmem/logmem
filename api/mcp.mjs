@@ -32,6 +32,7 @@ import { createJail } from "../src/http/jail.mjs";
 import { createLimits } from "../src/http/limits.mjs";
 import { getTenant } from "../cloud/tenants/index.mjs";
 import { SCOPE_WRITE, ALL_SCOPES } from "../src/http/issuer.mjs";
+import { applyRateLimit, ROUTE_CLASSES } from "../src/http/rate-limit.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
@@ -169,7 +170,7 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-LogMem-Space, X-LogMem-Surface");
-  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
+  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After");
   if (req.method === "OPTIONS") return res.status(204).end();
 
   const wantsSSE = String(req.headers.accept || "").toLowerCase().includes("text/event-stream");
@@ -188,9 +189,14 @@ export default async function handler(req, res) {
     const auth = await resolveAuth(req, cfg);
     const b = auth.backend && fromDescriptor(auth.backend);
     if (!b) {
+      // Unauthenticated MCP still counts against the unauth bucket. Honor 429.
+      const rateOk = await applyRateLimit(req, res, { routeClass: ROUTE_CLASSES.MCP, auth: null });
+      if (!rateOk) return;
       res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: auth.error }));
       return res.status(401).json({ error: "authentication required", hint: "OAuth 2.1 + PKCE via /.well-known/oauth-authorization-server." });
     }
+    const rateOk = await applyRateLimit(req, res, { redis: b.redis, routeClass: ROUTE_CLASSES.MCP, auth });
+    if (!rateOk) return;
     if (req.method === "GET") {
       if (wantsSSE) return res.status(405).json({ error: "GET streams not supported; POST JSON-RPC instead" });
       return res.status(200).json({ ...SERVER_INFO, protocolVersion: PROTOCOL_VERSION, transport: "streamable-http", toolCount: toolDefs().length, acmi_compat: compatFromEnv() });
