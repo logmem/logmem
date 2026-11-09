@@ -53,7 +53,7 @@ test('dashboard screens check access and do not carry internal sample paths', ()
   const page = files.filter((path) => /\/space\/\[space\]\/[^/]+\/page\.tsx$/.test(path));
   assert.deepEqual(
     page.map((path) => path.split('/').slice(-2, -1)[0]).sort(),
-    ['access', 'activity', 'agents', 'schedule', 'today', 'work'],
+    ['access', 'activity', 'agents', 'inbox', 'schedule', 'today', 'work'],
   );
   for (const path of page) {
     const source = readFileSync(path, 'utf8');

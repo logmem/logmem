@@ -6,6 +6,7 @@
 // access-denied page. Membership failures are not missing pages.
 // A Clerk or storage failure is thrown so the error boundary can show it.
 import 'server-only';
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { customerSession } from '../../../../src/http/clerk.mjs';
@@ -71,11 +72,12 @@ export async function listMySpaces(returnTo = SELECT_SPACE_PATH) {
 }
 
 /**
- * Authorizes one space for one action.
+ * Authorizes one space for one action. Cached per request, so the layout and the
+ * page share one Clerk check.
  * Signed out -> sign-in. Not a member, unknown space, or a role that cannot
  * take the action -> access denied. Storage and configuration failures throw.
  */
-export async function requireSpace(space: string, action: 'read' | 'write' | 'approve' = 'read') {
+export const requireSpace = cache(async (space: string, action: 'read' | 'write' | 'approve' = 'read') => {
   const returnTo = spacePath(space, 'today');
   const { req, session } = await requireSession(returnTo);
   if (!validSpaceId(space)) redirect(ACCESS_DENIED_PATH);
@@ -97,4 +99,4 @@ export async function requireSpace(space: string, action: 'read' | 'write' | 'ap
   } catch (error) {
     redirectForAccessError(error, returnTo);
   }
-}
+});
