@@ -39,9 +39,9 @@
           <h2>What we collect</h2>
           <ul>
             <li><strong>Waitlist.</strong> When you join the waitlist we receive your email address, how many agents you plan to run, and the plan you are interested in. We also save how you found us: the utm tags in the link you used, the website that sent you (host name only), the first page you opened, and the time. Your browser keeps that in session storage until you sign up or close the tab. We do not use a cookie for it.</li>
-            <li><strong>Account information.</strong> When you sign in, we receive your name and email address. Clerk runs sign-in. We never see or store your password. The live sign-in paths do not share one Clerk host. GET https://logmem.si/sign-in returns the sign-in page, and that response's Content-Security-Policy allows https://clerk.logmem.si, plus Cloudflare challenge hosts and Clerk protect hosts. The page's Clerk frontend is https://clerk.logmem.si. It does not allow https://*.accounts.dev. GET https://logmem.si/app sends a different Content-Security-Policy: scripts and connections may use only https://*.accounts.dev, and https://clerk.logmem.si is not allowed. This policy does not treat either host as the single sign-in instance.</li>
+            <li><strong>Account information.</strong> When you sign in, we receive your name and email address. Clerk runs sign-in. We never see or store your password. Some pages may still use Clerk's development host (a page address that ends in accounts.dev) and may show a development label. Request logs can include a sign-in token.</li>
             <li><strong>Space content.</strong> The entries you and your agents write to a space — notes, handoffs, decisions, approvals, and job records — are the product itself. Hosted spaces store this content in Redis databases we operate. Self-hosted open-source use stores nothing with us. Do not store passwords, API keys, tokens, or other secrets as memory content.</li>
-            <li><strong>Usage and device data.</strong> The website and console record basic usage data (pages visited, timestamps, browser type) through Vercel Analytics so we can run and improve the service.</li>
+            <li><strong>Usage and device data.</strong> The website and console record basic usage data (pages visited, timestamps, browser type) through Vercel Web Analytics so we can run and improve the service.</li>
             <li><strong>Payment information.</strong> When paid plans open, payments are processed by Square. Card details go to Square; we do not store full card numbers.</li>
           </ul>
 
@@ -56,28 +56,28 @@
           <p>Only you, the members you invite to a space, and the agents you connect. Agents you connect act on your instructions inside your space. We access hosted content only to operate the service, provide support you request, or comply with law.</p>
 
           <h2>Service providers</h2>
-          <p>We use a small set of providers to run LogMem: Clerk (sign-in; the /sign-in path is allowed to use https://clerk.logmem.si, and the /app path is allowed to use only https://*.accounts.dev), Vercel (hosting and analytics), cloud infrastructure providers (hosted Redis and servers), and Square (payments, when billing opens). Each provider processes data only to provide its part of the service.</p>
+          <p>We use a small set of providers to run LogMem: Clerk (sign-in), Vercel (hosting and analytics), cloud infrastructure providers (hosted Redis and servers), and Square (payments, when billing opens). Each provider processes data only to provide its part of the service.</p>
 
           <h2>Cookies</h2>
-          <p>We use essential cookies for sign-in sessions. We do not use Google Analytics, Google Tag Manager, or advertising cookies. Vercel Analytics and similar tools may use cookies or identifiers such as a visitor ID. You can block cookies in your browser; sign-in will not work without the essential ones.</p>
+          <p>We use essential cookies for sign-in sessions. We do not use Google Analytics, Google Tag Manager, or advertising cookies. Vercel Web Analytics counts page views and does not use cookies. You can block cookies in your browser; sign-in will not work without the essential ones.</p>
 
           <h2>Where your data lives</h2>
-          <p>Hosted LogMem runs on servers and databases in the United States, which we operate with our infrastructure providers. If you use LogMem from outside the United States, your information is processed in the United States. Where the law requires a transfer mechanism for personal data moving from the EU, UK or Switzerland, we use the one our providers offer, such as standard contractual clauses.</p>
+          <p>Hosted LogMem runs on servers and databases we operate with our infrastructure providers. We do not state a single country for every copy. If you use LogMem from outside the country where you live, your information is processed where those providers run it. Where the law requires a transfer mechanism for personal data moving from the EU, UK or Switzerland, we use the one our providers offer, such as standard contractual clauses.</p>
 
           <h2>How we protect it</h2>
           <p>Traffic to logmem.si uses HTTPS. Access to hosted space content is limited to the people and agents you authorize, and to our staff only for the reasons listed above. No system is perfectly secure, and we cannot promise it. If we learn of a breach that affects your personal information, we will tell you as the law requires.</p>
 
           <h2>Deleting content</h2>
-          <p>When you delete an entry or a space, we remove it from the live service. Backups and logs may keep a copy for up to 30 days, the standard period of our hosting provider, before they expire. We do not promise backups beyond that. Self-hosted open-source use keeps all data with you.</p>
+          <p>When you delete an entry or a space, we remove it from the live service. Backups and logs may keep a copy for a while before they expire. We do not promise how long that copy lasts, and we do not promise backups beyond what a provider keeps. Self-hosted open-source use keeps all data with you.</p>
 
           <h2>Children</h2>
-          <p>LogMem is for businesses and is not meant for children. We do not knowingly collect personal information from anyone under 16. If you think a child gave us information, contact us and we will delete it.</p>
+          <p>LogMem is for businesses and is not meant for children. We do not knowingly collect data from anyone under 13, or under 16 where local law sets that age. If you think a child gave us information, contact us and we will delete it.</p>
 
           <h2>Privacy rights by region</h2>
           <p>Depending on where you live, such as the EU, UK or California, you may have extra rights: to know what we hold, to correct or delete it, to object to or restrict some uses, and to move your data. You can use these rights through the contact below. We do not sell personal information and we do not share it for cross-context advertising. We will not treat you worse for using a right.</p>
 
           <h2>Retention</h2>
-          <p>Space history follows your plan's history window (for example, 7 days on Free and up to 1 year on higher plans). Account information is kept while your account is active. You can ask us to delete your account and its content at any time. Waitlist entries: up to 180 days, then we delete them unless you open an account. That 180-day expiry is not set on waitlist sign-ups in the current store, so an entry stays until we delete it.</p>
+          <p>Space history follows your plan's history window (for example, 7 days on Free and up to 1 year on higher plans). Account information is kept while your account is active. You can ask us to delete your account and its content at any time. We keep waitlist entries until you open an account or we delete them. We aim to delete unused entries within 180 days.</p>
 
           <h2>Your choices</h2>
           <ul>
