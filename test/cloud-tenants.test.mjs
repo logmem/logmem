@@ -182,7 +182,7 @@ test("plans.json: PRICING.md ladder A, recall at 10:1, no placeholders left, ali
     assert.equal(p.price_usd_month, price, id);
     assert.equal(p.limits.add, adds, id);
     assert.equal(p.limits.read, null, `${id}: reads unmetered for quota`);
-    assert.equal(p.limits.recall, adds / 10, `${id}: recall is one tenth of adds`);
+    assert.equal(p.limits.recall, id === "dev" ? 2500 : adds / 10, `${id}: recall is one tenth of adds (Dev is 2,500, Mikey Nov 7)`);
     if (id === "free") {
       assert.equal(p.limits.recall, 100);
       assert.equal(p.agents, 2);

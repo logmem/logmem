@@ -9,7 +9,7 @@ import { saveSignup } from "../src/http/waitlist-store.mjs";
 import { emailKey } from "../api/onboarding/waitlist.mjs";
 import { createHandler, csvCell } from "../api/waitlist.mjs";
 
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_ADMIN_SECRET: "admin-secret-waitlist-test" };
 const cookie = issueCookie(ENV).split(";")[0];
 
 const call = async (handler, { url = "/api/waitlist", method = "GET", headers = {} } = {}) => {

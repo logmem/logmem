@@ -27,7 +27,6 @@
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/site-nav.css"><link rel="stylesheet" href="/onboarding.css">
 <script src="/attrib.js" defer></script>
-<script src="/gtm.js" defer></script>
 <script src="/onboarding.js" defer></script>
 <script type="module" src="/onboarding-orb.js"></script>
 <script type="application/ld+json">
@@ -41,9 +40,12 @@
   "isPartOf": { "@id": "https://logmem.si/#website" }
 }
 </script>
-<script type="module" src="/site-nav.js"></script><script src="/theme-boot.js"></script><link rel="stylesheet" href="/setup-theme.css"></head>
+<script type="module" src="/site-nav.js"></script><script src="/theme-boot.js"></script><link rel="stylesheet" href="/setup-theme.css"><link rel="stylesheet" href="/vendor/cookieconsent/cookieconsent.css">
+<script src="/vendor/cookieconsent/cookieconsent.umd.js" defer></script>
+<script src="/gtm.js" defer></script>
+<script src="/consent.js" defer></script>
+</head>
 <body class="lm">
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KW8M5T7H" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <a class="skip" href="#ob-main">Skip to the current step</a>
 
 <header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/how-to">How to use</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a><a href="/app">Sign in</a></nav></header>
@@ -143,6 +145,7 @@
           <div class="lm-field"><label class="lm-label" for="wl-agents">Agents you plan to run</label><input class="lm-input" id="wl-agents" name="agents" type="number" min="1" max="10000" step="1" inputmode="numeric" value="3" aria-describedby="wl-agents-help"><span class="lm-help" id="wl-agents-help">A rough number is fine.</span></div>
         </div>
         <p class="ob-note ob-note--muted">Using it for: <strong id="wl-plan"></strong> <button type="button" class="ob-linkbtn" data-goto="plan">Change</button></p>
+        <p class="ob-note ob-note--muted">By joining you agree to the <a href="/terms">Terms</a> and the <a href="/privacy">Privacy policy</a>.</p>
         <div id="wl-status" role="status" aria-live="polite"></div>
         <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="submit" class="lm-btn lm-btn--primary" id="wl-submit">Join the waitlist</button></div>
       </form>

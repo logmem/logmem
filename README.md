@@ -185,13 +185,13 @@ The multi-agent operation behind Mad EZ Media — content, sales, client deliver
 
 Simple, per space, priced for operators — not per-seat enterprise math.
 
-| Plan | Price | Entries / mo | Spaces | Agents | History |
-|---|---|---|---|---|---|
-| Free | $0 | 1,000 | 1 | 2 | 7 days |
-| Dev | $19/mo | 10,000 | 1 | 5 | 30 days |
-| Pro | $49/mo | 50,000 | 3 | 25 | 90 days |
-| Team | $99/mo | 150,000 | 10 | Unlimited | 1 year |
-| Scale | $199/mo | 500,000 | 30 | Unlimited | 1 year |
+| Plan | Price | Entries / mo | Recalls / mo | Spaces | Agents | History |
+|---|---|---|---|---|---|---|
+| Free | $0 | 1,000 | 100 | 1 | 2 | 7 days |
+| Dev | $19/mo | 10,000 | 2,500 | 1 | 5 | 30 days |
+| Pro | $49/mo | 50,000 | 5,000 | 3 | 25 | 90 days |
+| Team | $99/mo | 150,000 | 15,000 | 10 | Unlimited | 1 year |
+| Scale | $199/mo | 500,000 | 50,000 | 30 | Unlimited | 1 year |
 
 Self-hosting the open-source core is free forever. Hosted plans open with the beta on **November 16** at [logmem.space](https://logmem.space) — see [logmem.si](https://logmem.si) for current access. Full detail: [docs/PRICING.md](docs/PRICING.md).
 

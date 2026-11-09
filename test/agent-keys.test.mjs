@@ -12,7 +12,7 @@ import { issueCookie } from "../src/http/admin-auth.mjs";
 import { createHandler } from "../api/agent-keys.mjs";
 import { insufficientScope } from "../api/mcp.mjs";
 
-const ENV = { VERCEL_ENV: "production", LOGMEM_SPACES: "madez", LOGMEM_REST_URL: "https://bridge.example/exec", LOGMEM_REST_TOKEN: "t", LOGMEM_ADMIN_PASSWORD: "correct horse" };
+const ENV = { VERCEL_ENV: "production", LOGMEM_SPACES: "madez", LOGMEM_REST_URL: "https://bridge.example/exec", LOGMEM_REST_TOKEN: "t", LOGMEM_ADMIN_PASSWORD: "correct horse", LOGMEM_ADMIN_SECRET: "admin-secret-test-horse" };
 
 test("agent keys: create, look up, list without the key, revoke", async () => {
   const redis = oauthRedis();
