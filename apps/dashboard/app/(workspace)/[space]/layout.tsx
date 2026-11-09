@@ -1,12 +1,17 @@
 import { NavRail } from './components/nav-rail';
+import { requireSpace } from '../../../lib/server/auth';
 
-export default function WorkspaceSpaceLayout({
+export const dynamic = 'force-dynamic';
+
+export default async function WorkspaceSpaceLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
   params: { space: string };
 }) {
+  // Real authorization on every request, not just hidden navigation.
+  await requireSpace(params.space, 'read');
   return (
     <div className="flex min-h-screen bg-[#F4F6F5] dark:bg-[#0C1211] text-[#121A19] dark:text-[#E9EEEC] font-sans antialiased">
       <NavRail space={params.space} />
