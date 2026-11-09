@@ -11,13 +11,29 @@
 import { checkPassword, issueCookie, issueIdentityCookie, isAdmin, adminEnabled, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
 import { customerSession } from "../src/http/clerk.mjs";
 import { getRole, ROLES } from "../src/http/admin-roles.mjs";
-import { customerRedis } from "../src/http/jail.mjs";
+import { customerRedis, CustomerRedisConfigError } from "../src/http/jail.mjs";
 import { applyRateLimit, ROUTE_CLASSES } from "../src/http/rate-limit.mjs";
 
 export const config = { runtime: "nodejs" };
 
 /** Roles that may hold an admin-surface session at all; finer grants come later. */
 const SESSION_ROLES = new Set(["admin", "support", "billing"]);
+
+/**
+ * Auth rate limits prefer the injected store, then the customer Redis.
+ * A missing or non-TLS customer Redis is not a login outage: the limiter's
+ * Option A policy falls open to the in-process bucket (same as /api/health).
+ * Role lookup on the Clerk path still requires the customer Redis.
+ */
+function rateLimitRedis(redis, env) {
+  if (redis) return redis;
+  try {
+    return customerRedis(env);
+  } catch (err) {
+    if (err instanceof CustomerRedisConfigError) return null;
+    throw err;
+  }
+}
 
 export function createLoginHandler({ session = customerSession, roleLookup = getRole, redis = null, env = process.env } = {}) {
   return async function handler(req, res) {
@@ -33,7 +49,7 @@ export function createLoginHandler({ session = customerSession, roleLookup = get
       }
     }
     if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-    const rateOk = await applyRateLimit(req, res, { redis: redis || customerRedis(env), routeClass: ROUTE_CLASSES.AUTH });
+    const rateOk = await applyRateLimit(req, res, { redis: rateLimitRedis(redis, env), routeClass: ROUTE_CLASSES.AUTH });
     if (!rateOk) return;
     if (!adminEnabled(env)) return res.status(503).json({ error: "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
     const password = (req.body && req.body.password) || "";
