@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Privacy — LogMem</title>
-<meta name="description" content="What LogMem collects, how it is used, and your choices. Mad EZ Media Partners LLC.">
+<meta name="description" content="What LogMem collects, how it is used, and your choices. Mad EZ Media and Technology Partners LLC.">
 <link rel="canonical" href="https://logmem.si/privacy">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="LogMem">
 <meta property="og:url" content="https://logmem.si/privacy">
 <meta property="og:title" content="Privacy — LogMem">
-<meta property="og:description" content="What LogMem collects, how it is used, and your choices. Mad EZ Media Partners LLC.">
+<meta property="og:description" content="What LogMem collects, how it is used, and your choices. Mad EZ Media and Technology Partners LLC.">
 <meta property="og:image" content="https://logmem.si/og/logmem-launch-og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -21,7 +21,11 @@
 <link rel="stylesheet" href="/ds/tokens/logmem.css">
 <link rel="stylesheet" href="/ds/components/bundle.css">
 <link rel="stylesheet" href="/pages.css">
-  <script type="module" src="/site-nav.js"></script><script src="/theme-boot.js"></script><link rel="stylesheet" href="/setup-theme.css"></head>
+  <script type="module" src="/site-nav.js"></script><script src="/theme-boot.js"></script><link rel="stylesheet" href="/setup-theme.css"><link rel="stylesheet" href="/vendor/cookieconsent/cookieconsent.css">
+<script src="/vendor/cookieconsent/cookieconsent.umd.js" defer></script>
+<script src="/gtm.js" defer></script>
+<script src="/consent.js" defer></script>
+</head>
   <body>
     <header class="nav" data-site-nav data-current=""><a href="/" class="wordmark" aria-label="LogMem home"><img class="brand-lockup logo-l" src="/ds/logos/logmem-lockup.svg" alt="LogMem" width="145" height="32"><img class="brand-lockup logo-d" src="/ds/logos/logmem-lockup-reversed.svg" alt="" width="145" height="32"></a><nav aria-label="Main"><a href="/#network">How it works</a><a href="/#privacy">Your control</a><a href="/how-to">How to use</a><a href="/agents">Agent setup</a><a href="/skills">Skills</a><a href="/pricing">Pricing</a></nav><a class="lm-btn lm-btn--primary dark small" href="/onboarding">Open your workspace <span aria-hidden="true">↗</span></a></header>
     <main class="page-main" id="main">
@@ -34,14 +38,14 @@
         <div class="prose">
 
           <p class="updated">Drafted from the <a href="https://github.com/basecamp/policies" rel="noopener">Basecamp open-source policies</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/" rel="noopener">CC BY 4.0</a>, and changed for LogMem.</p>
-          <p class="updated">Effective date: November 9, 2026. Operator: Mad EZ Media Partners LLC ("Mad EZ Media", "we"), Charlotte, North Carolina, USA. This policy covers logmem.si and the LogMem service.</p>
+          <p class="updated">Effective date: November 9, 2026. Operator: Mad EZ Media and Technology Partners LLC ("Mad EZ Media", "we"), Charlotte, North Carolina, USA. This policy covers logmem.si and the LogMem service.</p>
 
           <h2>What we collect</h2>
           <ul>
             <li><strong>Waitlist.</strong> When you join the waitlist we receive your email address, how many agents you plan to run, and the plan you are interested in. We also save how you found us: the utm tags in the link you used, the website that sent you (host name only), the first page you opened, and the time. Your browser keeps that in session storage until you sign up or close the tab. We do not use a cookie for it.</li>
-            <li><strong>Account information.</strong> When you sign in, we receive your name and email address. Clerk runs sign-in. We never see or store your password. Some pages may still use Clerk's development host (a page address that ends in accounts.dev) and may show a development label. Request logs can include a sign-in token.</li>
-            <li><strong>Space content.</strong> The entries you and your agents write to a space — notes, handoffs, decisions, approvals, and job records — are the product itself. Hosted spaces store this content in Redis databases we operate. Self-hosted open-source use stores nothing with us. Do not store passwords, API keys, tokens, or other secrets as memory content.</li>
-            <li><strong>Usage and device data.</strong> The website and console record basic usage data (pages visited, timestamps, browser type) through Vercel Web Analytics so we can run and improve the service.</li>
+            <li><strong>Account information.</strong> When you join the waitlist or sign in, we receive your name and email address. Sign-in is handled by Clerk; we never see or store your password.</li>
+            <li><strong>Space content.</strong> The entries you and your agents write to a space — notes, handoffs, decisions, approvals, and job records — are the product itself. Hosted spaces store this content in Redis databases we operate. Self-hosted open-source use stores nothing with us.</li>
+            <li><strong>Usage and device data.</strong> The website and console record basic usage data (pages visited, timestamps, browser type) through Vercel Analytics and Google Tag Manager so we can run and improve the service.</li>
             <li><strong>Payment information.</strong> When paid plans open, payments are processed by Square. Card details go to Square; we do not store full card numbers.</li>
           </ul>
 
@@ -59,25 +63,25 @@
           <p>We use a small set of providers to run LogMem: Clerk (sign-in), Vercel (hosting and analytics), cloud infrastructure providers (hosted Redis and servers), and Square (payments, when billing opens). Each provider processes data only to provide its part of the service.</p>
 
           <h2>Cookies</h2>
-          <p>We use essential cookies for sign-in sessions. We do not use Google Analytics, Google Tag Manager, or advertising cookies. Vercel Web Analytics counts page views and does not use cookies. You can block cookies in your browser; sign-in will not work without the essential ones.</p>
+          <p>We use essential cookies for sign-in sessions and to remember your cookie choice. On the website, Google Tag Manager and Google Analytics set analytics cookies only after you choose Accept analytics in the cookie banner. Reject leaves them off, and you can change your choice by clearing this site&rsquo;s cookies. Vercel Analytics and similar tools may use cookies or identifiers such as a visitor ID. You can block cookies in your browser; sign-in will not work without the essential ones.</p>
 
           <h2>Where your data lives</h2>
-          <p>Hosted LogMem runs on servers and databases we operate with our infrastructure providers. We do not state a single country for every copy. If you use LogMem from outside the country where you live, your information is processed where those providers run it. Where the law requires a transfer mechanism for personal data moving from the EU, UK or Switzerland, we use the one our providers offer, such as standard contractual clauses.</p>
+          <p>Hosted LogMem runs on servers and databases in the United States, which we operate with our infrastructure providers. If you use LogMem from outside the United States, your information is processed in the United States. Where the law requires a transfer mechanism for personal data moving from the EU, UK or Switzerland, we use the one our providers offer, such as standard contractual clauses.</p>
 
           <h2>How we protect it</h2>
           <p>Traffic to logmem.si uses HTTPS. Access to hosted space content is limited to the people and agents you authorize, and to our staff only for the reasons listed above. No system is perfectly secure, and we cannot promise it. If we learn of a breach that affects your personal information, we will tell you as the law requires.</p>
 
           <h2>Deleting content</h2>
-          <p>When you delete an entry or a space, we remove it from the live service. Backups and logs may keep a copy for a while before they expire. We do not promise how long that copy lasts, and we do not promise backups beyond what a provider keeps. Self-hosted open-source use keeps all data with you.</p>
+          <p>When you delete an entry or a space, we remove it from the live service. Backups and logs may keep a copy for up to 30 days, the standard period of our hosting provider, before they expire. We do not promise backups beyond that. Self-hosted open-source use keeps all data with you.</p>
 
           <h2>Children</h2>
-          <p>LogMem is for businesses and is not meant for children. We do not knowingly collect data from anyone under 13, or under 16 where local law sets that age. If you think a child gave us information, contact us and we will delete it.</p>
+          <p>LogMem is for businesses and is not meant for children. We do not knowingly collect personal information from anyone under 16. If you think a child gave us information, contact us and we will delete it.</p>
 
           <h2>Privacy rights by region</h2>
           <p>Depending on where you live, such as the EU, UK or California, you may have extra rights: to know what we hold, to correct or delete it, to object to or restrict some uses, and to move your data. You can use these rights through the contact below. We do not sell personal information and we do not share it for cross-context advertising. We will not treat you worse for using a right.</p>
 
           <h2>Retention</h2>
-          <p>Space history follows your plan's history window (for example, 7 days on Free and up to 1 year on higher plans). Account information is kept while your account is active. You can ask us to delete your account and its content at any time. We keep waitlist entries until you open an account or we delete them. We aim to delete unused entries within 180 days.</p>
+          <p>Space history follows your plan's history window (for example, 7 days on Free and up to 1 year on higher plans). Account information is kept while your account is active. You can ask us to delete your account and its content at any time. We keep waitlist entries until you open an account or we delete them.</p>
 
           <h2>Your choices</h2>
           <ul>
@@ -90,7 +94,7 @@
           <p>If this policy changes materially, we will update this page and note the new effective date. Continued use after a change means you accept the updated policy.</p>
 
           <h2>Contact</h2>
-          <p>Mad EZ Media Partners LLC, Charlotte, North Carolina, USA. Email: <a href="mailto:hello@logmem.si">hello@logmem.si</a></p>
+          <p>Mad EZ Media and Technology Partners LLC, Charlotte, North Carolina, USA. Email: <a href="mailto:hello@logmem.si">hello@logmem.si</a></p>
 
         </div>
       </div>

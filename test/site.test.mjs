@@ -288,7 +288,7 @@ test("site: both pages load /attrib.js in the head, and onboarding.js sends attr
   assert.match(post, /attribution: window\.lmAttribution \? window\.lmAttribution\(\) : null/);
 });
 
-test("site: privacy and terms drop Google tags and keep the reviewed legal lines", async () => {
+test("site: privacy and terms carry the owner's Nov 9 answers", async () => {
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
@@ -296,36 +296,31 @@ test("site: privacy and terms drop Google tags and keep the reviewed legal lines
   const read = (page) => readFileSync(join(root, page), "utf8");
   for (const page of ["public/privacy.html", "public/terms.html"]) {
     const html = read(page);
-    assert.ok(!html.includes('src="/gtm.js"') && !html.includes("googletagmanager.com") && !html.includes("cookieconsent") && !html.includes('src="/consent.js"'), `${page} does not load Google tags or the cookie banner`);
-    assert.ok(!html.includes("110%"), `${page} has no 110% grace line`);
-    assert.ok(!/CONFIRM|VERIFY|\[MIKEY PICK/.test(html), `${page} has no unresolved markers`);
+    assert.ok(html.includes('src="/consent.js"') && html.includes('src="/gtm.js"'), `${page} loads the cookie banner and the gated Google tag loader`);
+    assert.ok(!html.includes("googletagmanager.com"), `${page} has no inline Google tag`);
+    assert.ok(!html.includes("110%"), `${page} has no 110% line`);
+    assert.ok(!/CONFIRM|VERIFY|DRAFT for review|\[MIKEY PICK/.test(html), `${page} has no unresolved markers`);
     assert.match(html, /November 9, 2026/);
     assert.match(html, /hello@logmem\.si/);
-    assert.match(html, /Mad EZ Media Partners LLC/);
-    assert.ok(!html.includes("Technology Partners"), `${page} does not switch the legal name`);
+    assert.ok(!html.includes("legal@logmem.si"), `${page} uses hello@ only`);
+    assert.match(html, /Mad EZ Media and Technology Partners LLC/);
+    assert.ok(!html.includes("Mad EZ Media Partners"), `${page} uses the full legal name`);
+    assert.match(html, /basecamp\/policies/);
   }
   const terms = read("public/terms.html");
-  assert.match(terms, /Every plan has a hard entry cap, with no overage billing\. We warn you at 80% of your limit and prompt you at 100%\./);
   assert.match(terms, /at least 18/);
-  assert.match(terms, /limited to US \$100/);
-  assert.match(terms, /Mecklenburg County, North Carolina/);
-  assert.match(terms, /Do not store passwords, API keys, tokens, or other secrets as memory content\./);
+  assert.match(terms, /Every plan has an entry cap\. We warn you at 80% of your limit and prompt you at 100%\./);
+  assert.match(terms, /at least 30 days/);
   const privacy = read("public/privacy.html");
-  assert.match(privacy, /We keep waitlist entries until you open an account or we delete them\. We aim to delete unused entries within 180 days\./);
-  assert.ok(!privacy.includes("then we delete them unless you open an account"), "do not publish both 180-day sentences");
-  assert.ok(!privacy.includes("not set on waitlist sign-ups"));
+  assert.match(privacy, /servers and databases in the United States/);
+  assert.match(privacy, /up to 30 days/);
+  assert.match(privacy, /under 16/);
+  assert.equal((privacy.match(/<h2>Children<\/h2>/g) || []).length, 1, "one Children section");
+  assert.match(privacy, /may use cookies or identifiers such as a visitor ID/);
+  assert.ok(!privacy.includes("Vercel Analytics does not use cookies"), "no cookieless claim for Vercel Analytics");
+  assert.match(privacy, /set analytics cookies only after you choose Accept analytics/);
   assert.match(privacy, /how many agents you plan to run/);
-  assert.match(privacy, /Do not store passwords, API keys, tokens, or other secrets as memory content\./);
-  assert.match(privacy, /Clerk runs sign-in\. We never see or store your password\. Some pages may still use Clerk's development host \(a page address that ends in accounts\.dev\) and may show a development label\. Request logs can include a sign-in token\./);
-  assert.ok(!privacy.includes("Content-Security-Policy") && !privacy.includes("clerk.logmem.si"), "no live-header detail on the policy page");
-  assert.match(privacy, /We do not knowingly collect data from anyone under 13, or under 16 where local law sets that age\./);
-  assert.ok(!privacy.includes("anyone under 16."), "children line is not under 16 for everyone");
-  assert.match(privacy, /Vercel Web Analytics counts page views and does not use cookies\./);
-  assert.ok(!privacy.includes("may use cookies"));
-  assert.ok(!privacy.includes("servers and databases in the United States"));
-  assert.ok(!privacy.includes("up to 30 days, the standard period"));
-  assert.match(privacy, /We do not use Google Analytics, Google Tag Manager, or advertising cookies\./);
-  assert.ok(!privacy.includes("Accept analytics"));
+  assert.match(privacy, /We keep waitlist entries until you open an account or we delete them\./);
 });
 
 test("site: attrib.js keeps the first visit's source in sessionStorage, host only, and never breaks without storage", async () => {
