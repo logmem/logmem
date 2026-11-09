@@ -59,3 +59,10 @@ export function groupBlockers(jobs, getNote) {
 }
 
 export const summaryPreview = value => text(value).replace(/^\s{0,3}#{1,6}\s+/gm, '').replace(/\*\*([^*]+)\*\*/g, '$1');
+
+/** Range label for the mail-style footer, for example "1-30 of more" or "31-45". Cursor counts from 0. */
+export function mailRange(cursor, count, hasMore) {
+  const c = Math.max(0, Number(cursor) || 0), n = Math.max(0, Number(count) || 0);
+  if (!n) return 'No requests';
+  return `${c + 1}\u2013${c + n}${hasMore ? ' (more)' : ''}`;
+}
