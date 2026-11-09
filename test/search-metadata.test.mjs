@@ -73,3 +73,61 @@ test("search: documentation sharing metadata matches its visible title and descr
   assert.deepEqual(metadata(html, "og:image:height"), ["630"]);
   assert.deepEqual(metadata(html, "twitter:card"), ["summary_large_image"]);
 });
+
+test("search: sitemap pages have distinct descriptions", () => {
+  const seen = new Map();
+  for (const location of locations) {
+    const path = new URL(location).pathname;
+    const html = read(path === "/" ? "index.html" : `${path.slice(1)}.html`);
+    const description = metadata(html, "description")[0].trim().toLowerCase().replace(/\s+/g, " ");
+    assert.ok(!seen.has(description), `${location} duplicates ${seen.get(description)}`);
+    seen.set(description, location);
+  }
+});
+
+test("search: onboarding has one persistent H1 and focusable H2 step headings", () => {
+  const html = read("onboarding.html");
+  assert.equal((html.match(/<h1\b/gi) || []).length, 1);
+  assert.match(html, /<h1 class="lm-sr">Set up LogMem<\/h1>/);
+  const steps = [...html.matchAll(/<section\b[^>]*data-step="([^"]+)"[^>]*>/g)].map(match => match[1]);
+  assert.equal(steps.length, 11);
+  for (const step of steps) {
+    assert.ok(html.includes(`<h2 class="ob-step-title" id="h-${step}" tabindex="-1">`), step);
+  }
+  assert.match(read("onboarding.css"), /\.ob-card \.ob-step-title\[tabindex="-1"\]:focus-visible/);
+  assert.match(read("onboarding.js"), /h\.focus\(\{ preventScroll: true \}\)/);
+  assert.ok(html.includes('<link rel="canonical" href="https://logmem.si/onboarding">'));
+});
+
+test("search: pricing headings never skip a level and mobile plan styles follow H2", () => {
+  const html = read("pricing.html");
+  let previous = 0;
+  for (const match of html.matchAll(/<h([1-6])\b/gi)) {
+    const level = Number(match[1]);
+    assert.ok(level <= previous + 1, `heading jumped from H${previous} to H${level}`);
+    previous = level;
+  }
+  assert.equal((html.match(/<article class="plan-card"><h2>/g) || []).length, 7);
+  assert.match(read("pages.css"), /\.plan-card h2\s*\{/);
+});
+
+test("search: setup indexes explain paths and skill purposes in static HTML", () => {
+  const agents = read("agents.html"), skills = read("skills.html");
+  for (const phrase of ["Hosted MCP:", "Local MCP:", "Agent key:", "does not start an autonomous worker"]) {
+    assert.ok(agents.includes(phrase), phrase);
+  }
+  for (const phrase of ["Everyday LogMem:", "Agent onboarding:", "Decisions:", "Read-path recovery:", "SDK primitives:", "Seed a space:", "Self-hosting:", "Tracking and outages:"]) {
+    assert.ok(skills.includes(phrase), phrase);
+  }
+  for (const html of [agents, skills]) {
+    assert.match(html, /<section class="agent-step step-card" aria-labelledby=/);
+  }
+});
+
+test("search: docs title is concise and terms metadata remains consistent", () => {
+  const docs = read("docs.html"), terms = read("terms.html");
+  assert.equal(/<title>([^<]+)<\/title>/.exec(docs)[1], "LogMem Docs — Architecture, Tools & Setup");
+  const description = metadata(terms, "description")[0];
+  assert.ok(description.length >= 70 && description.length <= 160);
+  assert.deepEqual(metadata(terms, "og:description"), [description]);
+});

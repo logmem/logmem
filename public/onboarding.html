@@ -56,6 +56,7 @@
   </nav>
 
   <main class="ob-main" id="ob-main">
+    <h1 class="lm-sr">Set up LogMem</h1>
     <aside class="ob-companion" data-setup-companion aria-label="Setup guide">
       <div class="ob-orb" aria-hidden="true"><div class="ob-orb-fallback"><span></span><span></span></div><canvas></canvas></div>
       <div><p class="lm-eyebrow">Your setup companion</p><p data-companion-message>Open your workspace, then connect your AI.</p></div>
@@ -65,11 +66,11 @@
     <!-- Managed clients start here. BYO remains an explicit advanced path. -->
     <section class="lm-panel ob-card ob-fork" data-step="choose" aria-labelledby="h-choose">
       <div class="fun-sticker fun-sticker--1" aria-hidden="true"><img src="/home-assets/agents/claude.png" alt=""></div><div class="fun-sticker fun-sticker--2" aria-hidden="true"><img src="/home-assets/agents/cursor.svg" alt=""></div><div class="fun-sticker fun-sticker--3" aria-hidden="true"><img src="/home-assets/agents/gemini.png" alt=""></div>
-      <div class="ob-fork-head"><h1 id="h-choose" tabindex="-1">A shared space for your business.</h1><p class="ob-lede">Keep customer work, tasks, decisions and agent handoffs together. Start with your business workspace, then choose who can join each space.</p></div>
+      <div class="ob-fork-head"><h2 class="ob-step-title" id="h-choose" tabindex="-1">A shared space for your business.</h2><p class="ob-lede">Keep customer work, tasks, decisions and agent handoffs together. Start with your business workspace, then choose who can join each space.</p></div>
       <svg class="ob-doodle ob-doodle--a" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 2 C12.6 8 14 10.4 22 12 C14 13.6 12.6 16 12 22 C11.4 16 10 13.6 2 12 C10 10.4 11.4 8 12 2Z" fill="currentColor"/></svg><svg class="ob-doodle ob-doodle--b" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="M12 2 C12.6 8 14 10.4 22 12 C14 13.6 12.6 16 12 22 C11.4 16 10 13.6 2 12 C10 10.4 11.4 8 12 2Z" fill="currentColor"/></svg><svg class="ob-doodle ob-doodle--c" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 2 C12.6 8 14 10.4 22 12 C14 13.6 12.6 16 12 22 C11.4 16 10 13.6 2 12 C10 10.4 11.4 8 12 2Z" fill="currentColor"/></svg>
       <div class="ob-grid2 ob-fork-grid">
         <div class="lm-panel ob-choice ob-choice--rec ob-sketch ob-sketch--teal">
-          <div class="ob-choice-head"><h2 class="lm-title-2">Use managed LogMem</h2><span class="lm-badge lm-badge--brand ob-oval ob-oval--teal">Invite only</span></div>
+          <div class="ob-choice-head"><h3 class="lm-title-2">Use managed LogMem</h3><span class="lm-badge lm-badge--brand ob-oval ob-oval--teal">Invite only</span></div>
           <p class="ob-note ob-note--muted">For solo operators and small teams. We manage storage. You do not need a Redis account or connection URL.</p>
           <ol class="ob-list ob-list--arrows"><li>Sign in with the email that received access.</li><li>Create your business workspace, or join your team through its invitation link.</li><li>Choose a private space and connect one agent.</li><li>Add a real task and check its first update.</li></ol>
           <p class="ob-note">Already have a team invitation link? Open that link to join the right workspace.</p>
@@ -78,7 +79,7 @@
           <p class="ob-note">No invitation yet? <button type="button" class="ob-linkbtn ob-scribble" data-choose="cloud">Request access</button>.</p>
         </div>
         <div class="lm-panel ob-choice ob-sketch ob-sketch--amber">
-          <div class="ob-choice-head"><h2 class="lm-title-2">Bring your own Redis</h2><span class="lm-badge ob-oval ob-oval--amber">Advanced</span></div>
+          <div class="ob-choice-head"><h3 class="lm-title-2">Bring your own Redis</h3><span class="lm-badge ob-oval ob-oval--amber">Advanced</span></div>
           <p class="ob-note ob-note--muted">For developers who manage their own storage and agent configuration.</p>
           <ul class="ob-list ob-list--stars"><li>Works with Upstash, a TLS Redis, or an HTTPS REST bridge.</li><li>Name your space and run a read-only connection test.</li><li>Get ready-to-paste config for Claude, Cursor, Codex and more.</li></ul>
           <div class="ob-cta"><button type="button" class="lm-btn lm-btn--secondary ob-btn-ring ob-btn-ring--white" data-choose="byo">Set up my own Redis</button></div>
@@ -90,7 +91,7 @@
     <section class="lm-panel ob-card" data-step="plan" aria-labelledby="h-plan" hidden>
       <div>
         <div class="lm-row ob-tags"><a class="lm-badge lm-badge--info" href="/pricing">See pricing</a></div>
-        <span class="lm-badge ob-oval ob-oval--amber ob-chip">Quick question</span><h1 id="h-plan" tabindex="-1">What would you use it for?</h1>
+        <span class="lm-badge ob-oval ob-oval--amber ob-chip">Quick question</span><h2 class="ob-step-title" id="h-plan" tabindex="-1">What would you use it for?</h2>
         <p class="ob-lede">Pick the one closest to you. Include this with your access request. This form does not create an account or workspace.</p>
       </div>
       <fieldset class="ob-plans" id="plans-main">
@@ -111,7 +112,7 @@
 
     <!-- Detect agents (both paths) -->
     <section class="lm-panel ob-card" data-step="detect" aria-labelledby="h-detect" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">Find your tools</span><h1 id="h-detect" tabindex="-1">Find the AI tools on this machine.</h1><p class="ob-lede">Run this in a terminal. It looks for 9 agent tools on your PATH, prints what it finds, and sends only their names and versions back to this page.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">Find your tools</span><h2 class="ob-step-title" id="h-detect" tabindex="-1">Find the AI tools on this machine.</h2><p class="ob-lede">Run this in a terminal. It looks for 9 agent tools on your PATH, prints what it finds, and sends only their names and versions back to this page.</p></div>
       <div class="lm-stack">
         <span class="lm-eyebrow">Run in a terminal</span>
         <pre class="code" id="probe-cmd" aria-label="Probe command"></pre>
@@ -133,7 +134,7 @@
     <section class="lm-panel ob-card" data-step="waitlist" aria-labelledby="h-waitlist" hidden>
       <div>
         <div class="lm-row ob-tags"><span class="lm-badge lm-badge--warning">Waitlist</span></div>
-        <span class="lm-badge ob-oval ob-oval--amber ob-chip">Almost in</span><h1 id="h-waitlist" tabindex="-1">Join the waitlist.</h1>
+        <span class="lm-badge ob-oval ob-oval--amber ob-chip">Almost in</span><h2 class="ob-step-title" id="h-waitlist" tabindex="-1">Join the waitlist.</h2>
         <p class="ob-lede">Managed access is invite only. Leave your email to request access. Already invited? Go back and open your workspace with your approved email.</p>
       </div>
       <form id="wl-form" novalidate class="lm-stack ob-form">
@@ -150,7 +151,7 @@
 
     <!-- BYO: space -->
     <section class="lm-panel ob-card" data-step="space" aria-labelledby="h-space" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">Make it yours</span><h1 id="h-space" tabindex="-1">Name your space.</h1><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">Make it yours</span><h2 class="ob-step-title" id="h-space" tabindex="-1">Name your space.</h2><p class="ob-lede">A space is one walled-off memory: one team, one client, or one project. Agents connected to it can’t read any other space.</p></div>
       <div class="ob-grid2">
         <div class="lm-field"><label class="lm-label" for="ws">Workspace name</label><input class="lm-input" id="ws" placeholder="Northside Repairs" required autocomplete="organization" aria-describedby="ws-err"><span class="lm-error" id="ws-err" hidden></span></div>
         <div class="lm-field"><label class="lm-label" for="sp">Space id</label><input class="lm-input mono" id="sp" placeholder="northside" required maxlength="60" spellcheck="false" autocapitalize="off" aria-describedby="sp-help sp-err"><span class="lm-help" id="sp-help">Lowercase letters, numbers, - and _. Keys go under <span class="mono" id="sp-echo">lm:…:*</span>.</span><span class="lm-error" id="sp-err" hidden></span></div>
@@ -160,7 +161,7 @@
 
     <!-- BYO: Redis -->
     <section class="lm-panel ob-card" data-step="redis" aria-labelledby="h-redis" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--amber ob-chip">Plug in</span><h1 id="h-redis" tabindex="-1">Connect your Redis.</h1><p class="ob-lede">LogMem stores everything in a Redis you control. The test sends three read-only commands: PING, then TYPE and EXISTS on a random key that doesn’t exist. It writes nothing.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--amber ob-chip">Plug in</span><h2 class="ob-step-title" id="h-redis" tabindex="-1">Connect your Redis.</h2><p class="ob-lede">LogMem stores everything in a Redis you control. The test sends three read-only commands: PING, then TYPE and EXISTS on a random key that doesn’t exist. It writes nothing.</p></div>
       <div class="lm-seg ob-seg" role="group" aria-label="Backend type"><button type="button" id="b-tcp" aria-pressed="true">Redis (rediss://)</button><button type="button" id="b-rest" aria-pressed="false">HTTP REST bridge</button></div>
       <div id="f-rest" class="ob-grid2" hidden>
         <div class="lm-field"><label class="lm-label" for="ru">REST URL</label><input class="lm-input mono" id="ru" type="url" placeholder="https://your-redis-bridge/exec" spellcheck="false" autocomplete="off"></div>
@@ -174,7 +175,7 @@
 
     <!-- BYO: ACMI -->
     <section class="lm-panel ob-card" data-step="acmi" aria-labelledby="h-acmi" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">Bring your past</span><h1 id="h-acmi" tabindex="-1">Bring your existing agent history?</h1><p class="ob-lede">If your agents already use the ACMI protocol, compatibility mode lets them keep their acmi_* tools and shows their history in LogMem. Turn it off if you’re starting fresh.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">Bring your past</span><h2 class="ob-step-title" id="h-acmi" tabindex="-1">Bring your existing agent history?</h2><p class="ob-lede">If your agents already use the ACMI protocol, compatibility mode lets them keep their acmi_* tools and shows their history in LogMem. Turn it off if you’re starting fresh.</p></div>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="compat" checked><span class="ob-toggle-text"><strong class="lm-title-3">ACMI compatibility</strong><span class="muted ob-small">Adds 19 acmi_* tools and merges acmi:* history into every read. New writes still go to lm:*. Sets <code class="mono">LOGMEM_ACMI_COMPAT=1</code>.</span></span></label>
       <label class="ob-toggle"><input class="lm-switch" type="checkbox" role="switch" id="mirror"><span class="ob-toggle-text"><strong class="lm-title-3">Mirror writes back to ACMI</strong><span class="muted ob-small">For a gradual move: every LogMem write is also copied to acmi:* so agents you haven’t moved yet still see it. Sets <code class="mono">LOGMEM_MIRROR_ACMI=1</code> for this space.</span></span></label>
       <div class="lm-row"><button type="button" class="lm-btn lm-btn--ghost" data-back>Back</button><button type="button" class="lm-btn lm-btn--primary" data-next>Continue</button></div>
@@ -182,7 +183,7 @@
 
     <!-- BYO: connect agents -->
     <section class="lm-panel ob-card" data-step="connect" aria-labelledby="h-connect" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--amber ob-chip">Say hello</span><h1 id="h-connect" tabindex="-1">Connect your first AI tool.</h1><p class="ob-lede">Pick the tool. Paste the snippet, restart it, and its first call starts with a short catch-up.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--amber ob-chip">Say hello</span><h2 class="ob-step-title" id="h-connect" tabindex="-1">Connect your first AI tool.</h2><p class="ob-lede">Pick the tool. Paste the snippet, restart it, and its first call starts with a short catch-up.</p></div>
       <div class="lm-tabs" role="tablist" aria-label="Agent host" id="hosts"></div>
       <div class="ob-tabpanel" role="tabpanel" id="host-panel" tabindex="0">
         <div class="ob-snip-meta"><span class="lm-eyebrow" id="snip-label"></span><span id="snip-badges" class="lm-row"></span></div>
@@ -199,7 +200,7 @@
 
     <!-- BYO: first entries -->
     <section class="lm-panel ob-card" data-step="first" aria-labelledby="h-first" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">First notes</span><h1 id="h-first" tabindex="-1">Watch the first notes arrive.</h1><p class="ob-lede">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. As it works, it writes notes on what changed, in order. Below is what that looks like.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--teal ob-chip">First notes</span><h2 class="ob-step-title" id="h-first" tabindex="-1">Watch the first notes arrive.</h2><p class="ob-lede">Ask your agent: <code class="mono">logmem start quill</code>, then give it any small task. As it works, it writes notes on what changed, in order. Below is what that looks like.</p></div>
       <div class="lm-panel lm-demo-frame ob-events">
         <div class="lm-session" data-cold=""><span class="lm-carry"></span><span class="lm-eyebrow">quill · first shift · started cold (no Recap yet)</span></div>
         <div class="lm-events">
@@ -214,7 +215,7 @@
 
     <!-- BYO: second agent + handoff -->
     <section class="lm-panel ob-card" data-step="handoff" aria-labelledby="h-handoff" hidden>
-      <div><span class="lm-badge ob-oval ob-oval--amber ob-chip">Pass it on</span><h1 id="h-handoff" tabindex="-1">Add a second agent and hand it work.</h1><p class="ob-lede">Shared memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it. The handoff stays open until the other agent picks it up.</p></div>
+      <div><span class="lm-badge ob-oval ob-oval--amber ob-chip">Pass it on</span><h2 class="ob-step-title" id="h-handoff" tabindex="-1">Add a second agent and hand it work.</h2><p class="ob-lede">Shared memory pays off when work moves between agents. Connect one more, then ask quill to hand something to it. The handoff stays open until the other agent picks it up.</p></div>
       <ol class="ob-list">
         <li>Repeat <button type="button" class="ob-linkbtn" data-goto="connect">Connect agents</button> on another host, with <code class="mono">LOGMEM_AGENT=atlas</code>.</li>
         <li>Tell quill: <code class="mono">hand issue 14 to atlas</code>. LogMem writes a Handoff and atlas follows the job.</li>
@@ -233,7 +234,7 @@
     <section class="lm-panel ob-card" data-step="approver" aria-labelledby="h-approver" hidden>
       <div>
         <div class="lm-row ob-tags"><span class="lm-demo" title="Approver invites aren't built yet">Preview</span></div>
-        <span class="lm-badge ob-oval ob-oval--teal ob-chip">Last stop</span><h1 id="h-approver" tabindex="-1">Invite a person to approve.</h1>
+        <span class="lm-badge ob-oval ob-oval--teal ob-chip">Last stop</span><h2 class="ob-step-title" id="h-approver" tabindex="-1">Invite a person to approve.</h2>
         <p class="ob-lede">Some actions can’t be undone: sending, paying, deleting, publishing. Before one of those, the agent stops and shows this person the exact action. They see it under Decisions and approve or reject it; then the agent carries on. (Today the agent waits on its own; enforcement on our side is coming.)</p>
       </div>
       <form id="ap-form" novalidate class="lm-stack ob-form">
