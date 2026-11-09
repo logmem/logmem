@@ -1,6 +1,7 @@
 // Workspace control plane. Never expose this runner to a customer data store.
 import { randomBytes, createHash } from 'node:crypto';
 import { registerEvalScript } from '../lib/lua-scripts.mjs';
+import { planFor } from '../../cloud/tenants/index.mjs';
 
 export class WorkspaceError extends Error {
   constructor(code, status=400) { super(code); this.code=code; this.status=status; }
@@ -96,12 +97,24 @@ export function membership(w,u) {
   if(!m || m.status!=='active') failWorkspace('not_found',404);
   return m;
 }
+export function planSpaces(w, depsLimits) {
+  if (typeof depsLimits?.spaces === 'number') return depsLimits.spaces;
+  const plan = w?.plan;
+  // Deliberate legacy amnesty: workspaces created prior to explicit plan attribute keep 10 spaces.
+  if (!plan) return 10;
+  try {
+    const p = planFor(plan);
+    return typeof p.spaces === 'number' ? p.spaces : 1;
+  } catch {
+    return 1;
+  }
+}
 export function canManage(w,u) {return ['owner','admin'].includes(membership(w,u).role);}
 export function visibleSpaces(w,u) {
  const m=membership(w,u);
- return Object.values(w.spaces).filter(s=>s.status==='active' && (['owner','admin'].includes(m.role) || m.spaces?.[s.id]));
+ return Object.values(w.spaces).filter(s=>['active','archived'].includes(s.status) && (['owner','admin'].includes(m.role) || m.spaces?.[s.id]));
 }
-export function summary(w) {const {id,tenantId,name,status,createdAt,version,businessType}=w; return {id,tenantId,name,status,createdAt,version,businessType};}
+export function summary(w) {const {id,tenantId,name,status,createdAt,version,businessType,plan='free'}=w; return {id,tenantId,name,status,createdAt,version,businessType,plan};}
 export async function commitWorkspace({before,after,userId,requestId,operation,fingerprint,result,legacyUser},deps) {
   const event=after.audit.at(-1);
   after={...after,audit:after.audit.slice(-100)};
@@ -122,15 +135,15 @@ export async function replay(redis,key,fingerprint) {
  const r=JSON.parse(raw); if(r.digest!==fingerprint) failWorkspace('idempotency_conflict',409);
  return {...JSON.parse(r.result),created:false};
 }
-export async function createWorkspace({userId,name,firstSpaceName,requestId,businessType='',withSample=false,userLabel},deps) {
+export async function createWorkspace({userId,name,firstSpaceName,requestId,businessType='',withSample=false,userLabel,plan},deps) {
  checkUser(userId); name=cleanName(name); firstSpaceName=cleanName(firstSpaceName);
  if(!['','solo','development','trades','restaurant','sales'].includes(businessType)||typeof withSample!=='boolean'||(withSample&&!businessType))failWorkspace('invalid_business_type');
- const key=requestKey(userId,'create',requestId), fingerprint=digest({name,firstSpaceName,businessType,withSample});
+ const key=requestKey(userId,'create',requestId), fingerprint=digest({name,firstSpaceName,businessType,withSample,plan:plan||''});
  const prior=await replay(deps.redis,key,fingerprint); if(prior) {const {w}=await readWorkspace(deps.redis,prior.workspace.id);membership(w,userId);return prior;}
  for(let retry=0;retry<12;retry++) {
   const newId=deps.newId||id, workspaceId=`w${newId()}`, spaceId=newId(), now=(deps.now||Date.now)();
   const space={id:spaceId,workspaceId,namespace:`s-${spaceId}`,name:firstSpaceName,sampleTemplate:withSample?businessType:null,status:'active',createdAt:now};
-  const w={id:workspaceId,tenantId:workspaceId,name,businessType,status:'active',createdAt:now,version:1,members:{[userId]:{role:'owner',status:'active',...(typeof userLabel==='string'?{label:userLabel.slice(0,254)}:{}),spaces:{[spaceId]:{role:'editor',canApprove:true}}}},spaces:{[spaceId]:space},audit:[{kind:'workspace-created',by:`human:${userId}`,at:now}]};
+  const w={id:workspaceId,tenantId:workspaceId,name,businessType,...(plan?{plan}:{}),status:'active',createdAt:now,version:1,members:{[userId]:{role:'owner',status:'active',...(typeof userLabel==='string'?{label:userLabel.slice(0,254)}:{}),spaces:{[spaceId]:{role:'editor',canApprove:true}}}},spaces:{[spaceId]:space},audit:[{kind:'workspace-created',by:`human:${userId}`,at:now}]};
   const r=await commitWorkspace({after:w,userId,requestId,operation:'create',fingerprint,result:{workspace:w,space}},deps); if(r) return r;
  }
  failWorkspace('creation_conflict',409);
@@ -142,7 +155,8 @@ export async function createSpace({userId,workspaceId,name,requestId},deps) {
   const {w}=await readWorkspace(deps.redis,workspaceId), m=membership(w,userId);
   if(!['owner','admin','member'].includes(m.role)) failWorkspace('forbidden',403);
   const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
-  if(Object.values(w.spaces).filter(s=>s.status==='active').length>=(deps.limits?.spaces??10)) failWorkspace('space_limit',429);
+  const maxSpaces = planSpaces(w, deps.limits);
+  if(Object.values(w.spaces).filter(s=>s.status==='active').length>=maxSpaces) failWorkspace('space_limit',429);
   const spaceId=(deps.newId||id)(), now=(deps.now||Date.now)();
   const space={id:spaceId,workspaceId,namespace:`s-${spaceId}`,name,status:'active',createdAt:now};
   const next=structuredClone(w); next.spaces[spaceId]=space; next.version++;
@@ -192,6 +206,58 @@ export async function attachSpace({userId,workspaceId,space,requestId},deps) {
   failWorkspace('update_conflict',409);
 }
 
+export async function renameSpace({userId,workspaceId,spaceId,name,requestId},deps) {
+ checkUser(userId); name=cleanName(name); const fingerprint=digest({workspaceId,spaceId,name});
+ const key=requestKey(userId,'space-rename',requestId);
+ for(let retry=0;retry<20;retry++) {
+  const {w}=await readWorkspace(deps.redis,workspaceId), m=membership(w,userId);
+  if(!['owner','admin'].includes(m.role)) failWorkspace('forbidden',403);
+  const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
+  const s=w.spaces?.[spaceId];
+  if(!s) failWorkspace('not_found',404);
+  const now=(deps.now||Date.now)();
+  const next=structuredClone(w); next.spaces[spaceId].name=name; next.version++;
+  next.audit.push({kind:'space-renamed',spaceId,name,by:`human:${userId}`,at:now});
+  const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'space-rename',fingerprint,result:{space:next.spaces[spaceId]}},deps); if(r)return r;
+ }
+ failWorkspace('update_conflict',409);
+}
+export async function archiveSpace({userId,workspaceId,spaceId,requestId},deps) {
+ checkUser(userId); const fingerprint=digest({workspaceId,spaceId,action:'archive'});
+ const key=requestKey(userId,'space-archive',requestId);
+ for(let retry=0;retry<20;retry++) {
+  const {w}=await readWorkspace(deps.redis,workspaceId), m=membership(w,userId);
+  if(!['owner','admin'].includes(m.role)) failWorkspace('forbidden',403);
+  const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
+  const s=w.spaces?.[spaceId];
+  if(!s) failWorkspace('not_found',404);
+  if(s.status==='archived') return {space:s};
+  const now=(deps.now||Date.now)();
+  const next=structuredClone(w); next.spaces[spaceId].status='archived'; next.version++;
+  next.audit.push({kind:'space-archived',spaceId,by:`human:${userId}`,at:now});
+  const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'space-archive',fingerprint,result:{space:next.spaces[spaceId]}},deps); if(r)return r;
+ }
+ failWorkspace('update_conflict',409);
+}
+export async function unarchiveSpace({userId,workspaceId,spaceId,requestId},deps) {
+ checkUser(userId); const fingerprint=digest({workspaceId,spaceId,action:'unarchive'});
+ const key=requestKey(userId,'space-unarchive',requestId);
+ for(let retry=0;retry<20;retry++) {
+  const {w}=await readWorkspace(deps.redis,workspaceId), m=membership(w,userId);
+  if(!['owner','admin'].includes(m.role)) failWorkspace('forbidden',403);
+  const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
+  const s=w.spaces?.[spaceId];
+  if(!s) failWorkspace('not_found',404);
+  if(s.status==='active') return {space:s};
+  const maxSpaces = planSpaces(w, deps.limits);
+  if(Object.values(w.spaces).filter(sp=>sp.status==='active').length>=maxSpaces) failWorkspace('space_limit',429);
+  const now=(deps.now||Date.now)();
+  const next=structuredClone(w); next.spaces[spaceId].status='active'; next.version++;
+  next.audit.push({kind:'space-unarchived',spaceId,by:`human:${userId}`,at:now});
+  const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'space-unarchive',fingerprint,result:{space:next.spaces[spaceId]}},deps); if(r)return r;
+ }
+ failWorkspace('update_conflict',409);
+}
 export async function listWorkspaces({userId},deps) {
  checkUser(userId); const out=[];
  for(const workspaceId of await deps.redis('SMEMBERS',userKey(userId))||[]) {
@@ -206,7 +272,12 @@ export async function listSpaces({userId,workspaceId},deps) {
 export function accessPolicy(w,userId,spaceId,action) {
  const m=membership(w,userId), manager=['owner','admin'].includes(m.role);
  const s=w.spaces?.[spaceId];
- if(!s || s.status!=='active' || (!manager&&!m.spaces?.[spaceId])) failWorkspace('not_found',404);
+ if(!s || (!manager&&!m.spaces?.[spaceId])) failWorkspace('not_found',404);
+ if(s.status==='archived') {
+  if(action!=='read') failWorkspace('space_archived',403);
+  return {workspace:summary(w),space:s,membership:m,person:`human:${userId}`,permissions:{read:true,write:false,approve:false,manage:manager},version:w.version};
+ }
+ if(s.status!=='active') failWorkspace('not_found',404);
  const g=m.spaces?.[spaceId], editor=m.role!=='viewer'&&(manager||g?.role==='editor');
  const allowed={read:true,write:editor,approve:m.role!=='viewer'&&g?.canApprove===true,'manage-members':manager,'manage-connections':manager,'create-space':m.role!=='viewer'&&m.role!=='contributor'};
  if(!allowed[action]) failWorkspace('forbidden',403);

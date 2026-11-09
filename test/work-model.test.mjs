@@ -152,7 +152,7 @@ test("tasks API: cant_do needs the intent header and a reason, and unblocks the 
   const { mockRes, mockReq } = await import("./oauth-helpers.mjs");
   const { issueCookie } = await import("../src/http/admin-auth.mjs");
   const { createHandler } = await import("../api/blockers.mjs");
-  const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez" };
+  const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_ADMIN_SECRET: "admin-secret-work-model-test" };
   const cookie = issueCookie(ENV).split(";")[0];
   const { redis, lm, store } = setup();
   await sc(lm, "logmem_assign", { job: "ship", title: "Ship" });

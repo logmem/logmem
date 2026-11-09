@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { issueCookie, issueIdentityCookie, adminIdentity, isAdmin } from "../src/http/admin-auth.mjs";
+import { issueCookie, issueIdentityCookie, adminIdentity, isAdmin, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
 import { createLoginHandler } from "../api/login.mjs";
 import { createHandler as adminUsersHandler } from "../api/admin-users.mjs";
-import { setRole, getRole, isSuspended, isSuspendedSafe, activeRole } from "../src/http/admin-roles.mjs";
+import { setRole, getRole, isSuspended, isSuspendedSafe, activeRole, requireAdminAuth, BREAK_GLASS, SuspensionStoreError } from "../src/http/admin-roles.mjs";
+import { createHandler as invitesHandler } from "../api/invites.mjs";
+import { createHandler as agentKeysHandler } from "../api/agent-keys.mjs";
 import { mockReq, mockRes } from "./oauth-helpers.mjs";
 
 const ENV = { LOGMEM_ADMIN_PASSWORD: "pw", LOGMEM_CUSTOMER_DASHBOARD: "1" };
@@ -168,11 +170,167 @@ test("denial: identity cookie with no role record is refused, break-glass keeps 
   assert.equal(get.statusCode, 200, "break-glass operator keeps the full surface");
 });
 
-test("suspension guard: store errors never break the front door, admin stays strict", async () => {
+test("suspension guard: store errors fail closed with 503 backend unavailable (Option A)", async () => {
   const throwing = async () => { throw new Error("NOPERM No permissions to access a key"); };
-  assert.equal(await isSuspendedSafe("user_front000001", throwing), false, "front door treats a broken store as not suspended and survives");
-  await assert.rejects(() => isSuspended("user_strict00001", throwing), /NOPERM/, "strict read still surfaces the error");
+  await assert.rejects(() => isSuspendedSafe("user_front000001", throwing), (err) => err.status === 503 && err.name === "SuspensionStoreError", "front door fails closed with 503");
+  await assert.rejects(() => isSuspended("user_strict00001", throwing), /NOPERM/, "strict read surfaces error");
   await assert.rejects(() => activeRole("user_admin000001", throwing), /NOPERM/, "admin surface fails closed when the store is unavailable");
   const ok = await isSuspendedSafe("user_ok00000001", async () => "0");
   assert.equal(ok, false, "healthy store reads normally through the safe wrapper");
+});
+
+test("cookie secret: production requires LOGMEM_ADMIN_SECRET (Option A)", async () => {
+  const prodWithoutSecret = { VERCEL_ENV: "production", LOGMEM_ADMIN_PASSWORD: "pw" };
+  assert.throws(
+    () => adminIdentity(mockReq({ headers: { cookie: "lm_admin=123.456" } }), prodWithoutSecret),
+    AdminSecretMissingError,
+    "adminIdentity throws AdminSecretMissingError instead of hiding it as 401"
+  );
+  const prodWithSecret = { VERCEL_ENV: "production", LOGMEM_ADMIN_PASSWORD: "pw", LOGMEM_ADMIN_SECRET: "prod-secret-hex" };
+  const cookie = issueIdentityCookie(prodWithSecret, ADMIN_USER);
+  const req = mockReq({ headers: { cookie: cookieOf(cookie) } });
+  assert.equal(adminIdentity(req, prodWithSecret), ADMIN_USER, "verifies with LOGMEM_ADMIN_SECRET in production");
+
+  // Route mapping: password login with missing secret maps to 503, not 500
+  const login = createLoginHandler({ env: prodWithoutSecret });
+  const pwRes = mockRes();
+  await login(mockReq({ method: "POST", body: { password: "pw" } }), pwRes);
+  assert.equal(pwRes.statusCode, 503, "password login returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(pwRes.body).error, "admin_secret_missing");
+
+  // Route mapping: admin-users returns 503 when admin secret missing in prod
+  const adminUsers = adminUsersHandler({ env: prodWithoutSecret });
+  const auRes = mockRes();
+  await adminUsers(mockReq({ method: "GET", headers: { cookie: "lm_admin=123.456" } }), auRes);
+  assert.equal(auRes.statusCode, 503, "admin-users returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(auRes.body).error, "admin_secret_missing");
+
+  // Route mapping: invites returns 503 when admin secret missing in prod
+  const invites = invitesHandler({ env: prodWithoutSecret });
+  const invRes = mockRes();
+  await invites(mockReq({ method: "GET", headers: { cookie: "lm_admin=123.456" } }), invRes);
+  assert.equal(invRes.statusCode, 503, "invites returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(invRes.body).error, "admin_secret_missing");
+
+  // Route mapping: agent-keys returns 503 when admin secret missing in prod
+  const agentKeys = agentKeysHandler({ env: prodWithoutSecret });
+  const akRes = mockRes();
+  await agentKeys(mockReq({ method: "GET", headers: { cookie: "lm_admin=123.456" } }), akRes);
+  assert.equal(akRes.statusCode, 503, "agent-keys returns 503 when admin secret missing in prod");
+  assert.equal(JSON.parse(akRes.body).error, "admin_secret_missing");
+});
+
+test("break-glass: 1-hour expiration enforced", () => {
+  const c = issueCookie(ENV);
+  assert.ok(c.includes("Max-Age=3600"), "break glass cookie has 1 hour Max-Age");
+  const req = mockReq({ headers: { cookie: cookieOf(c) } });
+  assert.equal(adminIdentity(req, ENV), "break-glass");
+
+  // Old legacy cookie with 12 hour remaining lifetime is expired
+  const now = Date.now();
+  const twelveHoursAhead = Math.floor(now / 1000) + 12 * 3600;
+  const oldVal = `${twelveHoursAhead}.dummy`;
+  const oldReq = mockReq({ headers: { cookie: `lm_admin=${oldVal}` } });
+  assert.equal(adminIdentity(oldReq, ENV), null, "over-long break-glass token is expired");
+});
+
+test("requireAdminAuth: live role check and break-glass semantics", async () => {
+  const redis = createMemoryRedis();
+  // 1. No actorId
+  const noActor = await requireAdminAuth(null, redis);
+  assert.equal(noActor.ok, false);
+  assert.equal(noActor.status, 401);
+
+  // 2. Break-glass requires no redis
+  const bg = await requireAdminAuth(BREAK_GLASS, null);
+  assert.equal(bg.ok, true);
+  assert.equal(bg.breakglass, true);
+  assert.equal(bg.role, "operator");
+
+  // 3. User with no redis
+  const noRedis = await requireAdminAuth("user_foo1", null);
+  assert.equal(noRedis.ok, false);
+  assert.equal(noRedis.status, 503);
+
+  // 4. User with no role assigned
+  const noRole = await requireAdminAuth("user_norole", redis);
+  assert.equal(noRole.ok, false);
+  assert.equal(noRole.status, 403);
+  assert.equal(noRole.error, "no_role");
+
+  // 5. User with viewer role trying admin action
+  await setRole({ actorId: BREAK_GLASS, userId: "user_viewer1", role: "viewer", redis });
+  const viewerCheck = await requireAdminAuth("user_viewer1", redis, { allowedRoles: ["admin"] });
+  assert.equal(viewerCheck.ok, false);
+  assert.equal(viewerCheck.status, 403);
+  assert.equal(viewerCheck.error, "role_not_authorized");
+
+  // 6. User with admin role
+  await setRole({ actorId: BREAK_GLASS, userId: "user_admin1", role: "admin", redis });
+  const adminCheck = await requireAdminAuth("user_admin1", redis, { allowedRoles: ["admin"] });
+  assert.equal(adminCheck.ok, true);
+  assert.equal(adminCheck.role, "admin");
+
+  // 7. Suspended admin
+  await redis("SET", "lm:admin:suspended:user_admin1", JSON.stringify({ at: Date.now(), by: "operator" }));
+  const suspCheck = await requireAdminAuth("user_admin1", redis, { allowedRoles: ["admin"] });
+  assert.equal(suspCheck.ok, false);
+  assert.equal(suspCheck.status, 403);
+  assert.equal(suspCheck.error, "account_suspended");
+
+  // 8. Store outage throws 503
+  const brokenRedis = async () => { throw new Error("connection reset"); };
+  const outageCheck = await requireAdminAuth("user_admin1", brokenRedis, { allowedRoles: ["admin"] });
+  assert.equal(outageCheck.ok, false);
+  assert.equal(outageCheck.status, 503);
+  assert.equal(outageCheck.error, "suspension_store_unavailable");
+});
+
+test("admin routes live role checking: invites and agent-keys", async () => {
+  const customerDb = createMemoryRedis();
+  const deployDb = createMemoryRedis();
+  const env = { ...ENV, LOGMEM_CUSTOMER_REDIS_URI: "redis://dummy" };
+
+  const invites = invitesHandler({ env, redis: () => customerDb });
+  const agentKeys = agentKeysHandler({ env, redis: () => deployDb, rolesRedis: () => customerDb });
+
+  // Set roles
+  await setRole({ actorId: BREAK_GLASS, userId: "user_adm", role: "admin", redis: customerDb });
+  await setRole({ actorId: BREAK_GLASS, userId: "user_view", role: "viewer", redis: customerDb });
+
+  const admCookie = cookieOf(issueIdentityCookie(env, "user_adm"));
+  const viewCookie = cookieOf(issueIdentityCookie(env, "user_view"));
+
+  // Viewer cannot call invites GET
+  const viewRes = mockRes();
+  await invites(mockReq({ method: "GET", headers: { cookie: viewCookie } }), viewRes);
+  assert.equal(viewRes.statusCode, 403);
+  assert.equal(JSON.parse(viewRes.body).error, "role_not_authorized");
+
+  // Admin can call invites GET
+  const admRes = mockRes();
+  await invites(mockReq({ method: "GET", headers: { cookie: admCookie } }), admRes);
+  assert.equal(admRes.statusCode, 200);
+
+  // Viewer cannot call agent-keys GET
+  const viewKeysRes = mockRes();
+  await agentKeys(mockReq({ method: "GET", headers: { cookie: viewCookie } }), viewKeysRes);
+  assert.equal(viewKeysRes.statusCode, 403);
+  assert.equal(JSON.parse(viewKeysRes.body).error, "role_not_authorized");
+
+  // Admin can call agent-keys GET
+  const admKeysRes = mockRes();
+  await agentKeys(mockReq({ method: "GET", headers: { cookie: admCookie } }), admKeysRes);
+  assert.equal(admKeysRes.statusCode, 200);
+
+  // Break-glass works even if customer redis is broken for agent-keys
+  const bgCookie = cookieOf(issueCookie(env));
+  const brokenAgentKeys = agentKeysHandler({
+    env,
+    redis: () => deployDb,
+    rolesRedis: () => { throw new Error("customer redis offline"); }
+  });
+  const bgRes = mockRes();
+  await brokenAgentKeys(mockReq({ method: "GET", headers: { cookie: bgCookie } }), bgRes);
+  assert.equal(bgRes.statusCode, 200, "break-glass succeeds when customer redis offline");
 });
