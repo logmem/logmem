@@ -50,6 +50,29 @@ export function primaryEmail(user) {
 }
 
 /**
+ * Resolve an id that may be a native Clerk id or a migration external_id
+ * (dev-instance users carry their old id in the session claim). getUser first,
+ * then an external_id filter, and only accept a row whose external_id really
+ * matches. A transient provider error reads as null, so a broken provider
+ * signs the person out instead of erroring the route.
+ */
+export async function userById(clerk, id) {
+  if (!id) return null;
+  try {
+    return await clerk.users.getUser(id);
+  } catch {
+    // fall through to the external_id lookup
+  }
+  try {
+    const list = await clerk.users.getUserList({ externalId: [id] });
+    const rows = Array.isArray(list?.data) ? list.data : Array.isArray(list) ? list : [];
+    return rows.find((u) => (u.external_id || u.externalId) === id) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Origins a Clerk token may legitimately name as its authorized party (azp).
  * Dev-instance tokens often carry the instance domain from the publishable key
  * rather than the application origin, so the gate accepts both forms.
@@ -105,7 +128,9 @@ export async function clerkSession(req, { env = process.env, url, client } = {})
 
   if (state.status === AuthStatus.SignedIn) {
     const { userId, sessionId } = state.toAuth();
-    const email = userId ? primaryEmail(await clerk.users.getUser(userId)) : null;
+    // userId may be a migration external_id carried by the session claim.
+    const user = await userById(clerk, userId);
+    const email = user ? primaryEmail(user) : null;
     if (userId && email) return { status: "signed-in", userId, email, sessionId };
   }
 
@@ -129,9 +154,15 @@ export async function customerSession(req, options = {}) {
   const session = await clerkSession(req, options);
   if (session.status !== "signed-in") return session;
   const env = options.env || process.env;
-  const clerk = createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
+  const clerk = options.client || createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
   const current = session.sessionId ? await clerk.sessions.getSession(session.sessionId) : null;
-  if (!current || current.status !== "active" || current.userId !== session.userId) return { status: "signed-out" };
+  if (!current || current.status !== "active") return { status: "signed-out" };
+  if (current.userId !== session.userId) {
+    // The token claim may carry external_id (dev-instance migration). Accept
+    // the session only when Clerk's own user record maps it back exactly.
+    const mapped = await userById(clerk, current.userId);
+    if (!mapped || (mapped.external_id || mapped.externalId) !== session.userId) return { status: "signed-out" };
+  }
   return session;
 }
 export async function revokeCustomerSession(sessionId, env = process.env) {
