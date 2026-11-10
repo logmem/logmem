@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { fromDescriptor, descriptorFromEnv } from "../src/lib/backend.mjs";
 import { logRequest } from "../src/http/log.mjs";
+import { applyRateLimit, ROUTE_CLASSES } from "../src/http/rate-limit.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 10 };
 
@@ -72,6 +73,8 @@ export function createHandler(deps = {}) {
   return async function handler(req, res) {
     const t0 = performance.now();
     res.setHeader("Cache-Control", "no-store");
+    const rateOk = await applyRateLimit(req, res, { routeClass: ROUTE_CLASSES.READ });
+    if (!rateOk) return;
     if (req.method && req.method !== "GET" && req.method !== "HEAD") {
       res.setHeader("Allow", "GET, HEAD");
       res.status(405).json({ ok: false, error: "method not allowed" });
