@@ -26,8 +26,8 @@
 
 /* step cards */
 .ob-card{padding:28px;display:flex;flex-direction:column;gap:20px}
-.ob-card h1{font-size:22px;line-height:28px;margin:0 0 6px}
-.ob-card h1:focus{outline:none}
+.ob-card .ob-step-title{font-size:22px;line-height:28px;margin:0 0 6px}
+.ob-card .ob-step-title:focus{outline:none}
 .ob-card h2{margin:0}
 .ob-lede{margin:0;color:var(--text-muted);max-width:68ch}
 .ob-note{margin:0;font-size:13px;line-height:19px;color:var(--text-subtle);max-width:72ch}
@@ -88,8 +88,8 @@
 .ob-events{padding:8px 20px}
 .ob-events .lm-event-time{white-space:nowrap;min-width:9ch}
 /* P1-5: headings take programmatic focus on step change; ring only for keyboard users */
-.ob-card h1[tabindex="-1"]:focus{outline:none}
-.ob-card h1[tabindex="-1"]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.ob-card .ob-step-title[tabindex="-1"]:focus{outline:none}
+.ob-card .ob-step-title[tabindex="-1"]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .ob-av1{background:var(--viz-1)}.ob-av2{background:var(--viz-2)}
 
 /* fork screen: hand-drawn chalkboard look. Colors are scoped here so light mode stays readable. */
@@ -194,8 +194,8 @@ body[data-ob-step]::before{content:"";position:fixed;inset:0;z-index:-1;pointer-
 .ob-card:not(.ob-fork)::after{content:"\2734";position:absolute;top:14px;right:22px;font-size:18px;line-height:1;color:var(--ob-amber);pointer-events:none}
 .ob-card:not(.ob-fork)[data-step="redis"]::after,.ob-card:not(.ob-fork)[data-step="handoff"]::after,.ob-card:not(.ob-fork)[data-step="waitlist"]::after{color:var(--ob-teal)}
 .ob-chip{display:block;width:fit-content;margin:0 0 10px;padding:3px 14px;font-size:13px;line-height:20px;transform:rotate(-2deg)}
-.ob-card h1{position:relative;display:block;width:fit-content;max-width:100%;margin-bottom:12px}
-.ob-card:not(.ob-fork) h1::after{content:"";display:block;height:6px;margin-top:4px;width:min(12ch,60%);background:var(--ob-amber);opacity:.85;border-radius:60% 40% 55% 45% / 100% 100% 0 0;transform:rotate(-1.2deg)}
+.ob-card .ob-step-title{position:relative;display:block;width:fit-content;max-width:100%;margin-bottom:12px}
+.ob-card:not(.ob-fork) .ob-step-title::after{content:"";display:block;height:6px;margin-top:4px;width:min(12ch,60%);background:var(--ob-amber);opacity:.85;border-radius:60% 40% 55% 45% / 100% 100% 0 0;transform:rotate(-1.2deg)}
 .ob-card .lm-btn--primary{position:relative;border-radius:10px 7px 11px 8px / 8px 11px 7px 10px}
 .ob-card .lm-btn--primary::after{content:"";position:absolute;inset:-4px;border:1.5px solid var(--ob-teal);border-radius:12px 9px 13px 9px / 9px 13px 9px 12px;transform:rotate(.6deg);pointer-events:none}
 .ob-plan,.ob-toggle,.ob-agent,.ob-oss,.ob-extras{border-radius:12px 8px 13px 7px / 8px 12px 7px 11px}

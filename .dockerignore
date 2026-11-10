@@ -1,5 +1,9 @@
-# Build context hygiene for cloud/bridge/Dockerfile (and any future image).
-# Only what the Dockerfiles COPY should reach the daemon; secrets never do.
+# Build context hygiene for cloud/bridge/Dockerfile and selfhost/Dockerfile
+# (build from the repository root). Only what the Dockerfiles COPY should
+# reach the daemon; secrets never do.
+#
+# api/, public/ and scripts/ stay reachable: selfhost/Dockerfile COPYs them
+# (the serve entry mounts api/ + public/, and api routes import scripts/).
 **/node_modules
 node_modules
 .git
@@ -15,11 +19,8 @@ node_modules
 **/*-export*.json
 coverage
 reference
-public
 docs
 test
-scripts
-api
 .planning
 .claude
 .agents

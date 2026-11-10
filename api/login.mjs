@@ -8,10 +8,11 @@
 //                                     but only when that account holds an
 //                                     admin or support role (admin-roles.mjs).
 // The password path stays exactly as it was: an 800ms delay on failure.
-import { checkPassword, issueCookie, issueIdentityCookie, isAdmin, adminEnabled } from "../src/http/admin-auth.mjs";
+import { checkPassword, issueCookie, issueIdentityCookie, isAdmin, adminEnabled, AdminSecretMissingError } from "../src/http/admin-auth.mjs";
 import { customerSession } from "../src/http/clerk.mjs";
 import { getRole, ROLES } from "../src/http/admin-roles.mjs";
 import { customerRedis } from "../src/http/jail.mjs";
+import { applyRateLimit, ROUTE_CLASSES } from "../src/http/rate-limit.mjs";
 
 export const config = { runtime: "nodejs" };
 
@@ -21,8 +22,19 @@ const SESSION_ROLES = new Set(["admin", "support", "billing"]);
 export function createLoginHandler({ session = customerSession, roleLookup = getRole, redis = null, env = process.env } = {}) {
   return async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
-    if (req.method === "GET") return res.status(200).json({ enabled: adminEnabled(), signedIn: isAdmin(req, env), production: env.VERCEL_ENV === "production" });
+    if (req.method === "GET") {
+      try {
+        return res.status(200).json({ enabled: adminEnabled(), signedIn: isAdmin(req, env), production: env.VERCEL_ENV === "production" });
+      } catch (err) {
+        if (err instanceof AdminSecretMissingError || err?.status === 503 || err?.code === "admin_secret_missing") {
+          return res.status(503).json({ error: "admin_secret_missing", hint: err.message });
+        }
+        throw err;
+      }
+    }
     if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+    const rateOk = await applyRateLimit(req, res, { redis: redis || customerRedis(env), routeClass: ROUTE_CLASSES.AUTH });
+    if (!rateOk) return;
     if (!adminEnabled(env)) return res.status(503).json({ error: "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
     const password = (req.body && req.body.password) || "";
 
@@ -41,6 +53,9 @@ export function createLoginHandler({ session = customerSession, roleLookup = get
         res.setHeader("Set-Cookie", issueIdentityCookie(env, s.userId));
         return res.status(200).json({ ok: true, identity: s.userId, role: role.role });
       } catch (e) {
+        if (e instanceof AdminSecretMissingError || e?.status === 503 || e?.code === "admin_secret_missing") {
+          return res.status(503).json({ error: "admin_secret_missing", hint: e.message });
+        }
         return res.status(503).json({ error: "identity backend unavailable" });
       }
     }
@@ -49,8 +64,15 @@ export function createLoginHandler({ session = customerSession, roleLookup = get
       await new Promise((ok) => setTimeout(ok, 800));
       return res.status(401).json({ error: "That password isn't right." });
     }
-    res.setHeader("Set-Cookie", issueCookie(env));
-    return res.status(200).json({ ok: true, identity: "break-glass" });
+    try {
+      res.setHeader("Set-Cookie", issueCookie(env));
+      return res.status(200).json({ ok: true, identity: "break-glass" });
+    } catch (e) {
+      if (e instanceof AdminSecretMissingError || e?.status === 503 || e?.code === "admin_secret_missing") {
+        return res.status(503).json({ error: "admin_secret_missing", hint: e.message });
+      }
+      throw e;
+    }
   };
 }
 

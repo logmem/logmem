@@ -92,7 +92,7 @@ test("walkthrough: the writer edits it until the first tick, and only the writer
   assert.equal((await getBlocker(store, "wt-2")).summary, "v2");
 });
 
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_ADMIN_ID: "mikey" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production", LOGMEM_VIEW_SPACES: "madez", LOGMEM_ADMIN_ID: "mikey", LOGMEM_ADMIN_SECRET: "admin-secret-walkthrough-test" };
 const cookie = issueCookie(ENV).split(";")[0];
 const call = async (h, { method = "GET", url = "/api/blockers?space=madez", body, headers = {} } = {}) => {
   const req = mockReq({ method, url, body, headers: { host: "logmem.si", ...headers } });

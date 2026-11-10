@@ -8,6 +8,7 @@
 // The stdio entry (src/stdio/index.mjs) and the HTTP route (api/mcp.mjs)
 // are thin shells around this.
 
+import { getSecret } from "./lib/secrets.mjs";
 import { applyLimits } from "./core/apply-limits.mjs";
 import { createUsageMeter, applyUsageMeter, meterOnFromEnv } from "./core/usage-meter.mjs";
 import { createStore, normTs } from "./core/store.mjs";
@@ -195,7 +196,7 @@ export function createLogmem({
     now: now || Date.now,
     recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage, () => ctx.pure === true),
     workRules: workRules === "warn" ? "warn" : "strict",
-    get decideSecret() { return decideSecret !== undefined ? decideSecret : process.env.LOGMEM_DECIDE_SECRET; },
+    get decideSecret() { return decideSecret !== undefined ? decideSecret : getSecret("LOGMEM_DECIDE_SECRET"); },
     // Trusted server that verifies web decisions for a process with no signing key (opt-in: LOGMEM_VERIFY_URL).
     verifyUrl: verifyUrl !== undefined ? verifyUrl : process.env.LOGMEM_VERIFY_URL || null,
     fetchImpl,

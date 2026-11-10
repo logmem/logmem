@@ -1,0 +1,63 @@
+# The self-host bundle: server + Redis, loopback-published, one command.
+# Run from this directory (install.sh does):  docker compose up -d --build
+#
+# Everything secret lives in ./.env (install.sh generates it, chmod 600).
+# Compose reads it for interpolation; the server gets it via env_file.
+
+services:
+  redis:
+    # Official image. Pin by digest once you have verified a digest on your
+    # machine: docker manifest inspect redis:7-alpine
+    image: redis:7-alpine
+    container_name: logmem-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - "${REDIS_PASSWORD:?run ./selfhost/install.sh first}"
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "1"
+    environment:
+      # redis-cli reads this, so the healthcheck authenticates without argv.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    # Owner access for redis-cli / backups. Loopback only: never on a LAN.
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6399}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: selfhost/Dockerfile
+    container_name: logmem-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # The container listens on all interfaces; compose publishes loopback only.
+      SERVER_HOST: 0.0.0.0
+      # One Redis serves data and OAuth records. Plaintext on the compose
+      # network is why .env sets LOGMEM_OAUTH_ALLOW_INSECURE=1.
+      LOGMEM_REDIS_URI: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      LOGMEM_DEPLOY_REDIS_URI: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-3899}:${SERVER_PORT:-3899}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  redis-data:

@@ -74,7 +74,7 @@ test("accounts: bad input is refused", async () => {
   assert.match(newTenantId(), /^u[a-z0-9]{10}$/);
 });
 
-const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", VERCEL_ENV: "production" };
+const ENV = { LOGMEM_ADMIN_PASSWORD: "correct horse", LOGMEM_ADMIN_SECRET: "admin-secret-test-horse", VERCEL_ENV: "production" };
 const cookie = issueCookie(ENV).split(";")[0];
 const call = async (h, { method = "GET", body, headers = {} } = {}) => {
   const req = mockReq({ method, url: "/api/invites", body, headers: { host: "logmem.si", ...headers } });

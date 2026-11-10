@@ -22,6 +22,7 @@
     "src/lib/redis-native.mjs",
     "src/lib/redis-rest.mjs",
     "src/lib/redact.mjs",
+    "src/lib/secrets.mjs",
     "src/http/log.mjs",
     "src/http/pin.mjs",
     "src/http/net-guard.mjs"
@@ -54,6 +55,7 @@
     "test:e2e": "playwright test",
     "smoke": "node scripts/smoke.mjs",
     "release:check": "node scripts/release-guard.mjs",
+    "scan:secrets": "node scripts/scan-git-secrets.mjs",
     "release:prod": "node scripts/release-guard.mjs --full && vercel --prod"
   },
   "dependencies": {
