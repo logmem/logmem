@@ -321,6 +321,7 @@ test("site: privacy and terms carry the owner's Nov 9 answers", async () => {
   assert.match(privacy, /set analytics cookies only after you choose Accept analytics/);
   assert.match(privacy, /how many agents you plan to run/);
   assert.match(privacy, /We keep waitlist entries until you open an account or we delete them\./);
+  assert.match(privacy, /Resend \(waitlist and account emails; receives your email address and the message content\)/);
 });
 
 test("site: attrib.js keeps the first visit's source in sessionStorage, host only, and never breaks without storage", async () => {
