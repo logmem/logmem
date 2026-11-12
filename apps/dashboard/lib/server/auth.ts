@@ -1,7 +1,7 @@
 // Server-side authorization for the dashboard.
 // Identity is the Clerk session cookie, checked in-process by the same
-// customerSession the root /api/session route uses. Sign-in itself stays on
-// /api/session?signin=1 (it owns the Clerk handshake cookies).
+// customerSession the root /api/session route uses (it also asks Clerk whether
+// the session was revoked). Sign-in is the Clerk <SignIn /> page at /sign-in.
 // A signed-in person who is not a member of the space is sent to the
 // access-denied page. Membership failures are not missing pages.
 // A Clerk or storage failure is thrown so the error boundary can show it.
@@ -37,7 +37,7 @@ function nodeRequest() {
 export { safeReturnTo, spacePath, validSpaceId };
 
 export function signInHref(returnTo: string): string {
-  return `/api/session?signin=1&returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;
+  return `/sign-in?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;
 }
 
 function redirectForAccessError(error: unknown, returnTo: string): never {
