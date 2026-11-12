@@ -136,6 +136,22 @@ export function lmAskKey(space, trail) {
   validateKeySegments(space, trail);
   return `${PREFIX}:${space}:ask:${trail}`;
 }
+/**
+ * A per-person draft (Ask the record / approach C). Not in the live ask
+ * queue. Value is JSON. TTL set by the writer (default 30 days).
+ * Shape: lm:{space}:draft:{person}:{draftId}
+ */
+export function lmDraftKey(space, person, draftId) {
+  validateKeySegments(space, person, draftId);
+  return `${PREFIX}:${space}:draft:${person}:${draftId}`;
+}
+
+/** Index of draft ids for one person in a space. */
+export function lmDraftIndexKey(space, person) {
+  validateKeySegments(space, person);
+  return `${PREFIX}:${space}:draft:${person}:index`;
+}
+
 
 /** Protected prefixes never removed by logmem_remove, even with confirm. Ask and decision keys stay: removing one would allow a second answer or a swapped ask. Usage counters stay so use cannot be erased. */
-export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/, /^lm:[^:]+:ask:/, /^lm:[^:]+:usage:/];
+export const PROTECTED = [/^lm:[^:]+:registry:/, /^lm:oauth:/, /^lm:[^:]+:session:/, /^lm:[^:]+:decision:/, /^lm:[^:]+:ask:/, /^lm:[^:]+:draft:/, /^lm:[^:]+:usage:/];

@@ -4,6 +4,7 @@ import { withCustomerDashboard } from '../src/http/customer-dashboard.mjs';
 //   GET                         -> { keys: [{ id, space, agent, label, created_at, created_by, scope? }] }
 //   POST { space, agent, label, scope? } -> { id, key, space, agent, ... }   (the key is shown once)
 //                                  scope: "read" mints a read-only key (write tools 403 insufficient_scope)
+//                                  scope: "draft" mints read+draft (draft tools only for writes)
 //   POST { action: "revoke", id } -> { revoked: true|false }
 //   GET also returns web: [{ fid, app, agent, space, created_at, last_used }], the web
 //   clients an admin connected to a fleet space through the OAuth sign-in page.
