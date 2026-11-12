@@ -104,7 +104,7 @@ export async function registerAsk(store, {
     where: extra.where,
     ts: t,
   }), "NX");
-  if (reg == null) throw new RegisterAskError(`an ask with trail '${trail}' already exists`, "conflict");
+  if (reg == null) throw new RegisterAskError(`an ask with trail '${trail}' already exists; a trail carries one ask`, "conflict");
 
   const entry = {
     ts: t,
