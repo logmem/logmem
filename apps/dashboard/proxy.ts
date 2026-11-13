@@ -1,4 +1,4 @@
-// Bare Clerk middleware: it only reads the session and finishes the Clerk handshake.
+// Bare Clerk proxy (Next.js 16 renamed middleware to proxy): it only reads the session and finishes the Clerk handshake.
 // It protects nothing. Each page and layout authorizes itself (lib/server/auth.ts).
 import { clerkMiddleware } from '@clerk/nextjs/server';
 

@@ -23,8 +23,8 @@ import {
 
 type Session = { status: string; userId?: string; email?: string; sessionId?: string };
 
-function nodeRequest() {
-  const h = headers();
+async function nodeRequest() {
+  const h = await headers();
   return {
     headers: {
       cookie: h.get('cookie') ?? '',
@@ -49,7 +49,7 @@ function redirectForAccessError(error: unknown, returnTo: string): never {
 
 /** Verified session, or a redirect to sign-in. Expired auth is never shown as "denied". */
 export async function requireSession(returnTo: string) {
-  const req = nodeRequest();
+  const req = await nodeRequest();
   const origin = `${req.headers['x-forwarded-proto']}://${req.headers.host}`;
   let session: Session;
   try {
