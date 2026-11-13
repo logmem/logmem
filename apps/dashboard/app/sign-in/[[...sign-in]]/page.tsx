@@ -6,8 +6,12 @@ import { safeReturnTo } from '../../../lib/server/auth';
 
 export const dynamic = 'force-dynamic';
 
-export default function SignInPage({ searchParams }: { searchParams?: { returnTo?: string } }) {
-  const returnTo = safeReturnTo(searchParams?.returnTo || '/select-space');
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
+  const returnTo = safeReturnTo((await searchParams).returnTo || '/select-space');
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 bg-[var(--color-bg)] text-[var(--color-fg)] p-4">
       <div className="text-center">

@@ -68,7 +68,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
         </nav>
 
         <div className="p-3 border-t border-[#D3DAD8] dark:border-[#2B3835] flex items-center justify-end text-xs text-[#5C6966] font-['IBM_Plex_Mono']">
-          <UserButton afterSignOutUrl="/sign-in" />
+          <UserButton />
         </div>
       </aside>
 

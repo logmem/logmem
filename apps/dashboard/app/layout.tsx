@@ -17,7 +17,7 @@ const appearance = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider appearance={appearance}>
+    <ClerkProvider appearance={appearance} afterSignOutUrl="/sign-in">
       <html lang="en">
         <body>{children}</body>
       </html>

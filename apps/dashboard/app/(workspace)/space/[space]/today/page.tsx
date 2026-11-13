@@ -22,10 +22,11 @@ function Count({ label, value, note }: { label: string; value: number; note?: st
   );
 }
 
-export default async function TodayPage({ params }: { params: { space: string } }) {
+export default async function TodayPage({ params }: { params: Promise<{ space: string }> }) {
+  const { space } = await params;
   // Cached per request: getTodayData reuses this check.
-  await requireSpace(params.space, 'read');
-  const { view, unavailable, now } = await getTodayData(params.space);
+  await requireSpace(space, 'read');
+  const { view, unavailable, now } = await getTodayData(space);
 
   const heading = (
     <div className={`pb-4 border-b ${line}`}>
@@ -105,7 +106,7 @@ export default async function TodayPage({ params }: { params: { space: string } 
         {counts.waiting > blocked.length ? (
           <p className={`px-3 py-2 text-xs ${muted}`}>
             Showing {blocked.length} of {counts.waiting}.{' '}
-            <Link className="underline" href={`/space/${params.space}/work`}>Open Work</Link>
+            <Link className="underline" href={`/space/${space}/work`}>Open Work</Link>
           </p>
         ) : null}
       </details>
