@@ -12,7 +12,7 @@ import { readWorkspace } from '../src/http/workspaces.mjs';
 // auto Recap / persona switch) survive across stateless invocations.
 
 import { randomUUID, createHash } from "node:crypto";
-import { createLogmem, compatFromEnv, mirrorConfigFromEnv, toResult, toolError, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
+import { createLogmem, compatFromEnv, mirrorConfigFromEnv, verifyUrlFromEnv, toResult, toolError, SERVER_INFO, INSTRUCTIONS } from "../src/server.mjs";
 
 /** A failure building the server instance (backend, config) is never shown to the client verbatim. */
 const markUnexpected = (e) => {
@@ -114,6 +114,7 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     lockedAgent: auth.agent || null,
     mirror: mirrorConfigFromEnv(env),
     pureReads: true,
+    verifyUrl: verifyUrlFromEnv(env),
   });
 }
 
