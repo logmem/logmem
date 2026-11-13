@@ -171,7 +171,7 @@
   -e LOGMEM_AGENT=claude-code \
   -e LOGMEM_REST_URL=https://your-logmem-host \
   -e LOGMEM_REST_TOKEN=&lt;your-token&gt; \
-  -- npx -y github:logmem/logmem</pre>
+  -- npx -y @logmem/mcp</pre>
           </div>
 
           <div id="cfg-codex" class="persona-panel">
@@ -181,7 +181,7 @@
             </div>
             <pre class="code-block" id="code-cfg-codex">[mcp_servers.logmem]
 command = "npx"
-args = ["-y", "github:logmem/logmem"]
+args = ["-y", "@logmem/mcp"]
 env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex",
         LOGMEM_REST_URL = "https://your-logmem-host",
         LOGMEM_REST_TOKEN = "&lt;your-token&gt;" }</pre>
@@ -568,7 +568,7 @@ docker run -d --name logmem-redis -p 6379:6379 redis:7-alpine
 # Start LogMem pointing at your instance:
 LOGMEM_SPACE=my-team \
 LOGMEM_REDIS_URI=redis://localhost:6379 \
-npx -y github:logmem/logmem</pre>
+npx -y @logmem/mcp</pre>
       </div>
     </section>
 
