@@ -421,6 +421,107 @@
       "acmi_equivalent": null
     },
     {
+      "name": "logmem_draft_ask",
+      "title": "Draft ask",
+      "description": "Hold an ask as a draft for a person. Does not write to the live queue or Brief pending_asks. The person sends it with /api/assistant/send. Requires logmem:draft scope.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Plain question for the person to send"
+          },
+          "action": {
+            "type": "string",
+            "description": "Exact action text"
+          },
+          "for": {
+            "type": "string",
+            "description": "Person who owns the draft, human:<id>"
+          },
+          "where": {
+            "type": "string",
+            "description": "job:<id> the ask will target when sent"
+          },
+          "to": {
+            "type": "string",
+            "description": "human:<id> who must answer when sent"
+          },
+          "origin": {
+            "type": "string",
+            "description": "Trail this draft follows from"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "action",
+          "for"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Draft ask",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "draftHint": true
+      }
+    },
+    {
+      "name": "logmem_draft_note",
+      "title": "Draft note",
+      "description": "Hold a channel note as a draft for a person. Does not write the live log. The person sends it with /api/assistant/send. Requires logmem:draft scope.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "description": "Note text"
+          },
+          "for": {
+            "type": "string",
+            "description": "Person who owns the draft, human:<id>"
+          },
+          "channel": {
+            "type": "string",
+            "description": "channel id without prefix, optional"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "summary",
+          "for"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Draft note",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "draftHint": true
+      }
+    },
+    {
       "name": "logmem_status",
       "title": "Status",
       "description": "Update what you are doing right now (your Now). Merges the fields you pass; other fields stay. Only your own agent: other agents update theirs.",

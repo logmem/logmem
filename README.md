@@ -135,7 +135,7 @@ The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP 
 
 Agents talk to LogMem through a small set of tools. Reads never write; writes are always attributed entries in the Log.
 
-The 24 `logmem_*` tools form the current MCP surface.
+The 26 `logmem_*` tools form the current MCP surface.
 
 | Area | Tools |
 |---|---|
@@ -143,6 +143,7 @@ The 24 `logmem_*` tools form the current MCP surface.
 | Writing work | `logmem_note`, `logmem_assign`, `logmem_update`, `logmem_stage`, `logmem_status`, `logmem_bio`, `logmem_remove` |
 | Passing work | `logmem_handoff`, `logmem_accept` |
 | Decisions | `logmem_ask` (answers land in the Brief: `pending_asks`, `answered_asks`) |
+| Drafts | `logmem_draft_ask`, `logmem_draft_note` (hold for a person; Send promotes; needs `logmem:draft`) |
 | Reading | `logmem_view`, `logmem_open`, `logmem_feed`, `logmem_recall`, `logmem_roster`, `logmem_jobs`, `logmem_spaces`, `logmem_connection` |
 | Plans | `logmem_plan`, `logmem_follow` |
 
