@@ -1,5 +1,6 @@
 // apps/dashboard/app/sign-in/[[...sign-in]]/page.tsx
 // Sign-in view for the customer dashboard matching LogMem design tokens.
+import { safeReturnTo } from '../../../lib/server/routes.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,7 @@ export default function SignInPage({
 }: {
   searchParams?: { returnTo?: string };
 }) {
-  const returnTo = searchParams?.returnTo || '/app';
+  const returnTo = safeReturnTo(searchParams?.returnTo || '/select-space');
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-fg)] p-4">
