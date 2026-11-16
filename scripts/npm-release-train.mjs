@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getSecret } from "../src/lib/secrets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packages = [
@@ -210,7 +211,7 @@ async function selectForPublish(base, head) {
 
 async function checkEnvironment() {
   const repository = process.env.GITHUB_REPOSITORY;
-  const token = process.env.GITHUB_TOKEN;
+  const token = getSecret("LOGMEM_GITHUB_TOKEN");
   if (!repository || !token) fail("GitHub repository and token are required for the environment check.");
   const response = await fetch(`https://api.github.com/repos/${repository}/environments/npm-publish`, {
     headers: {

@@ -27,7 +27,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22.14.0"
+          node-version: "22"
           package-manager-cache: false
 
       - name: Install dependencies
@@ -51,7 +51,7 @@ jobs:
       - name: Require a protected npm environment
         if: steps.select.outputs.packages != '[]'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOGMEM_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/npm-release-train.mjs check-environment
 
   publish:
@@ -74,7 +74,7 @@ jobs:
       - name: Set up Node.js for npm trusted publishing
         uses: actions/setup-node@v6
         with:
-          node-version: "22.14.0"
+          node-version: "22"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
@@ -83,7 +83,7 @@ jobs:
 
       - name: Recheck environment protection
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOGMEM_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/npm-release-train.mjs check-environment
 
       - name: Publish MCP package
