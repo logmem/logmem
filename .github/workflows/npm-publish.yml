@@ -1,0 +1,96 @@
+name: Publish merged npm release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  validate-release:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+    steps:
+      - name: Check out the merged commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run repository checks
+        run: npm run ci
+
+      - name: Check package contents
+        run: |
+          npm pack --dry-run --json > "$RUNNER_TEMP/mcp-pack.json"
+          (cd packages/logmem && npm pack --dry-run --json > "$RUNNER_TEMP/cli-pack.json")
+
+      - name: Select packages with a new release version
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: node scripts/npm-release-train.mjs select "$BASE_SHA" "$MERGE_SHA"
+
+      - name: Require a protected npm environment
+        if: steps.select.outputs.packages != '[]'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/npm-release-train.mjs check-environment
+
+  publish:
+    needs: validate-release
+    if: needs.validate-release.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/
+    permissions:
+      contents: read
+      deployments: read
+      id-token: write
+    steps:
+      - name: Check out the merged release commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set up Node.js for npm trusted publishing
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11.5.1
+
+      - name: Recheck environment protection
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/npm-release-train.mjs check-environment
+
+      - name: Publish MCP package
+        if: contains(fromJSON(needs.validate-release.outputs.packages), 'mcp')
+        run: npm publish --access public
+
+      - name: Publish CLI package
+        if: contains(fromJSON(needs.validate-release.outputs.packages), 'cli')
+        working-directory: packages/logmem
+        run: npm publish --access public
