@@ -49,6 +49,17 @@ export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
 
+const VERCEL_HOST_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+vercel\.app$/i;
+
+/** Use this deployment's verifier on Vercel. Other hosts must opt in explicitly. */
+export function verifyUrlFromEnv(env = process.env) {
+  const configured = String(env?.LOGMEM_VERIFY_URL || "").trim();
+  if (configured) return configured;
+  const host = String(env?.VERCEL_URL || "").trim();
+  if (!VERCEL_HOST_RE.test(host)) return null;
+  return `https://${host}/api/verify-decisions`;
+}
+
 /** Recall tools. Each call counts as one recall, never also as a read. */
 const RECALL_TOOLS = new Set(["logmem_recall", "acmi_search_semantic"]);
 
@@ -197,8 +208,9 @@ export function createLogmem({
     recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage, () => ctx.pure === true),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : getSecret("LOGMEM_DECIDE_SECRET"); },
-    // Trusted server that verifies web decisions for a process with no signing key (opt-in: LOGMEM_VERIFY_URL).
-    verifyUrl: verifyUrl !== undefined ? verifyUrl : process.env.LOGMEM_VERIFY_URL || null,
+    // Trusted server verifies decisions for agents without the signing key.
+    // Vercel uses this deployment's verifier by default; other hosts need LOGMEM_VERIFY_URL.
+    verifyUrl: verifyUrl !== undefined ? verifyUrl : verifyUrlFromEnv(),
     fetchImpl,
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];

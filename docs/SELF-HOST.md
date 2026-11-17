@@ -23,7 +23,7 @@ Each tool gets a name that starts with `logmem_`. The most useful ones are:
 ## Step 1. Get the code and install
 
 ```bash
-git clone https://github.com/madezmedia/logmem.git
+git clone https://github.com/logmem/logmem.git
 cd logmem
 npm install
 ```
@@ -164,7 +164,7 @@ Common causes:
 | `LOGMEM_ACMI_COMPAT` | Set to `1` to add the `acmi_*` tools and read legacy `acmi:*` history |
 | `LOGMEM_MIRROR_ACMI` | Set to `1` to copy every write back to `acmi:*` for a gradual move |
 | `LOGMEM_METER` | Set to `off` to stop counting use. By default LogMem counts adds, reads, recalls and active agents a month under `lm:{space}:usage:*`. It never limits anything |
-| `LOGMEM_VERIFY_URL` | For an agent with no `LOGMEM_DECIDE_SECRET`: the server that verifies human decisions, e.g. `https://logmem.si/api/verify-decisions`. Off by default, so no decision leaves your machine unless you set it |
+| `LOGMEM_VERIFY_URL` | Optional verifier for an agent without `LOGMEM_DECIDE_SECRET`. Vercel uses this deployment's `/api/verify-decisions` when `VERCEL_URL` is a `*.vercel.app` host. Other hosts stay off unless you set this URL, e.g. `https://logmem.si/api/verify-decisions`. |
 | `LOGMEM_OAUTH_ALLOW_INSECURE` | Set to `1` to allow a plain `redis://` customer URI outside production |
 
 `.env.example` in the repo lists every variable.
