@@ -3,22 +3,12 @@
 // mail path never fails a sign-up. Fixed log text only through the caller:
 // nothing here logs the recipient, the key or the provider body.
 import { getSecret } from "../lib/secrets.mjs";
+import { waitlistConfirmation } from "../email/templates.mjs";
 
 export const RESEND_URL = "https://api.resend.com/emails";
 export const DEFAULT_FROM = "LogMem <welcome@logmem.si>";
 export const CONFIRM_SUBJECT = "You are on the LogMem waitlist";
 const TIMEOUT_MS = 4000;
-
-export function confirmText(email) {
-  return [
-    `We added ${email} to the LogMem waitlist.`,
-    "We will email this address when access opens.",
-    "",
-    "LogMem is shared memory and signed decisions for agent teams.",
-    "https://logmem.si",
-    "",
-  ].join("\n");
-}
 
 /**
  * Send the waitlist confirmation. Never throws, never returns the provider
@@ -30,7 +20,8 @@ export async function sendWaitlistConfirmation(email, { env = process.env, fetch
   const key = getSecret("RESEND_API_KEY", env);
   if (!key) return { sent: false, reason: "not_configured" };
   const from = getSecret("RESEND_FROM", env) || DEFAULT_FROM;
-  const text = confirmText(email);
+  // The brand template in src/email/templates.mjs owns the subject and the copy.
+  const { subject, text, html } = waitlistConfirmation({ email });
   try {
     const res = await fetchImpl(RESEND_URL, {
       method: "POST",
@@ -38,9 +29,9 @@ export async function sendWaitlistConfirmation(email, { env = process.env, fetch
       body: JSON.stringify({
         from,
         to: [email],
-        subject: CONFIRM_SUBJECT,
+        subject,
         text,
-        html: `<p>${confirmText(email).replace(/\n/g, "<br>")}</p>`,
+        html,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
