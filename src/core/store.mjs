@@ -60,6 +60,31 @@ export function normTs(n) {
   return Math.floor(x);
 }
 
+// A stamp more than a year ahead of the server clock is a broken clock or a unit slip (one
+// extra digit on a millisecond stamp lands in the year 2535). Writes refuse it. Reads stop
+// trusting it, because it would sort above every real entry on a newest-first read.
+// The bound is a year, not minutes, because cron tests and simulations run days ahead on an
+// injected clock while their store reads the real one.
+export const FUTURE_WRITE_MS = 366 * 24 * 3600 * 1000;
+export const FUTURE_READ_MS = 366 * 24 * 3600 * 1000;
+
+/** A typed error for a write whose ts is too far in the future. */
+export class FutureTimestampError extends Error {
+  constructor(ts, nowMs) {
+    super(`ts ${ts} is ${Math.round((ts - nowMs) / 86400000)} days in the future. Leave ts out to use the server clock, or send a real epoch time in milliseconds.`);
+    this.code = "future_ts";
+    this.ts = ts;
+  }
+}
+
+/**
+ * Read-side guard. An entry stamped more than FUTURE_READ_MS ahead of now sorts as the
+ * oldest entry (ts 0) and keeps the claimed stamp in ts_claimed, so nothing is hidden or lost.
+ */
+export function trustTs(ts, nowMs) {
+  return ts > nowMs + FUTURE_READ_MS ? 0 : ts;
+}
+
 export function tryParse(s) {
   if (typeof s !== "string") return s;
   try {
@@ -186,7 +211,7 @@ async function readIds(redis, key) {
 /** The key the web app's pulse reads: bumped on every write in the space. */
 export const revKey = (space) => `lm:${space}:rev`;
 
-export function createStore(redis, { space, compat = false, mirror = null } = {}) {
+export function createStore(redis, { space, compat = false, mirror = null, now = Date.now } = {}) {
   if (!space) throw new Error("createStore: space required");
   const k = (ns, id, slot) => lmKey(space, ns, id, slot);
   const legacy = (ns, id, slot) => acmiKey(space, ns, id, slot);
@@ -231,13 +256,18 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
         }
       }
     }
+    const nowMs = now();
     let entries = rows.filter((r) => !isBlankMember(r.member)).map((r, i) => {
       const e = asEntry(tryParse(r.member));
       const { _o, ...obj } = e && typeof e === "object" ? e : { summary: String(e) };
-      const out = { ...obj, ts: normTs(obj.ts ?? r.score) };
+      const raw = normTs(obj.ts ?? r.score);
+      const ts = trustTs(raw, nowMs);
+      const out = { ...obj, ts };
+      if (ts !== raw) out.ts_claimed = raw;
       if (r.legacy) Object.defineProperty(out, "legacy", { value: true, enumerable: false });
       return { e: out, o: _o ?? "", i };
     });
+    if (sinceMs != null) entries = entries.filter((x) => x.e.ts >= min);
     entries.sort((a, b) => a.e.ts - b.e.ts || (a.o < b.o ? -1 : a.o > b.o ? 1 : a.i - b.i));
     entries = entries.map((x) => x.e);
     if (reverse) entries.reverse();
@@ -366,7 +396,9 @@ export function createStore(redis, { space, compat = false, mirror = null } = {}
      */
     async append(ns, id, entry) {
       if (!entry || typeof entry !== "object") throw new Error("entry must be an object");
-      const ts = entry.ts == null ? Date.now() : normTs(entry.ts);
+      const t0 = now();
+      const ts = entry.ts == null ? t0 : normTs(entry.ts);
+      if (ts > t0 + FUTURE_WRITE_MS) throw new FutureTimestampError(ts, t0);
       // Stamp the trusted connection policy after caller fields. Repairs preserve this value.
       const full = { ...entry, ...normalizeKind(entry.kind), ts, mirror: mirror ? "on" : "off" };
       if (entry.acmi_kind) full.acmi_kind = entry.acmi_kind;
