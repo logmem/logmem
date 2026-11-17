@@ -484,9 +484,13 @@ async function brief(ctx, agent, opts = {}) {
   } catch (_) {}
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
-  // No signing key here (a local agent): ask the trusted server which decisions verify.
-  if (!usableSecret(verify.secret) && ctx.verifyUrl) {
-    verify.remote = await remoteVerified([...week, ...log.slice(0, 20), ...state.claims.values()], { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
+  // A local signing key can be stale after rotation. Ask the trusted server
+  // about rows it rejects, as well as when this process has no signing key.
+  const decisions = [...week, ...log.slice(0, 20), ...state.claims.values()];
+  const needsRemote = !usableSecret(verify.secret) || decisions.some((e) =>
+    e?.kind === "decided" && !verifyDecision(e, { secret: verify.secret, space: s.space }));
+  if (needsRemote && ctx.verifyUrl) {
+    verify.remote = await remoteVerified(decisions, { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
   }
   const tasks = await blockersFrom(s, agentRef(a));
   const asks = asksOf(a, week, { ...verify, ...state });
@@ -1655,16 +1659,16 @@ export function verifyDecision(e, { secret, space, ask, remote } = {}) {
     if (ask_hash != null && ask_hash !== want) return false;
     ask_hash = want;
   }
-  if (!usableSecret(secret)) {
-    // No key here: only a decision the trusted server verified, field for field, counts.
-    return remote instanceof Set && e.payload?.ask_hash != null && e.payload.ask_hash === ask_hash && remote.has(remoteKey(e, space));
+  if (usableSecret(secret)) {
+    const want = createHmac("sha256", secret)
+      .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
+      .digest();
+    const got = Buffer.from(sig, "hex");
+    if (got.length === want.length && timingSafeEqual(want, got)) return true;
   }
-  const want = createHmac("sha256", secret)
-    .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
-    .digest();
-  const got = Buffer.from(sig, "hex");
-  if (got.length !== want.length) return false;
-  return timingSafeEqual(want, got);
+  // A successful local check is enough. Otherwise, trust only the configured
+  // verifier's field-bound response, including when this process has a stale key.
+  return remote instanceof Set && e.payload?.ask_hash != null && e.payload.ask_hash === ask_hash && remote.has(remoteKey(e, space));
 }
 const VERDICT_LABEL = { approve: "Approved", reject: "Rejected", defer: "Deferred" };
 
