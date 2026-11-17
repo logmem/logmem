@@ -82,3 +82,31 @@ test("an unconfigured Clerk is a503, not a crash", async () => {
     (e) => e instanceof AccountError && e.code === "clerk_unconfigured" && e.status === 503
   );
 });
+
+// Handler-level: unauthenticated and disabled requests must surface their real
+// status, never the catch-all500 that shipped in PR278 and was caught live.
+const fakeRes = () => ({
+  _h: {},
+  setHeader(k, v) { this._h[k] = v; },
+  status(c) { this.c = c; return this; },
+  json(j) { this.body = j; return this; },
+});
+
+test("handler maps workspace errors: no session is401, dashboard off is503", async () => {
+  const { createHandler } = await import("../api/profile.mjs");
+  const noSession = fakeRes();
+  await createHandler({ env: { LOGMEM_CUSTOMER_DASHBOARD: "1" }, session: async () => ({ status: "signed-out" }) })(
+    { method: "GET", headers: {} }, noSession
+  );
+  assert.equal(noSession.c, 401);
+  assert.deepEqual(noSession.body, { error: "sign_in_required" });
+
+  const disabled = fakeRes();
+  await createHandler({ env: {} })({ method: "GET", headers: {} }, disabled);
+  assert.equal(disabled.c, 503);
+  assert.deepEqual(disabled.body, { error: "customer_dashboard_disabled" });
+
+  const wrongMethod = fakeRes();
+  await createHandler({ env: {} })({ method: "POST", headers: {} }, wrongMethod);
+  assert.equal(wrongMethod.c, 405);
+});
