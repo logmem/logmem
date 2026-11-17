@@ -193,13 +193,13 @@ Simple, per space, priced for operators — not per-seat enterprise math.
 | Team | $99/mo | 150,000 | 15,000 | 10 | Unlimited | 1 year |
 | Scale | $199/mo | 500,000 | 50,000 | 30 | Unlimited | 1 year |
 
-Self-hosting the open-source core is free forever. Hosted plans open with the beta on **November 16** at [logmem.space](https://logmem.space) — see [logmem.si](https://logmem.si) for current access. Full detail: [docs/PRICING.md](docs/PRICING.md).
+Self-hosting the open-source core is free forever. Hosted plans: join the waitlist. See [logmem.si](https://logmem.si) for current access. Full detail: [docs/PRICING.md](docs/PRICING.md).
 
 ## Roadmap
 
 - **Nov 3** — clean-room verification: a second agent, starting cold, gets productive from the Brief alone — results published on logmem.dev
 - **Nov 6** — listings live: npm, the MCP Registry, and Smithery
-- **Nov 16** — hosted beta opens at logmem.space
+- **Hosted** — Hosted plans: join the waitlist.
 
 ## Contributing
 
