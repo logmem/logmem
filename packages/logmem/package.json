@@ -1,0 +1,31 @@
+{
+  "name": "logmem",
+  "version": "0.2.0",
+  "description": "Set up and check LogMem for your AI agents.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Mad EZ Media Partners LLC",
+  "homepage": "https://logmem.si",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/logmem/logmem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/logmem/logmem/issues"
+  },
+  "bin": {
+    "logmem": "cli.js"
+  },
+  "files": [
+    "cli.js",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

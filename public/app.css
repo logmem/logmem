@@ -1455,3 +1455,35 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-fresh{padding:16px;display:grid;gap:10px;border-color:var(--brand)}
 .lmx-accessnew{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end;max-width:none}
 .lmx-accessnew .lm-btn{min-height:44px}
+
+/* Inbox: mail-style rows, footer and slide-over detail drawer */
+.lmx-mail{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden}
+.lmx-mail-row{display:flex;align-items:center;gap:4px;padding:0 8px 0 4px;border-bottom:1px solid var(--border)}
+.lmx-mail-row:last-child{border-bottom:0}
+.lmx-mail-row:hover{background:var(--surface-sunken)}
+.lmx-mail-check{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer}
+.lmx-mail-check input{width:16px;height:16px}
+.lmx-mail-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0;min-height:44px;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.lmx-mail-from{flex:0 0 clamp(120px,22%,220px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 13px/1.4 var(--font-sans)}
+.lmx-mail-sum{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-subtle)}
+.lmx-mail-chip{flex:none;padding:0 6px;border-radius:4px;border:1px solid var(--danger);color:var(--danger);font:600 10px/1.6 var(--font-sans);text-transform:uppercase}
+.lmx-mail-time{flex:0 0 64px;text-align:right;font:12px/1.4 var(--font-mono,monospace);color:var(--text-subtle);white-space:nowrap}
+.lmx-mail-main:focus-visible,.lmx-mail-check:focus-within{outline:2px solid var(--brand,var(--text));outline-offset:-2px}
+.lmx-mail-batch{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-bottom:8px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--brand-subtle,var(--surface-sunken));font-size:13px}
+.lmx-mail-foot{display:flex;align-items:center;justify-content:flex-end;gap:4px;font:12px/1.4 var(--font-mono,monospace);color:var(--text-subtle)}
+.lmx-mail-foot .lm-btn{min-width:44px;min-height:44px}
+.lmx-drawer{position:fixed;inset:0 0 0 auto;margin:0;height:100%;max-height:none;width:min(440px,100%);max-width:100%;padding:0;border:0;border-left:1px solid var(--border);background:var(--surface);color:var(--text)}
+.lmx-drawer[open]{display:flex;flex-direction:column}
+.lmx-drawer::backdrop{background:rgba(0,0,0,.4)}
+.lmx-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface-sunken)}
+.lmx-drawer-head h2{margin:0;font-size:14px;overflow-wrap:anywhere}
+.lmx-drawer-body{flex:1;overflow-y:auto;padding:12px;overflow-wrap:anywhere}
+.lmx-drawer-status{margin:0 0 8px;font:600 12px/1.5 var(--font-sans);color:var(--text-subtle)}
+.lmx-drawer[data-status="overdue"] .lmx-drawer-status{color:var(--danger)}
+.lmx-drawer-summary{white-space:pre-wrap;font-size:13px}
+.lmx-drawer-body dl{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;font-size:12px}
+.lmx-drawer-body dd{margin:0}
+.lmx-drawer-foot{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;border-top:1px solid var(--border);font-size:12px}
+.lmx-drawer-foot .lm-btn{min-height:44px}
+@media(max-width:639px){.lmx-mail-from{flex-basis:96px}.lmx-mail-chip{display:none}.lmx-mail-time{flex-basis:52px}}
+@media(prefers-reduced-motion:no-preference){.lmx-drawer[open]{animation:lmx-slide .18s ease-out}@keyframes lmx-slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}

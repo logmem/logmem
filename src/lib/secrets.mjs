@@ -39,6 +39,7 @@ export const REGISTRY = Object.freeze({
   LOGMEM_REDIS_URI: { source: "env", rotated: null },
   LOGMEM_REST_TOKEN: { source: "env", rotated: null },
   RESEND_API_KEY: { source: "env", rotated: null },
+  RESEND_FROM: { source: "env", rotated: null },
   UPSTASH_REDIS_REST_TOKEN: { source: "env", rotated: null },
 });
 

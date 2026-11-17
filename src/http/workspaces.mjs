@@ -258,6 +258,24 @@ export async function unarchiveSpace({userId,workspaceId,spaceId,requestId},deps
  }
  failWorkspace('update_conflict',409);
 }
+/** The signed-in person leaves a workspace. The last active owner cannot
+ *  leave (transfer the owner role first), an idempotent replay returns the
+ *  first result, and the audit keeps the departure with the role they held. */
+export async function leaveWorkspace({userId,workspaceId,requestId},deps) {
+ checkUser(userId); const fingerprint=digest({userId,workspaceId,action:'leave'});
+ const key=requestKey(userId,'leave',requestId);
+ const prior=await replay(deps.redis,key,fingerprint); if(prior)return prior;
+ for(let retry=0;retry<20;retry++) {
+  const {w}=await readWorkspace(deps.redis,workspaceId), m=membership(w,userId);
+  if(m.status!=='active') failWorkspace('not_found',404);
+  if(m.role==='owner'&&Object.values(w.members).filter(x=>x.status==='active'&&x.role==='owner').length<=1) failWorkspace('last_owner',409);
+  const now=(deps.now||Date.now)();
+  const next=structuredClone(w); delete next.members[userId]; next.version++;
+  next.audit.push({kind:'member-left',userId,role:m.role,by:`human:${userId}`,at:now});
+  const r=await commitWorkspace({before:w,after:next,userId,requestId,operation:'leave',fingerprint,result:{ok:true,left:true,workspaceId}},deps); if(r)return r;
+ }
+ failWorkspace('update_conflict',409);
+}
 export async function listWorkspaces({userId},deps) {
  checkUser(userId); const out=[];
  for(const workspaceId of await deps.redis('SMEMBERS',userKey(userId))||[]) {

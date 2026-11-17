@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { serverRedis, readJsonBody, BodyError, noStore, methodNotAllowed, clientIp, rateLimit, WAITLIST_RATE_LIMIT, UNAVAILABLE } from "../../src/http/onboarding.mjs";
 import { saveSignup, envBlobPut } from "../../src/http/waitlist-store.mjs";
 import { logRequest, sendServerError } from "../../src/http/log.mjs";
+import { sendWaitlistConfirmation } from "../../src/http/waitlist-email.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 10 };
 
@@ -57,6 +58,8 @@ export function createHandler({
   now = () => Date.now(),
   blobPut,
   log,
+  env = process.env,
+  sendConfirmation = sendWaitlistConfirmation,
 } = {}) {
   return async function handler(req, res) {
     const t0 = performance.now();
@@ -93,6 +96,14 @@ export function createHandler({
         blobPut: blobPut === undefined ? envBlobPut() : blobPut,
         log,
       });
+      // Confirmation mail, best effort: the reply never changes and a broken
+      // mail path never fails a sign-up. Fixed log text only.
+      try {
+        const mail = await sendConfirmation(email, { env });
+        logRequest({ route: ROUTE, ok: mail.sent, event: "waitlist_email", status: mail.status ?? mail.reason ?? null }, log ? { sink: log } : {});
+      } catch {
+        logRequest({ route: ROUTE, ok: false, err: "waitlist email failed" }, log ? { sink: log } : {});
+      }
       return done(200, { ok: true });
     } catch (e) {
       sendServerError(res, ROUTE, e, log ? { sink: log } : {});

@@ -33,7 +33,11 @@ export function createLoginHandler({ session = customerSession, roleLookup = get
       }
     }
     if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-    const rateOk = await applyRateLimit(req, res, { redis: redis || customerRedis(env), routeClass: ROUTE_CLASSES.AUTH });
+    let rateRedis = redis;
+    if (!rateRedis) {
+      try { rateRedis = customerRedis(env); } catch { rateRedis = null; }
+    }
+    const rateOk = await applyRateLimit(req, res, { redis: rateRedis, routeClass: ROUTE_CLASSES.AUTH });
     if (!rateOk) return;
     if (!adminEnabled(env)) return res.status(503).json({ error: "admin app is off: LOGMEM_ADMIN_PASSWORD is not set" });
     const password = (req.body && req.body.password) || "";

@@ -10,6 +10,7 @@
   },
   "files": [
     "LICENSE",
+    "CHANGELOG.md",
     "server.json",
     "src/stdio/index.mjs",
     "src/server.mjs",
@@ -33,10 +34,10 @@
   "homepage": "https://logmem.si",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/madezmedia/logmem.git"
+    "url": "git+https://github.com/logmem/logmem.git"
   },
   "bugs": {
-    "url": "https://github.com/madezmedia/logmem/issues"
+    "url": "https://github.com/logmem/logmem/issues"
   },
   "engines": {
     "node": ">=22"
@@ -66,8 +67,8 @@
   "devDependencies": {
     "@clerk/backend": "^3.26.1",
     "@madezmedia/acmi": "1.2.0",
-    "@playwright/test": "1.64.1",
-    "@vercel/blob": "2.8.2"
+    "@playwright/test": "1.65.0",
+    "@vercel/blob": "2.9.0"
   },
   "mcpName": "si.logmem/mcp"
 }

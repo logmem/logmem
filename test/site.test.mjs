@@ -288,6 +288,42 @@ test("site: both pages load /attrib.js in the head, and onboarding.js sends attr
   assert.match(post, /attribution: window\.lmAttribution \? window\.lmAttribution\(\) : null/);
 });
 
+test("site: privacy and terms carry the owner's Nov 9 answers", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const read = (page) => readFileSync(join(root, page), "utf8");
+  for (const page of ["public/privacy.html", "public/terms.html"]) {
+    const html = read(page);
+    assert.ok(html.includes('src="/consent.js"') && html.includes('src="/gtm.js"'), `${page} loads the cookie banner and the gated Google tag loader`);
+    assert.ok(!html.includes("googletagmanager.com"), `${page} has no inline Google tag`);
+    assert.ok(!html.includes("110%"), `${page} has no 110% line`);
+    assert.ok(!/CONFIRM|VERIFY|DRAFT for review|\[MIKEY PICK/.test(html), `${page} has no unresolved markers`);
+    assert.match(html, /November 9, 2026/);
+    assert.match(html, /hello@logmem\.si/);
+    assert.ok(!html.includes("legal@logmem.si"), `${page} uses hello@ only`);
+    assert.match(html, /Mad EZ Media and Technology Partners LLC/);
+    assert.ok(!html.includes("Mad EZ Media Partners"), `${page} uses the full legal name`);
+    assert.match(html, /basecamp\/policies/);
+  }
+  const terms = read("public/terms.html");
+  assert.match(terms, /at least 18/);
+  assert.match(terms, /Every plan has an entry cap\. We warn you at 80% of your limit and prompt you at 100%\./);
+  assert.match(terms, /at least 30 days/);
+  const privacy = read("public/privacy.html");
+  assert.match(privacy, /servers and databases in the United States/);
+  assert.match(privacy, /up to 30 days/);
+  assert.match(privacy, /under 16/);
+  assert.equal((privacy.match(/<h2>Children<\/h2>/g) || []).length, 1, "one Children section");
+  assert.match(privacy, /may use cookies or identifiers such as a visitor ID/);
+  assert.ok(!privacy.includes("Vercel Analytics does not use cookies"), "no cookieless claim for Vercel Analytics");
+  assert.match(privacy, /set analytics cookies only after you choose Accept analytics/);
+  assert.match(privacy, /how many agents you plan to run/);
+  assert.match(privacy, /We keep waitlist entries until you open an account or we delete them\./);
+  assert.match(privacy, /Resend \(waitlist and account emails; receives your email address and the message content\)/);
+});
+
 test("site: attrib.js keeps the first visit's source in sessionStorage, host only, and never breaks without storage", async () => {
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
