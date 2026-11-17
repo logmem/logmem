@@ -19,7 +19,11 @@ export function createHandler(deps = {}) {
       const out = await accountRows({ userId: session?.userId, env, clerk: deps.clerk });
       return res.status(200).json(out);
     } catch (e) {
-      if (e instanceof AccountError) return res.status(e.status).json({ error: e.code });
+      // WorkspaceError from customerIdentity (sign_in_required, account_suspended,
+      // customer_dashboard_disabled) carries status + code, same as AccountError.
+      if (e instanceof AccountError || (Number.isInteger(e?.status) && typeof e?.code === "string")) {
+        return res.status(e.status).json({ error: e.code });
+      }
       return res.status(500).json({ error: "internal_error" });
     }
   };
