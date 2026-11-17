@@ -62,7 +62,7 @@ export async function createAgentKey({ space, agent, label = "", by = "human:adm
     throw new AgentKeyError(`agent: ${e.message}`);
   }
   const sc = String(scope || "").trim().toLowerCase();
-  if (sc && sc !== "read") throw new AgentKeyError("scope must be 'read' or empty");
+  if (sc && sc !== "read" && sc !== "draft") throw new AgentKeyError("scope must be 'read', 'draft', or empty");
   const key = `${AGENT_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
   const id = `ak_${randomBytes(6).toString("hex")}`;
   const rec = { id, space: s, agent: a, label: String(label || "").slice(0, LABEL_MAX), created_at: now(), created_by: String(by), ...(owner ? { owner: String(owner).slice(0, 64) } : {}), ...(sc ? { scope: sc } : {}) };

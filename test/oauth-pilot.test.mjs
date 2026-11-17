@@ -40,20 +40,20 @@ test("issuer: LOGMEM_ISSUER wins over Host and X-Forwarded-Host; production defa
   assert.equal(canonicalResource(req, { LOGMEM_ISSUER: "https://logmem.si" }), "https://logmem.si/mcp");
 });
 
-test("metadata: both documents use the pinned issuer, the /mcp resource, the two scopes, iss and revocation", async () => {
+test("metadata: both documents use the pinned issuer, the /mcp resource, the scopes, iss and revocation", async () => {
   await withEnv(PINNED, async () => {
     const req = mockReq({ headers: { host: "www.logmem.si", "x-forwarded-host": "attacker.example" } });
     const as = (await json(asMetadata, req)).body;
     assert.equal(as.issuer, "https://logmem.si");
     assert.equal(as.authorization_endpoint, "https://logmem.si/api/oauth/authorize");
-    assert.deepEqual(as.scopes_supported, ["logmem:read", "logmem:write"]);
+    assert.deepEqual(as.scopes_supported, ["logmem:read", "logmem:write", "logmem:draft"]);
     assert.equal(as.authorization_response_iss_parameter_supported, true);
     assert.equal(as.revocation_endpoint, "https://logmem.si/api/oauth/revoke");
     assert.notEqual(as.revocation_endpoint, as.token_endpoint);
     const pr = (await json(prMetadata, req)).body;
     assert.equal(pr.resource, "https://logmem.si/mcp");
     assert.deepEqual(pr.authorization_servers, ["https://logmem.si"]);
-    assert.deepEqual(pr.scopes_supported, ["logmem:read", "logmem:write"]);
+    assert.deepEqual(pr.scopes_supported, ["logmem:read", "logmem:write", "logmem:draft"]);
   });
 });
 
@@ -159,6 +159,9 @@ test("scopes: mcp and empty mean both; write implies read; unknown scopes are dr
   assert.equal(normalizeScope("logmem:write"), "logmem:read logmem:write");
   assert.equal(normalizeScope("openid logmem:read"), "logmem:read");
   assert.equal(normalizeScope("openid"), "logmem:read logmem:write");
+  assert.equal(normalizeScope("logmem:draft"), "logmem:draft");
+  assert.equal(normalizeScope("logmem:read logmem:draft"), "logmem:read logmem:draft");
+  assert.equal(normalizeScope("mcp logmem:draft"), "logmem:read logmem:write logmem:draft");
 });
 
 // ───── 5: the token endpoint and the MCP route check the resource ─────

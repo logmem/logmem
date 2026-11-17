@@ -29,8 +29,10 @@
 export const PROD_ISSUER = "https://logmem.si";
 export const SCOPE_READ = "logmem:read";
 export const SCOPE_WRITE = "logmem:write";
-export const SCOPES = [SCOPE_READ, SCOPE_WRITE];
-export const ALL_SCOPES = SCOPES.join(" ");
+export const SCOPE_DRAFT = "logmem:draft";
+export const SCOPES = [SCOPE_READ, SCOPE_WRITE, SCOPE_DRAFT];
+/** Full OAuth grant (read+write). Draft is opt-in beside these. */
+export const ALL_SCOPES = `${SCOPE_READ} ${SCOPE_WRITE}`;
 
 function originOnly(raw, what) {
   let u;
@@ -93,11 +95,16 @@ export function bindResource(value, req, env = process.env) {
   return { error: "invalid_target" };
 }
 
-/** Requested scope as the stored scope string. "mcp", empty and unknown-only mean both; write implies read. */
+/** Requested scope as the stored scope string. "mcp", empty and unknown-only mean both; write implies read. Draft is additive. */
 export function normalizeScope(scope) {
   const asked = new Set(String(scope || "").split(/\s+/).filter(Boolean));
-  if (asked.has("mcp") || asked.has(SCOPE_WRITE)) return ALL_SCOPES;
-  if (asked.has(SCOPE_READ)) return SCOPE_READ;
+  if (asked.has("mcp") || asked.has(SCOPE_WRITE)) {
+    return asked.has(SCOPE_DRAFT) ? `${ALL_SCOPES} ${SCOPE_DRAFT}` : ALL_SCOPES;
+  }
+  const parts = [];
+  if (asked.has(SCOPE_READ)) parts.push(SCOPE_READ);
+  if (asked.has(SCOPE_DRAFT)) parts.push(SCOPE_DRAFT);
+  if (parts.length) return parts.join(" ");
   return ALL_SCOPES;
 }
 

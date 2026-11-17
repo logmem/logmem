@@ -47,9 +47,9 @@ test("agent keys: only the deploy's spaces and valid agent ids; junk bearers are
   assert.equal(calls.length, 0);
 });
 
-test("agent keys: scope 'read' is stored, resolved and enforced; anything else is refused", async () => {
+test("agent keys: scope 'read' or 'draft' is stored; anything else is refused", async () => {
   const redis = oauthRedis();
-  await assert.rejects(() => createAgentKey({ space: "madez", agent: "muse", scope: "write" }, { env: ENV, redis }), AgentKeyError, "only 'read' or empty");
+  await assert.rejects(() => createAgentKey({ space: "madez", agent: "muse", scope: "write" }, { env: ENV, redis }), AgentKeyError, "only 'read', 'draft', or empty");
   await assert.rejects(() => createAgentKey({ space: "madez", agent: "muse", scope: "admin" }, { env: ENV, redis }), AgentKeyError);
 
   const ro = await createAgentKey({ space: "madez", agent: "logmem-platform", label: "platform app", scope: "read" }, { env: ENV, redis });
@@ -59,6 +59,10 @@ test("agent keys: scope 'read' is stored, resolved and enforced; anything else i
   const listed = await listAgentKeys({ redis });
   assert.equal(listed[0].scope, "read", "the admin list shows the scope");
   assert.ok(!JSON.stringify(listed).includes(ro.key));
+
+  const draft = await createAgentKey({ space: "madez", agent: "logmem-drafter", label: "drafter", scope: "draft" }, { env: ENV, redis });
+  assert.equal(draft.scope, "draft");
+  assert.equal((await lookupAgentKey(draft.key, { redis })).scope, "draft");
 
   // A full key keeps the historical behaviour: no scopes at all.
   const full = await createAgentKey({ space: "madez", agent: "muse" }, { env: ENV, redis });
@@ -117,6 +121,28 @@ test("agent keys: a read-scoped key resolves with logmem:read and its write tool
   }
 });
 
+test("agent keys: a draft-scoped key resolves with logmem:read+logmem:draft and may only draft-write", async () => {
+  const redis = oauthRedis();
+  __setRedisForTests(redis);
+  try {
+    const k = await createAgentKey({ space: "madez", agent: "logmem-drafter", scope: "draft" }, { env: ENV, redis });
+    const auth = await resolveAuth({ headers: { authorization: `Bearer ${k.key}` } }, {}, ENV);
+    assert.equal(auth.source, "agent-key");
+    assert.deepEqual(auth.scopes, ["logmem:read", "logmem:draft"]);
+
+    const toolDefs = createLogmem({ redis: async () => null, space: "madez" }).listTools();
+    const call = (name) => ({ method: "tools/call", params: { name } });
+    assert.equal(insufficientScope(auth, call("logmem_brief"), toolDefs), false);
+    assert.equal(insufficientScope(auth, call("logmem_draft_ask"), toolDefs), false);
+    assert.equal(insufficientScope(auth, call("logmem_draft_note"), toolDefs), false);
+    assert.equal(insufficientScope(auth, call("logmem_ask"), toolDefs), true);
+    assert.equal(insufficientScope(auth, call("logmem_note"), toolDefs), true);
+    assert.equal(insufficientScope(auth, call("no-such-tool"), toolDefs), true);
+  } finally {
+    __setRedisForTests(null);
+  }
+});
+
 test("agent keys: a locked connection writes only as its own agent", async () => {
   const redis = createMemoryRedis();
   const lm = createLogmem({ redis, space: "madez", sessionId: "k1", surface: "http", defaultAgent: "muse", lockedAgent: "muse" });
@@ -158,19 +184,24 @@ test("agent keys API: admin only, intent header on writes, key shown once", asyn
   const ro = await call(h, { method: "POST", body: { space: "madez", agent: "logmem-platform", scope: "read" }, headers: w });
   assert.equal(ro.status, 201);
   assert.equal(ro.body.scope, "read");
+  const draft = await call(h, { method: "POST", body: { space: "madez", agent: "logmem-drafter", scope: "draft" }, headers: w });
+  assert.equal(draft.status, 201);
+  assert.equal(draft.body.scope, "draft");
   assert.equal((await call(h, { method: "POST", body: { space: "madez", agent: "muse", scope: "root" }, headers: w })).status, 400, "bad scope refused");
 
   const listed = await call(h, { headers: auth });
   assert.equal(listed.status, 200);
   assert.deepEqual(listed.body.spaces, ["madez"]);
-  assert.equal(listed.body.keys.length, 2);
+  assert.equal(listed.body.keys.length, 3);
   assert.equal(listed.body.keys.filter((x) => x.scope === "read").length, 1, "the list shows which keys are read-only");
+  assert.equal(listed.body.keys.filter((x) => x.scope === "draft").length, 1, "the list shows draft keys");
   assert.ok(!JSON.stringify(listed.body).includes(made.body.key), "GET never returns the key");
 
   assert.equal((await call(h, { method: "POST", body: { space: "nope", agent: "muse" }, headers: w })).status, 400);
   const rv = await call(h, { method: "POST", body: { action: "revoke", id: made.body.id }, headers: w });
   assert.deepEqual(rv.body, { revoked: true });
   assert.equal((await call(h, { method: "POST", body: { action: "revoke", id: ro.body.id }, headers: w })).body.revoked, true);
+  assert.equal((await call(h, { method: "POST", body: { action: "revoke", id: draft.body.id }, headers: w })).body.revoked, true);
   assert.equal((await call(h, { headers: auth })).body.keys.length, 0);
 });
 

@@ -1,4 +1,4 @@
-// tools.mjs — the 24 logmem_* tools.
+// tools.mjs — the 26 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
@@ -20,6 +20,8 @@ import { checkBlockedOn, linkOpen, linkClose, jobOf, BlockedError } from "./link
 import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypto";
 import { params } from "./params.mjs";
 import { parseRef, lmDecisionKey, lmAskKey } from "./keys.mjs";
+import { registerAsk, RegisterAskError } from "./register-ask.mjs";
+import { createDraft, DraftError } from "./drafts.mjs";
 import { stableJson } from "./store.mjs";
 import { KINDS, normalizeKind } from "./vocab.mjs";
 import { agentRef, agentId, byline, checkAgentId } from "./session.mjs";
@@ -38,6 +40,7 @@ import { executeSync, claimCoordAction } from "./sync.mjs";
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 const SET = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const DRAFT = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, draftHint: true };
 
 const STAGES = ["open", "active", "blocked", "done"];
 const KIND_WORDS = Object.keys(KINDS);
@@ -937,29 +940,91 @@ export const TOOLS = [
       }
       const onJob = await workJob(ctx, whereRef, "A decision");
       if (onJob.error) return { ok: false, error: onJob.error };
-      const loc = whereRef ? parseRef(whereRef, "job") : { ns: "agent", id: agent };
-      const t = clock(ctx);
-      const trail = makeTrail("approval", loc.id, t);
-      // Default not reversible: only an explicit boolean true counts as reversible.
-      const extra = { action, reversible: reversible === true, status: "waiting", where: `${loc.ns}:${loc.id}`, ...(to != null ? { to } : {}) };
-      // Register the ask once (SET NX) with the hash of its canonical content.
-      // This is what makes it the ask for this trail: any other approval entry
-      // under the same trail is ignored by findAsk, the Brief and the web app.
-      const hash = askDigest({ trail, by: agentRef(agent), ts: t, summary: question, ...extra });
-      const reg = await ctx.store.redis("SET", lmAskKey(ctx.store.space, trail), JSON.stringify({ hash, asker: agentId(agent), where: extra.where, ts: t }), "NX");
-      if (reg == null) return { ok: false, error: `an ask with trail '${trail}' already exists; a trail carries one ask` };
-      const entry = await write(ctx, loc.ns, loc.id, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
-      if (!(loc.ns === "agent" && loc.id === agent)) await write(ctx, "agent", agent, { kind: "approval", summary: question, trail, origin, ts: t, extra, ask: true });
-      await ctx.store.setNow("agent", agent, { waiting_on: { trail, question, since: t } });
-      const job = onJob.job ? await linkOpen(ctx.store, onJob.job, { type: "decision", ref: trail, note: question, now: () => t }) : null;
-      return {
-        ok: true,
-        trail,
-        entry,
-        ...(job ? { job: { id: onJob.job, stage: job.stage, blocked_on: job.blocked_on } } : {}),
-        ...(onJob.warning ? { warning: onJob.warning } : {}),
-        instruction: "Waiting on a human. Do not perform the action. Check logmem_brief: act only when answered_asks shows this trail with verdict 'approve'.",
-      };
+      try {
+        const out = await registerAsk(ctx.store, {
+          question,
+          action,
+          reversible,
+          where: whereRef,
+          to,
+          origin,
+          asker: agentRef(agent),
+          via: ctx.surface || "mcp",
+          now: () => clock(ctx),
+          shift: ctx.shift?.shift || null,
+          workRules: workRules(ctx),
+        });
+        return {
+          ...out,
+          ...(onJob.warning ? { warning: onJob.warning } : {}),
+          instruction: "Waiting on a human. Do not perform the action. Check logmem_brief: act only when answered_asks shows this trail with verdict 'approve'.",
+        };
+      } catch (e) {
+        if (e instanceof RegisterAskError) return { ok: false, error: e.message };
+        throw e;
+      }
+    },
+  },
+
+  {
+    name: "logmem_draft_ask",
+    title: "Draft ask",
+    description: "Hold an ask as a draft for a person. Does not write to the live queue or Brief pending_asks. The person sends it with /api/assistant/send. Requires logmem:draft scope.",
+    params: params({
+      question: { type: "string", desc: "Plain question for the person to send" },
+      action: { type: "string", desc: "Exact action text" },
+      for: { type: "string", desc: "Person who owns the draft, human:<id>" },
+      where: { type: "string", desc: "job:<id> the ask will target when sent", optional: true },
+      to: { type: "string", desc: "human:<id> who must answer when sent", optional: true },
+      origin: { type: "string", desc: "Trail this draft follows from", optional: true },
+    }),
+    annotations: DRAFT,
+    async run(args, ctx) {
+      const person = args.for;
+      if (!HUMAN_RE.test(String(person || ""))) return { ok: false, error: "for must be human:<id>" };
+      try {
+        const draft = await createDraft((...a) => ctx.store.redis(...a), {
+          space: ctx.store.space,
+          person,
+          kind: "ask",
+          ask: { question: args.question, action: args.action, where: args.where, to: args.to },
+          created_by: agentRef(me(ctx)),
+          now: () => clock(ctx),
+        });
+        return { ok: true, draft };
+      } catch (e) {
+        if (e instanceof DraftError) return { ok: false, error: e.message, code: e.code };
+        throw e;
+      }
+    },
+  },
+  {
+    name: "logmem_draft_note",
+    title: "Draft note",
+    description: "Hold a channel note as a draft for a person. Does not write the live log. The person sends it with /api/assistant/send. Requires logmem:draft scope.",
+    params: params({
+      summary: { type: "string", desc: "Note text" },
+      for: { type: "string", desc: "Person who owns the draft, human:<id>" },
+      channel: { type: "string", desc: "channel id without prefix, optional", optional: true },
+    }),
+    annotations: DRAFT,
+    async run(args, ctx) {
+      const person = args.for;
+      if (!HUMAN_RE.test(String(person || ""))) return { ok: false, error: "for must be human:<id>" };
+      try {
+        const draft = await createDraft((...a) => ctx.store.redis(...a), {
+          space: ctx.store.space,
+          person,
+          kind: "note",
+          note: { summary: args.summary, channel: args.channel },
+          created_by: agentRef(me(ctx)),
+          now: () => clock(ctx),
+        });
+        return { ok: true, draft };
+      } catch (e) {
+        if (e instanceof DraftError) return { ok: false, error: e.message, code: e.code };
+        throw e;
+      }
     },
   },
 
@@ -1413,8 +1478,9 @@ function decisionMessage({ space, origin, ask_hash, verdict, note, by, ts }) {
 
 // ─── Canonical asks ──────────────────────────────────────────────────────
 /** True for an entry that may be an ask: kind approval, by an agent, not a legacy acmi:* row. */
+// Agent asks (MCP) and person-sent asks (Phase 0 /api/assistant/send).
 export const isAskCandidate = (e) =>
-  !!e && e.kind === "approval" && e.legacy !== true && typeof e.trail === "string" && /^agent:/.test(String(e.by || ""));
+  !!e && e.kind === "approval" && e.legacy !== true && typeof e.trail === "string" && /^(agent|human):/.test(String(e.by || ""));
 
 /** SHA-256 over an ask's canonical content: what a person sees and approves. */
 export function askDigest(e) {
@@ -1715,7 +1781,11 @@ export async function findAsk(store, trail, { secret = getSecret("LOGMEM_DECIDE_
   }
   const reg = parse(await store.redis("GET", key));
   if (reg && typeof reg.hash === "string" && typeof reg.asker === "string" && Number.isFinite(reg.ts)) {
-    const mine = (await store.readLog("agent", reg.asker, { sinceMs: reg.ts, untilMs: reg.ts })).filter((e) => isAskCandidate(e) && e.trail === trail);
+    const humanAsker = reg.asker_kind === "human";
+    const byExpected = humanAsker ? `human:${reg.asker}` : agentRef(reg.asker);
+    const mine = humanAsker
+      ? []
+      : (await store.readLog("agent", reg.asker, { sinceMs: reg.ts, untilMs: reg.ts })).filter((e) => isAskCandidate(e) && e.trail === trail);
     let others = [];
     if (typeof reg.where === "string" && reg.where !== `agent:${reg.asker}`) {
       try {
@@ -1725,7 +1795,7 @@ export async function findAsk(store, trail, { secret = getSecret("LOGMEM_DECIDE_
         others = [];
       }
     }
-    const ask = mine.find((e) => e.by === agentRef(reg.asker) && askDigest(e) === reg.hash);
+    const ask = (humanAsker ? others : mine).find((e) => e.by === byExpected && askDigest(e) === reg.hash);
     if (!ask) {
       let claim = null;
       try {
@@ -1740,7 +1810,7 @@ export async function findAsk(store, trail, { secret = getSecret("LOGMEM_DECIDE_
     if ([...mine, ...others].some((e) => bindingKey(e) !== bindingKey(ask))) {
       throw new DecisionError("ambiguous", `ask '${trail}' has conflicting copies; refusing so the question, action, or reversible flag cannot be swapped`);
     }
-    return { ask, hash: reg.hash, asker: reg.asker, where: ask.where || `agent:${reg.asker}` };
+    return { ask, hash: reg.hash, asker: reg.asker, asker_kind: humanAsker ? "human" : "agent", where: ask.where || (humanAsker ? reg.where : `agent:${reg.asker}`) };
   }
 
   // Unregistered (older) ask.
@@ -1835,6 +1905,7 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   const found = await findAsk(store, askTrail, { secret });
   if (!found) throw new DecisionError("not_found", `no ask with trail '${askTrail}' in space '${store.space}'`);
   const { ask, hash: askHash, asker, where } = found;
+  const humanAsker = found.asker_kind === "human" || String(ask.by || "").startsWith("human:");
   if (expectedHash !== undefined && expectedHash !== askHash) throw new DecisionError("stale_ask", "The proposed action changed. Reload and review it before answering.");
   // Only the receiver settles: the person the ask was sent to (when it names
   // one), and never the asker itself under a human-looking name.
@@ -1845,9 +1916,10 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
     throw new DecisionError("confirm_required", "this action can't be undone (the ask did not say reversible: true): confirm the exact action to approve it");
   }
   const w = parseRef(where, "job");
-  // The asker's own log first: it is what the agent's Brief reads.
-  const logs = [["agent", asker]];
-  if (!(w.ns === "agent" && w.id === asker)) logs.push([w.ns, w.id]);
+  // Agent askers: mirror onto the agent log (Brief). Human askers (Phase 0 Send):
+  // write only to the ask's where log — people have no agent Brief mirror.
+  const logs = humanAsker ? [[w.ns, w.id]] : [["agent", asker]];
+  if (!humanAsker && !(w.ns === "agent" && w.id === asker)) logs.push([w.ns, w.id]);
 
   const t = typeof now === "function" ? now() : now;
   const label = VERDICT_LABEL[verdict];
@@ -1929,9 +2001,13 @@ export async function writeDecision(store, askTrail, { verdict, note, by, via = 
   }
 
   // Only a settling answer clears waiting_on; after a defer the agent keeps waiting.
-  const cur = await store.getNow("agent", asker);
-  const cleared = settles && cur?.waiting_on?.trail === askTrail;
-  if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: final.ts } });
+  // Human askers have no agent Now mirror.
+  let cleared = false;
+  if (!humanAsker) {
+    const cur = await store.getNow("agent", asker);
+    cleared = settles && cur?.waiting_on?.trail === askTrail;
+    if (cleared) await store.setNow("agent", asker, { waiting_on: null, last_decision: { trail: askTrail, verdict, at: final.ts } });
+  }
   // Auto-link: a settled decision unblocks its job (defer keeps it blocked).
   const job = settles && w.ns === "job" ? await linkClose(store, w.id, { ref: askTrail, outcome: verdict, now: () => final.ts }) : null;
   return { ok: true, entry: final, asker, where: `${w.ns}:${w.id}`, settled: settles, waiting_on_cleared: cleared, reclaimed: priorRaw != null, ...(job ? { job: { id: w.id, stage: job.stage } } : {}), ...(reconciled ? { reconciled: true } : {}) };

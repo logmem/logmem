@@ -31,7 +31,7 @@ import { touchManagedAppCall } from "./oauth/_lib/storage.mjs";
 import { createJail } from "../src/http/jail.mjs";
 import { createLimits } from "../src/http/limits.mjs";
 import { getTenant } from "../cloud/tenants/index.mjs";
-import { SCOPE_WRITE, ALL_SCOPES } from "../src/http/issuer.mjs";
+import { SCOPE_WRITE, SCOPE_DRAFT, ALL_SCOPES } from "../src/http/issuer.mjs";
 import { applyRateLimit, ROUTE_CLASSES } from "../src/http/rate-limit.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
@@ -118,15 +118,19 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
 }
 
 /**
- * true when a credential without logmem:write calls a tool that is not
- * read only (unknown tools included). Applies to OAuth tokens and to agent
- * keys minted with scope "read"; full agent keys and break-glass carry no
- * scopes and are not limited here.
+ * true when a credential without logmem:write calls a tool outside its
+ * allowlist. Read-only: readOnlyHint tools. Draft (with or without read):
+ * readOnlyHint or draftHint tools. Unknown tools fail closed. Full agent
+ * keys and break-glass carry no scopes and are not limited here.
  */
 export function insufficientScope(auth, msg, toolDefs) {
   if (msg?.method !== "tools/call" || !Array.isArray(auth?.scopes) || auth.scopes.includes(SCOPE_WRITE)) return false;
   const tool = toolDefs.find((t) => t.name === msg.params?.name);
-  return tool?.annotations?.readOnlyHint !== true;
+  const draftOk = auth.scopes.includes(SCOPE_DRAFT) && tool?.annotations?.draftHint === true;
+  const readOk = tool?.annotations?.readOnlyHint === true;
+  // Draft scope always includes read tools so an agent can gather context.
+  if (auth.scopes.includes(SCOPE_DRAFT)) return !(readOk || draftOk);
+  return !readOk;
 }
 
 export async function dispatch(msg, { lmFactory, toolDefs }) {
@@ -206,7 +210,9 @@ export default async function handler(req, res) {
     if (insufficientScope(auth, msg, toolDefs())) {
       res.setHeader("WWW-Authenticate", wwwAuthenticate(req, { error: "insufficient_scope", scope: ALL_SCOPES }));
       const hint = auth.source === "agent-key"
-        ? "This key is read-only. Mint a full-scope key to write."
+        ? (Array.isArray(auth.scopes) && auth.scopes.includes("logmem:draft")
+          ? "This key can only draft. Mint a full-scope key to write to the live queue."
+          : "This key is read-only. Mint a full-scope key to write.")
         : "This connection can only read. Reconnect and allow logmem:write to write.";
       return res.status(403).json({ error: "insufficient_scope", hint });
     }

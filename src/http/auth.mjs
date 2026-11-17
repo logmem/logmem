@@ -34,7 +34,7 @@ import { descriptorFromEnv } from "../lib/backend.mjs";
 import { assertPublicTarget } from "./net-guard.mjs";
 import { lookupAgentKey, keySpaces, AGENT_KEY_PREFIX } from "./agent-keys.mjs";
 import { customerRedisUri } from "./jail.mjs";
-import { canonicalResource, resourceMetadataUrl, scopesOf, ALL_SCOPES, SCOPE_READ } from "./issuer.mjs";
+import { canonicalResource, resourceMetadataUrl, scopesOf, ALL_SCOPES, SCOPE_READ, SCOPE_DRAFT } from "./issuer.mjs";
 
 const TARGET_CACHE_MS = 60_000;
 const targetCache = new Map(); // sha256(target) -> { ok, until }
@@ -168,7 +168,7 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
         const d = k && keySpaces(env).includes(k.space) ? descriptorFromEnv(env) : null;
         // A key minted with scope "read" resolves with logmem:read only, so the
         // MCP route (insufficientScope) refuses its write tools.
-        if (d) return out(d, "agent-key", { space: k.space, sub: `agent:${k.agent}`, agent: k.agent, keyId: k.id, ...(k.scope === "read" ? { scopes: [SCOPE_READ] } : {}) });
+        if (d) return out(d, "agent-key", { space: k.space, sub: `agent:${k.agent}`, agent: k.agent, keyId: k.id, ...(k.scope === "read" ? { scopes: [SCOPE_READ] } : k.scope === "draft" ? { scopes: [SCOPE_READ, SCOPE_DRAFT] } : {}) });
       } catch {
         // fall through: an unreadable key store is unauthenticated, never open
       }
