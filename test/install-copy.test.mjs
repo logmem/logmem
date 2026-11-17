@@ -5,8 +5,11 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
+const rootDir = fileURLToPath(new URL("../", import.meta.url));
+const publicDir = join(rootDir, "public");
 const readPublic = (path) => readFileSync(new URL(`../public/${path}`, import.meta.url), "utf8");
+const SKIP_DIRS = new Set(["node_modules", ".git"]);
+const TEXT_EXT = /\.(html|js|mjs|md|json|yml|yaml|txt|sh)$/;
 
 function publicSources(dir = publicDir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -39,4 +42,30 @@ test("public pages install LogMem from npm @logmem/mcp", () => {
   const docs = readPublic("docs.html");
   const docInstalls = docs.match(/npx -y @logmem\/mcp|@logmem\/mcp/g) || [];
   assert.ok(docInstalls.length >= 3, "docs install examples name @logmem/mcp");
+});
+
+function repoSources(dir = rootDir, out = []) {
+  for (const name of readdirSync(dir)) {
+    if (SKIP_DIRS.has(name)) continue;
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) repoSources(path, out);
+    else if (TEXT_EXT.test(name) && !path.endsWith(`${join("test", "install-copy.test.mjs")}`)) out.push(path);
+  }
+  return out;
+}
+
+test("the repo does not tell people LogMem is missing from npm or to install it from GitHub", () => {
+  const hits = [];
+  for (const path of repoSources()) {
+    const text = readFileSync(path, "utf8");
+    if (/not on npm/i.test(text) || /github:logmem\/logmem/.test(text)) hits.push(path.slice(rootDir.length));
+  }
+  assert.deepEqual(hits, []);
+  const help = readFileSync(join(rootDir, "src/stdio/index.mjs"), "utf8");
+  assert.match(help, /npx -y @logmem\/mcp/);
+  const walk = readFileSync(join(rootDir, "docs/WALKTHROUGH.md"), "utf8");
+  assert.match(walk, /npx -y @logmem\/mcp/);
+  assert.match(walk, /args = \["-y", "@logmem\/mcp"\]/);
+  const readme = readFileSync(join(rootDir, "README.md"), "utf8");
+  assert.match(readme, /npx -y @logmem\/mcp/);
 });
