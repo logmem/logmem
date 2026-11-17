@@ -10,6 +10,7 @@
   },
   "files": [
     "LICENSE",
+    "CHANGELOG.md",
     "server.json",
     "src/stdio/index.mjs",
     "src/server.mjs",
@@ -33,10 +34,10 @@
   "homepage": "https://logmem.si",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/madezmedia/logmem.git"
+    "url": "git+https://github.com/logmem/logmem.git"
   },
   "bugs": {
-    "url": "https://github.com/madezmedia/logmem/issues"
+    "url": "https://github.com/logmem/logmem/issues"
   },
   "engines": {
     "node": ">=22"

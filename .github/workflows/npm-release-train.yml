@@ -1,0 +1,86 @@
+name: Weekly npm release train
+
+on:
+  schedule:
+    - cron: "0 16 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: npm-release-train
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Install npm with OIDC support
+        run: npm install --global npm@11.5.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run repository checks
+        run: npm run ci
+
+      - name: Check package contents
+        run: |
+          npm pack --dry-run --json > "$RUNNER_TEMP/mcp-pack.json"
+          (cd packages/logmem && npm pack --dry-run --json > "$RUNNER_TEMP/cli-pack.json")
+
+      - name: Prepare changed packages
+        id: prepare
+        env:
+          RELEASE_BODY_PATH: ${{ runner.temp }}/npm-release-body.md
+        run: node scripts/npm-release-train.mjs prepare
+
+      - name: Open or update the release pull request
+        id: pull-request
+        if: steps.prepare.outputs.packages != '[]'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/npm-weekly-release
+          delete-branch: false
+          draft: false
+          title: "chore(release): prepare weekly npm updates"
+          body-path: ${{ runner.temp }}/npm-release-body.md
+          add-paths: |
+            package.json
+            CHANGELOG.md
+            packages/logmem/package.json
+            packages/logmem/CHANGELOG.md
+
+      - name: Run checks on the release pull request
+        if: steps.pull-request.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/npm-ci.yml/dispatches" \
+            -f ref=automation/npm-weekly-release
+
+      - name: Record the result
+        if: always()
+        run: |
+          if [ "${{ steps.prepare.outputs.packages }}" = "[]" ]; then
+            echo "No package changed. No release pull request was opened." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "${{ steps.pull-request.outputs.pull-request-url }}" ]; then
+            echo "Release pull request: ${{ steps.pull-request.outputs.pull-request-url }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "A separate CI run checks the release branch." >> "$GITHUB_STEP_SUMMARY"
+          fi
