@@ -3,7 +3,7 @@ async function signIn(page){await page.request.post('/api/login',{data:{password
 async function audit(page,data){await page.route('**/api/view?*',async route=>{const u=new URL(route.request().url());if(u.searchParams.get('what')!=='audit')return route.fallback();await route.fulfill({json:{ok:true,space:'fieldnotes',spaces:['fieldnotes'],days:[],gate:{},pending:{items:[],total:0,counts:{}},coverage:'partial',...data}});});}
 test('audit does not present partial empty coverage as an empty backlog',async({page})=>{
  await audit(page,{});await signIn(page);
- await expect(page.getByText('Older handoffs still need indexing',{exact:false})).toBeVisible();
+ await expect(page.getByText('Older requests still need indexing',{exact:false})).toBeVisible();
  await expect(page.getByText('No open records were returned.',{exact:true})).toBeVisible();
  await expect(page.getByText('Nothing open.',{exact:true})).toHaveCount(0);
  await page.getByRole('link',{name:'Review requests in Inbox'}).click();

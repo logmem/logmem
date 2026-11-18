@@ -9,7 +9,7 @@ export const FRESH_MS = 36 * 3600e3;
 
 export const SECTION_DEFS = [
   { key: 'clock', label: 'Clock', open: false },
-  { key: 'lanes', label: 'Lanes', open: false },
+  { key: 'lanes', label: 'Plans', open: false },
   { key: 'launch', label: 'Launch', open: false },
   { key: 'blockers', label: 'Blockers', open: true },
   { key: 'infra', label: 'Infra', open: true },

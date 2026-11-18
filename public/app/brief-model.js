@@ -87,9 +87,9 @@ export function briefTiles({ needs = [], queue = null, agents = [], plans = [] }
   const ms = nextMilestone(plans);
   return [
     { id: 'needs', label: 'Needs you', value: p.total, sub: `${p.decision} ${p.decision === 1 ? 'decision' : 'decisions'} · ${p.task} ${p.task === 1 ? 'task' : 'tasks'} · ${p.review} ${p.review === 1 ? 'review' : 'reviews'}`, href: '#/needs', zero: p.total === 0 },
-    { id: 'overdue', label: 'Overdue', value: overdue == null ? '—' : overdue, sub: open ? `of ${open.length} open ${open.length === 1 ? 'handoff' : 'handoffs'}${queue?.nextCursor != null ? ' loaded' : ''}` : 'Inbox unavailable', href: '#/queue/overdue', zero: overdue === 0, tone: overdue > 0 ? 'danger' : '' },
+    { id: 'overdue', label: 'Overdue', value: overdue == null ? '—' : overdue, sub: open ? `of ${open.length} open ${open.length === 1 ? 'request' : 'requests'}${queue?.nextCursor != null ? ' loaded' : ''}` : 'Inbox unavailable', href: '#/queue/overdue', zero: overdue === 0, tone: overdue > 0 ? 'danger' : '' },
     { id: 'agents', label: 'Agents active', value: active, sub: `of ${(agents || []).length} connected`, href: '#/agents', zero: active === 0 },
-    { id: 'milestone', label: 'Next milestone', value: ms ? dayLabel(ms.date, now) : 'None', sub: ms ? ms.title : 'No open milestone', href: ms ? '#/plan/' + encodeURIComponent(ms.plan) : '#/lanes', zero: !ms, small: true },
+    { id: 'milestone', label: 'Next milestone', value: ms ? dayLabel(ms.date, now) : 'None', sub: ms ? ms.title : 'No open milestone', href: ms ? '#/plans/' + encodeURIComponent(ms.plan) : '#/plans', zero: !ms, small: true },
   ];
 }
 /** The handoff the Brief shows as "in flight": the oldest open request. */
@@ -135,7 +135,7 @@ export function dueChip(item, now = Date.now()) {
 }
 
 // ─── Activity ────────────────────────────────────────────────────────
-export const KIND_GROUPS = [['work', 'Work'], ['handoff', 'Handoffs'], ['decision', 'Decisions'], ['signal', 'Signals'], ['error', 'Problems'], ['system', 'System']];
+export const KIND_GROUPS = [['work', 'Work'], ['handoff', 'Requests'], ['decision', 'Decisions'], ['signal', 'Signals'], ['error', 'Problems'], ['system', 'System']];
 /** Newest first, filtered by agent and kind group. */
 export function filterActivity(entries = [], { agent = '', kind = '' } = {}, nameOf = (by) => String(by || '')) {
   return (Array.isArray(entries) ? entries : [])

@@ -63,17 +63,17 @@ test('briefTiles: four linked tiles, zeros flagged, unknown inbox shown as a das
   assert.equal(t[0].sub, '1 decision · 1 task · 0 reviews');
   assert.equal(t[1].value, 1);
   assert.equal(t[1].tone, 'danger');
-  assert.equal(t[1].sub, 'of 2 open handoffs');
+  assert.equal(t[1].sub, 'of 2 open requests');
   assert.equal(t[2].value, 1);
   assert.equal(t[2].sub, 'of 2 connected');
   assert.equal(t[3].value, 'Nov 20');
-  assert.equal(t[3].href, '#/plan/p1');
+  assert.equal(t[3].href, '#/plans/p1');
   const empty = briefTiles({}, NOW);
   assert.equal(empty[0].zero, true);
   assert.equal(empty[1].value, '—');
   assert.equal(empty[1].sub, 'Inbox unavailable');
-  assert.equal(empty[3].href, '#/lanes');
-  assert.equal(briefTiles({ queue: { items: [], nextCursor: 'x' } }, NOW)[1].sub, 'of 0 open handoffs loaded');
+  assert.equal(empty[3].href, '#/plans');
+  assert.equal(briefTiles({ queue: { items: [], nextCursor: 'x' } }, NOW)[1].sub, 'of 0 open requests loaded');
 });
 test('Inbox buckets: overdue includes over 48h, due soon excludes overdue', () => {
   const late = { id: 'a', created_at: NOW - 80 * H, deadline: NOW - 50 * H };

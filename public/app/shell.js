@@ -16,7 +16,7 @@ export const NAV = PRIMARY_NAV;
 export const PHONE_NAV = [['home', 'Brief', 'overview'], ['work', 'Work', 'work'], ['queue', 'Inbox', 'handoff'], ['agents', 'Team', 'agents'], ['more', 'More', 'settings']];
 const PHONE_TAB = { overview: 'home' };
 export { ADMIN };
-const ROUTE_NAV = { brief: 'home', needs: 'home', plan: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
+const ROUTE_NAV = { brief: 'home', needs: 'home', plan: 'work', plans: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
 export const LIVE_LABEL = { live: 'Data connected', reconnecting: 'Reconnecting…', paused: 'Updates paused' };
 
 // lit-html adds to a container; the first render clears the static "Loading…" placeholder.

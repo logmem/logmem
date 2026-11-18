@@ -17,8 +17,8 @@ test('envelope hides raw status codes and marks stale replies',()=>{
  assert.equal(envelope('jobs',{__stale:true}).stale,true);assert.equal(envelope('jobs',{__stale:true}).ok,false);
 });
 test('every view that indexes lists loads through data.js',()=>{
- const views=fs.readFileSync(new URL('../public/app/views.js',import.meta.url),'utf8');
- for(const w of ['home','lanes','plan','agents'])assert.match(views,new RegExp(`load\\('${w}'`));
+ const views=['views.js','plans-view.js'].map(f=>fs.readFileSync(new URL('../public/app/'+f,import.meta.url),'utf8')).join('\n');
+ for(const w of ['home','lanes','jobs','plan','agents'])assert.match(views,new RegExp(`load\\('${w}'`));
  assert.ok(CONTRACT>=1&&KEYS.home);
 });
 test('a cold load primes the space before a page reads it',()=>{

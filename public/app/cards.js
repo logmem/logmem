@@ -1,9 +1,9 @@
 // cards.js — the shared parts (live app spec, section 3): one job card, one plan card, one agent
-// chip, one task card, one decision card, one lane card. Every view is built from these.
+// chip, one task card and one decision card. Every view is built from these. Plan rows live in plans-view.js.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live, isLate } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, moreMenu, dueTag, waitsTag, laneBadge, joinDot, textWithIds } from './ui.js';
-import { doWork, doStep, doTask, doLane, decide } from './actions.js';
+import { doWork, doStep, doTask, decide } from './actions.js';
 import { decisionProblem, shortenIds, jobName, initials } from './dashboard-model.js';
 import {agentDispatchButton} from './dispatch-components.js';
 import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
@@ -38,11 +38,11 @@ export function jobCard(b, { route = '', inPanel = false } = {}) {
 
 export function planCard(p, route) {
   const general = p.id === 'general';
-  return html`<a class="lmx-card lmx-plan ${glow(route, 'plan:' + p.id)}" tabindex="0" data-key=${'plan:' + p.id} href=${`#/plan/${encodeURIComponent(p.id)}`} style="text-decoration:none;color:inherit">
+  return html`<a class="lmx-card lmx-plan ${glow(route, 'plan:' + p.id)}" tabindex="0" data-key=${'plan:' + p.id} href=${`#/plans/${encodeURIComponent(p.id)}`} style="text-decoration:none;color:inherit">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>${laneBadge(p.lane)}${general ? 'general' : p.title}</h3>${general ? nothing : html`<span class="lmx-pct">${num(p.percent)}%</span>`}</div>
     ${general ? html`<div class="lmx-why">${num(p.jobs)} ${p.jobs === 1 ? 'job' : 'jobs'} to file in a plan</div>` : html`
       <div class="lmx-bar"><i style=${`width:${num(p.percent)}%`}></i></div>
-      <div class="lmx-meta">${num(p.done)} of ${num(p.jobs)} done${p.blocked ? html` · <b style="color:var(--warning)">${num(p.blocked)} blocked</b>` : nothing}${p.parked ? ` · ${num(p.parked)} parked` : ''}</div>
+      <div class="lmx-meta">${num(p.done)} of ${num(p.jobs)} done${p.blocked ? html` · <b style="color:var(--warning)">${num(p.blocked)} blocked</b>` : nothing}${p.parked ? ` · ${num(p.parked)} paused` : ''}</div>
       <div class="lmx-why">${p.next_milestone ? `Next: ${p.next_milestone.title}${p.next_milestone.date ? ' · ' + p.next_milestone.date : ''}` : 'No milestone set'}</div>`}</a>`;
 }
 
@@ -157,28 +157,4 @@ export function agentCard(a, opts = {}) {
     <div class="lmx-agent-foot">${gaps.length ? gaps.map((g) => html`<span class="lmx-checkpill" data-ok="0">${g}</span>`) : html`<span class="lmx-checkpill" data-ok="1" title="Now is set and a recap exists">On track</span>`}${r ? html`<span class="lmx-meta lmx-recap-age" title="When the last recap was written">recap ${ago(r.ended_at)}</span>` : nothing}<span class="lmx-foot-spacer"></span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
 }
 
-// ─── lanes ───────────────────────────────────────────────────────────
-function laneActs(l) {
-  const st = l.lane ? l.lane.status : null;
-  const main = st === 'parked' ? btn('Unpark', 'primary', (e) => doLane(e, l.id, 'active'))
-    : !st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing;
-  const more = [st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing,
-    st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing];
-  const rest = more.filter((x) => x !== nothing);
-  return html`<div class="lmx-acts">${main}${main === nothing && rest.length === 1 ? rest : moreMenu(rest)}</div>`;
-}
-const laneJobRow = (j) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}>${jobLink(j.id, j.title)}<span class="lmx-meta">${agentName(j.owner || '')}${j.since ? ' · ' + ago(j.since) : ''}</span></div>`;
-const parkedRow = (j) => { const b = j.blocked_on || {}; return html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}><div>${jobLink(j.id, j.title)}<div class="lmx-meta">${b.note || ''}</div></div><span class="lmx-meta">${joinDot([b.until ? 'until ' + b.until : '', j.owner ? agentName(j.owner) : ''])}</span></div>`; };
-export function laneCard(l, big, route) {
-  const ln = l.lane || {};
-  return html`<section class="lmx-card lmx-lanecard ${glow(route, 'lane:' + l.id)}" data-key=${'lane:' + l.id} data-l=${ln.status || 'none'}>
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><h3 style=${big ? 'font-size:20px' : ''}>${laneBadge(ln)}<a href=${`#/plan/${encodeURIComponent(l.id)}`} style="color:inherit;text-decoration:none">${l.title}</a></h3><span class="lmx-pct">${num(l.percent)}%</span></div>
-    <div class="lmx-bar"><i style=${`width:${num(l.percent)}%`}></i></div>
-    <div class="lmx-meta">${joinDot([ln.owner ? 'driven by ' + ln.owner : '', `${num(l.done)} of ${num(l.jobs)} done`, l.active_count ? `${num(l.active_count)} active` : '', l.blocked_count ? html`<b style="color:var(--warning)">${num(l.blocked_count)} blocked</b>` : '', l.parked_jobs.length ? `${l.parked_jobs.length} parked` : ''])}</div>
-    ${ln.status === 'parked' ? html`<div class="lmx-why"><b>Parked:</b> ${ln.why || ''}${ln.until ? html` <b>Until:</b> ${ln.until}` : nothing}</div>` : ln.why ? html`<div class="lmx-why">${ln.why}</div>` : nothing}
-    ${l.next_milestone ? html`<div class="lmx-why">Next: ${l.next_milestone.title}${l.next_milestone.date ? ' · ' + l.next_milestone.date : ''}</div>` : nothing}
-    ${big && l.active.length ? html`<div class="lmx-colhead" style="margin:8px 0 2px">Moving now</div>${l.active.map(laneJobRow)}` : nothing}
-    ${l.parked_jobs.length && ln.status !== 'parked' ? html`<details ?open=${big}><summary class="lmx-meta" style="cursor:pointer;margin-top:6px">Parked inside this lane (${l.parked_jobs.length})</summary>${l.parked_jobs.map(parkedRow)}</details>` : nothing}
-    ${laneActs(l)}</section>`;
-}
 export { jobLink, openJob };
