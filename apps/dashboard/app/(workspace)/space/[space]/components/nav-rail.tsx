@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { UserButton } from '@clerk/nextjs';
-import { Inbox, Mail, Briefcase, Bot, Activity, KeyRound, ChevronDown, CalendarDays } from 'lucide-react';
+import { Inbox, Mail, Briefcase, Bot, Activity, KeyRound, ChevronDown, CalendarDays, MessageSquare } from 'lucide-react';
 
 interface NavRailProps {
   space: string;
@@ -16,6 +16,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
   const links = [
     { href: `/space/${space}/today`, label: 'Today', icon: Inbox },
     { href: `/space/${space}/inbox`, label: 'Inbox', icon: Mail },
+    { href: `/space/${space}/chat`, label: 'Chat', icon: MessageSquare },
     { href: `/space/${space}/schedule`, label: 'Schedule', icon: CalendarDays },
     { href: `/space/${space}/work`, label: 'Work', icon: Briefcase },
     { href: `/space/${space}/agents`, label: 'Agents', icon: Bot },
