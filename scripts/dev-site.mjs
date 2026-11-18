@@ -75,6 +75,16 @@ if (argv.includes("--seed") && !argv.includes("--business-demos")) {
   await call("logmem_note", { where: "channel:field-notes", kind: "huddle", trail: "huddleIssue15Plan-1", summary: "[huddle @atlas @relay] quill: issue 15 ships Tue. Can we lock the draft by Fri? Reply with yes or the risk." });
   const atlas = createLogmem({ redis, space: "fieldnotes", sessionId: "dev-seed-atlas", surface: "dev", defaultAgent: "atlas" });
   await atlas.callTool("logmem_note", { where: "channel:field-notes", kind: "memo", origin: "huddleIssue15Plan-1", summary: "atlas: yes, photos land Thu." });
+  // Inbox demo (dev only): open agent handoffs of different ages, so the age buckets have something to split.
+  const { createCoordItem } = await import("../src/core/coord.mjs");
+  const coordStore = { space: "fieldnotes", redis };
+  const H = 3600000;
+  for (const [n, from, to, where, summary, ageH] of [
+    [1, "agent:relay", "agent:atlas", "job:i15-photos", "Send the raw cleanup photos: issue 15 needs six picks by Thursday.", 80],
+    [2, "agent:quill", "agent:relay", "job:pod-script", "Review the pilot script intro. Keep it under 90 seconds.", 30],
+    [3, "agent:atlas", "agent:quill", "job:i15-lead", "Fact-check the volunteer count in the lead story.", 20],
+    [4, "agent:quill", "agent:atlas", "job:i15-sponsor", "Crop the sponsor logo to the 3:1 banner size.", 2],
+  ]) await createCoordItem(coordStore, { type: "handoff", requestTrail: `devInboxDemo${n}`, from, to, where, summary, createdAt: Date.now() - ageH * H });
   const backend = await import("../src/lib/backend.mjs");
   const orig = backend.fromDescriptor;
   // dev only: route every descriptor to the seeded memory Redis

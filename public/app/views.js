@@ -4,10 +4,12 @@ import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { live as liveDir } from '/vendor/lit-html-3.2.1/directives/live.js';
 import { repeat } from '/vendor/lit-html-3.2.1/directives/repeat.js';
 import { getJSON, live, state, num, ago, hhmm, agentName, filt, saveFilt, uniq, isLate } from './core.js';
+import { idChip, textWithIds } from './ui.js';
+import { filterActivity, dayGroups, KIND_GROUPS, placeLink, relTime, fullTime, clock24 } from './brief-model.js';
 import { icon, agent, seenTag, fresh, stage, decision, entries, emptyState, panel, kv, table, head, btn, laneBadge, waitsTag, dueTag } from './ui.js';
 import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, laneCard, jobLink, askCard, copy } from './cards.js';
 import { invite } from './actions.js';
-import {launchpad} from './launchpad.js';
+import {launchpad,setupStrip} from './launchpad.js';
 import {groupControl,logList,inspector,recallCard,recallExplainer} from './log-components.js';
 import {groupByMode,logRows,entryKey,matchTerms} from './log-model.js';
 import {earliestPass} from './canvas-detail-model.js';
@@ -16,7 +18,9 @@ import {viewOnlyNote,riskNote,inviteAllConfirm,inviteAllLabel,SETTINGS_NOTE,AUDI
 import {healthQueueItems,auditDays,overdueRequest,unindexedRequest} from './health-model.js';
 import {healthRequestRow,auditBreakdownCard} from './health-components.js';
 import {observeTelemetry} from './telemetry-state.js';
-import {bentoTaskCard,planProgressTile,terminalActionBanner,waitingTeamCard} from './today-components.js';
+import {bentoTaskCard,waitingTeamCard} from './today-components.js';
+import {pageHeader,promiseStrip,statTiles,agentsList,handoffCard,recentFeed} from './brief-view.js';
+import {handoffInFlight} from './brief-model.js';
 import {workspaceAssistant} from './shell.js';
 import { renderView } from './shell.js';
 import { load } from './data.js';
@@ -42,43 +46,42 @@ const ok = (d) => okHook(d);
 const col = (cls, title, n, body) => html`<section class=${cls}><h2 class="lmx-colhead">${title}${n != null ? html` <b>${n}</b>` : nothing}</h2><div class="lmx-stack">${body}</div></section>`;
 const keyed = (list, key, tpl) => repeat(list, key, tpl);
 
-// ─── Today: decisions, waits, source updates, and compact priorities ───
+// ─── Brief: what needs you, the numbers, who is working, and what just happened ───
+// No hero. One header, the promise strip, an optional status strip (shell), four linked tiles, then work.
 pages.home = async () => {
+  // The Inbox tile reads the first queue page. A cold load learns the space from home first.
+  const readQueue = () => getJSON('/api/interactions?' + new URLSearchParams({ space: state.space || '', queue: '1' })).catch(() => null);
+  const early = state.space ? readQueue() : null;
   const d = await load('home');
   if (!ok(d)) return;
+  const queue = await (early || readQueue());
   live.needs = d.needs_count; live.home = d;
   observeTelemetry(state.space,{decisions:{value:Array.isArray(d.needs_items)?d.needs_items.filter(i=>i.type==='decision').length:null}});
   const b = briefFor(d), needs = d.needs_items || [];
-  const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
-  const heading = b.decisions ? `${b.decisions === 1 ? 'One decision needs' : b.decisions + ' decisions need'} you.` : 'Your work,', sub = b.decisions ? 'Everything else is in view.' : 'in view.';
-  if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Today'],html`<h1>Your space is ready.</h1>${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}${seedCard({project:state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space})}`);
+  const spaceLabel = state.customer ? state.spaceRecords.find(s=>s.id===state.spaceId)?.name || state.space : state.space;
+  // A workspace with no work at all shows the full setup; otherwise setup is one compact strip below the numbers.
+  if(state.customer&&b.total===0&&!d.agents.length)return renderView('home',['Brief'],html`${pageHeader('Space ' + spaceLabel, 'Brief')}<h2 class="lmx-section-title">Your space is ready.</h2>${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}${seedCard({project:state.spaceRecords.find(s=>s.id===state.spaceId)?.name||state.space})}`);
+  const q = queue && queue.__status === 200 && Array.isArray(queue.items) ? queue : null;
   const review = i => i.type==='task' ? openDrawer('needs','tasks') : i.job ? openDrawer('job',i.job) : openDrawer('needs','all');
   const attention = i => bentoTaskCard({item:i,space:state.space,review:()=>review(i)});
-  const counts = attentionCounts(needs), pf = filt('home:'+state.space);
-  const draw = () => {
-  const shown = filterAttention(needs, pf.attn || 'all');
-  const plans = splitPlans(d.plans || []);
-  const setAttn = kind => () => { pf.attn = kind; saveFilt(); draw(); document.getElementById('today-board')?.scrollIntoView({ block: 'nearest' }); };
-  const pills = [['all', 'All'], ['decision', 'Decisions'], ['task', 'Tasks'], ['review', 'Reviews']];
-  renderView('home', ['Today'], html`
-    <div class="lmx-today-heading lmx-hero"><div><span class="lm-eyebrow">Your workspace · ${state.customer?state.spaceRecords.find(s=>s.id===state.spaceId)?.name:state.space}</span><h1>${heading}<span>${sub}</span></h1><p>Decide what needs you. Keep the next step in view.</p>
-      <div class="lmx-hero-note"><img src="/ds/logos/logmem-symbol.svg" alt="" width="34" height="24"><p>Counts describe the records loaded in this view. Open Inbox for unanswered coordination.</p></div></div>
-      <a class="lm-btn lm-btn--secondary" href="#/queue">Open Inbox</a></div>
-    ${launchpad({data:d,space:state.space,refresh:()=>pages.home()})}
-    <div class="lmx-triage-strip" role="group" aria-label="Workspace status filters">${[['decision',b.decisions,'Decisions'],['task',b.tasks,'Tasks'],['waiting',b.blocked,'Waiting'],['done',b.done,'Done']].map(([kind,value,label])=>html`<button type="button" aria-pressed=${String(pf.attn===kind)} @click=${setAttn(pf.attn===kind?'all':kind)}><strong>${value??'Unknown'}</strong><span>${label}${Number.isFinite(b.total)&&b.total>0&&Number.isFinite(value)?html`<small class="lmx-tile-sub">of ${b.total} items</small>`:nothing}</span></button>`)}<span class="lmx-meta">Loaded workspace records · ${d.generated_at?ago(d.generated_at):'this read'}</span></div>
-    ${terminalActionBanner({item:needs.find(i=>i.type==='decision'),space:state.space,review:()=>review(needs.find(i=>i.type==='decision'))})}
-    <details class="lmx-coverage"><summary>What this view covers</summary><p>This summary reads a bounded set of records. Open Inbox for unanswered coordination and Health for receipt coverage. Counts describe this view only.</p>
-      ${(d.coverage?.notes || []).map(n => html`<p>${n}</p>`)}${(d.coverage?.errors || []).map(e => html`<p role="alert">${e.source}: ${e.message}</p>`)}</details>
-    <div class="lmx-today-grid"><div class="lmx-stack">
-      <section id="today-board">${pf.attn==='waiting'?html`<h2 class="lmx-section-title">Waiting work <span>${d.blocked.length}</span></h2><div class="lmx-stack">${d.blocked.length?d.blocked.map(j=>jobCard(j,{route:'home'})):emptyState('No waiting work was returned.','This view covers loaded records only.')}</div>`:pf.attn==='done'?html`<h2 class="lmx-section-title">Completion by plan</h2><p class="lmx-meta">${b.done} of ${b.total} loaded work items are done. Open a plan for its completed work.</p><div class="lmx-stack">${(d.plans||[]).filter(p=>Number(p.done)>0).map(planProgressTile)}</div>`:html`<div class="lmx-board-head"><h2 class="lmx-section-title">Needs your attention <span>${needs.length}</span></h2><div class="lmx-filter" role="group" aria-label="Filter by type">${pills.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String((pf.attn || 'all') === k)} @click=${setAttn(k)}>${l} (${counts[k]})</button>`)}</div></div><div class="lmx-attention-grid">${shown.length ? keyed(shown, i => state.space + ':' + i.type + ':' + i.trail, attention) : needs.length ? emptyState('Nothing of this type.', 'Pick All to see every request.') : emptyState('No personal requests were returned.', 'The coordination backlog may contain other unanswered requests. See coverage above.') }</div>`}</section>
-      ${!pf.attn||pf.attn==='all'?html`<section id="today-waiting"><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-waiting-list">${waits.length ? keyed(waits, j => j.id, waitingTeamCard) : emptyState('No other blocked jobs were returned.', 'This is not a complete handoff backlog.')}</div></section>`:nothing}
-      <section id="today-updates"><h2 class="lmx-section-title">Recent job updates</h2><div class="lmx-card lmx-update-list">${groupUpdates(d.recent || []).groups.slice(0,6).map(g => g.entries[0]).map(e => html`<div class="lmx-update"><div class="lmx-update-source"><span class="lmx-update-agent">${agentName(e.by)}</span><time class="lmx-meta">${hhmm(e.ts)}</time><span class="lmx-chip">${e.kind}</span></div><p>${e.summary}</p><a href=${'#/job/' + encodeURIComponent(e.where.replace(/^job:/,''))}>Open work →</a></div>`)}${!d.recent?.length ? html`<p class="lmx-meta">No recent job updates were returned. See coverage above.</p>` : nothing}</div><a href="#/activity" class="lmx-text-link">View Activity →</a></section>
-    </div><details class="lmx-operations" ?open=${pf.operations!==false} @toggle=${e=>{pf.operations=e.currentTarget.open;saveFilt();}}><summary><strong>Operations</strong><span>Plans, team and workspace guidance</span></summary><div class="lmx-operations-body"><section><h2 class="lmx-section-title">Current priorities</h2><div class="lmx-stack">${keyed(plans.active, p => p.id, p => planProgressTile(p))}</div>${plans.empty.length ? html`<details class="lmx-parked-plans"><summary>Show ${plans.empty.length} parked ${plans.empty.length === 1 ? 'plan' : 'plans'}</summary><div class="lmx-stack">${keyed(plans.empty, p => p.id, p => planProgressTile(p))}</div></details>` : nothing}<a href="#/work" class="lmx-text-link">Open all work →</a></section>
-      <p class="lmx-meta">${d.agents.length} agents have records. Reporting activity does not prove a running process. <a href="#/agents">Review team →</a></p><details class="lmx-operations-assistant"><summary>Workspace guidance</summary>${workspaceAssistant('home')}</details></div></details></div>`);
-  };
-  draw();
+  const waits = d.blocked.filter(j => !['task', 'decision'].includes(j.blocked_on?.type));
+  const errors = d.coverage?.errors || [];
+  renderView('home', ['Brief'], html`
+    ${pageHeader('Space ' + spaceLabel, 'Brief')}
+    ${promiseStrip({ needs, review })}
+    ${statTiles({ needs, queue: q, agents: d.agents, plans: d.plans }, () => openDrawer('needs', 'all'))}
+    ${setupStrip({data:d,space:state.space,refresh:()=>pages.home()})}
+    <div class="lmx-brief-grid">
+      ${agentsList(d.agents || [])}
+      <div class="lmx-stack">${handoffCard(q ? handoffInFlight(q.items) : null)}${recentFeed(d.recent || [])}</div>
+    </div>
+    ${needs.length ? html`<section id="today-board"><h2 class="lmx-section-title">Needs your attention <span>${needs.length}</span></h2><div class="lmx-attention-grid">${keyed(needs, i => state.space + ':' + i.type + ':' + i.trail, attention)}</div></section>` : nothing}
+    ${waits.length ? html`<section id="today-waiting"><h2 class="lmx-section-title">Waiting on your team <span>${waits.length}</span></h2><div class="lmx-waiting-list">${keyed(waits, j => j.id, waitingTeamCard)}</div></section>` : nothing}
+    <details class="lmx-coverage lmx-coverage--quiet"><summary>About these numbers</summary><p>Counts come from the records loaded for this view${d.generated_at ? ', read ' + ago(d.generated_at) : ''}. The Inbox tile reads its first page.</p>${(d.coverage?.notes || []).map(n => html`<p>${n}</p>`)}${errors.map(e => html`<p role="alert">${e.source}: ${e.message}</p>`)}</details>`);
 };
 pages.overview = pages.home;
+pages.brief = pages.home;
+pages.needs = async () => { location.replace('#/home'); openDrawer('needs', 'all'); };
 pages.decisions = async () => { location.replace('#/home'); openDrawer('needs', 'decisions'); };
 pages.blockers = async () => { location.replace('#/home'); openDrawer('needs', 'tasks'); };
 
@@ -262,7 +265,7 @@ function drawLog() {
     f.where = f.agent = f.kind = f.q = ''; f.allEvents = true; saveFilt(); live.recall = null;
     if (location.hash !== '#/log') location.hash = '#/log'; else drawLog();
   };
-  renderView('log', ['Activity'], html`${head('Activity', 'Recent source entries. This bounded window is not the full coordination backlog.')}<div class="lmx-tabsbar" role="group" aria-label="Activity detail"><button type="button" aria-pressed=${!f.allEvents} @click=${()=>{f.allEvents=false;saveFilt();drawLog();}}>Work updates</button><button type="button" aria-pressed=${!!f.allEvents} @click=${()=>{f.allEvents=true;saveFilt();drawLog();}}>All events</button></div>
+  renderView('log', [html`<a href="#/activity">Activity</a>`, 'Log'], html`${head('Log', 'Recent source entries with the inspector and Recall. This bounded window is not the full coordination backlog.')}<div class="lmx-tabsbar" role="group" aria-label="Activity detail"><button type="button" aria-pressed=${!f.allEvents} @click=${()=>{f.allEvents=false;saveFilt();drawLog();}}>Work updates</button><button type="button" aria-pressed=${!!f.allEvents} @click=${()=>{f.allEvents=true;saveFilt();drawLog();}}>All events</button></div>
     <form class="lmx-filters" role="search" @submit=${(e) => { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(e.target.q.value); }}>
       <label class="lmx-f lmx-f-q"><span>Recall</span><input class="lm-input" name="q" .value=${liveDir(rq)} placeholder="what did we decide about…"></label><button class="lm-btn lm-btn--primary" style="align-self:flex-end">Recall</button></form>
     <details class="lmx-filter-fold" ?open=${!matchMedia('(max-width:639px)').matches}><summary>Filters</summary><div class="lmx-filters">${selectBox('log', 'where', 'Where', places, drawLog)}${selectBox('log', 'agent', 'Who', uniq(all.map((e) => agentName(e.by))), drawLog)}${selectBox('log', 'kind', 'Kind', uniq(all.map((e) => e.group)), drawLog)}${searchBox('log', 'Words in the entry', drawLog)}</div></details>
@@ -271,7 +274,27 @@ function drawLog() {
     ${timeScrubber({ entries: all, t: f.scrubT ?? null, scrub: (t) => { f.scrubT = t; drawLog(); } })}
     <div class="lmx-log-layout${sel ? ' has-sel' : ''}">${inspector({ sel, all, close: () => { live.logSel = null; drawLog(); } })}<section class="lm-panel lmx-log-list" style="padding:8px 16px 16px">${mode !== 'time' || f.allEvents ? (list.length ? logList(logRows(list, mode), selKey, pick) : emptyState('No entries match.', 'Clear a filter. This is a bounded read window.')) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${logList(g.entries.map((e) => ({ type: 'entry', e })), selKey, pick)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.${mode === 'shift' || (mode === 'time' && f.allEvents) ? ' Shift markers come from entry times: a new writer or a gap over 30 minutes starts a shift.' : ''}</p></section></div>`);
 }
-pages.activity = () => pages.log();
+// ─── Activity: the full feed, newest first, grouped by day ─────────
+// The raw log with the inspector and Recall stays at #/log.
+const ACTIVITY_PAGE = 50;
+function drawActivity() {
+  const all = live.log || [], f = filt('activity:' + state.space), now = Date.now();
+  const agents = uniq(all.map((e) => agentName(e.by)).filter(Boolean)).sort();
+  if (f.agent && !agents.includes(f.agent)) f.agent = '';
+  const list = filterActivity(all, { agent: f.agent || '', kind: f.kind || '' }, agentName);
+  const kinds = Object.fromEntries(KIND_GROUPS.map(([k]) => [k, all.filter((e) => (e.group || 'system') === k && (!f.agent || agentName(e.by) === f.agent)).length]));
+  const shown = list.slice(0, Math.max(ACTIVITY_PAGE, Number(f.shown) || ACTIVITY_PAGE));
+  const set = (key, value) => () => { f[key] = value; f.shown = ACTIVITY_PAGE; saveFilt(); drawActivity(); };
+  const row = (e) => html`<li class="lmx-activity-row" data-k=${e.group || 'system'}><time datetime=${new Date(Number(e.ts)).toISOString()} title=${fullTime(e.ts)}>${clock24(e.ts)}</time>
+    <span class="lmx-kind-chip" data-k=${e.group || 'system'}>${e.kind}</span>${agent(e.by)}
+    <div class="lmx-activity-main"><p>${textWithIds(e.summary)}</p><span class="lmx-feed-meta">${placeLink(e.where) ? html`<a href=${placeLink(e.where).href}>${placeLink(e.where).label}</a>` : html`<span>${e.where || 'No place recorded'}</span>`}${e.trail ? idChip(e.trail, 'trail') : nothing}<span title=${fullTime(e.ts)}>${relTime(e.ts, now)}</span></span></div></li>`;
+  renderView('activity', ['Activity'], html`<header class="lmx-pageheader"><div><span class="lm-eyebrow">Every entry · newest first</span><h1>Activity</h1></div><div class="lmx-pageheader-links"><a href="#/log">Log and Recall</a></div></header>
+    <div class="lmx-activity-filters"><label class="lmx-f"><span>Agent</span><select class="lm-select" aria-label="Filter by agent" @change=${(e) => set('agent', e.target.value)()}><option value="">All agents</option>${agents.map((n) => html`<option ?selected=${n === f.agent}>${n}</option>`)}</select></label>
+      <div class="lmx-filter" role="group" aria-label="Filter by kind"><button type="button" class="lmx-typepill" aria-pressed=${String(!f.kind)} @click=${set('kind', '')}>All ${f.agent ? all.filter((e) => agentName(e.by) === f.agent).length : all.length}</button>${KIND_GROUPS.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-k=${k} aria-pressed=${String(f.kind === k)} ?disabled=${!kinds[k] && f.kind !== k} @click=${set('kind', f.kind === k ? '' : k)}>${l} ${kinds[k]}</button>`)}</div></div>
+    ${shown.length ? dayGroups(shown, now).map((g) => html`<section class="lmx-activity-day" aria-label=${g.label}><h2 class="lmx-activity-dayhead">${g.label} <span class="lmx-meta">${g.entries.length}</span></h2><ol class="lmx-activity-list">${repeat(g.entries, entryKey, row)}</ol></section>`) : emptyState(all.length ? 'No entries match these filters.' : 'No activity yet.', all.length ? 'Pick All agents or All kinds.' : 'Entries appear here as agents write.')}
+    <div class="lmx-activity-foot">${list.length > shown.length ? html`<button type="button" class="lm-btn lm-btn--secondary" @click=${() => { f.shown = shown.length + ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Load ${Math.min(ACTIVITY_PAGE, list.length - shown.length)} more</button>` : nothing}<span class="lmx-meta">${shown.length} of ${list.length} shown. This screen reads the latest ${all.length} entries; use <a href="#/log">Recall</a> for older ones.</span></div>`);
+}
+pages.activity = async () => { const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawActivity(); };
 pages.log = async () => { live.recall = null; const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
 pages.recall = async (q) => {
   const query = q || '';

@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {ageLabel,ticketAgeBadge} from '../public/app/dispatch-model.js';
+import {briefTiles} from '../public/app/brief-model.js';
 const read=f=>fs.readFileSync(new URL('../public/'+f,import.meta.url),'utf8');
 const shell=read('app/shell.js'),inter=read('app/interactions.js'),dc=read('app/dispatch-components.js'),views=read('app/views.js'),css=read('app.css');
 test('phone tabs draw a needs badge on Today and Inbox, hidden at zero or null',()=>{
@@ -31,7 +32,15 @@ test('demo badge wording and no unicode glyph icons in shell',()=>{
  assert.doesNotMatch(shell,/Sample space|Contains sample content/);
  for(const g of ['▣','⌄','✓','＋'])assert.ok(!shell.includes(g)&&!dc.includes(g),g);
 });
-test('Today tiles add x of y only from loaded totals',()=>{
- assert.match(views,/Number\.isFinite\(b\.total\)&&b\.total>0&&Number\.isFinite\(value\)/);
+test('Brief tiles come from the brief model and link to their pages',()=>{
+ assert.match(views,/statTiles\(\{ needs, queue: q, agents: d\.agents, plans: d\.plans \}/);
+ assert.doesNotMatch(views,/Number\.isFinite\(b\.total\)&&b\.total>0&&Number\.isFinite\(value\)/);
+ const tiles=briefTiles({needs:[{type:'decision'}],queue:{items:[]},agents:[],plans:[]},1e12);
+ assert.deepEqual(tiles.map(t=>t.href),['#/needs','#/queue/overdue','#/agents','#/lanes']);
  assert.match(css,/\/\* canvas-inbox \*\//);
+});
+test('Inbox and Activity skip the assistant rail and use the full width',()=>{
+ assert.match(shell,/NO_ASSISTANT\.has\(route\)\?nothing:workspaceAssistant\(route\)/);
+ assert.match(shell,/NO_ASSISTANT = new Set\(\['home', 'overview', 'queue', 'activity'\]\)/);
+ assert.match(css,/\.lmx-workarea\[data-route="queue"\],:root\[data-app-theme\] \.lmx-workarea\[data-route="activity"\]\{grid-template-columns:minmax\(0,1fr\)\}/);
 });
