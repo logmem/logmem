@@ -1,7 +1,8 @@
 // ui.js — small display parts shared by every view. All lit-html templates: values are escaped.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { hhmm, ago, agentName, isLate, toast } from './core.js';
+import { hhmm, ago, agentName, isLate, toast, state } from './core.js';
 import { shortenIds } from './dashboard-model.js';
+import { agentIcon } from './agent-icons.js';
 import { stageLabel, priorityLabel, PRIORITY_LABEL } from './labels.js';
 
 export { html, nothing };
@@ -21,7 +22,8 @@ export function agent(by) {
   const n = agentName(by) || '?';
   const human = /^human:/.test(by || '');
   const ini = n.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
-  return html`<span class="lm-agent"><span class="lm-avatar" ?data-human=${human} style=${human ? '' : `background:var(--${hue(n)})`} aria-hidden="true">${ini}</span><span class="lm-agent-name">${n}</span></span>`;
+  const logo = human ? null : agentIcon(state.space, by);
+  return html`<span class="lm-agent"><span class="lm-avatar" ?data-human=${human} style=${human || logo ? '' : `background:var(--${hue(n)})`} aria-hidden="true">${logo ? html`<img src=${logo.src} alt="" loading="lazy" decoding="async">` : ini}</span><span class="lm-agent-name">${n}</span></span>`;
 }
 export function seenTag(s) {
   const label = { active: 'Wrote in the last 15 min', idle: 'Quiet', offline: 'No recent entries', unknown: 'Never wrote' }[s?.state] || 'Unknown';

@@ -10,6 +10,7 @@ import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
 import { AGENT_CLIENTS } from './agent-clients.js';
 import { approveObject, reversibleLine } from './canvas-detail-model.js';
+import { agentIcon, savedAgentIcon } from './agent-icons.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
 /** One name for a job everywhere: its title when the loaded board has it, else the id. */
@@ -120,9 +121,6 @@ export function agentCard(a, opts = {}) {
   const now = a.now || {}, r = a.recap, job = jobName(now.job), open = opts.open === true;
   const parts = shortenIds(now.doing || ''), nextParts = shortenIds(now.next || '');
   const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
-  // Grok Bot is its own product. These agents run on it or report to chief-of-staff, per their profiles in the madez space.
-  const GROK_BOT_IDS = ['chief-of-staff', 'ops-center', 'open-design', 'avery', 'ez-influencer-lab', 'grok', 'grok-local', 'grok-coding', 'infra'];
-  const GROK_BOT_FAMILIES = ['bentley', 'folana'];
   const id = String(a.id || '').toLowerCase();
   const isAgent = (name) => id === name || id.startsWith(name + '-');
   const provider = isAgent('claude-code') ? { name: 'Anthropic', asset: 'claude-code.png' }
@@ -136,16 +134,17 @@ export function agentCard(a, opts = {}) {
     : isAgent('muse') ? { name: 'Muse', asset: 'muse.jpg' }
     : isAgent('opencode') ? { name: 'OpenCode', asset: 'opencode.svg' }
     : isAgent('antigravity') ? { name: 'Antigravity', asset: 'antigravity.png' }
-    : GROK_BOT_IDS.includes(id) || GROK_BOT_FAMILIES.some(isAgent) ? { name: 'Grok Bot', asset: 'grokbot.jpg' }
     : null;
   const client = AGENT_CLIENTS[id];
   const providerName = provider?.name || client?.name || '';
+  const savedLogo = savedAgentIcon(opts.space || state.space, a.id);
+  const logo = savedLogo || (!provider?.asset ? agentIcon(opts.space || state.space, a.id) : null);
   const activity = a.seen?.state || 'unknown';
   const recapLine = r ? String(r.summary || '').split(/\r?\n/).find((l) => l.trim()) || '' : '';
   const gaps = [now.doing ? null : 'No Now set', r ? null : 'No recap'].filter(Boolean);
   return html`<article class="lmx-card lmx-agent-card" tabindex="0" data-key=${'agent:' + a.id} data-state=${a.seen?.state || 'unknown'}>
     <div class="lmx-agent-head">
-      <span class="lmx-avatar lmx-agent-avatar" data-state=${activity} data-agent=${id} aria-hidden="true">${provider?.asset ? html`<img src=${'/home-assets/agents/' + provider.asset} alt="" loading="lazy">` : initials(a.id)}</span>
+      <span class="lmx-avatar lmx-agent-avatar" data-state=${activity} data-agent=${id} aria-hidden="true">${savedLogo ? html`<img src=${savedLogo.src} alt="" loading="lazy" decoding="async">` : provider?.asset ? html`<img src=${'/home-assets/agents/' + provider.asset} alt="" loading="lazy">` : logo ? html`<img src=${logo.src} alt="" loading="lazy" decoding="async">` : initials(a.id)}</span>
       <div class="lmx-agent-identity"><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${agentName(a.id)}</a>${providerName ? html`<span class="lmx-agent-provider">${providerName}</span>` : nothing}</div>
       <span class="lmx-agent-seen" title="Recent writing activity">${seenTag(a.seen)}</span>
     </div>

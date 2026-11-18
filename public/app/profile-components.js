@@ -8,6 +8,8 @@ import { initials } from './dashboard-model.js';
 import { agentDispatchPrompt } from './dispatch-model.js';
 import { agentDispatchButton } from './dispatch-components.js';
 import { profileNow, recapParts, followGroups, followCounts, FOLLOW_SHOW, shiftRows, profileTelemetry } from './profile-model.js';
+import { agentIcon } from './agent-icons.js';
+import { profileTools } from './profile-tools.js';
 
 const pill = (label, on, click) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click}>${label}</button>`;
 const SHIFT_FILTERS = [['all', 'All'], ['auto', 'Auto'], ['manual', 'Manual']];
@@ -23,6 +25,7 @@ function extraValue(x) {
 /** Agent profile. d is the agent view payload. pf holds the filters, redraw repaints. */
 export function agentProfile({ d, id, pf, redraw, space }) {
   const now = profileNow(d.now), recap = recapParts(d.recap), tel = profileTelemetry(d);
+  const logo = agentIcon(space, id);
   const groups = followGroups(d.follows), fc = followCounts(groups);
   const folMode = FOLLOW_FILTERS.some(([k]) => k === pf.fol) ? pf.fol : 'all';
   const folRows = (folMode === 'all' ? [...groups.job, ...groups.channel, ...groups.other] : groups[folMode]);
@@ -34,7 +37,7 @@ export function agentProfile({ d, id, pf, redraw, space }) {
   const dispatch = { id, now: d.now, recap: d.recap, seen: d.seen };
   return html`<section class="lmx-prof" aria-label=${'Agent profile for ' + id}>
     <header class="lmx-card lmx-prof-head" data-state=${tel.state}>
-      <div class="lmx-prof-id"><span class="lmx-avatar" aria-hidden="true">${initials(id)}</span><h2>${id}</h2>${tel.role ? html`<span class="lmx-tag">${tel.role}</span>` : nothing}</div>
+      <div class="lmx-prof-id"><span class="lmx-avatar lmx-prof-avatar" aria-hidden="true">${logo ? html`<img src=${logo.src} alt="">` : initials(id)}</span><h2>${id}</h2>${tel.role ? html`<span class="lmx-tag">${tel.role}</span>` : nothing}</div>
       <div class="lmx-prof-pills">
         <span class="lmx-prof-seen">${seenTag(d.seen)}</span>
         ${now.blocked ? html`<span class="lm-badge lm-badge--warning">Blocked</span>` : nothing}
@@ -42,6 +45,8 @@ export function agentProfile({ d, id, pf, redraw, space }) {
       </div>
       <p class="lmx-meta">These are reports from the log. Recent activity does not prove a running process. Schedule coverage and run controls are not verified.</p>
     </header>
+
+    ${profileTools({ d, id, space, redraw })}
 
     <div class="lmx-prof-grid">
       <section class="lmx-card lmx-prof-tile lmx-prof-now" aria-label="Now">
