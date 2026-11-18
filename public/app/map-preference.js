@@ -1,4 +1,4 @@
-// Keep spatial mode as the default and store the user's choice across routes.
+// Keep Map (stored as 'spatial') as the default; List is stored as 'table'. Keep spatial mode as the default and store the user's choice across routes.
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
 
 const KEY = 'logmem-map-view';
@@ -18,7 +18,7 @@ if (typeof document !== 'undefined') document.documentElement.dataset.mapMode = 
 export function mapViewToggle() {
   const mode = typeof document === 'undefined' ? 'spatial' : document.documentElement.dataset.mapMode || readMode();
   return html`<div class="lmx-map-toggle" role="group" aria-label="Page layout">
-    <button type="button" data-view="spatial" aria-pressed=${String(mode === 'spatial')} @click=${() => setMode('spatial')}><span aria-hidden="true">◉</span> Spatial</button>
-    <button type="button" data-view="table" aria-pressed=${String(mode === 'table')} @click=${() => setMode('table')}><span aria-hidden="true">▤</span> Table</button>
+    <button type="button" data-view="spatial" aria-pressed=${String(mode === 'spatial')} @click=${() => setMode('spatial')}><span aria-hidden="true">◉</span> Map</button>
+    <button type="button" data-view="table" aria-pressed=${String(mode === 'table')} @click=${() => setMode('table')}><span aria-hidden="true">▤</span> List</button>
   </div>`;
 }

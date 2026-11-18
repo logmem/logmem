@@ -65,11 +65,15 @@ test("quick search: Cmd or Ctrl K finds a job and opens it", async ({ page }) =>
   await expect(page.locator("#lmx-dt")).toHaveText("Photo set from the cleanup");
 });
 
-test("lanes: the board shows the P0 lane; parking needs a reason", async ({ page }) => {
+test("plans: the Top priority plan leads; pausing asks for a reason in the page", async ({ page }) => {
   await signIn(page, "#/lanes");
-  await expect(page.locator('.lmx-lanecard[data-l="p0"]')).toContainText("Field Notes issue 15");
-  await page.locator('.lmx-lanecard[data-l="active"]').getByRole("button", { name: "Park" }).click();
-  await expect(page.locator(".lmx-toast").last()).toContainText("why the lane parks");
+  await expect(page.locator('.lmx-planrow[data-l="p0"]')).toContainText("Field Notes issue 15");
+  const row = page.locator('.lmx-planrow[data-l="active"]').first();
+  await row.getByRole("button", { name: /Change priority/ }).click();
+  await row.getByRole("button", { name: /Paused/ }).click();
+  await expect(row.getByLabel(/Why pause/)).toBeFocused();
+  await row.getByRole("button", { name: "Pause plan" }).click();
+  await expect(row.getByLabel(/Why pause/)).toBeVisible();
 });
 
 test("log: a huddle opens its round table", async ({ page }) => {

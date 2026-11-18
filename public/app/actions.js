@@ -3,7 +3,7 @@
 import { html, render } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { postJSON, toast, state, live } from './core.js';
 import { decisionProblem } from './dashboard-model.js';
-import { LANE_LABEL } from './ui.js';
+import { needsReason, priorityToast } from './plans-model.js';
 
 const dialogs=new Set();
 export function cancelDialogs(){for(const close of [...dialogs])close(false);}
@@ -55,18 +55,17 @@ export async function doTask(ev, action, trail) {
   } catch (e) { toast('Not saved: ' + e.message, true); } finally { if (card) card.style.opacity = ''; busy(b, false); }
 }
 
-// ─── lanes ───────────────────────────────────────────────────────────
-export async function doLane(ev, plan, status) {
-  const key = `lane:${plan}`, why = noteFor(key), b = ev.currentTarget;
-  if (status === 'parked' && !why) { toast('Say in one line why the lane parks.', true); focusNote(key); return; }
-  if (status === 'p0' && !window.confirm(`Make ${plan} the P0 lane? The current P0 lane moves to active.`)) return;
-  busy(b, true);
+// ─── plan priority (the stored lane status: p0 / active / parked) ────
+// Same /api/lane call and server rules as before: one Top priority per space (the old one moves to
+// Active), and pausing needs a reason. The Plans page asks for the reason in an in-page form.
+export async function setPlanPriority({ plan, title, status, why }) {
+  if (needsReason(status) && !String(why || '').trim()) { toast('Say in one line why the plan pauses.', true); return false; }
   try {
-    const j = await postJSON('/api/lane', 'work', { plan, status, why: why || undefined });
-    clearNote(key);
-    toast(`Lane ${plan}: ${LANE_LABEL[status]}${j.demoted && j.demoted.length ? `. ${j.demoted.join(', ')} moved to active.` : '.'}`);
+    const j = await postJSON('/api/lane', 'work', { plan, status, why: String(why || '').trim() || undefined });
+    toast(priorityToast(title || plan, status, j.demoted));
     onChanged();
-  } catch (e) { toast('Not saved: ' + e.message, true); } finally { busy(b, false); }
+    return true;
+  } catch (e) { toast('Not saved: ' + e.message, true); return false; }
 }
 
 // ─── decisions: one ask, or a batch ──────────────────────────────────

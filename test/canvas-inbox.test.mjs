@@ -36,7 +36,7 @@ test('Brief tiles come from the brief model and link to their pages',()=>{
  assert.match(views,/statTiles\(\{ needs, queue: q, agents: d\.agents, plans: d\.plans \}/);
  assert.doesNotMatch(views,/Number\.isFinite\(b\.total\)&&b\.total>0&&Number\.isFinite\(value\)/);
  const tiles=briefTiles({needs:[{type:'decision'}],queue:{items:[]},agents:[],plans:[]},1e12);
- assert.deepEqual(tiles.map(t=>t.href),['#/needs','#/queue/overdue','#/agents','#/lanes']);
+ assert.deepEqual(tiles.map(t=>t.href),['#/needs','#/queue/overdue','#/agents','#/plans']);
  assert.match(css,/\/\* canvas-inbox \*\//);
 });
 test('Inbox and Activity skip the assistant rail and use the full width',()=>{

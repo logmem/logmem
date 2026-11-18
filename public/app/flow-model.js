@@ -145,7 +145,7 @@ export function pulseAxis(windowHours, steps = 4) {
 }
 
 // ---- Blocker map ----
-export const KIND_LABEL = { person: 'Waiting on a person', vendor: 'Billing and infrastructure', agent: 'Agent handoffs' };
+export const KIND_LABEL = { person: 'Waiting on a person', vendor: 'Billing and infrastructure', agent: 'Waiting on an agent' };
 const PERSON_NOTE = /\b(waits?\s+for|needs?|awaiting)\s+(mikey|michael|a person|the operator|operator|a human|human|you)\b/i;
 const VENDOR_NOTE = /\b(billing|payment|invoice|credits?|quota|subscription|plan limit|rate limit|tokens?|expired|expiry|api key|secret|oauth|infisical|vercel|github|openai|anthropic|stripe|clerk|dns|domain|certificate)\b/i;
 /** A guess from the job's type and blocker text: person, vendor (billing or infrastructure) or agent. */

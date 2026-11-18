@@ -39,7 +39,7 @@ export function closeDrawer() {
   if (discussion && location.hash.startsWith('#/discussion/')) {
     const split = discussion.indexOf('/');
     const type = discussion.slice(0, split), id = discussion.slice(split + 1);
-    location.hash = type === 'decision' ? '#/knowledge' : type === 'coord' ? '#/queue' : type === 'plan' ? '#/lanes' : type === 'job' ? '#/job/' + encodeURIComponent(id) : '#/work';
+    location.hash = type === 'decision' ? '#/knowledge' : type === 'coord' ? '#/queue' : type === 'plan' ? '#/plans' : type === 'job' ? '#/job/' + encodeURIComponent(id) : '#/work';
   }
   if (back && back.focus && document.contains(back)) back.focus();
 }

@@ -38,9 +38,9 @@ export function agentsList(agents = [], limit = 8) {
 
 /** The oldest open handoff, with who, what and when it is due. */
 export function handoffCard(item, now = Date.now()) {
-  if (!item) return html`<section class="lmx-brief-panel" aria-labelledby="brief-flight"><div class="lmx-brief-panel-head"><h2 id="brief-flight">Handoff in flight</h2><a href="#/queue">Inbox</a></div><p class="lmx-meta">No open handoffs on the first Inbox page.</p></section>`;
+  if (!item) return html`<section class="lmx-brief-panel" aria-labelledby="brief-flight"><div class="lmx-brief-panel-head"><h2 id="brief-flight">Oldest open request</h2><a href="#/queue">Inbox</a></div><p class="lmx-meta">No open handoffs on the first Inbox page.</p></section>`;
   const { head } = splitHeadline(item.summary), due = dueChip(item, now);
-  return html`<section class="lmx-brief-panel" aria-labelledby="brief-flight"><div class="lmx-brief-panel-head"><h2 id="brief-flight">Handoff in flight</h2><a href="#/queue">Inbox</a></div>
+  return html`<section class="lmx-brief-panel" aria-labelledby="brief-flight"><div class="lmx-brief-panel-head"><h2 id="brief-flight">Oldest open request</h2><a href="#/queue">Inbox</a></div>
     <a class="lmx-flight" href="#/queue"><span class="lmx-flight-who">${agent(item.from)}<span aria-hidden="true">→</span>${agent(item.to)}</span><strong>${head}</strong><span class="lmx-flight-meta"><span class="lmx-due-chip" data-tone=${due.tone || nothing}>${due.text}</span><span class="lmx-meta" title=${fullTime(item.created_at)}>opened ${relTime(item.created_at, now)}</span></span></a></section>`;
 }
 
