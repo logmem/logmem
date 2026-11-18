@@ -65,16 +65,15 @@ export async function drawDiscussion(want,shell,current){
  model.render=draw;model.reload=load;draw();await load();
 }
 export async function queuePage(arg){
- const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',cursor=0,error='',data=null,busy=false,flowSel='',flowHover='',flowPair=null,flowView='map',bucket=BUCKETS.some(([k])=>k===arg)?arg:'all',mapOpen=false,openId='',selected=new Set(),mp=0;const MAIL_PAGE=10;
+ const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',error='',data=null,busy=false,requestSeq=0,flowSel='',flowHover='',flowPair=null,flowView='map',bucket=BUCKETS.some(([k])=>k===arg)?arg:'all',mapOpen=false,openId='',selected=new Set(),mp=0;const MAIL_PAGE=10;
  const active=()=>space===state.space&&version===generation&&location.hash===route;
  const jumpToList=()=>requestAnimationFrame(()=>{const el=document.getElementById('lmx-queue-list');if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});});
  const draw=()=>{
   if(!active())return;
   const now=Date.now();
-  // List first, oldest on top. Every open request is in the main list; age buckets split it, nothing hides in a drawer.
+  // The server returns stable oldest-first pages. Keep loaded pages together so local paging never shifts backward.
   const loaded=data?sortOldestFirst(data.items):[];
   const counts=bucketCounts(loaded,now);
-  if(bucket!=='all'&&!counts[bucket])bucket='all';
   const shownItems=loaded.filter(i=>inBucket(i,bucket,now)&&matchHandoff(i,flowSel,flowPair));
   const mpMax=Math.max(0,Math.ceil(shownItems.length/MAIL_PAGE)-1);if(mp>mpMax)mp=mpMax;
   const pageItems=shownItems.slice(mp*MAIL_PAGE,mp*MAIL_PAGE+MAIL_PAGE);
@@ -96,29 +95,49 @@ export async function queuePage(arg){
    </dialog>`;};
   const selectedItems=data?data.items.filter(i=>selected.has(i.id)):[];
   const batchBar=selectedItems.length?html`<div class="lmx-mail-batch" role="status"><span>${selectedItems.length} selected</span>${agentDispatchButton(selectedItems.map(i=>ticketPrompt(i,space)).join('\n\n---\n\n'),'Copy prompts')}<button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{selected.clear();draw();}}>Clear</button></div>`:nothing;
-  const empty=!loaded.length?(data?.coverage?.complete?'No open requests. Nothing is waiting on a reply.':'No indexed requests are open. Older requests may still sit in source logs.'):(flowSel||flowPair)?'No requests match this map filter. Pick the same agent or cell again to clear it.':'No requests in this bucket.';
+  const empty=!loaded.length?(data?.coverage?.complete?'No open requests. Nothing is waiting on a reply.':'No indexed requests are open. Older requests may still sit in source logs.'):(flowSel||flowPair)?'No requests match this map filter. Pick the same agent or cell again to clear it.':'No requests in this bucket yet.';
   renderView('queue',['Inbox'],html`<section class="lmx-queue"><header class="lmx-pageheader"><div><span class="lm-eyebrow">Requests · oldest first</span><h1>Inbox</h1></div><div class="lmx-pageheader-links"><a href="#/work">Work</a><a href="#/decisions">Decisions</a></div></header>
    ${error?html`<p role="alert">${error}</p>`:nothing}
-   ${data?html`<div class="lmx-inbox-bar"><p class="lmx-inbox-summary" aria-live="polite"><strong>${queueSummary(loaded,now)}</strong>${data.nextCursor!=null?html` <span class="lmx-meta">on this page</span>`:nothing}</p>
-    <div class="lmx-bucket-chips" role="group" aria-label="Age buckets">${BUCKETS.map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String(bucket===value)} ?disabled=${value!=='all'&&!counts[value]} @click=${()=>{bucket=value;mp=0;draw();}}>${label} ${counts[value]}</button>`)}</div></div>
+   ${data?html`<div class="lmx-inbox-bar"><p class="lmx-inbox-summary" aria-live="polite"><strong>${queueSummary(pageItems,now)}</strong> <span class="lmx-meta">${data.indexedCount} indexed</span>${data.nextAfter!=null?html` <span class="lmx-meta">more requests available</span>`:nothing}</p>
+    <div class="lmx-bucket-chips" role="group" aria-label="Age buckets">${BUCKETS.map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String(bucket===value)} ?disabled=${busy} @click=${()=>{if(bucket!==value){bucket=value;load({reset:true});}}}>${label} ${counts[value]}</button>`)}</div></div>
     <div class="lmx-stack" id="lmx-queue-list">${batchBar}${pageItems.length?html`<ul class="lmx-inbox" aria-label="Requests">${pageItems.map(renderRow)}</ul>`:html`<p class="lmx-meta">${empty}</p>`}</div>
-    <div class="lmx-mail-foot"><span aria-live="polite">${mailRange(cursor+mp*MAIL_PAGE,pageItems.length,mp>=mpMax&&data.nextCursor!=null)}</span><button type="button" class="lm-btn lm-btn--ghost" aria-label="Previous page" ?disabled=${mp<=0&&cursor<=0} @click=${()=>{if(mp>0){mp--;draw();}else{cursor=Math.max(0,cursor-30);load();}}}>‹</button><button type="button" class="lm-btn lm-btn--ghost" aria-label="Next page" ?disabled=${mp>=mpMax&&data.nextCursor==null} @click=${()=>{if(mp<mpMax){mp++;draw();}else{cursor=data.nextCursor;load();}}}>›</button></div>
-    <form class="lmx-filters lmx-inbox-filter" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();cursor=0;load();}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
-    <details class="lmx-queue-map" ?open=${mapOpen} @toggle=${e=>{mapOpen=e.currentTarget.open;}}><summary><strong>Request map</strong><span class="lmx-meta">Who sends requests to whom</span></summary><div class="lmx-map-canvas">${data.items.length?handoffMap({arcs:handoffArcs(data.items),sel:flowSel,hover:flowHover,pair:flowPair,view:flowView,setView:v=>{flowView=v;flowPair=null;draw();},pick:s=>{flowSel=s;flowPair=null;draw();if(s)jumpToList();},peek:h=>{if(h!==flowHover){flowHover=h;draw();}},pickPair:x=>{flowPair=x;flowSel='';draw();if(x)jumpToList();}}):html`<p class="lmx-meta">The map appears when this page has requests.</p>`}</div></details>
-    <details class="lmx-coverage lmx-coverage--quiet"><summary>About this list</summary><p>These counts cover this page only. Copy prompt puts a prompt on your clipboard and starts no agent. Reassign and resolve live under Comment, for people with that permission.</p>${!data.coverage?.complete?html`<p>History indexing is pending. Older requests remain in their source logs until verified indexing completes.</p>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p>${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}</details>`:html`<p>Loading requests…</p>`}${renderDrawer()}</section>`);
+    <div class="lmx-mail-foot"><span aria-live="polite">${mailRange(mp*MAIL_PAGE,pageItems.length,mp>=mpMax&&data.nextAfter!=null)}</span><button type="button" class="lm-btn lm-btn--ghost" aria-label="Previous page" ?disabled=${busy||mp<=0} @click=${()=>{if(mp>0){mp--;draw();}}}>‹</button><button type="button" class="lm-btn lm-btn--ghost" aria-label="Next page" ?disabled=${busy||mp>=mpMax&&data.nextAfter==null} @click=${nextPage}>›</button></div>
+    <form class="lmx-filters lmx-inbox-filter" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();load({reset:true});}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient} ?disabled=${busy}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
+    <details class="lmx-queue-map" ?open=${mapOpen} @toggle=${e=>{mapOpen=e.currentTarget.open;}}><summary><strong>Request map</strong><span class="lmx-meta">Who sends requests to whom</span></summary><div class="lmx-map-canvas">${data.items.length?handoffMap({arcs:handoffArcs(data.items),sel:flowSel,hover:flowHover,pair:flowPair,view:flowView,setView:v=>{flowView=v;flowPair=null;draw();},pick:s=>{flowSel=s;flowPair=null;load({reset:true});if(s)jumpToList();},peek:h=>{if(h!==flowHover){flowHover=h;draw();}},pickPair:x=>{flowPair=x;flowSel='';load({reset:true});if(x)jumpToList();}}):html`<p class="lmx-meta">The map appears when this page has requests.</p>`}</div></details>
+    <details class="lmx-coverage lmx-coverage--quiet"><summary>About this list</summary><p>Age counts cover requests loaded so far. Use Next to load more. Copy prompt puts a prompt on your clipboard and starts no agent. Reassign and resolve live under Comment, for people with that permission.</p>${!data.coverage?.complete?html`<p>History indexing is pending. Older requests remain in their source logs until verified indexing completes.</p>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p>${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}</details>`:html`<p>Loading requests…</p>`}${renderDrawer()}</section>`);
   requestAnimationFrame(()=>{const d=document.querySelector('dialog.lmx-drawer');if(d&&!d.open){try{d.showModal();const c=d.querySelector('.lmx-drawer-close');if(c)c.focus();}catch{}}});
  };
  const nudge=async item=>{
   if(pending.has(item.id))return;
   const key=space+':'+item.id,requestId=queueRequests.get(key)||crypto.randomUUID();queueRequests.set(key,requestId);pending.set(item.id,true);draw();
-  try{await postJSON('/api/interactions','interactions',{target:{type:'coord',id:item.id},action:'nudge',text:'',requestId});if(!active())return;toast('Nudge recorded. The original deadline stays in place.');queueRequests.delete(key);pending.delete(item.id);await load();}
+  try{await postJSON('/api/interactions','interactions',{target:{type:'coord',id:item.id},action:'nudge',text:'',requestId});if(!active())return;toast('Nudge recorded. The original deadline stays in place.');queueRequests.delete(key);pending.delete(item.id);await load({reset:true});}
   catch(e){if(!active()||e.stale)return;pending.delete(item.id);if(e.status&&e.status!==503)queueRequests.delete(key);error=e.message;draw();}
  };
- const load=async()=>{
+ const load=async({reset=false}={})=>{
+  const request=++requestSeq,after=reset?null:data?.nextAfter;
+  if(reset){data=null;mp=0;selected.clear();openId='';}
   busy=true;error='';draw();
-  try{const result=await getJSON(endpoint(null,{queue:'1',cursor,...(recipient?{recipient}:{})}));if(!active()||result.__stale)return;if(result.__status!==200)throw new Error(result.error||'Could not load requests.');data=result;mp=0;observeTelemetry(space,{inbox:{value:result.items.length}});}
-  catch(e){if(active())error=e.message;}
-  finally{if(active()){busy=false;draw();}}
+  try{
+   const result=await getJSON(endpoint(null,{queue:'1',paging:'keyset',...(after?{after}:{}),...(recipient?{recipient}:{})}));
+   if(!active()||result.__stale||request!==requestSeq)return false;
+   if(result.__status!==200)throw new Error(result.error||'Could not load requests.');
+   const previous=reset||!data?[]:data.items;
+   data={...result,items:[...previous,...result.items]};
+   observeTelemetry(space,{inbox:{value:result.items.length}});
+   return true;
+  }catch(e){if(active()&&request===requestSeq)error=e.message;return false;}
+  finally{if(active()&&request===requestSeq){busy=false;draw();}}
  };
- await load();
+ const nextPage=async()=>{
+  if(busy||!data)return;
+  const current=sortOldestFirst(data.items).filter(i=>inBucket(i,bucket,Date.now())&&matchHandoff(i,flowSel,flowPair));
+  if(mp<Math.ceil(current.length/MAIL_PAGE)-1){mp++;draw();return;}
+  const hadRows=current.length>mp*MAIL_PAGE,needed=hadRows?(mp+1)*MAIL_PAGE:mp*MAIL_PAGE;
+  while(data?.nextAfter!=null&&active()){
+   const loaded=await load();if(!loaded)return;
+   const matches=sortOldestFirst(data.items).filter(i=>inBucket(i,bucket,Date.now())&&matchHandoff(i,flowSel,flowPair));
+   if(matches.length>needed){if(hadRows)mp++;draw();return;}
+  }
+ };
+ await load({reset:true});
 }

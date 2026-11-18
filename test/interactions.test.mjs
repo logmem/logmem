@@ -15,6 +15,48 @@ test('plan discussion is isolated from sibling spaces and supports paging',async
 async function seedItem(redis){const id='ci_'+'a'.repeat(24);await redis('HSET','lm:test:coord:item:'+id,'id',id,'space','test','type','handoff','from','agent:one','to','agent:two','where','job:a','request_trail','handoff-a','summary','Review A','response','open','created_at','1000','deadline','86401000','last_nudge_at','');await redis('ZADD','lm:test:coord:open',86401000,id);return id;}
 test('item nudges resolve stored recipients and keep deadline and response unchanged',async()=>{const{store,redis}=await setup(),id=await seedItem(redis);await interact(store,input({target:{type:'coord',id},action:'nudge',to:'agent:forged'}));assert.equal(await redis('HGET','lm:test:coord:item:'+id,'deadline'),'86401000');assert.equal(await redis('HGET','lm:test:coord:item:'+id,'response'),'open');assert.equal((await store.readLog('agent','two')).length,1);await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'nudge',requestId:'request-0002'})),e=>e.status===429);await redis('HSET','lm:test:coord:item:'+id,'response','answered');await assert.rejects(()=>interact(store,input({target:{type:'coord',id},action:'nudge',requestId:'request-0003',now:()=>2000000})),e=>e.status===409);});
 test('queue reports incomplete coverage instead of claiming an empty backlog',async()=>{const{store,redis}=await setup();const empty=await coordinationQueue(store);assert.equal(empty.coverage.complete,false);await seedItem(redis);const q=await coordinationQueue(store);assert.equal(q.items.length,1);assert.equal(q.items[0].to,'agent:two');});
+async function seedQueueRow(redis,suffix,createdAt=1000){
+ const id='ci_'+suffix,deadline=createdAt+86400000,key=`lm:test:coord:item:${id}`;
+ await redis('HSET',key,'id',id,'space','test','type','handoff','from','agent:one','to','agent:two','where','job:a','request_trail','handoff-'+suffix,'summary','Queue '+suffix,'response','open','created_at',String(createdAt),'deadline',String(deadline));
+ await redis('ZADD','lm:test:coord:open',deadline,id);
+ return id;
+}
+test('keyset queue keeps equal-score ordering when earlier rows leave the index',async()=>{
+ const{store,redis}=await setup(),ids=[];
+ for(const suffix of ['1'.repeat(24),'2'.repeat(24),'3'.repeat(24),'4'.repeat(24),'5'.repeat(24)])ids.push(await seedQueueRow(redis,suffix));
+ const first=await coordinationQueue(store,{paging:'keyset',limit:2});
+ assert.deepEqual(first.items.map(x=>x.id),ids.slice(0,2));
+ assert.equal(first.indexedCount,5);
+ assert.ok(first.nextAfter);
+ await redis('ZREM','lm:test:coord:open',ids[0]);
+ await seedQueueRow(redis,'0'.repeat(24));
+ const second=await coordinationQueue(store,{paging:'keyset',after:first.nextAfter,limit:2});
+ assert.deepEqual(second.items.map(x=>x.id),ids.slice(2,4));
+ assert.ok(second.nextAfter);
+ const last=await coordinationQueue(store,{paging:'keyset',after:second.nextAfter,limit:2});
+ assert.deepEqual(last.items.map(x=>x.id),[ids[4]]);
+ assert.equal(last.nextAfter,null);
+});
+test('keyset queue orders by score then id and rejects malformed cursors',async()=>{
+ const{store,redis}=await setup();
+ const old=await seedQueueRow(redis,'a'.repeat(24),1000);
+ const tied=await seedQueueRow(redis,'b'.repeat(24),1000);
+ const newer=await seedQueueRow(redis,'c'.repeat(24),2000);
+ const first=await coordinationQueue(store,{paging:'keyset',limit:2});
+ assert.deepEqual(first.items.map(x=>x.id),[old,tied]);
+ const next=await coordinationQueue(store,{paging:'keyset',after:first.nextAfter,limit:2});
+ assert.deepEqual(next.items.map(x=>x.id),[newer]);
+ await assert.rejects(()=>coordinationQueue(store,{paging:'keyset',after:'not-a-cursor'}),e=>e.status===400);
+});
+test('legacy numeric queue cursors remain available to older clients',async()=>{
+ const{store,redis}=await setup();
+ const ids=[];for(const suffix of ['a'.repeat(24),'b'.repeat(24),'c'.repeat(24)])ids.push(await seedQueueRow(redis,suffix));
+ const first=await coordinationQueue(store,{limit:2});
+ assert.deepEqual(first.items.map(x=>x.id),ids.slice(0,2));
+ assert.equal(first.nextCursor,2);
+ const next=await coordinationQueue(store,{cursor:first.nextCursor,limit:2});
+ assert.deepEqual(next.items.map(x=>x.id),[ids[2]]);
+});
 test('a delivery failure keeps the mutation receipt and retry finishes without duplication',async()=>{const{store}=await setup();const append=store.append;let fail=true;store.append=async(...a)=>{if(fail)throw new Error('offline');return append(...a);};await assert.rejects(()=>interact(store,input()),e=>e.status===503);assert.equal((await discussion(store,{type:'job',id:'a'},{by:'human:Mikey'})).entries.length,1);fail=false;await interact(store,input());assert.equal((await store.readLog('job','a')).length,1);});
 test('a task progress race refuses reassignment without losing the new progress',async()=>{const{store,redis}=await setup();await createBlocker(store,{trail:'race',where:'job:a',by:'human:Mikey',to:'human:Old',summary:'Read'});let once=true;store.redis=async(...c)=>{if(c[0]==='EVAL'&&once){once=false;const key='lm:test:blocker:race',old=JSON.parse(await redis('GET',key));await redis('SET',key,JSON.stringify({...old,steps_done:[0]}));}return redis(...c);};await assert.rejects(()=>interact(store,input({target:{type:'task',id:'race'},action:'reassign',to:'human:New',expectedOwner:'human:Old'})),e=>e.status===409);assert.deepEqual((await getBlocker(store,'race')).steps_done,[0]);assert.equal((await getBlocker(store,'race')).to,'human:Old');});
 test('a corrupt revision counter never leaves a partial mutation',async()=>{const{store,redis}=await setup();await redis('SET','lm:test:rev','invalid');await assert.rejects(()=>interact(store,input()));assert.equal((await discussion(store,{type:'job',id:'a'},{by:'human:Mikey'})).entries.length,0);});
