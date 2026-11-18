@@ -23,11 +23,13 @@ test('/connect names one MCP URL, in a copy box, and the order is link first the
   assert.ok(!/logmem\.si\/api\/mcp/.test(html));
   assert.ok(html.indexOf('id="s2"') < html.indexOf('id="s3"'));
   assert.ok(!/One prompt connects/.test(html), 'a prompt alone cannot connect an AI');
-  assert.match(html, /Invite only until the beta opens on November 16/);
+  assert.match(html, /Hosted plans: join the waitlist\./);
+  assert.doesNotMatch(html, /November 16|Nov\.? 16/);
 });
 
 test('the homepage says the same thing about invites and the order', async () => {
   const html = await read('public/index.html');
-  assert.match(html, /Invite only until the beta opens on November 16/);
+  assert.match(html, /Hosted plans: join the waitlist\./);
+  assert.doesNotMatch(html, /November 16|Nov\.? 16/);
   assert.match(html, /paste the prompt into your AI\. It gets the skills and connects/);
 });
