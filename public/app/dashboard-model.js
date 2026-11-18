@@ -58,7 +58,7 @@ export function canAnswerDecision(ask, {person, canApprove}) {
   return Boolean(person?.startsWith('human:') && canApprove && (!ask.to || ask.to === person));
 }
 
-// ---- Today: attention cards ----
+// ---- Brief: attention cards ----
 const HEAD_MAX = 85;
 /** Split a long title into a short headline and a body. Short text stays whole. */
 export function splitHeadline(text, max = HEAD_MAX) {
@@ -86,7 +86,7 @@ export function needsTabs(items = []) {
   const counts = { decision: 0, task: 0, suggestion: 0, other: 0 };
   for (const item of items) counts[needsKind(item)]++;
   const tabs = [['all', 'All', items.length], ['decision', 'Decisions', counts.decision], ['task', 'Tasks', counts.task]];
-  if (counts.suggestion) tabs.push(['suggestion', 'Looks done?', counts.suggestion]);
+  if (counts.suggestion) tabs.push(['suggestion', 'Reviews', counts.suggestion]);
   if (counts.other) tabs.push(['other', 'Other', counts.other]);
   return tabs;
 }
@@ -98,7 +98,7 @@ export function splitPlans(plans = []) {
 }
 
 // ---- Plan detail ----
-export const PLAN_MODES = [['all', 'All'], ['open', 'Open & active'], ['blocked', 'Blocked'], ['late', 'Late'], ['waiting', 'Waiting on a person'], ['done', 'Done']];
+export const PLAN_MODES = [['all', 'All'], ['open', 'To do & in progress'], ['blocked', 'Blocked'], ['late', 'Late'], ['waiting', 'Waiting on a person'], ['done', 'Done']];
 const waitsOnPerson = job => job.stage === 'blocked' && ['decision', 'task'].includes(job.blocked_on?.type);
 export function planMatch(job, mode, late = () => false) {
   switch (mode) {
@@ -149,7 +149,7 @@ export function dueState(job, late = () => false) {
   if (job.stage !== 'done' && late(job)) return { kind: 'late', text: `Overdue · ${text}` };
   return { kind: 'due', text: `Due ${text}` };
 }
-export const WORK_MODES = [['live', 'Active & blocked'], ['blocked', 'Blocked'], ['active', 'Active'], ['open', 'Open'], ['late', 'Overdue'], ['parked', 'Parked'], ['done', 'Done'], ['all', 'All']];
+export const WORK_MODES = [['live', 'In progress & blocked'], ['blocked', 'Blocked'], ['active', 'In progress'], ['open', 'To do'], ['late', 'Overdue'], ['parked', 'Paused'], ['done', 'Done'], ['all', 'All']];
 const parked = job => job.stage === 'blocked' && job.blocked_on?.parked === true;
 export function workMatch(job, mode, late = () => false) {
   switch (mode) {

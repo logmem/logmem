@@ -29,7 +29,7 @@ test('the seed prompt keeps its gates: one space, read first, a draft, approval,
 });
 
 test('the app shows the seed card on the empty Home and Plan pages, and /how-to links it', async () => {
-  const views = await read('public/app/views.js');
+  const views = await read('public/app/views.js') + await read('public/app/plans-view.js');
   assert.equal((views.match(/seedCard\(/g) || []).length, 2);
   assert.match(await read('public/app/seed-components.js'), /Copy seed prompt/);
   const howto = await read('public/how-to.html');

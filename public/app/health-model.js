@@ -12,7 +12,7 @@ export function auditResult(day){return day.paused===true?'Paused':day.pass===tr
 export function auditVectors(day){
  return [
   {key:'mirror',label:'Missing compatibility copies',value:recordedCount(day.mirror_mismatches),note:day.mirror_checked===false?'Mirror check was not enabled.':day.mirror_checked===true?'Saved audit window only.':'Mirror check status is unknown.',active:day.mirror_checked!==false&&recordedCount(day.mirror_mismatches)>0},
-  {key:'unanswered',label:'Unanswered handoffs over 24 hours',value:recordedCount(day.unanswered_24h),note:'Historical response check, not the current overdue queue.',active:recordedCount(day.unanswered_24h)>0},
+  {key:'unanswered',label:'Requests unanswered over 24 hours',value:recordedCount(day.unanswered_24h),note:'Historical response check, not the current overdue queue.',active:recordedCount(day.unanswered_24h)>0},
   {key:'degraded',label:'Degraded sessions',value:recordedCount(day.degraded_sessions),note:'Recorded degraded-session signals.',active:recordedCount(day.degraded_sessions)>0},
  ];
 }
@@ -22,6 +22,6 @@ export function auditDays(days=[],filter='all'){
 export function volumeChecks(day){
  const agents=Array.isArray(day.agents)?day.agents.length:null,handoffs=recordedCount(day.handoffs),accepted=recordedCount(day.accepted);
  return [{label:'At least 3 reporting agents',value:agents,pass:agents==null?null:agents>=3},
-  {label:'At least 1 handoff',value:handoffs,pass:handoffs==null?null:handoffs>=1},
-  {label:'All handoffs accepted',value:accepted==null||handoffs==null?null:accepted+' / '+handoffs,pass:accepted==null||handoffs==null?null:accepted>=handoffs}];
+  {label:'At least 1 request',value:handoffs,pass:handoffs==null?null:handoffs>=1},
+  {label:'All requests accepted',value:accepted==null||handoffs==null?null:accepted+' / '+handoffs,pass:accepted==null||handoffs==null?null:accepted>=handoffs}];
 }

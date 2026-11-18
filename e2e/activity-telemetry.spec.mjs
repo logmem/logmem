@@ -13,7 +13,7 @@ test('density peaks jump to real events and the native slider stays keyboard usa
 test('assistant shows bounded snapshots and inspects configured access without writes or navigation',async({page})=>{
  let writes=0;page.on('request',r=>{if(r.method()==='POST'&&!r.url().endsWith('/api/login'))writes++;});
  await page.route('**/api/connections',r=>r.fulfill({json:{apps:[{app:'Claude',agent:'claude',last_used:Math.floor(now/1000)}]}}));await open(page);
- const widget=page.getByRole('complementary',{name:'Workspace assistant'});await expect(widget.getByRole('link',{name:/Source activity/})).toContainText('5 entries · loaded');await expect(widget.getByRole('link',{name:/Health & coverage/})).toContainText('Open to measure');await expect(widget).toContainText('Agent execution: unverified');
+ const widget=page.getByRole('complementary',{name:'Workspace assistant'});await expect(widget.getByRole('link',{name:/Activity/})).toContainText('5 recent entries');await expect(widget.getByRole('link',{name:/Health & coverage/})).toContainText('Open to measure');await expect(widget).toContainText('Agent execution: unverified');
  await widget.locator('.lmx-client-inspector>summary').click();await expect(widget).toContainText('Claude');await expect(widget).toContainText('Grant configured');await expect(page).toHaveURL(/#\/activity$/);expect(writes).toBe(0);await expect(widget.getByText('Local MCP Bridge Connected',{exact:true})).toHaveCount(0);
 });
 test('client inspector handles missing account authentication without signing out the workspace',async({page})=>{

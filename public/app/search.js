@@ -1,18 +1,18 @@
 // search.js — quick search (Cmd or Ctrl K), a crossover from acmi-console's entity search.
-// Jump to any job, agent, lane or view; the last row searches the whole log with Recall.
+// Jump to any job, agent, plan or page; the last row searches the whole log with Recall.
 import { html, render, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { load as loadData } from './data.js';
 import { openDrawer } from './drawer.js';
 
 let host = null, open = false, items = null, q = '', pick = 0;
-const VIEWS = [['Home', '#/home'], ['Lanes', '#/lanes'], ['Jobs', '#/jobs'], ['Agents', '#/agents'], ['Log', '#/log'], ['Settings', '#/settings'], ['Audit', '#/audit'], ['Waitlist', '#/waitlist']];
+const VIEWS = [['Brief', '#/home'], ['Inbox', '#/queue'], ['Activity', '#/activity'], ['Work', '#/work'], ['Plans', '#/plans'], ['Decisions', '#/decisions'], ['Team', '#/agents'], ['Log', '#/log'], ['Settings', '#/settings'], ['Audit', '#/audit'], ['Waitlist', '#/waitlist']];
 
 async function load() {
   const [jobs, agents, lanes] = await Promise.all([loadData('jobs'), loadData('agents'), loadData('lanes')]);
   items = [
     ...(jobs.jobs || []).map((j) => ({ kind: 'Job', label: j.title, sub: [j.plan, j.track, j.id].filter(Boolean).join(' › '), go: () => openDrawer('job', j.id) })),
     ...(agents.agents || []).map((a) => ({ kind: 'Agent', label: a.id, sub: (a.now && a.now.doing) || '', go: () => { location.hash = '#/agent/' + encodeURIComponent(a.id); } })),
-    ...(lanes.lanes || []).map((l) => ({ kind: 'Lane', label: l.title, sub: l.id, go: () => { location.hash = '#/plan/' + encodeURIComponent(l.id); } })),
+    ...(lanes.lanes || []).map((l) => ({ kind: 'Plan', label: l.title, sub: l.id, go: () => { location.hash = '#/plans/' + encodeURIComponent(l.id); } })),
     ...VIEWS.map(([label, href]) => ({ kind: 'View', label, sub: '', go: () => { location.hash = href; } })),
   ];
   draw();
@@ -36,7 +36,7 @@ function draw() {
   if (pick >= list.length) pick = Math.max(0, list.length - 1);
   render(html`<div class="lm-scrim lmx-cmdk-scrim" @click=${(e) => { if (e.target === e.currentTarget) closeSearch(); }}>
     <div class="lm-cmdk lmx-cmdk" role="dialog" aria-modal="true" aria-label="Search LogMem">
-      <input class="lm-cmdk-input lm-input" placeholder="Jump to a job, agent, lane or view…" autocomplete="off" spellcheck="false" .value=${q}
+      <input class="lm-cmdk-input lm-input" placeholder="Jump to a job, agent, plan or page…" autocomplete="off" spellcheck="false" .value=${q}
         @input=${(e) => { q = e.target.value; pick = 0; draw(); }} @keydown=${(e) => onKey(e, list)} aria-controls="lmx-cmdk-list">
       <ul id="lmx-cmdk-list" role="listbox" class="lmx-cmdk-list">
         ${items == null ? html`<li class="lmx-meta" style="padding:10px">Loading…</li>` : list.length ? list.map((i, n) => html`<li role="option" aria-selected=${n === pick} @click=${() => choose(i)} @mousemove=${() => { if (pick !== n) { pick = n; draw(); } }}>

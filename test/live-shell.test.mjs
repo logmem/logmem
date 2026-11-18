@@ -46,7 +46,8 @@ test("layout: phone tab bar, tablet icon rail and a wide pinned panel", () => {
 test("views: Plans, Jobs board, Agents and Log replace the old pages; one place per question", () => {
   const js = appJs();
   for (const v of ["pages.plan =", "pages.jobs =", "pages.agents =", "pages.log =", "pages.recall =", "pages.job =", "pages.lanes =", "pages.home ="]) assert.ok(js.includes(v), v);
-  assert.match(js, /const BOARD = \[\['open', 'Open'\], \['active', 'Active'\], \['blocked', 'Blocked'\], \['done', 'Done, last 7 days'\]\]/);
+  assert.match(js, /const BOARD = \[\['open', STAGE_LABEL\.open\], \['active', STAGE_LABEL\.active\], \['blocked', STAGE_LABEL\.blocked\], \['done', STAGE_LABEL\.done \+ ', last 7 days'\]\]/);
+  assert.match(js, /pages\.plans = plansPage/);
   assert.match(js, /d\.open_asks/, "the job panel shows decisions the server says are open");
 });
 
