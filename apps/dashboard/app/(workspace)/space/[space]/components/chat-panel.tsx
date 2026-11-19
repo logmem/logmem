@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 type Act = { id: string; label: string; detail: string; state: 'pending' | 'approved' | 'declined' };
-type Msg = { id: number; role: 'user' | 'assistant'; text: string; actions: Act[] };
+type Msg = { id: number; role: 'user' | 'assistant'; text: string; actions: Act[]; via?: string };
 
 const SUGGEST = ['What needs me?', 'What is blocked?', 'What happened recently?'];
 
@@ -64,6 +64,7 @@ export function ChatPanel({ space }: { space: string }) {
           buf = buf.slice(i + 1);
           if (!row) continue;
           const c = JSON.parse(row);
+          if (c.t === 'meta') patch((x) => ({ ...x, via: c.provider === 'model' ? `model ${c.model}` : c.provider === 'rules' ? 'space data' : undefined }));
           if (c.t === 'token') patch((x) => ({ ...x, text: x.text + c.v }));
           if (c.t === 'action') patch((x) => ({ ...x, actions: [...x.actions, { id: c.id, label: c.label, detail: c.detail, state: 'pending' }] }));
         }
@@ -100,7 +101,10 @@ export function ChatPanel({ space }: { space: string }) {
         )}
         {msgs.map((m) => (
           <div key={m.id} className="max-w-prose space-y-1">
-            <div className={`text-xs font-semibold ${muted}`}>{m.role === 'user' ? 'You' : 'LogMem'}</div>
+            <div className={`text-xs font-semibold ${muted}`}>
+              {m.role === 'user' ? 'You' : 'LogMem'}
+              {m.via ? <span className="font-normal"> · from {m.via}</span> : null}
+            </div>
             <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
               {m.text || (busy && m.role === 'assistant' ? <span role="status" className={muted}>Reading this space…</span> : null)}
             </p>
