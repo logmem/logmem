@@ -213,13 +213,13 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
 
   function fallbackAgent() {
     if (locked) return locked;
-    const raw = defaultAgent || slug(surface) || "guest";
+    if (defaultAgent == null || String(defaultAgent) === "") {
+      throw new Error("no agent is bound to this connection; set LOGMEM_AGENT or call logmem_start with an agent");
+    }
+    const raw = String(defaultAgent);
     const id = validAgent(agentId(raw));
-    // A configured default that is not an agent id fails closed. It must not
-    // start a shift under a made-up name. A valid surface slug is the fallback
-    // when the stored shift names an agent id that does not validate.
     if (id) return id;
-    return checkAgentId(String(raw));
+    return checkAgentId(raw);
   }
 
   /** Build and write a mechanical Recap for the shift in `rec`. */
@@ -344,7 +344,8 @@ export function createShifts(store, { sessionId, surface, defaultAgent, lockedAg
         }
       }
       if ((!rec || rec.ended) && toolName !== "logmem_start") {
-        const agent = (rec && validAgent(rec.agent)) || fallbackAgent();
+        const agent = (rec && validAgent(rec.agent)) || locked || (defaultAgent ? fallbackAgent() : null);
+        if (!agent) return { shift: null, events };
         rec = await resumeOrStart(agent, events);
         open = await loadOpen(agent);
       }

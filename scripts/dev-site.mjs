@@ -28,6 +28,7 @@ if (argv.includes("--business-demos")) {
   process.env.LOGMEM_REST_URL = "memory://business-demos";
   process.env.LOGMEM_REST_TOKEN = "local-synthetic-demo";
   process.env.LOGMEM_VIEW_SPACES = BUSINESS_DEMOS.map(d => d.id).join(",");
+  process.env.LOGMEM_ALLOW_DEGRADED_WRITES = "1";
   // A disposable person session for this loopback-only, in-memory fixture.
   // No production password or decision key is reused or exposed to the browser.
   process.env.LOGMEM_ADMIN_PASSWORD = randomBytes(32).toString("hex");
