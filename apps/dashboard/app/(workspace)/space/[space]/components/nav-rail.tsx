@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { UserButton } from '@clerk/nextjs';
-import { Inbox, Mail, Briefcase, Bot, Activity, KeyRound, ChevronDown, CalendarDays } from 'lucide-react';
+import { Inbox, Mail, Briefcase, Bot, Activity, KeyRound, ChevronDown, CalendarDays, MessageSquare } from 'lucide-react';
 
 interface NavRailProps {
   space: string;
@@ -16,6 +16,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
   const links = [
     { href: `/space/${space}/today`, label: 'Today', icon: Inbox },
     { href: `/space/${space}/inbox`, label: 'Inbox', icon: Mail },
+    { href: `/space/${space}/chat`, label: 'Chat', icon: MessageSquare },
     { href: `/space/${space}/schedule`, label: 'Schedule', icon: CalendarDays },
     { href: `/space/${space}/work`, label: 'Work', icon: Briefcase },
     { href: `/space/${space}/agents`, label: 'Agents', icon: Bot },
@@ -72,7 +73,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
         </div>
       </aside>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-[#FFFFFF] dark:bg-[#121A19] border-t border-[#D3DAD8] dark:border-[#2B3835] flex items-center justify-around z-50 px-2 font-sans">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-[#FFFFFF] dark:bg-[#121A19] border-t border-[#D3DAD8] dark:border-[#2B3835] flex items-center justify-between gap-1 overflow-x-auto z-50 px-2 font-sans" aria-label="Space menu">
         {links.map((link) => {
           const active = pathname === link.href || pathname?.startsWith(`${link.href}/`);
           const Icon = link.icon;
@@ -80,7 +81,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex flex-col items-center justify-center min-w-[44px] min-h-[44px] gap-0.5 text-[10px] ${
+              className={`flex shrink-0 flex-col items-center justify-center min-w-[44px] min-h-[44px] gap-0.5 px-1 text-[10px] ${
                 active ? 'text-[#0E6863] dark:text-[#4FC3B8] font-semibold' : 'text-[#5C6966]'
               }`}
             >
