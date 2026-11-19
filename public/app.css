@@ -1692,3 +1692,29 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
   .lmx-pause-form{min-width:0;max-width:none;width:100%}
   .lmx-planrow-act:has(.lmx-pause-form){grid-column:1 / -1;grid-row:auto}
 }
+
+/* Chat (#/chat). Read-only answers over one space; approvals use the decision color. */
+.lmx-chat{display:flex;flex-direction:column;min-height:60vh;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
+.lmx-chat-log{flex:1;list-style:none;margin:0;padding:16px;display:flex;flex-direction:column;gap:20px;overflow-y:auto}
+.lmx-chat-msg{max-width:68ch;display:flex;flex-direction:column;gap:4px}
+.lmx-chat-who{font:600 12px/1.4 var(--font-sans);color:var(--text-muted)}
+.lmx-chat-who span{font-weight:400}
+.lmx-chat-text{margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)}
+.lmx-chat-wait{margin:0;font-size:14px;color:var(--text-muted)}
+.lmx-chat-empty{max-width:68ch;display:flex;flex-direction:column;gap:12px}
+.lmx-chat-empty p{margin:0;font-size:14px}
+.lmx-chat-chips,.lmx-chat-btns{display:flex;flex-wrap:wrap;gap:8px}
+.lmx-chat-chips .lm-btn,.lmx-chat-btns .lm-btn{min-height:44px}
+.lmx-chat-approve{margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface-sunken);display:flex;flex-direction:column;gap:6px;font-size:14px}
+.lmx-chat-approve strong{color:var(--decision)}
+.lmx-chat-approve p{margin:0;overflow-wrap:anywhere}
+.lmx-chat-meta{font-size:12px;color:var(--text-muted)}
+.lmx-chat-result{font-weight:600}
+.lmx-chat-decide{min-height:44px;padding:0 16px;border:0;border-radius:var(--radius-sm,6px);background:var(--decision);color:var(--surface);font:600 14px/1 var(--font-sans);cursor:pointer}
+.lmx-chat-decide:hover{filter:brightness(1.08)}
+.lmx-chat-decide:focus-visible{outline:2px solid var(--decision);outline-offset:2px}
+.lmx-chat-form{display:flex;align-items:flex-end;gap:8px;padding:12px;border-top:1px solid var(--border)}
+.lmx-chat-form textarea.lm-input{flex:1;height:auto;min-height:44px;padding-top:10px;padding-bottom:10px;resize:none;font-size:16px}
+.lmx-chat-form .lm-btn{min-height:44px}
+@media (min-width:768px){.lmx-chat-form textarea.lm-input{font-size:14px}}
+.lmx-chat-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

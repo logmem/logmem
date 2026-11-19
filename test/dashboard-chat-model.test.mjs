@@ -21,14 +21,14 @@ const ask = (text) => [{ role: "user", text }];
 
 test("chat model: needs answer counts come from the view", () => {
   const r = answer(ask("What needs me?"), view(), NOW);
-  assert.match(r.text, /^2 items need you: 1 decision and 1 task\./);
+  assert.match(r.text, /^2 items need you: 1 decision and 1 task\.\n- Decision: /);
   assert.match(r.text, /Decision: Create the project\?/);
   assert.equal(r.action, undefined);
   assert.equal(answer(ask("what needs me"), view({ needs_items: [] }), NOW).text, "Nothing in this space needs you now.");
 });
 
 test("chat model: blocked, recent and work answers use the view", () => {
-  assert.match(answer(ask("What is blocked?"), view(), NOW).text, /1 job is blocked\. Checkout: Square app is missing\./);
+  assert.match(answer(ask("What is blocked?"), view(), NOW).text, /1 job is blocked\.\n- Checkout: Square app is missing\./);
   assert.match(answer(ask("What happened recently?"), view(), NOW).text, /codex: Fixed it\./);
   assert.match(answer(ask("How is the work going?"), view(), NOW).text, /10 jobs in its plans\. 4 done and 1 blocked\./);
 });

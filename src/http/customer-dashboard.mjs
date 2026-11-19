@@ -14,6 +14,7 @@ import {writeDecision} from '../core/tools.mjs';
 import {listBlockers,getBlocker,setStep,markDone,cantDo,writeWalkthrough,JOB_ID_RE} from '../core/blockers.mjs';
 import {buildScorecard} from '../../api/scorecard.mjs';
 import {randomBytes} from 'node:crypto';
+import {chatReply,ChatInputError} from './chat.mjs';
 
 export function createCustomerDashboard(deps={}) {return async(req,res)=>{
 // Phase A: a suspended account stops at the front door of the dashboard.
@@ -23,7 +24,8 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
   const u=requestUrl(req),b=req.method==='POST'?jsonBody(req):{},q=Object.fromEntries(u.searchParams);
   const path=u.pathname.startsWith('/api/inbox/')?'inbox':u.pathname.split('/').filter(Boolean).at(-1),op=q.op||({pulse:'pulse',needs:'needs',nudge:'nudge',unblock:'unblock',lane:'lane','confirm-done':'confirm_done','keep-open':'keep_open','create-job':'create_job'}[path]);
   const manager=['connections','agent-keys'].includes(path);
-  const action=manager?'manage-connections':path==='decide'?'approve':req.method==='GET'?'read':'write';
+  // Chat is a POST because it carries the conversation, but it only reads the space.
+  const action=manager?'manage-connections':path==='decide'?'approve':path==='chat'?'read':req.method==='GET'?'read':'write';
   const v=await resolveViewer(req,{workspaceId:b.workspaceId||q.workspaceId,spaceId:b.spaceId||q.spaceId,action},deps);
   const env=deps.env||process.env,space=v.namespace,store=webStore(v.redis,space,{...env,LOGMEM_MIRROR_ACMI:''}),opts={by:v.person};
  if(v.person && await isSuspendedSafe(v.person, deps.redis||await import('./jail.mjs').then(m=>m.customerRedis(env))))throw new WorkspaceError('account_suspended',403);
@@ -40,7 +42,7 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
    if(manager){const apps=await listManagedApps(v.workspace.tenantId).catch(()=>null);return result({keys:await listWorkspaceAgentKeys({userId:v.userId,workspaceId:v.workspaceId,spaceId:v.spaceId},{redis:deps.redis||await import('./jail.mjs').then(m=>m.customerRedis(env))}),apps:apps?apps.filter(a=>a.workspaceId===v.workspaceId&&a.spaceId===v.spaceId).map(a=>({fid:a.fid,app:a.client_name||'App',agent:a.agent,space:a.space,created_at:a.created_at})):[],oauthAvailable:apps!==null});}
    throw new WorkspaceError('not_found',404);
   }
-  const expected=manager?(path==='connections'?'connections':'agent-keys'):path==='decide'?'decide':(path==='tasks'||path==='blockers')?'blockers':path==='inbox'?'inbox':'work';
+  const expected=manager?(path==='connections'?'connections':'agent-keys'):path==='decide'?'decide':(path==='tasks'||path==='blockers')?'blockers':path==='inbox'?'inbox':path==='chat'?'chat':'work';
   requireIntent(req,expected);await v.revalidate();
   if(manager) {
    const redis=deps.redis||await import('./jail.mjs').then(m=>m.customerRedis(env));
@@ -56,6 +58,11 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
    if(!await store.getWho('agent',agent))throw new WorkspaceError('not_found',404);
    const entry=await store.append('agent',agent,{ts:Date.now(),kind:'handoff',by:v.person,to:`agent:${agent}`,summary:b.summary,via:'inbox',trail:`inbox-${randomBytes(12).toString('hex')}`});
    return result({ok:true,entry});
+  }
+  if(path==='chat') {
+   const view=await buildView(v.redis,space,'home',{person:v.person});
+   try{return result({ok:true,...await chatReply(b.history,view,{env})});}
+   catch(e){if(e instanceof ChatInputError)throw new WorkspaceError('bad_history');throw e;}
   }
   if(path==='decide')return res.status(201).json({ok:true,space,...await writeDecision(store,b.trail,{...opts,verdict:b.verdict,note:b.note,confirm:b.confirm==='approve',expectedHash:b.expected_hash,reclaim:true,via:'web'})});
   if(path==='blockers'||path==='tasks') {
