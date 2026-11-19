@@ -61,6 +61,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "ai": "7.0.162",
     "redis": "^6.3.0",
     "zod": "^4.6.7"
   },

@@ -32,17 +32,19 @@ function needsAnswer(view) {
   const c = todayCounts(view);
   const rows = needsRows(view);
   if (rows.length === 0) return "Nothing in this space needs you now.";
-  const top = rows.slice(0, 3).map((r) => `${r.label}: ${r.summary}`).join(" ");
-  const more = rows.length > 3 ? ` ${rows.length - 3} more are in the Inbox.` : "";
-  return `${plural(rows.length, "item")} need you: ${plural(c.decisions, "decision")} and ${plural(c.tasks, "task")}. ${top}${more}`;
+  const top = rows.slice(0, 3).map((r) => `- ${r.label}: ${r.summary}`).join("\n");
+  const rest = rows.length - 3;
+  const more = rest > 0 ? `\n${rest} more ${rest === 1 ? "is" : "are"} in the Inbox.` : "";
+  const verb = rows.length === 1 ? "needs" : "need";
+  return `${plural(rows.length, "item")} ${verb} you: ${plural(c.decisions, "decision")} and ${plural(c.tasks, "task")}.\n${top}${more}`;
 }
 
 function blockedAnswer(view) {
   const c = todayCounts(view);
   const rows = blockedRows(view, 3);
   if (c.waiting === 0) return "No job in this space is blocked.";
-  const top = rows.map((b) => `${b.title}: ${b.reason}`).join(" ");
-  return `${plural(c.waiting, "job is", "jobs are")} blocked. ${top}`;
+  const top = rows.map((b) => `- ${b.title}: ${b.reason}`).join("\n");
+  return `${plural(c.waiting, "job is", "jobs are")} blocked.\n${top}`;
 }
 
 function workAnswer(view) {
@@ -53,7 +55,7 @@ function workAnswer(view) {
 function recentAnswer(view) {
   const rows = recentRows(view, 3);
   if (rows.length === 0) return "No job in this space has an update yet.";
-  return `Latest updates: ${rows.map((e) => `${e.by ? shortName(e.by) : "Someone"}: ${e.summary}`).join(" ")}`;
+  return `Latest updates:\n${rows.map((e) => `- ${e.by ? shortName(e.by) : "Someone"}: ${e.summary}`).join("\n")}`;
 }
 
 /**

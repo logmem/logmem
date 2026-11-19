@@ -15,6 +15,7 @@ import { pages, setOkHook } from './views.js';
 import { registerDecisions } from './decisions-view.js';
 import { registerFleetTruth } from './fleet-truth-view.js';
 import { registerAccess } from './access-view.js';
+import { registerChat } from './chat-view.js';
 import { openSearch, searchOpen, closeSearch } from './search.js';
 import { setWalkOkHook, cancelWalkLoads } from './walk.js';
 
@@ -54,6 +55,7 @@ setOkHook(ok);
 registerDecisions(pages, ok);
 registerFleetTruth(pages, ok);
 registerAccess(pages);
+registerChat(pages);
 setWalkOkHook(ok);
 setSignedOutHook(login);
 let customerAccessRefreshPending=false;
