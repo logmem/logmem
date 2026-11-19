@@ -179,17 +179,78 @@ export async function interact(store,{target:input,action,text='',requestId,by,m
  const saved=parse(raw);try{await deliver(store,saved);}catch{fail(503,'Saved. Notification pending. Retry to finish delivery.');}
  return {ok:true,replayed:status==='replay',entry:saved.entry};
 }
-export async function coordinationQueue(store,{cursor,limit,recipient}={}){
- cursor=bounded(cursor,0,100000);limit=Math.max(1,bounded(limit,30,100));
+export async function coordinationQueue(store,{cursor,limit,recipient,paging,after:afterToken}={}){
+ limit=Math.max(1,bounded(limit,30,100));
  const coverageKey=`lm:${store.space}:coord:coverage`,coverageType=await store.redis('TYPE',coverageKey);
  const coverage=coverageType==='hash'?hashObject(await store.redis('HGETALL',coverageKey)):coverageType==='string'?{status:(await store.redis('GET',coverageKey))==='full'?'complete':'partial'}:{};
  const index=recipient?`lm:${store.space}:coord:open:${checkAgentId(recipient)}`:`lm:${store.space}:coord:open`;
- const ids=await store.redis('ZRANGE',index,cursor,cursor+limit),items=[],errors=[];
- for(const id of ids.slice(0,limit)){
-  if(!COORD.test(id)){errors.push('Invalid item identifier.');continue;}
-  const rec=hashObject(await store.redis('HGETALL',`lm:${store.space}:coord:item:${id}`));
-  if(rec?.id!==id||rec.space!==store.space||rec.response!=='open'){errors.push('An index entry has no matching pending record.');continue;}
-  items.push(rec);
+ const errors=[],items=[];
+ const keyset=paging==='keyset'||afterToken!=null;
+ let after=decodeQueueCursor(afterToken),nextAfter=null,nextCursor=null;
+ if(keyset){
+  let scanAfter=after,hasMore=false;
+  while(items.length<=limit){
+   const rows=await queueRowsAfter(store,index,scanAfter,limit+1);
+   if(!rows.length)break;
+   for(const row of rows){
+    scanAfter=row;
+    const rec=await queueRecord(store,row,errors);
+    if(!rec)continue;
+    if(items.length===limit){hasMore=true;break;}
+    items.push(rec);nextAfter=encodeQueueCursor(row);
+   }
+   if(hasMore||rows.length<limit+1)break;
+  }
+  if(!hasMore)nextAfter=null;
+ }else{
+  cursor=bounded(cursor,0,100000);
+  const ids=await store.redis('ZRANGE',index,cursor,cursor+limit);
+  for(const id of ids.slice(0,limit)){
+   if(!COORD.test(id)){errors.push('Invalid item identifier.');continue;}
+   const rec=hashObject(await store.redis('HGETALL',`lm:${store.space}:coord:item:${id}`));
+   if(rec?.id!==id||rec.space!==store.space||rec.response!=='open'){errors.push('An index entry has no matching pending record.');continue;}
+   items.push(rec);
+  }
+  nextCursor=ids.length>limit?cursor+limit:null;
  }
- return {items,nextCursor:ids.length>limit?cursor+limit:null,coverage:{...coverage,complete:coverage?.status==='complete'&&errors.length===0,errors,notes:coverage?.status==='complete'&&errors.length===0?[]:['This queue reads indexed requests. Older source records need verified history indexing.']}};
+ const indexedCount=Number(await store.redis('ZCARD',index))||0;
+ return {items,nextCursor,nextAfter,indexedCount,coverage:{...coverage,complete:coverage?.status==='complete'&&errors.length===0,errors,notes:coverage?.status==='complete'&&errors.length===0?[]:['This queue reads indexed requests. Older source records need verified history indexing.']}};
+}
+
+function encodeQueueCursor(row){
+ return Buffer.from(JSON.stringify({v:1,score:row.score,id:row.id})).toString('base64url');
+}
+function decodeQueueCursor(value){
+ if(value==null||value==='')return null;
+ if(typeof value!=='string'||value.length>512)fail(400,'Invalid queue cursor.');
+ try{
+  const row=JSON.parse(Buffer.from(value,'base64url').toString('utf8'));
+  if(row?.v!==1||!Number.isSafeInteger(row.score)||row.score<0||!COORD.test(row.id))fail(400,'Invalid queue cursor.');
+  return {score:row.score,id:row.id};
+ }catch(e){if(e instanceof InteractionError)throw e;fail(400,'Invalid queue cursor.');}
+}
+function queueScoreRows(raw){
+ if(!Array.isArray(raw)||raw.length%2)fail(503,'Queue index returned an invalid page.');
+ const rows=[];
+ for(let i=0;i<raw.length;i+=2){
+  const score=Number(raw[i+1]);
+  if(Number.isSafeInteger(score))rows.push({id:String(raw[i]),score});
+ }
+ return rows;
+}
+async function queueRowsAfter(store,index,after,count){
+ if(!after)return queueScoreRows(await store.redis('ZRANGEBYSCORE',index,'-inf','+inf','WITHSCORES','LIMIT','0',String(count)));
+ const same=queueScoreRows(await store.redis('ZRANGEBYSCORE',index,String(after.score),String(after.score),'WITHSCORES'))
+  .filter(row=>row.id>after.id);
+ const remaining=Math.max(0,count-same.length);
+ if(!remaining)return same.slice(0,count);
+ const later=queueScoreRows(await store.redis('ZRANGEBYSCORE',index,`(${after.score}`,'+inf','WITHSCORES','LIMIT','0',String(remaining)));
+ return [...same,...later].slice(0,count);
+}
+async function queueRecord(store,row,errors){
+ if(!COORD.test(row.id)){errors.push('Invalid item identifier.');return null;}
+ const rec=hashObject(await store.redis('HGETALL',`lm:${store.space}:coord:item:${row.id}`));
+ const created=Number(rec?.created_at),deadline=Number(rec?.deadline);
+ if(rec?.id!==row.id||rec.space!==store.space||rec.response!=='open'||!Number.isSafeInteger(created)||created<=0||deadline!==row.score||deadline<created){errors.push('An index entry has no matching pending record.');return null;}
+ return rec;
 }
