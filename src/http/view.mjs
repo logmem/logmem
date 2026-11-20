@@ -16,6 +16,7 @@ import { KINDS } from "../core/vocab.mjs";
 import { checkAgentId } from "../core/keys.mjs";
 import { listCoordItemsForTrail, getCoordItem, computeItemId, COORD_DEADLINE_MS, coordOpenKey, coordAgentOpenKey, readCoordCoverage } from "../core/coord.mjs";
 import { getAgentSlotsView, getLocalSlotDate } from "../core/sync.mjs";
+import { activityPage, parseCursor } from "../core/activity.mjs";
 
 const MAX_LOGS = 300;
 const GROUP = Object.fromEntries(Object.entries(KINDS).map(([k, d]) => [k, d.group]));
@@ -571,9 +572,30 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
   if (what === "needs") return needsView(store, r, space, { secret, person: params.person });
 
   if (what === "log") {
-    const entries = await allEntries(store, r, space, { limit: 200 });
-    const picked = params.where ? entries.filter((e) => e.where === params.where) : entries;
-    return { entries: await annotate(picked, entries) };
+    const SCAN_NOTE = "Recent window: the newest 100 entries of up to 300 logs.";
+    const scan = async () => {
+      const entries = await allEntries(store, r, space, { limit: 200 });
+      const picked = params.where ? entries.filter((e) => e.where === params.where) : entries;
+      return { entries: await annotate(picked, entries), next_cursor: null, coverage: { source: "scan", partial: true, note: SCAN_NOTE } };
+    };
+    // A where filter keeps the scan: it filters one place, and paging the whole index for it would thin pages.
+    if (params.where) return scan();
+    const cursor = parseCursor(params.cursor);
+    if (cursor === undefined) throw Object.assign(new Error("cursor must be a whole number of ms"), { code: "bad_cursor" });
+    const lim = Number(params.limit);
+    const limit = Number.isInteger(lim) && lim > 0 ? Math.min(lim, 500) : 200;
+    const page = await activityPage(r, space, { limit, cursor, digest: askDigest });
+    // A young index (fewer rows than one page, no cursor yet) would show less than the scan: use the scan.
+    if (!page || (cursor == null && page.rows.length < limit && page.next_cursor == null)) return scan();
+    const entries = page.rows.map((row) => slim(row, row.at));
+    return {
+      entries: await annotate(entries, entries),
+      next_cursor: page.next_cursor,
+      coverage: {
+        source: "index", end: page.next_cursor == null, oldest: page.oldest,
+        note: page.next_cursor == null ? "End of the index. Entries older than the oldest indexed one are not listed." : null,
+      },
+    };
   }
 
   if (what === "agents" || what === "overview") {

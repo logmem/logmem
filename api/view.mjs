@@ -30,7 +30,7 @@ async function handler(req, res) {
     // Always name the FE contract version so clients can refuse a mismatch.
     res.status(200).json({ ok: true, contract: CONTRACT, space, person, spaces: viewSpaces(), generated_at: Date.now(), ...data });
   } catch (e) {
-    if (e?.code === "bad_agent_id") return res.status(400).json({ error: e.message });
+    if (e?.code === "bad_agent_id" || e?.code === "bad_cursor") return res.status(400).json({ error: e.message });
     sendServerError(res, "/api/view", e);
   }
 }

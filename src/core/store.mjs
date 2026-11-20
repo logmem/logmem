@@ -12,6 +12,7 @@ import { asEntry, normalizeKind, stageFromStatus } from "./vocab.mjs";
 import { isProtectedKey, validateKeySegments } from "../lib/helpers.mjs";
 import { unreadableTypeWarning } from "../lib/redact.mjs";
 import { registerEvalScript } from "../lib/lua-scripts.mjs";
+import { indexActivity, unindexActivity } from "./activity.mjs";
 
 // Compare-and-set on a Now hash (setNowIf). ARGV: n, then n pairs of field
 // and expected raw text (NOW_MISSING = the field must be absent), then the
@@ -222,6 +223,18 @@ export function createStore(redis, { space, compat = false, mirror = null, now =
   }
 
   /**
+   * Activity index row for one entry (job activity-index-feed). Best effort: the log write
+   * already landed, so an index failure never fails it. repairEntry re-adds the row.
+   */
+  async function activity(ns, id, entry) {
+    try {
+      await indexActivity(redis, space, ns, id, entry);
+    } catch {
+      /* the Activity page falls back to the scan until the row is repaired */
+    }
+  }
+
+  /**
    * The space's change counter (live app spec): every Who, Now and Log write
    * bumps lm:{space}:rev, and the web app's pulse reads it. Best effort: a
    * backend that refuses INCR never fails the write itself.
@@ -313,6 +326,7 @@ export function createStore(redis, { space, compat = false, mirror = null, now =
       const full = { ...entry, ...normalizeKind(entry.kind), ts: normTs(entry.ts) };
       delete full._o;
       await index(ns, id);
+      await activity(ns, id, full);
       await mirrorWrite({ slot: "log", ns, id, entry: full });
     },
     /** "ok" | "failed" per mirrored write since the last reset (server resets per tool call). */
@@ -419,6 +433,7 @@ export function createStore(redis, { space, compat = false, mirror = null, now =
       const ordinal = String((same || []).length).padStart(6, "0");
       await redis("ZADD", key, ts, stableJson({ _o: ordinal, ...full }));
       await index(ns, id);
+      await activity(ns, id, full);
       await mirrorWrite({ slot: "log", ns, id, entry: full });
       return full;
     },
@@ -439,7 +454,14 @@ export function createStore(redis, { space, compat = false, mirror = null, now =
         if (stableJson(rest) !== body) continue;
         n += Number(await redis("ZREM", key, m)) || 0;
       }
-      if (n) await bumpRev();
+      if (n) {
+        try {
+          await unindexActivity(redis, space, ns, id, { ...entry, ...normalizeKind(entry.kind), ts });
+        } catch {
+          /* the row stays; the view still shows only what the index holds */
+        }
+        await bumpRev();
+      }
       return n;
     },
     async readLog(ns, id, options = {}) {
