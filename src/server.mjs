@@ -14,7 +14,7 @@ import { createUsageMeter, applyUsageMeter, meterOnFromEnv } from "./core/usage-
 import { createStore, normTs } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
-import { TOOLS, keywordRecall } from "./core/tools.mjs";
+import { TOOLS, keywordRecall, inboxCount } from "./core/tools.mjs";
 import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { styleFor } from "./core/style.mjs";
@@ -62,6 +62,8 @@ export function verifyUrlFromEnv(env = process.env) {
 
 /** Recall tools. Each call counts as one recall, never also as a read. */
 const RECALL_TOOLS = new Set(["logmem_recall", "acmi_search_semantic"]);
+// Writes that also return the caller's unanswered-handoff count (result.inbox).
+const INBOX_TOOLS = new Set(["logmem_note", "logmem_update", "logmem_stage", "logmem_status", "logmem_assign"]);
 
 /**
  * Without limits, the usage meter counts each recall. It never refuses one.
@@ -267,6 +269,10 @@ export function createLogmem({
       const out = await tool.run(args || {}, ctx);
       if (usage && !pure && tool.annotations?.readOnlyHint === true && !RECALL_TOOLS.has(name) && out?.ok !== false) await usage.count("read");
       if (events.length) out.shift_events = events;
+      if (INBOX_TOOLS.has(name) && out && out.ok !== false && ctx.shift?.agent) {
+        // Never fail a write over the count: a read error leaves the field out.
+        try { out.inbox = await inboxCount(store, ctx.shift.agent, ctx.now()); } catch (_) {}
+      }
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
       }
