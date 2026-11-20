@@ -1233,6 +1233,9 @@ export const TOOLS = [
     }),
     annotations: SET,
     async run({ job, stage, note, blocked_on }, ctx) {
+      // The params enum is advisory to clients; re-check here so a free-text
+      // stage never lands in Now and drops the job out of every stage count.
+      if (!STAGES.includes(stage)) return { ok: false, error: `stage must be one of ${STAGES.join(", ")}; got ${JSON.stringify(stage)}` };
       capText("note", note);
       const { id } = parseRef(job, "job");
       let reason = null;

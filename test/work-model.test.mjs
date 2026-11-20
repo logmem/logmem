@@ -170,3 +170,18 @@ test("tasks API: cant_do needs the intent header and a reason, and unblocks the 
   assert.equal(ok.body.blocker.outcome, "cant_do");
   assert.equal((await jobNow(store, "ship")).stage, "active");
 });
+
+test("stage: a stage outside open/active/blocked/done is refused and nothing is written", async () => {
+  const { lm, store } = setup();
+  await sc(lm, "logmem_assign", { job: "a", title: "A" });
+  for (const bad of ["stage4-audit-complete-iteration-blocked", "Done", "done ", ""]) {
+    const r = await sc(lm, "logmem_stage", { job: "a", stage: bad });
+    assert.equal(r.ok, false, `stage ${JSON.stringify(bad)} should be refused`);
+    assert.match(r.error, /stage must be one of open, active, blocked, done/);
+  }
+  assert.equal((await jobNow(store, "a")).stage, "open");
+  const log = await store.readLog("job", "a", { reverse: true, limit: 10 });
+  assert.equal(log.filter((e) => e.kind !== "assigned").length, 0);
+  assert.equal((await sc(lm, "logmem_stage", { job: "a", stage: "done", note: "PR 1" })).ok, true);
+  assert.deepEqual((await sc(lm, "logmem_jobs", {})).jobs, []);
+});
