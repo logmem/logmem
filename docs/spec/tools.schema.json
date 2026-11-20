@@ -324,7 +324,7 @@
     {
       "name": "logmem_accept",
       "title": "Accept",
-      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log.",
+      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
       "inputSchema": {
         "type": "object",
         "properties": {
