@@ -446,6 +446,55 @@ async function fleetSnapshot(store, nowMs) {
   };
 }
 
+/**
+ * Handoffs passed to agent `a` that it has not accepted or declined.
+ * Open coordination items lead (they carry deadline and item_id), but an item
+ * whose accept or decline entry is already in the agent log counts as answered:
+ * a failed settle can leave the item at response=open after the agent replied.
+ * `log` is the agent log, newest first; it is read when not given. Overdue is
+ * judged against `nowMs` (the LogMem clock), not the item's wall-clock flag.
+ */
+export async function unansweredHandoffs(s, a, log, nowMs = Date.now()) {
+  if (!log) log = await s.readLog("agent", a, { reverse: true, limit: 200 });
+  const settled = new Set(
+    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin),
+  );
+  let waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
+  try {
+    const openItems = await listOpenCoordItemsForAgent(s, s.space, a);
+    if (openItems && openItems.length > 0) {
+      const indexWaiting = openItems
+        .filter((item) => !settled.has(item.request_trail))
+        .map((item) => ({
+          kind: "handoff",
+          summary: item.summary,
+          trail: item.request_trail,
+          to: item.to,
+          job: item.where || undefined,
+          ts: item.created_at,
+          deadline: item.deadline,
+          item_id: item.id,
+          is_overdue: Number(item.deadline) > 0 && Number(item.deadline) < nowMs,
+        }));
+      const seenTrails = new Set(indexWaiting.map((i) => i.trail));
+      waiting = [...indexWaiting, ...waiting.filter((w) => !seenTrails.has(w.trail))];
+    }
+  } catch (_) {}
+  return waiting;
+}
+
+/**
+ * Inbox count for a write response. A long session only sees handoffs_to_me at
+ * start or Brief, so each write also says how many handoffs still wait.
+ */
+export async function inboxCount(s, a, nowMs = Date.now()) {
+  const waiting = await unansweredHandoffs(s, a, undefined, nowMs);
+  const overdue = waiting.filter((w) => w.is_overdue === true).length;
+  const out = { handoffs_waiting: waiting.length, overdue };
+  if (waiting.length > 0) out.next = "Answer them with logmem_accept. logmem_brief lists each one.";
+  return out;
+}
+
 async function brief(ctx, agent, opts = {}) {
   const a = agentId(agent);
   const s = ctx.store;
@@ -460,28 +509,7 @@ async function brief(ctx, agent, opts = {}) {
     s.recentShifts(a, 5),
     s.readLog("agent", a, { reverse: true, sinceMs: nowMs - WEEK_MS, limit: 2000 }),
   ]);
-  const settled = new Set(
-    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin),
-  );
-  let waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
-  try {
-    const openItems = await listOpenCoordItemsForAgent(s, s.space, a);
-    if (openItems && openItems.length > 0) {
-      const indexWaiting = openItems.map((item) => ({
-        kind: "handoff",
-        summary: item.summary,
-        trail: item.request_trail,
-        to: item.to,
-        job: item.where || undefined,
-        ts: item.created_at,
-        deadline: item.deadline,
-        item_id: item.id,
-        is_overdue: item.is_overdue,
-      }));
-      const seenTrails = new Set(indexWaiting.map((i) => i.trail));
-      waiting = [...indexWaiting, ...waiting.filter((w) => !seenTrails.has(w.trail))];
-    }
-  } catch (_) {}
+  const waiting = await unansweredHandoffs(s, a, log, nowMs);
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
   // A local signing key can be stale after rotation. Ask the trusted server
