@@ -14,6 +14,7 @@
 import { getSecret } from "../lib/secrets.mjs";
 import { createClerkClient } from "@clerk/backend";
 import { AuthStatus, createRedirect } from "@clerk/backend/internal";
+import { timed } from "./phase-timer.mjs";
 
 export class ClerkConfigError extends Error {
   constructor(message) {
@@ -75,7 +76,7 @@ export async function clerkSession(req, { env = process.env, url, client } = {})
   for (const p of partyOrigins(env.CLERK_PUBLISHABLE_KEY)) if (!parties.includes(p)) parties.push(p);
   let state;
   try {
-    state = await clerk.authenticateRequest(webRequest(req, url), { authorizedParties: parties });
+    state = await timed("clerk.authenticateRequest", () => clerk.authenticateRequest(webRequest(req, url), { authorizedParties: parties }), { env });
   } catch (e) {
     console.error(`[clerk] authenticateRequest threw: ${e?.message || e}`);
     throw e;
@@ -105,7 +106,7 @@ export async function clerkSession(req, { env = process.env, url, client } = {})
 
   if (state.status === AuthStatus.SignedIn) {
     const { userId, sessionId } = state.toAuth();
-    const email = userId ? primaryEmail(await clerk.users.getUser(userId)) : null;
+    const email = userId ? primaryEmail(await timed("clerk.users.getUser", () => clerk.users.getUser(userId), { env })) : null;
     if (userId && email) return { status: "signed-in", userId, email, sessionId };
   }
 
@@ -130,7 +131,7 @@ export async function customerSession(req, options = {}) {
   if (session.status !== "signed-in") return session;
   const env = options.env || process.env;
   const clerk = createClerkClient({ secretKey: getSecret("CLERK_SECRET_KEY", env), publishableKey: env.CLERK_PUBLISHABLE_KEY });
-  const current = session.sessionId ? await clerk.sessions.getSession(session.sessionId) : null;
+  const current = session.sessionId ? await timed("clerk.sessions.getSession", () => clerk.sessions.getSession(session.sessionId), { env }) : null;
   if (!current || current.status !== "active" || current.userId !== session.userId) return { status: "signed-out" };
   return session;
 }

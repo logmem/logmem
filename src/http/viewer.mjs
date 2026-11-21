@@ -4,6 +4,7 @@ import {customerRedis,createSpaceJail} from './jail.mjs';
 import {readOnly} from '../lib/read-only.mjs';
 import {evalScriptFor,registerEvalScript} from '../lib/lua-scripts.mjs';
 import {authorizeSpace,workspaceVersionKey,WorkspaceError} from './workspaces.mjs';
+import {timed} from './phase-timer.mjs';
 const scripts=new Map();
 function guardedScript(original) {
  if(scripts.has(original))return scripts.get(original);
@@ -28,11 +29,11 @@ export async function resolveViewer(req,{workspaceId,spaceId,action='read'},deps
  const env=deps.env||process.env;
  if(env.LOGMEM_CUSTOMER_DASHBOARD!=='1'&&!deps.redis)throw new WorkspaceError('customer_dashboard_disabled',503);
  const origin=deps.origin||`https://${req.headers?.host||'logmem.si'}`;
- const session=await (deps.session||customerSession)(req,{env,url:new URL('/api/session',origin).toString()});
+ const session=await timed('viewer.session',()=>(deps.session||customerSession)(req,{env,url:new URL('/api/session',origin).toString()}),{env});
  if(session.status!=='signed-in')throw new WorkspaceError('sign_in_required',401);
  const redis=deps.redis||customerRedis(env),userId=session.userId;
  const options={userId,workspaceId,spaceId,action};
- const context=await authorizeSpace(options,{redis});
+ const context=await timed('viewer.authorizeSpace',()=>authorizeSpace(options,{redis}),{env});
  const revalidate=async()=>{const fresh=await authorizeSpace(options,{redis});if(fresh.version!==context.version)throw new WorkspaceError('not_found',404);return fresh;};
  const run=async(...cmd)=>{
   let keys,args,source;
