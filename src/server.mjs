@@ -19,6 +19,7 @@ import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { styleFor } from "./core/style.mjs";
 import { RESULT_SCHEMA } from "./core/params.mjs";
+import { coordAgentOpenKey } from "./core/coord.mjs";
 import { validateKeySegments } from "./lib/helpers.mjs";
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -221,6 +222,29 @@ export function createLogmem({
     return toResult({ ...result.structuredContent, degraded: true }, tool);
   }
 
+  // Writes that report the caller's open Inbox count, so a long session sees
+  // handoffs, seats and requests that arrive after its Brief.
+  const INBOX_TOOLS = new Set(["logmem_note", "logmem_update", "logmem_stage", "logmem_status"]);
+
+  /** Two reads on the agent's open coord index. Never fails the write. */
+  async function inboxCount(agent) {
+    try {
+      const key = coordAgentOpenKey(space, agent);
+      const [open, overdue] = await Promise.all([
+        store.redis("ZCARD", key),
+        // Deadlines are whole ms, so "deadline < now" is "deadline <= now - 1".
+        store.redis("ZRANGEBYSCORE", key, "-inf", ctx.now() - 1),
+      ]);
+      const n = Number(open) || 0;
+      const late = Array.isArray(overdue) ? overdue.length : 0;
+      const out = { open: n, overdue: late };
+      if (n > 0) out.hint = `You have ${n} open Inbox item${n === 1 ? "" : "s"}${late ? ` (${late} overdue)` : ""}. Call logmem_sync to list them.`;
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /**
    * `validate`: check args against the tool's zod schema first, as the MCP SDK
    * does on stdio (HTTP tools/call has no SDK in front of it). Unknown keys
@@ -267,6 +291,10 @@ export function createLogmem({
       const out = await tool.run(args || {}, ctx);
       if (usage && !pure && tool.annotations?.readOnlyHint === true && !RECALL_TOOLS.has(name) && out?.ok !== false) await usage.count("read");
       if (events.length) out.shift_events = events;
+      if (INBOX_TOOLS.has(name) && out && out.ok !== false && ctx.shift?.agent) {
+        const inbox = await inboxCount(ctx.shift.agent);
+        if (inbox) out.inbox = inbox;
+      }
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
       }
