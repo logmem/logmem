@@ -28,7 +28,7 @@ claude mcp add logmem --scope user \
   -e LOGMEM_AGENT=claude-code \
   -e LOGMEM_REST_URL=https://your-logmem-host \
   -e LOGMEM_REST_TOKEN=<your-token> \
-  -- npx -y github:logmem/logmem
+  -- npx -y @logmem/mcp
 ```
 
 ### OpenAI Codex (`codex`)
@@ -36,7 +36,7 @@ In `~/.codex/config.toml`:
 ```toml
 [mcp_servers.logmem]
 command = "npx"
-args = ["-y", "github:logmem/logmem"]
+args = ["-y", "@logmem/mcp"]
 env = { LOGMEM_SPACE = "fleet", LOGMEM_AGENT = "codex", LOGMEM_REST_URL = "https://your-logmem-host", LOGMEM_REST_TOKEN = "<your-token>" }
 ```
 
