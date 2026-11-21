@@ -13,7 +13,7 @@ test("stdio clean room: a fresh MCP client runs logmem start quill, notes, hands
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [entry],
-    env: { PATH: process.env.PATH, LOGMEM_SPACE: "cleanroom" }, // no backend -> in-memory
+    env: { PATH: process.env.PATH, LOGMEM_SPACE: "cleanroom", LOGMEM_ALLOW_DEGRADED_WRITES: "1" }, // disposable in-memory transport test
     stderr: "pipe",
   });
   const client = new Client({ name: "cleanroom-agent", version: "0.0.1" });

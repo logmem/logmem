@@ -274,10 +274,23 @@ export function createLogmem({
       args = c.args;
     }
     const isSyncReceipt = name === "logmem_sync" && args?.receipt === true;
-    const pure = pureReads && (tool.annotations?.readOnlyHint === true || (name === "logmem_sync" && !isSyncReceipt));
+    const readOnly = tool.annotations?.readOnlyHint === true || (name === "logmem_sync" && !isSyncReceipt);
+    const pure = pureReads && readOnly;
     // A pure read makes zero Redis writes (PR 91), so the usage meter skips it.
     ctx.pure = pure;
     try {
+      if (live && snapshot().kind === "memory" && !readOnly) {
+        const allowDegradedWrites = ["1", "true", "yes"].includes(String(process.env.LOGMEM_ALLOW_DEGRADED_WRITES || "").toLowerCase());
+        if (!allowDegradedWrites) {
+          return degradedMark(toResult({
+            ok: false,
+            error: "backend is unavailable; write refused to prevent data loss",
+            backend: "memory",
+            durable: false,
+            tool: name,
+          }, tool), tool);
+        }
+      }
       let events = [];
       if (pure) {
         ctx.shift = await shifts.peek();
@@ -285,6 +298,9 @@ export function createLogmem({
         const touched = await shifts.touch(name);
         ctx.shift = touched.shift;
         events = touched.events;
+      }
+      if (!readOnly && name !== "logmem_start" && !tool.skipTouch && !ctx.shift) {
+        return degradedMark(toResult({ ok: false, error: "no agent is bound to this connection; set LOGMEM_AGENT or call logmem_start with an agent", tool: name }, tool), tool);
       }
       store.mirrorEvents = [];
       if (mirror && !pure) await mirror.drain().catch(() => {});

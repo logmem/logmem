@@ -71,12 +71,12 @@ What clients do while it is down:
   and should retry the write themselves once health is green.
 - **stdio:** if the backend was down at startup, the process runs **in memory**.
   Every tool result carries `degraded: true`. It PINGs the real backend every 60 s
-  and switches over when it answers. **Writes made while degraded are not copied
-  to the real backend and are lost when the process exits.** If an agent's work
-  must not be lost, run it with `LOGMEM_REQUIRE_BACKEND=1`: the process exits 1
-  with a clear message instead of starting degraded.
-- After an outage, ask agents whose sessions showed `degraded: true` to re-log
-  anything important (a `logmem_note` that summarises it is enough).
+  and switches over when it answers. Mutating calls return `durable: false` and
+  fail before they write. Callers must retry after health returns. Set
+  `LOGMEM_REQUIRE_BACKEND=1` to make the process exit instead of starting degraded.
+  `LOGMEM_ALLOW_DEGRADED_WRITES=1` is only for disposable local sessions.
+- After an outage, retry writes that returned `durable: false`. Review any writes
+  that timed out before this protection, because their result may be unknown.
 
 ## 3. Redis backups and restore
 

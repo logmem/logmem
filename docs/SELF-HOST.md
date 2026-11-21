@@ -137,9 +137,11 @@ If tool B sees the note, the tools share one memory.
 
 The server starts in memory when it cannot reach your Redis at startup. It reports `degraded: true` and tries your Redis again every 60 seconds.
 
-Writes made while degraded stay in that process. They are not sent to your Redis and they are gone when the process exits.
+Mutating tool calls fail with `durable: false` before they write. LogMem does not queue writes for replay. Retry them after Redis recovers.
 
 Set `LOGMEM_REQUIRE_BACKEND=1` to make the server exit instead of starting in memory. Use this in production.
+
+Set `LOGMEM_ALLOW_DEGRADED_WRITES=1` only for disposable local sessions. It allows writes to memory that will not reach Redis.
 
 Common causes:
 
@@ -160,6 +162,7 @@ Common causes:
 | `LOGMEM_REST_URL` | An HTTP Redis REST URL |
 | `LOGMEM_REST_TOKEN` | The token for the REST URL |
 | `LOGMEM_REQUIRE_BACKEND` | Set to `1` to exit when the backend is unreachable |
+| `LOGMEM_ALLOW_DEGRADED_WRITES` | Set to `1` only for disposable local sessions |
 | `LOGMEM_REDIS_TIMEOUT_MS` | Per command timeout. Default 5000 |
 | `LOGMEM_ACMI_COMPAT` | Set to `1` to add the `acmi_*` tools and read legacy `acmi:*` history |
 | `LOGMEM_MIRROR_ACMI` | Set to `1` to copy every write back to `acmi:*` for a gradual move |
