@@ -11,7 +11,7 @@ import { jobCard, planCard, agentChip, boardCard, planRow, agentCard, jobLink, a
 import { invite } from './actions.js';
 import {launchpad,setupStrip} from './launchpad.js';
 import {groupControl,logList,inspector,recallCard,recallExplainer} from './log-components.js';
-import {groupByMode,logRows,entryKey,matchTerms} from './log-model.js';
+import {groupByMode,logRows,entryKey,matchTerms,appendOlder,olderCursor} from './log-model.js';
 import {earliestPass} from './canvas-detail-model.js';
 import {moreGroups} from './nav-model.js';
 import {viewOnlyNote,riskNote,inviteAllConfirm,inviteAllLabel,SETTINGS_NOTE,AUDIT_NOTE,INVITE_RISK} from './admin-notes.js';
@@ -235,9 +235,24 @@ function drawActivity() {
     <div class="lmx-activity-filters"><label class="lmx-f"><span>Agent</span><select class="lm-select" aria-label="Filter by agent" @change=${(e) => set('agent', e.target.value)()}><option value="">All agents</option>${agents.map((n) => html`<option ?selected=${n === f.agent}>${n}</option>`)}</select></label>
       <div class="lmx-filter" role="group" aria-label="Filter by kind"><button type="button" class="lmx-typepill" aria-pressed=${String(!f.kind)} @click=${set('kind', '')}>All ${f.agent ? all.filter((e) => agentName(e.by) === f.agent).length : all.length}</button>${KIND_GROUPS.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-k=${k} aria-pressed=${String(f.kind === k)} ?disabled=${!kinds[k] && f.kind !== k} @click=${set('kind', f.kind === k ? '' : k)}>${l} ${kinds[k]}</button>`)}</div></div>
     ${shown.length ? dayGroups(shown, now).map((g) => html`<section class="lmx-activity-day" aria-label=${g.label}><h2 class="lmx-activity-dayhead">${g.label} <span class="lmx-meta">${g.entries.length}</span></h2><ol class="lmx-activity-list">${repeat(g.entries, entryKey, row)}</ol></section>`) : emptyState(all.length ? 'No entries match these filters.' : 'No activity yet.', all.length ? 'Pick All agents or All kinds.' : 'Entries appear here as agents write.')}
-    <div class="lmx-activity-foot">${list.length > shown.length ? html`<button type="button" class="lm-btn lm-btn--secondary" @click=${() => { f.shown = shown.length + ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Load ${Math.min(ACTIVITY_PAGE, list.length - shown.length)} more</button>` : nothing}<span class="lmx-meta">${shown.length} of ${list.length} shown. This screen reads the latest ${all.length} entries; use <a href="#/log">Recall</a> for older ones.</span></div>`);
+    <div class="lmx-activity-foot">${list.length > shown.length ? html`<button type="button" class="lm-btn lm-btn--secondary" @click=${() => { f.shown = shown.length + ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Load ${Math.min(ACTIVITY_PAGE, list.length - shown.length)} more</button>` : nothing}${list.length <= shown.length && live.logNext ? html`<button type="button" class="lm-btn lm-btn--secondary" ?disabled=${!!live.logBusy} @click=${showOlder}>${live.logBusy ? 'Loading older entries' : 'Show older'}</button>` : nothing}<span class="lmx-meta" role="status">${shown.length} of ${list.length} shown.${live.logErr ? ' ' + live.logErr : live.logNext ? ' Older entries are available.' : live.logIndexed ? ' This is the oldest indexed entry. Use ' : ' This screen reads the latest ' + all.length + ' entries. Use '}${live.logNext && !live.logErr ? nothing : html`<a href="#/log">Recall</a> for older ones.`}</span></div>`);
 }
-pages.activity = async () => { const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawActivity(); };
+async function showOlder() {
+  if (live.logBusy || !live.logNext) return;
+  const route = location.hash, space = state.space;
+  live.logBusy = true; live.logErr = ''; drawActivity();
+  const d = await load('log', { cursor: live.logNext });
+  live.logBusy = false;
+  if (location.hash !== route || state.space !== space) return; // the viewer left Activity while the page loaded
+  if (d.__status === 401) { ok(d); return; }
+  // Keep the loaded entries on screen. The shared error page would replace them.
+  if (d.__status !== 200) { live.logErr = 'Older entries could not load. Try again.'; drawActivity(); return; }
+  const f = filt('activity:' + state.space);
+  live.log = appendOlder(live.log, d.entries); live.logNext = olderCursor(d);
+  f.shown = (Number(f.shown) || ACTIVITY_PAGE) + ACTIVITY_PAGE; saveFilt();
+  drawActivity();
+}
+pages.activity = async () => { const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; live.logNext = olderCursor(d); live.logIndexed = d.coverage?.source === 'index'; live.logBusy = false; live.logErr = ''; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawActivity(); };
 pages.log = async () => { live.recall = null; const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
 pages.recall = async (q) => {
   const query = q || '';

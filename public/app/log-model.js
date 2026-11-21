@@ -10,6 +10,17 @@ export const groupByMode = (v) => (GROUP_BY.some(([k]) => k === v) ? v : 'time')
 /** A stable key for one entry. Trail alone repeats along a chain, so the time and writer join it. */
 export const entryKey = (e) => [s(e && e.trail), t(e), s(e && e.by), s(e && e.kind)].join('|');
 
+/** Append an older page from /api/view?what=log&cursor=… to the loaded list. Drops repeats, keeps newest first. */
+export function appendOlder(current, older) {
+  const have = Array.isArray(current) ? current : [];
+  const seen = new Set(have.map(entryKey));
+  const add = (Array.isArray(older) ? older : []).filter((e) => { const k = entryKey(e); if (seen.has(k)) return false; seen.add(k); return true; });
+  return have.concat(add).sort((a, b) => t(b) - t(a));
+}
+
+/** The next cursor only when the reply came from the activity index. A scan reply has no pages. */
+export const olderCursor = (reply) => (reply && reply.coverage && reply.coverage.source === 'index' && reply.next_cursor ? String(reply.next_cursor) : null);
+
 /** Entries on the same trail as `sel`, plus the origin chain behind it and the entries that follow from it. Oldest first. */
 export function trailChain(all, sel) {
   const list = Array.isArray(all) ? all : [];
