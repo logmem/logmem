@@ -106,6 +106,27 @@ export function assertDeclinedType(payload) {
   if (typeof payload.declined !== "boolean") throw new Error(DECLINED_TYPE);
 }
 
+/**
+ * Settle the coordination item of a handoff the agent accepted or declined.
+ * One retry on a thrown backend error: the CAS is idempotent, so a retry after
+ * a write that did land returns already_settled, never a double settle.
+ * Status: ok | already_settled | not_found (handoff predates items) |
+ * wrong_recipient | error (both attempts threw).
+ */
+async function settleHandoffItem(ctx, { trail, agent, declined, settledAt, settlementTrail, disposition }) {
+  const id = computeItemId(ctx.store.space, "handoff", trail, agent);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await settleCoordItem(ctx.store, {
+        space: ctx.store.space, id, recipient: agent, response: declined ? "declined" : "answered",
+        settledBy: agentRef(agent), settledAt, settlementTrail, disposition,
+      });
+      return { id, status: res.status };
+    } catch (_) { /* retry once, then report */ }
+  }
+  return { id, status: "error" };
+}
+
 /** True when this kind/payload would settle a handoff (accepted, or feedback marked declined). */
 export function handoffSettlement(kind, payload) {
   const word = normalizeKind(kind == null || String(kind).trim() === "" ? "memo" : String(kind).trim().toLowerCase()).kind;
@@ -858,7 +879,7 @@ export const TOOLS = [
     name: "logmem_accept",
     title: "Accept",
     description:
-      "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log.",
+      "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
     params: params({
       trail: { type: "string", desc: "Trail of the handoff, from handoffs_to_me in your Brief" },
       decline: { type: "boolean", desc: "true to turn the work down (default false = accept)", optional: true },
@@ -873,7 +894,21 @@ export const TOOLS = [
       const ho = log.find((e) => e.kind === "handoff" && e.trail === trail && e.to === agentRef(a));
       if (!ho) return { ok: false, error: `no handoff with trail '${trail}' was passed to ${a}; check handoffs_to_me in your Brief` };
       const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload))));
-      if (done) return { ok: false, error: `you already ${done.kind === "accepted" ? "accepted" : "declined"} this handoff`, entry: done };
+      if (done) {
+        // The entry landed but its coordination item can still be open: the
+        // settle after the write failed (a transient backend error). Re-running
+        // accept repairs it from the entry already written, so Inbox and sync
+        // counts stop listing work that was answered.
+        const declinedBefore = done.kind !== "accepted";
+        const repair = await settleHandoffItem(ctx, {
+          trail, agent: a, declined: declinedBefore, settledAt: Number(done.ts) || clock(ctx), settlementTrail: done.trail,
+          disposition: declinedBefore ? (done.payload?.reason || "declined") : "accepted",
+        });
+        if (repair.status === "ok") {
+          return { ok: true, repaired: true, origin: trail, trail: done.trail, item_id: repair.id, declined: declinedBefore, entry: done };
+        }
+        return { ok: false, error: `you already ${declinedBefore ? "declined" : "accepted"} this handoff`, entry: done, item_id: repair.id, item_status: repair.status };
+      }
 
       const where = ho.job ? parseRef(ho.job) : null;
       const t = clock(ctx);
@@ -895,21 +930,13 @@ export const TOOLS = [
         seenLogs.add(`${ns}:${id}`);
         entries.push(await write(ctx, ns, id, { ...one, settle: true }));
       }
-      let itemId = null;
-      try {
-        itemId = computeItemId(ctx.store.space, "handoff", trail, a);
-        await settleCoordItem(ctx.store, {
-          space: ctx.store.space,
-          id: itemId,
-          recipient: a,
-          response: decline ? "declined" : "answered",
-          settledBy: agentRef(a),
-          settledAt: t,
-          settlementTrail: tr,
-          disposition: decline ? (reason || "declined") : "accepted",
-        });
-      } catch (_) {}
-      return { ok: true, trail: tr, origin: trail, item_id: itemId || undefined, declined: !!decline, where: where ? `${where.ns}:${where.id}` : null, entries };
+      const settled = await settleHandoffItem(ctx, {
+        trail, agent: a, declined: !!decline, settledAt: t, settlementTrail: tr,
+        disposition: decline ? (reason || "declined") : "accepted",
+      });
+      const out = { ok: true, trail: tr, origin: trail, item_id: settled.id, item_status: settled.status, declined: !!decline, where: where ? `${where.ns}:${where.id}` : null, entries };
+      if (settled.status === "error") out.warning = "The entry is written but its Inbox item is still open. Call logmem_accept again with the same trail to settle it.";
+      return out;
     },
   },
   {

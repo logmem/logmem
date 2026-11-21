@@ -23,6 +23,7 @@ import {
   COORD_DEADLINE_MS,
   coordOpenKey,
   coordAgentOpenKey,
+  COORD_SETTLE_ITEM_LUA,
 } from "../src/core/coord.mjs";
 
 const sc = async (lm, name, args) => (await lm.callTool(name, args)).structuredContent;
@@ -280,4 +281,77 @@ test("Case 9 & 10: Resumable backfill populates items and sets coverage", async 
   assert.ok(itemAfter, "item indexed by backfill");
   assert.equal(itemAfter.response, "open");
   assert.equal(itemAfter.deadline, t1 + COORD_DEADLINE_MS);
+});
+
+// A settle that throws must not leave the item open for good. Live case
+// (madez, 2026-11-20): five accepts in 23 seconds; two settled, two items
+// stayed open because the settle error was swallowed after the entries landed.
+async function flakySettleFixture(failures) {
+  const redis = createMemoryRedis();
+  const clk = clock();
+  let left = failures;
+  const flaky = async (...cmd) => {
+    if (cmd[0] === "EVAL" && cmd[1] === COORD_SETTLE_ITEM_LUA && left > 0) {
+      left--;
+      throw new Error("Redis REST EVAL: HTTP 429");
+    }
+    return redis(...cmd);
+  };
+  const mk = (agent, r) => createLogmem({ workRules: "warn", redis: r, space: "madez", surface: "test", sessionId: `${agent}-sid`, now: clk });
+  const atlas = mk("atlas", redis);
+  const quill = mk("quill", flaky);
+  await sc(atlas, "logmem_start", { agent: "atlas" });
+  await sc(quill, "logmem_start", { agent: "quill" });
+  return { atlas, quill, store: atlas.ctx.store, clk, failuresLeft: () => left };
+}
+
+test("accept: one thrown settle is retried and the item settles", async () => {
+  const { atlas, quill, store } = await flakySettleFixture(1);
+  const ho = await sc(atlas, "logmem_handoff", { to: "quill", summary: "Do A", where: "job:a" });
+  const acc = await sc(quill, "logmem_accept", { trail: ho.trail });
+  assert.equal(acc.ok, true);
+  assert.equal(acc.item_status, "ok");
+  assert.equal(acc.warning, undefined);
+  assert.equal((await getCoordItem(store, "madez", acc.item_id)).response, "answered");
+});
+
+test("accept: a settle that fails twice warns, and a second accept repairs the open item", async () => {
+  const { atlas, quill, store } = await flakySettleFixture(2);
+  const ho = await sc(atlas, "logmem_handoff", { to: "quill", summary: "Do A", where: "job:a" });
+  const acc = await sc(quill, "logmem_accept", { trail: ho.trail });
+  assert.equal(acc.ok, true, "the entry is written, so the accept itself succeeds");
+  assert.equal(acc.item_status, "error");
+  assert.match(acc.warning, /Call logmem_accept again/);
+  assert.equal((await getCoordItem(store, "madez", acc.item_id)).response, "open");
+  assert.equal((await listOpenCoordItemsForAgent(store, "madez", "quill")).length, 1);
+
+  const again = await sc(quill, "logmem_accept", { trail: ho.trail });
+  assert.equal(again.ok, true);
+  assert.equal(again.repaired, true);
+  assert.equal(again.trail, acc.trail, "repair points at the entry already written, not a new one");
+  const item = await getCoordItem(store, "madez", acc.item_id);
+  assert.equal(item.response, "answered");
+  assert.equal(item.settlement_trail, acc.trail);
+  assert.equal((await listOpenCoordItemsForAgent(store, "madez", "quill")).length, 0);
+  const accepted = (await store.readLog("agent", "quill")).filter((e) => e.kind === "accepted");
+  assert.equal(accepted.length, 1, "repair writes no second entry");
+
+  const third = await sc(quill, "logmem_accept", { trail: ho.trail });
+  assert.equal(third.ok, false);
+  assert.match(third.error, /already accepted/);
+  assert.equal(third.item_status, "already_settled");
+});
+
+test("accept: a repaired decline settles as declined with its reason", async () => {
+  const { atlas, quill, store } = await flakySettleFixture(2);
+  const ho = await sc(atlas, "logmem_handoff", { to: "quill", summary: "Do B", where: "job:b" });
+  const dec = await sc(quill, "logmem_accept", { trail: ho.trail, decline: true, reason: "Delivered already" });
+  assert.equal(dec.item_status, "error");
+  const again = await sc(quill, "logmem_accept", { trail: ho.trail });
+  assert.equal(again.ok, true);
+  assert.equal(again.repaired, true);
+  assert.equal(again.declined, true);
+  const item = await getCoordItem(store, "madez", dec.item_id);
+  assert.equal(item.response, "declined");
+  assert.equal(item.disposition, "Delivered already");
 });
