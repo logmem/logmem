@@ -1,15 +1,16 @@
 // cards.js — the shared parts (live app spec, section 3): one job card, one plan card, one agent
-// chip, one task card, one decision card, one lane card. Every view is built from these.
+// chip, one task card and one decision card. Every view is built from these. Plan rows live in plans-view.js.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { num, ago, agentName, glow, toast, state, live, isLate } from './core.js';
 import { icon, agent, seenTag, stage, decision, btn, moreMenu, dueTag, waitsTag, laneBadge, joinDot, textWithIds } from './ui.js';
-import { doWork, doStep, doTask, doLane, decide } from './actions.js';
+import { doWork, doStep, doTask, decide } from './actions.js';
 import { decisionProblem, shortenIds, jobName, initials } from './dashboard-model.js';
 import {agentDispatchButton} from './dispatch-components.js';
 import {agentDispatchPrompt, jobDispatchPrompt} from './dispatch-model.js';
 import { openDrawer } from './drawer.js';
 import { AGENT_CLIENTS } from './agent-clients.js';
 import { approveObject, reversibleLine } from './canvas-detail-model.js';
+import { agentIcon, savedAgentIcon } from './agent-icons.js';
 
 const openJob = (id) => (e) => { e.preventDefault(); openDrawer('job', id); };
 /** One name for a job everywhere: its title when the loaded board has it, else the id. */
@@ -38,11 +39,11 @@ export function jobCard(b, { route = '', inPanel = false } = {}) {
 
 export function planCard(p, route) {
   const general = p.id === 'general';
-  return html`<a class="lmx-card lmx-plan ${glow(route, 'plan:' + p.id)}" tabindex="0" data-key=${'plan:' + p.id} href=${`#/plan/${encodeURIComponent(p.id)}`} style="text-decoration:none;color:inherit">
+  return html`<a class="lmx-card lmx-plan ${glow(route, 'plan:' + p.id)}" tabindex="0" data-key=${'plan:' + p.id} href=${`#/plans/${encodeURIComponent(p.id)}`} style="text-decoration:none;color:inherit">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>${laneBadge(p.lane)}${general ? 'general' : p.title}</h3>${general ? nothing : html`<span class="lmx-pct">${num(p.percent)}%</span>`}</div>
     ${general ? html`<div class="lmx-why">${num(p.jobs)} ${p.jobs === 1 ? 'job' : 'jobs'} to file in a plan</div>` : html`
       <div class="lmx-bar"><i style=${`width:${num(p.percent)}%`}></i></div>
-      <div class="lmx-meta">${num(p.done)} of ${num(p.jobs)} done${p.blocked ? html` · <b style="color:var(--warning)">${num(p.blocked)} blocked</b>` : nothing}${p.parked ? ` · ${num(p.parked)} parked` : ''}</div>
+      <div class="lmx-meta">${num(p.done)} of ${num(p.jobs)} done${p.blocked ? html` · <b style="color:var(--warning)">${num(p.blocked)} blocked</b>` : nothing}${p.parked ? ` · ${num(p.parked)} paused` : ''}</div>
       <div class="lmx-why">${p.next_milestone ? `Next: ${p.next_milestone.title}${p.next_milestone.date ? ' · ' + p.next_milestone.date : ''}` : 'No milestone set'}</div>`}</a>`;
 }
 
@@ -120,9 +121,6 @@ export function agentCard(a, opts = {}) {
   const now = a.now || {}, r = a.recap, job = jobName(now.job), open = opts.open === true;
   const parts = shortenIds(now.doing || ''), nextParts = shortenIds(now.next || '');
   const idChip = (p) => html`<button type="button" class="lmx-idchip" title=${'Copy ' + p.full} @click=${() => copy(p.full)}>trail:${p.chip}</button>`;
-  // Grok Bot is its own product. These agents run on it or report to chief-of-staff, per their profiles in the madez space.
-  const GROK_BOT_IDS = ['chief-of-staff', 'ops-center', 'open-design', 'avery', 'ez-influencer-lab', 'grok', 'grok-local', 'grok-coding', 'infra'];
-  const GROK_BOT_FAMILIES = ['bentley', 'folana'];
   const id = String(a.id || '').toLowerCase();
   const isAgent = (name) => id === name || id.startsWith(name + '-');
   const provider = isAgent('claude-code') ? { name: 'Anthropic', asset: 'claude-code.png' }
@@ -136,16 +134,17 @@ export function agentCard(a, opts = {}) {
     : isAgent('muse') ? { name: 'Muse', asset: 'muse.jpg' }
     : isAgent('opencode') ? { name: 'OpenCode', asset: 'opencode.svg' }
     : isAgent('antigravity') ? { name: 'Antigravity', asset: 'antigravity.png' }
-    : GROK_BOT_IDS.includes(id) || GROK_BOT_FAMILIES.some(isAgent) ? { name: 'Grok Bot', asset: 'grokbot.jpg' }
     : null;
   const client = AGENT_CLIENTS[id];
   const providerName = provider?.name || client?.name || '';
+  const savedLogo = savedAgentIcon(opts.space || state.space, a.id);
+  const logo = savedLogo || (!provider?.asset ? agentIcon(opts.space || state.space, a.id) : null);
   const activity = a.seen?.state || 'unknown';
   const recapLine = r ? String(r.summary || '').split(/\r?\n/).find((l) => l.trim()) || '' : '';
   const gaps = [now.doing ? null : 'No Now set', r ? null : 'No recap'].filter(Boolean);
   return html`<article class="lmx-card lmx-agent-card" tabindex="0" data-key=${'agent:' + a.id} data-state=${a.seen?.state || 'unknown'}>
     <div class="lmx-agent-head">
-      <span class="lmx-avatar lmx-agent-avatar" data-state=${activity} data-agent=${id} aria-hidden="true">${provider?.asset ? html`<img src=${'/home-assets/agents/' + provider.asset} alt="" loading="lazy">` : initials(a.id)}</span>
+      <span class="lmx-avatar lmx-agent-avatar" data-state=${activity} data-agent=${id} aria-hidden="true">${savedLogo ? html`<img src=${savedLogo.src} alt="" loading="lazy" decoding="async">` : provider?.asset ? html`<img src=${'/home-assets/agents/' + provider.asset} alt="" loading="lazy">` : logo ? html`<img src=${logo.src} alt="" loading="lazy" decoding="async">` : initials(a.id)}</span>
       <div class="lmx-agent-identity"><a href=${`#/agent/${encodeURIComponent(a.id)}`} class="lmx-agent-id">${agentName(a.id)}</a>${providerName ? html`<span class="lmx-agent-provider">${providerName}</span>` : nothing}</div>
       <span class="lmx-agent-seen" title="Recent writing activity">${seenTag(a.seen)}</span>
     </div>
@@ -157,28 +156,4 @@ export function agentCard(a, opts = {}) {
     <div class="lmx-agent-foot">${gaps.length ? gaps.map((g) => html`<span class="lmx-checkpill" data-ok="0">${g}</span>`) : html`<span class="lmx-checkpill" data-ok="1" title="Now is set and a recap exists">On track</span>`}${r ? html`<span class="lmx-meta lmx-recap-age" title="When the last recap was written">recap ${ago(r.ended_at)}</span>` : nothing}<span class="lmx-foot-spacer"></span>${agentDispatchButton(agentDispatchPrompt(a, opts.space || state.space))}</div></article>`;
 }
 
-// ─── lanes ───────────────────────────────────────────────────────────
-function laneActs(l) {
-  const st = l.lane ? l.lane.status : null;
-  const main = st === 'parked' ? btn('Unpark', 'primary', (e) => doLane(e, l.id, 'active'))
-    : !st && l.id !== 'general' ? btn('Make active', 'secondary', (e) => doLane(e, l.id, 'active')) : nothing;
-  const more = [st !== 'p0' ? btn('Make P0', 'secondary', (e) => doLane(e, l.id, 'p0')) : nothing,
-    st !== 'parked' && l.id !== 'general' ? html`${noteBox(`lane:${l.id}`, 'Why park it')}${btn('Park', 'secondary', (e) => doLane(e, l.id, 'parked'))}` : nothing];
-  const rest = more.filter((x) => x !== nothing);
-  return html`<div class="lmx-acts">${main}${main === nothing && rest.length === 1 ? rest : moreMenu(rest)}</div>`;
-}
-const laneJobRow = (j) => html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}>${jobLink(j.id, j.title)}<span class="lmx-meta">${agentName(j.owner || '')}${j.since ? ' · ' + ago(j.since) : ''}</span></div>`;
-const parkedRow = (j) => { const b = j.blocked_on || {}; return html`<div class="lmx-prow" style="grid-template-columns:minmax(0,1fr) auto" data-key=${'job:' + j.id}><div>${jobLink(j.id, j.title)}<div class="lmx-meta">${b.note || ''}</div></div><span class="lmx-meta">${joinDot([b.until ? 'until ' + b.until : '', j.owner ? agentName(j.owner) : ''])}</span></div>`; };
-export function laneCard(l, big, route) {
-  const ln = l.lane || {};
-  return html`<section class="lmx-card lmx-lanecard ${glow(route, 'lane:' + l.id)}" data-key=${'lane:' + l.id} data-l=${ln.status || 'none'}>
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><h3 style=${big ? 'font-size:20px' : ''}>${laneBadge(ln)}<a href=${`#/plan/${encodeURIComponent(l.id)}`} style="color:inherit;text-decoration:none">${l.title}</a></h3><span class="lmx-pct">${num(l.percent)}%</span></div>
-    <div class="lmx-bar"><i style=${`width:${num(l.percent)}%`}></i></div>
-    <div class="lmx-meta">${joinDot([ln.owner ? 'driven by ' + ln.owner : '', `${num(l.done)} of ${num(l.jobs)} done`, l.active_count ? `${num(l.active_count)} active` : '', l.blocked_count ? html`<b style="color:var(--warning)">${num(l.blocked_count)} blocked</b>` : '', l.parked_jobs.length ? `${l.parked_jobs.length} parked` : ''])}</div>
-    ${ln.status === 'parked' ? html`<div class="lmx-why"><b>Parked:</b> ${ln.why || ''}${ln.until ? html` <b>Until:</b> ${ln.until}` : nothing}</div>` : ln.why ? html`<div class="lmx-why">${ln.why}</div>` : nothing}
-    ${l.next_milestone ? html`<div class="lmx-why">Next: ${l.next_milestone.title}${l.next_milestone.date ? ' · ' + l.next_milestone.date : ''}</div>` : nothing}
-    ${big && l.active.length ? html`<div class="lmx-colhead" style="margin:8px 0 2px">Moving now</div>${l.active.map(laneJobRow)}` : nothing}
-    ${l.parked_jobs.length && ln.status !== 'parked' ? html`<details ?open=${big}><summary class="lmx-meta" style="cursor:pointer;margin-top:6px">Parked inside this lane (${l.parked_jobs.length})</summary>${l.parked_jobs.map(parkedRow)}</details>` : nothing}
-    ${laneActs(l)}</section>`;
-}
 export { jobLink, openJob };

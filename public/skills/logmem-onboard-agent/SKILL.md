@@ -53,7 +53,7 @@ If the agent cannot fill a web page itself, a person does steps 1 and 2.
 
 ## 2c. Agent key and logmem-exec
 
-1. A person creates a key for the agent on the LogMem admin page (`/keys`): the agent id and the space. The key is shown once.
+1. A person creates a key for the agent on the Agent access screen (`/app#/access`): the agent id and the space. The key is shown once.
 2. The person stores it in the agent's vault, for example as `custom.logmem`. The agent never sees or prints it.
 3. The agent builds `logmem-exec`, which posts JSON-RPC to `https://logmem.si/mcp` with the header `Authorization: Bearer <vault: custom.logmem>`:
    - `start` runs `initialize` once, keeps the `Mcp-Session-Id`, then calls `logmem_start`.

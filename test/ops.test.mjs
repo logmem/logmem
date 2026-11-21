@@ -316,7 +316,7 @@ test("degraded: memory fallback marks every tool result, re-probe switches to th
   const b = await resilientBackendFromEnv({}, (m) => logs.push(m), { resolve: () => configured, reprobeMs: 0 });
   assert.equal(b.kind, "memory");
   assert.equal(b.degraded(), true);
-  assert.match(logs[0], /NOT durable/);
+  assert.match(logs[0], /Mutating tool calls will fail/);
 
   const lm = createLogmem({ live: b, space: "opsdeg", sessionId: "s1", defaultAgent: "agent:test" });
   const conn = await lm.callTool("logmem_connection", {});
@@ -370,7 +370,7 @@ test("degraded: bad backend config degrades instead of crashing; probes are sing
   assert.equal(b.kind, "rest");
 });
 
-test("degraded: one tool call uses one backend snapshot even if the backend switches mid-call", async () => {
+test("degraded: writes fail before mutation even if the backend switches mid-call", async () => {
   const mem = { kind: "memory", redis: createMemoryRedis(), seen: 0 };
   const realStore = createMemoryRedis();
   const real = { kind: "rest", redis: realStore, seen: 0 };
@@ -384,17 +384,18 @@ test("degraded: one tool call uses one backend snapshot even if the backend swit
   const lm = createLogmem({ live, space: "opssnap", sessionId: "s3", defaultAgent: "agent:test" });
 
   const first = await lm.callTool("logmem_note", { where: "channel:ops", summary: "written while degraded" });
-  assert.equal(first.structuredContent.ok, true, JSON.stringify(first.structuredContent));
-  assert.ok(mem.seen > 2, "the call kept issuing commands after the switch");
-  assert.equal(real.seen, 0, "no command of the first call reached the real backend");
+  assert.equal(first.structuredContent.ok, false, JSON.stringify(first.structuredContent));
+  assert.equal(first.isError, true, "MCP callers receive a tool error");
+  assert.equal(first.structuredContent.durable, false);
+  assert.match(first.structuredContent.error, /refused to prevent data loss/);
+  assert.equal(mem.seen, 0, "a refused write does not touch the memory backend");
+  assert.equal(real.seen, 0, "a refused write does not mix backend snapshots");
   assert.equal(first.structuredContent.degraded, true);
-  assert.equal(active, real);
 
-  const before = real.seen;
-  const memBefore = mem.seen;
+  active = real;
   const second = await lm.callTool("logmem_connection", {});
-  assert.ok(real.seen > before, "next call uses the real backend");
-  assert.equal(mem.seen, memBefore, "and never touches memory");
+  assert.ok(real.seen > 0, "the next call uses the recovered backend");
+  assert.equal(mem.seen, 0, "the refused write never touched memory");
   assert.equal(second.structuredContent.backend, "rest");
   assert.equal(second.structuredContent.degraded, false);
 });

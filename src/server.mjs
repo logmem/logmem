@@ -19,6 +19,7 @@ import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { styleFor } from "./core/style.mjs";
 import { RESULT_SCHEMA } from "./core/params.mjs";
+import { coordAgentOpenKey } from "./core/coord.mjs";
 import { validateKeySegments } from "./lib/helpers.mjs";
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -48,6 +49,17 @@ export const SERVER_INFO = { name: "logmem", version: versionString() };
 export { INSTRUCTIONS };
 
 export { mirrorConfigFromEnv };
+
+const VERCEL_HOST_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+vercel\.app$/i;
+
+/** Use this deployment's verifier on Vercel. Other hosts must opt in explicitly. */
+export function verifyUrlFromEnv(env = process.env) {
+  const configured = String(env?.LOGMEM_VERIFY_URL || "").trim();
+  if (configured) return configured;
+  const host = String(env?.VERCEL_URL || "").trim();
+  if (!VERCEL_HOST_RE.test(host)) return null;
+  return `https://${host}/api/verify-decisions`;
+}
 
 /** Recall tools. Each call counts as one recall, never also as a read. */
 const RECALL_TOOLS = new Set(["logmem_recall", "acmi_search_semantic"]);
@@ -197,8 +209,9 @@ export function createLogmem({
     recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage, () => ctx.pure === true),
     workRules: workRules === "warn" ? "warn" : "strict",
     get decideSecret() { return decideSecret !== undefined ? decideSecret : getSecret("LOGMEM_DECIDE_SECRET"); },
-    // Trusted server that verifies web decisions for a process with no signing key (opt-in: LOGMEM_VERIFY_URL).
-    verifyUrl: verifyUrl !== undefined ? verifyUrl : process.env.LOGMEM_VERIFY_URL || null,
+    // Trusted server verifies decisions for agents without the signing key.
+    // Vercel uses this deployment's verifier by default; other hosts need LOGMEM_VERIFY_URL.
+    verifyUrl: verifyUrl !== undefined ? verifyUrl : verifyUrlFromEnv(),
     fetchImpl,
   };
   const tools = compat ? [...TOOLS, ...ACMI_TOOLS] : [...TOOLS];
@@ -207,6 +220,29 @@ export function createLogmem({
   function degradedMark(result, tool) {
     if (!live || snapshot().kind !== "memory") return result;
     return toResult({ ...result.structuredContent, degraded: true }, tool);
+  }
+
+  // Writes that report the caller's open Inbox count, so a long session sees
+  // handoffs, seats and requests that arrive after its Brief.
+  const INBOX_TOOLS = new Set(["logmem_note", "logmem_update", "logmem_stage", "logmem_status"]);
+
+  /** Two reads on the agent's open coord index. Never fails the write. */
+  async function inboxCount(agent) {
+    try {
+      const key = coordAgentOpenKey(space, agent);
+      const [open, overdue] = await Promise.all([
+        store.redis("ZCARD", key),
+        // Deadlines are whole ms, so "deadline < now" is "deadline <= now - 1".
+        store.redis("ZRANGEBYSCORE", key, "-inf", ctx.now() - 1),
+      ]);
+      const n = Number(open) || 0;
+      const late = Array.isArray(overdue) ? overdue.length : 0;
+      const out = { open: n, overdue: late };
+      if (n > 0) out.hint = `You have ${n} open Inbox item${n === 1 ? "" : "s"}${late ? ` (${late} overdue)` : ""}. Call logmem_sync to list them.`;
+      return out;
+    } catch (_) {
+      return null;
+    }
   }
 
   /**
@@ -238,10 +274,23 @@ export function createLogmem({
       args = c.args;
     }
     const isSyncReceipt = name === "logmem_sync" && args?.receipt === true;
-    const pure = pureReads && (tool.annotations?.readOnlyHint === true || (name === "logmem_sync" && !isSyncReceipt));
+    const readOnly = tool.annotations?.readOnlyHint === true || (name === "logmem_sync" && !isSyncReceipt);
+    const pure = pureReads && readOnly;
     // A pure read makes zero Redis writes (PR 91), so the usage meter skips it.
     ctx.pure = pure;
     try {
+      if (live && snapshot().kind === "memory" && !readOnly) {
+        const allowDegradedWrites = ["1", "true", "yes"].includes(String(process.env.LOGMEM_ALLOW_DEGRADED_WRITES || "").toLowerCase());
+        if (!allowDegradedWrites) {
+          return degradedMark(toResult({
+            ok: false,
+            error: "backend is unavailable; write refused to prevent data loss",
+            backend: "memory",
+            durable: false,
+            tool: name,
+          }, tool), tool);
+        }
+      }
       let events = [];
       if (pure) {
         ctx.shift = await shifts.peek();
@@ -250,11 +299,18 @@ export function createLogmem({
         ctx.shift = touched.shift;
         events = touched.events;
       }
+      if (!readOnly && name !== "logmem_start" && !tool.skipTouch && !ctx.shift) {
+        return degradedMark(toResult({ ok: false, error: "no agent is bound to this connection; set LOGMEM_AGENT or call logmem_start with an agent", tool: name }, tool), tool);
+      }
       store.mirrorEvents = [];
       if (mirror && !pure) await mirror.drain().catch(() => {});
       const out = await tool.run(args || {}, ctx);
       if (usage && !pure && tool.annotations?.readOnlyHint === true && !RECALL_TOOLS.has(name) && out?.ok !== false) await usage.count("read");
       if (events.length) out.shift_events = events;
+      if (INBOX_TOOLS.has(name) && out && out.ok !== false && ctx.shift?.agent) {
+        const inbox = await inboxCount(ctx.shift.agent);
+        if (inbox) out.inbox = inbox;
+      }
       if (mirror && store.mirrorEvents.length) {
         out.mirror = store.mirrorEvents.includes("failed") ? "failed" : "ok";
       }

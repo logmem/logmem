@@ -448,11 +448,11 @@ test("low: a resumed shift with an invalid agent id is dropped, not recapped", a
   assert.equal(await shifts.sweep(), false);
   assert.equal((await store.readLog("agent", "quill")).some((e) => e.kind === "recap"), false);
   const touched = await shifts.touch("logmem_brief");
-  assert.equal(touched.shift.agent, "codex");
-  assert.equal(touched.events[0].type, "auto-start");
+  assert.equal(touched.shift, null, "an unbound surface does not become an agent");
+  assert.deepEqual(touched.events, []);
   const ids = await store.list("agent");
   assert.equal(ids.includes("not a valid id"), false);
-  assert.equal(ids.includes("codex"), true);
+  assert.equal(ids.includes("codex"), false);
 });
 
 test("low: a caller-chosen trail already on the receiver or inbox agent is refused", async () => {

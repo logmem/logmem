@@ -115,7 +115,7 @@ export function fleetPulse({ entries, agents = [], win = 24, sel = '', show = 'a
 }
 
 const KIND_GLYPH = { person: '!', vendor: '$', agent: 'A' };
-const KIND_SHORT = { person: 'Waiting on a person', vendor: 'Billing & infrastructure', agent: 'Agent handoffs' };
+const KIND_SHORT = { person: 'Waiting on a person', vendor: 'Billing & infrastructure', agent: 'Waiting on an agent' };
 
 /** Blocker map: jobs that wait on the same text share a bubble. Colour shows who or what holds the lock.
  *  The kind pills dim the other bubbles. Copy puts a prompt on the clipboard and starts nothing. */

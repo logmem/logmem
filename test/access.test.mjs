@@ -60,7 +60,8 @@ test('one menu entry replaces Agent keys and Connections', () => {
 });
 test('the old pages are redirects and their scripts are gone', () => {
   for (const f of ['keys.js', 'connections.js', 'utility-shell.js', 'utility-shell.css']) assert.ok(!existsSync(pub(f)), f);
-  assert.match(readFileSync(pub('keys.html'), 'utf8'), /http-equiv="refresh" content="0;url=\/app\?operator=1#\/access"/);
+  assert.match(readFileSync(pub('keys.html'), 'utf8'), /http-equiv="refresh" content="0;url=\/app#\/access"/);
+  assert.match(readFileSync(pub('keys.html'), 'utf8'), /href="\/app\?operator=1#\/access"/, 'operators keep a way to the admin sign-in');
   assert.match(readFileSync(pub('connections.html'), 'utf8'), /http-equiv="refresh" content="0;url=\/app#\/access"/);
 });
 test('the screen is registered, asks in the page, and never prints a stored key', () => {
@@ -74,4 +75,14 @@ test('the screen is registered, asks in the page, and never prints a stored key'
 test('the api route and its tests are untouched', () => {
   assert.ok(existsSync(new URL('../api/connections.mjs', import.meta.url)));
   assert.ok(existsSync(new URL('../api/agent-keys.mjs', import.meta.url)));
+});
+
+test('customers reach Agent access, not the admin prompt, from the Team page and setup pages', () => {
+  assert.doesNotMatch(app('views.js'), /href="\/keys"/);
+  assert.match(app('views.js'), /href="#\/access"[^>]*>Agent access</);
+  for (const f of ['agents/muse.html', 'agents/vaulted-key.html']) {
+    const s = readFileSync(pub(f), 'utf8');
+    assert.doesNotMatch(s, /href="\/keys"/, f);
+    assert.match(s, /href="\/app#\/access"/, f);
+  }
 });

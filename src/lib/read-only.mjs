@@ -2,7 +2,7 @@
 // Used by the migration dry run and the scorecard endpoint (which holds
 // read-write creds but must never write).
 
-export const READ_COMMANDS = new Set(["PING", "DBSIZE", "SCAN", "TYPE", "GET", "HGET", "HGETALL", "SMEMBERS", "LRANGE", "ZRANGE", "ZREVRANGE", "ZRANGEBYSCORE", "ZCARD", "EXISTS", "TTL"]);
+export const READ_COMMANDS = new Set(["PING", "DBSIZE", "SCAN", "TYPE", "GET", "HGET", "HGETALL", "SMEMBERS", "LRANGE", "ZRANGE", "ZREVRANGE", "ZRANGEBYSCORE", "ZREVRANGEBYSCORE", "ZCARD", "EXISTS", "TTL"]);
 
 export function readOnly(redis, { retries = 4 } = {}) {
   return async (cmd, ...args) => {

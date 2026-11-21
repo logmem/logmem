@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { moreGroups } from '../public/app/nav-model.js';
-import { ADMIN } from '../public/app/nav-model.js';
+import { ADMIN, PRIMARY_NAV, WORKSPACE_LINKS } from '../public/app/nav-model.js';
 
 const ids = (g) => g.admin.map((n) => n[0]);
 test('operator keeps every admin link', () => {
@@ -29,4 +29,30 @@ test('More page uses the model', () => {
   const v = readFileSync(new URL('../public/app/views.js', import.meta.url), 'utf8');
   assert.match(v, /moreGroups\(/);
   assert.doesNotMatch(v, /\$\{ADMIN\.map\(link\)\}/);
+});
+
+test('Activity is a primary nav item right after Inbox, and Brief replaces Today', () => {
+  const nav = PRIMARY_NAV.map((n) => n[0]);
+  assert.equal(nav[0], 'home');
+  assert.equal(PRIMARY_NAV[0][1], 'Brief');
+  assert.equal(nav.indexOf('activity'), nav.indexOf('queue') + 1);
+  assert.ok(!PRIMARY_NAV.some((n) => n[1] === 'Today'));
+});
+test('Activity is not an admin link and leads the More workspace group for the phone', () => {
+  assert.ok(!ADMIN.some((n) => n[0] === 'activity'));
+  assert.equal(WORKSPACE_LINKS[0][0], 'activity');
+});
+test('every viewer sees Activity: operators and customers of every role', () => {
+  const has = (g) => g.workspace.some((n) => n[0] === 'activity');
+  assert.ok(has(moreGroups({ customer: false }, ADMIN)));
+  for (const role of ['owner', 'admin', 'member', 'viewer', undefined]) assert.ok(has(moreGroups({ customer: true, role }, ADMIN)), `${role} misses Activity`);
+});
+test('shell uses the shared primary nav and keeps five phone tabs', async () => {
+  const s = readFileSync(new URL('../public/app/shell.js', import.meta.url), 'utf8');
+  assert.match(s, /export const NAV = PRIMARY_NAV;/);
+  const phone = /export const PHONE_NAV = (\[.*\]);/.exec(s);
+  assert.ok(phone);
+  const tabs = JSON.parse(phone[1].replace(/'/g, '"'));
+  assert.equal(tabs.length, 5);
+  assert.deepEqual(tabs.map((t) => t[1]), ['Brief', 'Work', 'Inbox', 'Team', 'More']);
 });

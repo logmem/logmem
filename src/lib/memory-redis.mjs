@@ -276,12 +276,45 @@ export function createMemoryRedis() {
       const lo = scoreBound(min, true);
       const hi = scoreBound(max, false);
       const withScores = opts.some((o) => String(o).toUpperCase() === "WITHSCORES");
-      const items = zsorted(e).filter(
+      let items = zsorted(e).filter(
         (i) =>
           (lo.excl ? i.score > lo.n : i.score >= lo.n) &&
           (hi.excl ? i.score < hi.n : i.score <= hi.n),
       );
+      const limitAt = opts.findIndex((o) => String(o).toUpperCase() === "LIMIT");
+      if (limitAt >= 0) {
+        const offset = Math.max(0, Number(opts[limitAt + 1]) || 0);
+        const count = Math.max(0, Number(opts[limitAt + 2]) || 0);
+        items = items.slice(offset, offset + count);
+      }
       return flat(items, withScores);
+    },
+    ZREVRANGEBYSCORE: (k, max, min, ...opts) => {
+      const e = get(k, "zset");
+      if (!e) return [];
+      const lo = scoreBound(min, true);
+      const hi = scoreBound(max, false);
+      const withScores = opts.some((o) => String(o).toUpperCase() === "WITHSCORES");
+      let items = zsorted(e).reverse().filter(
+        (i) =>
+          (lo.excl ? i.score > lo.n : i.score >= lo.n) &&
+          (hi.excl ? i.score < hi.n : i.score <= hi.n),
+      );
+      const limitAt = opts.findIndex((o) => String(o).toUpperCase() === "LIMIT");
+      if (limitAt >= 0) {
+        const offset = Math.max(0, Number(opts[limitAt + 1]) || 0);
+        const count = Math.max(0, Number(opts[limitAt + 2]) || 0);
+        items = items.slice(offset, offset + count);
+      }
+      return flat(items, withScores);
+    },
+    ZREMRANGEBYRANK: (k, start, stop) => {
+      const e = get(k, "zset");
+      if (!e) return 0;
+      const doomed = sliceRange(zsorted(e), start, stop);
+      for (const i of doomed) e.value.delete(i.member);
+      if (!e.value.size) data.delete(k);
+      return doomed.length;
     },
   };
 

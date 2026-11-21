@@ -9,15 +9,15 @@
 //   LOGMEM_ACMI_COMPAT=1    also expose acmi_* tools and read acmi:* keys
 //   LOGMEM_REDIS_URI / LOGMEM_REST_URL + LOGMEM_REST_TOKEN   backend (see lib/backend.mjs)
 //   LOGMEM_REQUIRE_BACKEND=1  exit 1 instead of starting in degraded (in-memory) mode
+//   LOGMEM_ALLOW_DEGRADED_WRITES=1  allow writes to disposable in-memory state
 //   LOGMEM_REDIS_TIMEOUT_MS   per-command Redis timeout (default 5000)
 //   LOGMEM_WORK_RULES=warn    allow a task or decision off a job, or blocked with no reason (default strict)
 //
 // Degraded mode: if the backend is unreachable at startup (and
 // LOGMEM_REQUIRE_BACKEND is not set) this process runs on an in-memory store,
 // re-probes the real backend every 60 s and switches over when it answers.
-// DATA-LOSS RISK: writes made while degraded stay in this process only; they
-// are not replayed to the real backend and are gone when the process exits.
-// Every tool result carries degraded:true while this is the case.
+// Mutating tool calls fail while degraded. LogMem does not queue them for
+// replay. Reads carry degraded:true, and shift metadata can stay in memory.
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";

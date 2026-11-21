@@ -1,7 +1,9 @@
 // ui.js — small display parts shared by every view. All lit-html templates: values are escaped.
 import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
-import { hhmm, ago, agentName, isLate, toast } from './core.js';
+import { hhmm, ago, agentName, isLate, toast, state } from './core.js';
 import { shortenIds } from './dashboard-model.js';
+import { agentIcon } from './agent-icons.js';
+import { stageLabel, priorityLabel, PRIORITY_LABEL } from './labels.js';
 
 export { html, nothing };
 export const icon = (n) => html`<i class="lm-i" data-i=${n} aria-hidden="true"></i>`;
@@ -20,7 +22,8 @@ export function agent(by) {
   const n = agentName(by) || '?';
   const human = /^human:/.test(by || '');
   const ini = n.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
-  return html`<span class="lm-agent"><span class="lm-avatar" ?data-human=${human} style=${human ? '' : `background:var(--${hue(n)})`} aria-hidden="true">${ini}</span><span class="lm-agent-name">${n}</span></span>`;
+  const logo = human ? null : agentIcon(state.space, by);
+  return html`<span class="lm-agent"><span class="lm-avatar" ?data-human=${human} style=${human || logo ? '' : `background:var(--${hue(n)})`} aria-hidden="true">${logo ? html`<img src=${logo.src} alt="" loading="lazy" decoding="async">` : ini}</span><span class="lm-agent-name">${n}</span></span>`;
 }
 export function seenTag(s) {
   const label = { active: 'Wrote in the last 15 min', idle: 'Quiet', offline: 'No recent entries', unknown: 'Never wrote' }[s?.state] || 'Unknown';
@@ -32,8 +35,9 @@ export function fresh(st, age) {
 }
 const DEC = { pending: ['hourglass', 'Pending decision'], approved: ['check', 'Approved'], rejected: ['x', 'Rejected'], deferred: ['defer', 'Deferred'], failed: ['alert', 'Failed'], completed: ['check', 'Completed'], 'in-progress': ['refresh', 'In progress'], blocked: ['pause', 'Blocked'] };
 export function decision(st, label) { const d = DEC[st] || ['unknown', st]; return html`<span class="lm-decision" data-d=${st}>${icon(d[0])}${label || d[1]}</span>`; }
-const STAGE = { open: ['deferred', 'Open'], active: ['in-progress', 'Active'], blocked: ['blocked', 'Blocked'], done: ['completed', 'Done'] };
-export function stage(s) { const x = STAGE[s] || ['deferred', s || 'Open']; return decision(x[0], x[1]); }
+// Stage icons here; the words come from labels.js so every screen says To do / In progress / Blocked / Done.
+const STAGE_ICON = { open: 'deferred', active: 'in-progress', blocked: 'blocked', done: 'completed' };
+export function stage(s) { return decision(STAGE_ICON[s] || 'deferred', stageLabel(s)); }
 
 export function entry(e) {
   const timestamp = new Date(e.ts), validTime = Number.isFinite(timestamp.getTime());
@@ -69,7 +73,7 @@ export const moreMenu = (items, label = 'More') => items.length ? html`<details 
 export function dueTag(due, st) { return due ? (isLate(due, st) ? html`<span class="lmx-flag">late · ${due}</span>` : html`due ${due}`) : nothing; }
 const WAIT_SHORT = { task: 'waits on a task', decision: 'waits on a decision', external: 'waits outside' };
 export function waitsTag(w) { if (!w) return nothing; return html`<span class="lmx-wait" data-w=${w.type}>${w.type === 'agent' ? `waits on ${w.ref || 'an agent'}` : WAIT_SHORT[w.type] || 'waits'}</span>`; }
-export const LANE_LABEL = { p0: 'P0', active: 'Active', parked: 'Parked' };
-export function laneBadge(l) { return l && l.status ? html`<span class="lmx-lane" data-l=${l.status}>${LANE_LABEL[l.status]}</span> ` : nothing; }
+/** Plan priority badge (stored lane status). Shows nothing when unset, unless `always` asks for "Not set". */
+export function laneBadge(l, always = false) { const st = l && PRIORITY_LABEL[l.status] ? l.status : null; return st || always ? html`<span class="lmx-prio" data-l=${st || 'none'}>${priorityLabel(st)}</span> ` : nothing; }
 export const joinDot = (parts) => { const xs = parts.filter((p) => p !== '' && p != null && p !== false && p !== nothing); return xs.map((p, i) => (i ? html` · ${p}` : p)); };
 export { ago, agentName };

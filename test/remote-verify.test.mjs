@@ -14,7 +14,9 @@ const sc = async (lm, name, args) => (await lm.callTool(name, args)).structuredC
 /** A fetch that calls the real handler with the server's key, and records calls. */
 function serverFetch({ secret = SECRET, fail = false } = {}) {
   const calls = [];
+  const urls = [];
   const fetchImpl = async (url, init) => {
+    urls.push(String(url));
     calls.push(JSON.parse(init.body));
     if (fail) throw new Error("network down");
     let status = 0, body;
@@ -22,26 +24,99 @@ function serverFetch({ secret = SECRET, fail = false } = {}) {
     await verifyHandler({ method: "POST", body: JSON.parse(init.body) }, res, { env: { LOGMEM_DECIDE_SECRET: secret } });
     return { ok: status === 200, status, json: async () => body };
   };
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, urls };
 }
 
 async function setup(agentOpts = {}) {
+  const { decisionVerdict = "approve", ...localOpts } = agentOpts;
   const redis = createMemoryRedis();
   const store = createStore(redis, { space: "fleet" });
   const server = createLogmem({ workRules: "warn", redis, space: "fleet", sessionId: "srv", surface: "web", defaultAgent: "quill", decideSecret: SECRET });
   await sc(server, "logmem_assign", { job: "issue-14", title: "Issue 14" });
   const ask = await sc(server, "logmem_ask", { question: "Send issue 14?", action: "POST send", reversible: false, where: "job:issue-14" });
-  const out = await writeDecision(store, ask.trail, { verdict: "approve", note: "Go", by: "human:mikey", confirm: true, secret: SECRET });
+  const out = await writeDecision(store, ask.trail, { verdict: decisionVerdict, note: "Go", by: "human:mikey", confirm: true, secret: SECRET });
   // A local agent: no signing key.
-  const local = createLogmem({ workRules: "warn", redis, space: "fleet", sessionId: "loc", surface: "claude-code", defaultAgent: "quill", decideSecret: null, ...agentOpts });
-  return { redis, store, ask, decision: out.entry, local };
+  const local = createLogmem({ workRules: "warn", redis, space: "fleet", sessionId: "loc", surface: "claude-code", defaultAgent: "quill", decideSecret: null, ...localOpts });
+  return { redis, store, ask, decision: out.entry, server, local };
 }
 
-test("remote verify: with no key and no verify URL, a web decision stays pending and unverified (today's behavior)", async () => {
+test("remote verify: decision stays pending without a signing key or trusted verifier", async (t) => {
+  const oldVerifyUrl = process.env.LOGMEM_VERIFY_URL;
+  const oldVercelUrl = process.env.VERCEL_URL;
+  t.after(() => {
+    if (oldVerifyUrl === undefined) delete process.env.LOGMEM_VERIFY_URL;
+    else process.env.LOGMEM_VERIFY_URL = oldVerifyUrl;
+    if (oldVercelUrl === undefined) delete process.env.VERCEL_URL;
+    else process.env.VERCEL_URL = oldVercelUrl;
+  });
+  delete process.env.LOGMEM_VERIFY_URL;
+  delete process.env.VERCEL_URL;
   const { ask, local } = await setup();
   const b = await sc(local, "logmem_brief", {});
   assert.deepEqual(b.pending_asks.map((x) => x.trail), [ask.trail]);
   assert.equal(b.answered_asks.length, 0);
+});
+
+test("remote verify: Vercel derives its verifier URL and the Brief records a rejected decision", async (t) => {
+  const oldVerifyUrl = process.env.LOGMEM_VERIFY_URL;
+  const oldVercelUrl = process.env.VERCEL_URL;
+  t.after(() => {
+    if (oldVerifyUrl === undefined) delete process.env.LOGMEM_VERIFY_URL;
+    else process.env.LOGMEM_VERIFY_URL = oldVerifyUrl;
+    if (oldVercelUrl === undefined) delete process.env.VERCEL_URL;
+    else process.env.VERCEL_URL = oldVercelUrl;
+  });
+  delete process.env.LOGMEM_VERIFY_URL;
+  process.env.VERCEL_URL = "logmem-prod-abc123.vercel.app";
+
+  const srv = serverFetch();
+  const { ask, server, local } = await setup({ decisionVerdict: "reject", fetchImpl: srv.fetchImpl });
+  const freshAsk = await sc(server, "logmem_ask", { question: "Continue issue 14?", action: "Continue issue 14", reversible: true, where: "job:issue-14" });
+  const brief = await sc(local, "logmem_brief", {});
+  assert.deepEqual(brief.pending_asks.map((x) => x.trail), [freshAsk.trail]);
+  assert.deepEqual(brief.answered_asks.map((x) => [x.trail, x.verdict, x.decided_by]), [[ask.trail, "reject", "human:mikey"]]);
+  assert.ok(srv.urls.length > 0);
+  assert.ok(srv.urls.every((url) => url === "https://logmem-prod-abc123.vercel.app/api/verify-decisions"));
+});
+
+test("remote verify: Vercel records a signed approval without a local signing key", async (t) => {
+  const oldVerifyUrl = process.env.LOGMEM_VERIFY_URL;
+  const oldVercelUrl = process.env.VERCEL_URL;
+  t.after(() => {
+    if (oldVerifyUrl === undefined) delete process.env.LOGMEM_VERIFY_URL;
+    else process.env.LOGMEM_VERIFY_URL = oldVerifyUrl;
+    if (oldVercelUrl === undefined) delete process.env.VERCEL_URL;
+    else process.env.VERCEL_URL = oldVercelUrl;
+  });
+  delete process.env.LOGMEM_VERIFY_URL;
+  process.env.VERCEL_URL = "logmem-prod-abc123.vercel.app";
+
+  const srv = serverFetch();
+  const { ask, local } = await setup({ fetchImpl: srv.fetchImpl });
+  const brief = await sc(local, "logmem_brief", {});
+  assert.deepEqual(brief.answered_asks.map((x) => [x.trail, x.verdict, x.decided_by]), [[ask.trail, "approve", "human:mikey"]]);
+  assert.equal(brief.pending_asks.length, 0);
+  assert.ok(srv.urls.every((url) => url === "https://logmem-prod-abc123.vercel.app/api/verify-decisions"));
+});
+
+test("remote verify: Vercel fallback rejects hosts outside vercel.app", async (t) => {
+  const oldVerifyUrl = process.env.LOGMEM_VERIFY_URL;
+  const oldVercelUrl = process.env.VERCEL_URL;
+  t.after(() => {
+    if (oldVerifyUrl === undefined) delete process.env.LOGMEM_VERIFY_URL;
+    else process.env.LOGMEM_VERIFY_URL = oldVerifyUrl;
+    if (oldVercelUrl === undefined) delete process.env.VERCEL_URL;
+    else process.env.VERCEL_URL = oldVercelUrl;
+  });
+  delete process.env.LOGMEM_VERIFY_URL;
+  process.env.VERCEL_URL = "attacker.example/path";
+
+  const srv = serverFetch();
+  const { ask, local } = await setup({ decisionVerdict: "reject", fetchImpl: srv.fetchImpl });
+  const brief = await sc(local, "logmem_brief", {});
+  assert.deepEqual(brief.pending_asks.map((x) => x.trail), [ask.trail]);
+  assert.equal(brief.answered_asks.length, 0);
+  assert.equal(srv.calls.length, 0);
 });
 
 test("remote verify: the trusted server verifies it, so the Brief shows it answered and verified", async () => {

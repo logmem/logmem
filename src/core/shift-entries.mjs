@@ -2,6 +2,28 @@
 import { checkAgentId } from "./keys.mjs";
 import { stableJson } from "./store.mjs";
 
+const TRANSIENT_CODES = new Set([
+  "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EPIPE", "EAI_AGAIN",
+  "ENETUNREACH", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+function isTransientReadError(error) {
+  return error?.transient === true ||
+    TRANSIENT_CODES.has(error?.code) ||
+    error?.name === "TimeoutError" ||
+    error?.name === "AbortError";
+}
+
+async function readWithRetry(read) {
+  try {
+    return await read();
+  } catch (error) {
+    if (!isTransientReadError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return read();
+  }
+}
+
 export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }) {
   const actor = `agent:${checkAgentId(agent)}`;
   const sources = new Map([[actor, ["agent", agent]]]);
@@ -12,7 +34,7 @@ export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }
   }
   for (const ns of ["agent", "job", "channel"]) {
     try {
-      for (const id of await store.list(ns)) sources.set(`${ns}:${id}`, [ns, id]);
+      for (const id of await readWithRetry(() => store.list(ns))) sources.set(`${ns}:${id}`, [ns, id]);
     } catch {
       read_errors.push({ ref: `${ns}:*`, reason: "roster_read_failed" });
     }
@@ -20,19 +42,21 @@ export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }
   // An append can land before its roster update fails. Discover those logs
   // too, so a missing index member cannot turn written work into silence.
   try {
-    let cursor = "0";
-    const prefix = `lm:${store.space}:`;
-    do {
-      const [next, keys] = await store.redis("SCAN", cursor, "MATCH", `${prefix}*:log`, "COUNT", "1000");
-      cursor = String(next);
-      for (const key of keys) {
-        if (!key.startsWith(prefix) || !key.endsWith(":log")) continue;
-        const ref = key.slice(prefix.length, -4);
-        const split = ref.indexOf(":");
-        const ns = ref.slice(0, split), id = ref.slice(split + 1);
-        if (["agent", "job", "channel"].includes(ns)) sources.set(ref, [ns, id]);
-      }
-    } while (cursor !== "0");
+    await readWithRetry(async () => {
+      let cursor = "0";
+      const prefix = `lm:${store.space}:`;
+      do {
+        const [next, keys] = await store.redis("SCAN", cursor, "MATCH", `${prefix}*:log`, "COUNT", "1000");
+        cursor = String(next);
+        for (const key of keys) {
+          if (!key.startsWith(prefix) || !key.endsWith(":log")) continue;
+          const ref = key.slice(prefix.length, -4);
+          const split = ref.indexOf(":");
+          const ns = ref.slice(0, split), id = ref.slice(split + 1);
+          if (["agent", "job", "channel"].includes(ns)) sources.set(ref, [ns, id]);
+        }
+      } while (cursor !== "0");
+    });
   } catch {
     read_errors.push({ ref: "logs:*", reason: "log_discovery_failed" });
   }
@@ -43,7 +67,7 @@ export async function readShiftEntries(store, { agent, shift, sinceMs, untilMs }
     const rows = await Promise.all(refs.slice(i, i + 20).map(async ([ref, [ns, id]]) => {
       try {
         const readLog = id.includes(":") ? store.readLogWithLegacyId : store.readLog;
-        const entries = await readLog.call(store, ns, id, { sinceMs, untilMs });
+        const entries = await readWithRetry(() => readLog.call(store, ns, id, { sinceMs, untilMs }));
         if (entries.warnings?.length) read_errors.push({ ref, reason: "unreadable_legacy_log" });
         return entries;
       } catch {

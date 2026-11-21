@@ -193,19 +193,50 @@ async function prepare() {
   else summarize(`Release candidates: ${selected.join(", ")}. The workflow will open a reviewed pull request.`);
 }
 
+function manifestAtCommit(revision, path) {
+  const check = spawnSync("git", ["ls-tree", "-r", "--name-only", revision, "--", path], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (check.error) throw check.error;
+  if (check.status !== 0) {
+    fail(`Could not inspect ${revision}:${path}: ${(check.stderr || check.stdout || "unknown git error").trim()}`);
+  }
+  if (!check.stdout.trim()) return null;
+  return JSON.parse(command("git", ["show", `${revision}:${path}`], { cwd: root }));
+}
+
 async function selectForPublish(base, head) {
   const selected = [];
+  const skippedInitial = [];
+  command("git", ["cat-file", "-e", `${base}^{commit}`], { cwd: root });
+  command("git", ["cat-file", "-e", `${head}^{commit}`], { cwd: root });
+
   for (const spec of packages) {
-    const before = JSON.parse(command("git", ["show", `${base}:${spec.manifest}`], { cwd: root }));
-    const after = JSON.parse(command("git", ["show", `${head}:${spec.manifest}`], { cwd: root }));
-    if (before.version === after.version) continue;
-    if (compareVersions(after.version, before.version) <= 0) fail(`${spec.name} release version must increase.`);
+    const before = manifestAtCommit(base, spec.manifest);
+    const after = manifestAtCommit(head, spec.manifest);
+    if (!after) {
+      if (before) fail(`${spec.name} package manifest was removed; refusing release selection.`);
+      continue;
+    }
+    if (before && before.version === after.version) continue;
+    if (before && compareVersions(after.version, before.version) <= 0) {
+      fail(`${spec.name} release version must increase.`);
+    }
     const latest = await registryPackage(spec.name);
-    if (compareVersions(after.version, latest.version) <= 0) fail(`${spec.name} ${after.version} is not newer than npm ${latest.version}.`);
+    if (compareVersions(after.version, latest.version) <= 0) {
+      if (!before) {
+        skippedInitial.push(spec.id);
+        continue;
+      }
+      fail(`${spec.name} ${after.version} is not newer than npm ${latest.version}.`);
+    }
     selected.push(spec.id);
   }
   setOutput("packages", JSON.stringify(selected));
-  if (selected.length === 0) summarize("This merged pull request did not change a package version. Nothing will publish.");
+  if (selected.length === 0 && skippedInitial.length > 0) {
+    summarize(`Initial package versions are not newer than npm: ${skippedInitial.join(", ")}. Nothing will publish.`);
+  } else if (selected.length === 0) summarize("This merged pull request did not change a package version. Nothing will publish.");
   else summarize(`Packages approved for the protected publish job: ${selected.join(", ")}.`);
 }
 

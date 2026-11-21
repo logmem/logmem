@@ -221,6 +221,42 @@ function visibleText(html) {
     .replace(/&#39;|&apos;/gi, "'");
 }
 
+test("pricing: hosted plans say join the waitlist and customer pages do not name a November 16 beta", async () => {
+  const { readFileSync, readdirSync, statSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const read = (rel) => readFileSync(join(root, rel), "utf8");
+  const dated = /November 16|Nov\.? 16/;
+  const pricing = read("public/pricing.html");
+  assert.match(pricing, /Annual billing: about 17% off Dev, Pro, and Team\. Hosted plans: join the waitlist\./);
+  assert.match(pricing, /<summary>When can I buy a hosted plan\?<\/summary>\s*<p>Hosted plans: join the waitlist\.<\/p>/);
+  assert.doesNotMatch(pricing, dated);
+  assert.doesNotMatch(pricing, /Hosted plans open with the beta/);
+  assert.match(pricing, /\$19\/mo/);
+  assert.match(pricing, /\$49\/mo/);
+  assert.match(pricing, /\$99\/mo/);
+  assert.match(pricing, /\$199\/mo/);
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (name.endsWith(".html")) {
+        const html = readFileSync(path, "utf8");
+        assert.doesNotMatch(html, dated, path);
+      }
+    }
+  };
+  walk(join(root, "public"));
+  for (const name of readdirSync(join(root, "public/agents"))) {
+    if (name.endsWith(".html")) assert.match(read(`public/agents/${name}`), /Hosted plans: join the waitlist\./, name);
+  }
+  for (const rel of ["public/index.html", "public/connect.html", "public/how-to.html", "README.md"]) {
+    assert.match(read(rel), /Hosted plans: join the waitlist\./, rel);
+    assert.doesNotMatch(read(rel), dated, rel);
+  }
+});
+
 test("homepage: visible text does not name ACMI", async () => {
   const { readFileSync } = await import("node:fs");
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");

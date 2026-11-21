@@ -36,6 +36,15 @@ test("bare start with nothing bound fails with the fix, and never guesses from t
   assert.equal(r.error, NO_BOUND_AGENT);
 });
 
+test("an unbound write does not create an agent from its surface name", async () => {
+  const redis = createMemoryRedis();
+  const lm = lmFor(redis);
+  const r = await call(lm, "logmem_note", { where: "channel:ops", summary: "must not be misattributed" });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /no agent is bound to this connection/);
+  assert.deepEqual(await redis("KEYS", "lm:fleet:agent:gemini-mac:log"), []);
+});
+
 test("the first start ever carries welcome; later starts do not", async () => {
   const redis = createMemoryRedis();
   const first = await call(lmFor(redis, { defaultAgent: "gemini-app" }), "logmem_start", {});

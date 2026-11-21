@@ -38,18 +38,18 @@ export function descriptorFromEnv(env = process.env) {
 // ---- stdio degraded mode ----------------------------------------------------
 //
 // When the configured backend is unreachable at startup, stdio falls back to an
-// in-memory store so the MCP client still gets a working tool list. That is a
-// data-loss risk: anything written while degraded lives only in this process
-// and is NOT replayed to the real backend when it comes back (or when the
-// process exits). Three mitigations:
+// in-memory store so the MCP client still gets a working tool list. LogMem
+// refuses mutating tool calls in this mode. It does not queue writes for replay.
+// Reads remain available, and their shift metadata can stay only in memory.
+// Three safeguards apply:
 //
 //   LOGMEM_REQUIRE_BACKEND=1  refuse to start without a reachable backend
 //                             (BackendRequiredError; stdio exits 1).
+//   LOGMEM_ALLOW_DEGRADED_WRITES=1 permit writes only for disposable local use.
 //   re-probe                  every 60 s, PING the configured backend and
 //                             switch to it as soon as it answers.
 //   degraded:true             every tool result carries it while in memory
-//                             mode, so agents can tell their writes are
-//                             not durable (see createLogmem({ isDegraded })).
+//                             mode. Refused writes also return durable:false.
 
 export const REPROBE_MS = 60_000;
 
@@ -102,7 +102,7 @@ export async function resilientBackendFromEnv(env = process.env, log = () => {},
 
   let timer = null;
   if (!current) {
-    log(`${reason}; using in-memory (degraded). Writes are NOT durable and are not replayed when the backend returns.`);
+    log(`${reason}; using in-memory (degraded). Mutating tool calls will fail until the backend returns.`);
     current = { kind: "memory", redis: createMemoryRedis() };
   }
 
@@ -119,7 +119,7 @@ export async function resilientBackendFromEnv(env = process.env, log = () => {},
       current = configured;
       if (timer) clearInterval(timer);
       timer = null;
-      log(`backend ${configured.kind} reachable again; switched over from in-memory. Writes made while degraded were not copied.`);
+      log(`backend ${configured.kind} reachable again; switched over from in-memory. In-memory shift metadata was not copied.`);
       return true;
     })().finally(() => { probing = null; });
     return probing;

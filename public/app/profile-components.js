@@ -8,6 +8,8 @@ import { initials } from './dashboard-model.js';
 import { agentDispatchPrompt } from './dispatch-model.js';
 import { agentDispatchButton } from './dispatch-components.js';
 import { profileNow, recapParts, followGroups, followCounts, FOLLOW_SHOW, shiftRows, profileTelemetry } from './profile-model.js';
+import { agentIcon } from './agent-icons.js';
+import { profileTools } from './profile-tools.js';
 
 const pill = (label, on, click) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click}>${label}</button>`;
 const SHIFT_FILTERS = [['all', 'All'], ['auto', 'Auto'], ['manual', 'Manual']];
@@ -23,6 +25,7 @@ function extraValue(x) {
 /** Agent profile. d is the agent view payload. pf holds the filters, redraw repaints. */
 export function agentProfile({ d, id, pf, redraw, space }) {
   const now = profileNow(d.now), recap = recapParts(d.recap), tel = profileTelemetry(d);
+  const logo = agentIcon(space, id);
   const groups = followGroups(d.follows), fc = followCounts(groups);
   const folMode = FOLLOW_FILTERS.some(([k]) => k === pf.fol) ? pf.fol : 'all';
   const folRows = (folMode === 'all' ? [...groups.job, ...groups.channel, ...groups.other] : groups[folMode]);
@@ -34,14 +37,16 @@ export function agentProfile({ d, id, pf, redraw, space }) {
   const dispatch = { id, now: d.now, recap: d.recap, seen: d.seen };
   return html`<section class="lmx-prof" aria-label=${'Agent profile for ' + id}>
     <header class="lmx-card lmx-prof-head" data-state=${tel.state}>
-      <div class="lmx-prof-id"><span class="lmx-avatar" aria-hidden="true">${initials(id)}</span><h2>${id}</h2>${tel.role ? html`<span class="lmx-tag">${tel.role}</span>` : nothing}</div>
+      <div class="lmx-prof-id"><span class="lmx-avatar lmx-prof-avatar" aria-hidden="true">${logo ? html`<img src=${logo.src} alt="">` : initials(id)}</span><h2>${id}</h2>${tel.role ? html`<span class="lmx-tag">${tel.role}</span>` : nothing}</div>
       <div class="lmx-prof-pills">
         <span class="lmx-prof-seen">${seenTag(d.seen)}</span>
         ${now.blocked ? html`<span class="lm-badge lm-badge--warning">Blocked</span>` : nothing}
-        ${countTag(tel.waiting, 'handoff waiting', 'handoffs waiting')}${countTag(tel.follows, 'follow', 'follows')}${countTag(tel.shifts, 'recent shift', 'recent shifts')}
+        ${countTag(tel.waiting, 'request waiting', 'requests waiting')}${countTag(tel.follows, 'follow', 'follows')}${countTag(tel.shifts, 'recent shift', 'recent shifts')}
       </div>
       <p class="lmx-meta">These are reports from the log. Recent activity does not prove a running process. Schedule coverage and run controls are not verified.</p>
     </header>
+
+    ${profileTools({ d, id, space, redraw })}
 
     <div class="lmx-prof-grid">
       <section class="lmx-card lmx-prof-tile lmx-prof-now" aria-label="Now">
@@ -49,7 +54,7 @@ export function agentProfile({ d, id, pf, redraw, space }) {
         ${now.doing ? html`<p class=${'lmx-clamp3' + (pf.moreNow ? ' is-open' : '')}>${now.doing}</p>${now.doing.length > 140 ? html`<button type="button" class="lmx-linkish" aria-expanded=${String(!!pf.moreNow)} @click=${set('moreNow', !pf.moreNow)}>${pf.moreNow ? 'Show less' : 'Show more'}</button>` : nothing}` : html`<span class="lmx-flag">No Now set</span>`}
         <div class="lmx-prof-facts">
           ${now.job ? html`<a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(now.job)}>${now.job}</a>` : nothing}
-          ${now.lane ? html`<span class="lmx-tag">lane · ${now.lane}</span>` : nothing}
+          ${now.lane ? html`<span class="lmx-tag">plan · ${now.lane}</span>` : nothing}
           ${now.waiting ? html`<span class="lmx-tag">waiting on · ${now.waiting}</span>` : nothing}
           ${now.blockedNote ? html`<span class="lmx-tag" data-late="true">blocked · ${now.blockedNote}</span>` : nothing}
         </div>
@@ -66,9 +71,9 @@ export function agentProfile({ d, id, pf, redraw, space }) {
         ${recap ? html`<p>${recap.headline}</p>${recap.rest.length ? html`<details class="lmx-recap-box"><summary><span class="lmx-recap-label">Full recap</span></summary><div class="lmx-recap-scroll">${recap.rest.map(l => html`<p>${l}</p>`)}</div></details>` : nothing}<div class="lm-prov"><span>${recap.mode}${recap.reason ? ' · ' + recap.reason : ''}</span></div>` : emptyState('No Recap yet.', 'This agent has not finished a shift.')}
       </section>
 
-      <section class="lmx-card lmx-prof-tile" aria-label=${'Handoffs waiting for ' + id}>
+      <section class="lmx-card lmx-prof-tile" aria-label=${'Requests waiting for ' + id}>
         <span class="lmx-label">WAITING FOR ${id.toUpperCase()}</span>
-        ${d.handoffs.length ? entries(d.handoffs) : emptyState('Nothing waiting.', 'Handoffs show here until the agent accepts or declines them.')}
+        ${d.handoffs.length ? entries(d.handoffs) : emptyState('Nothing waiting.', 'Requests show here until the agent accepts or declines them.')}
       </section>
     </div>
 

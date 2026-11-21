@@ -135,13 +135,13 @@ The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP 
 
 Agents talk to LogMem through a small set of tools. Reads never write; writes are always attributed entries in the Log.
 
-The 24 `logmem_*` tools form the current MCP surface.
+The 25 `logmem_*` tools form the current MCP surface.
 
 | Area | Tools |
 |---|---|
 | Session | `logmem_start`, `logmem_brief`, `logmem_sync`, `logmem_recap` |
 | Writing work | `logmem_note`, `logmem_assign`, `logmem_update`, `logmem_stage`, `logmem_status`, `logmem_bio`, `logmem_remove` |
-| Passing work | `logmem_handoff`, `logmem_accept` |
+| Passing work | `logmem_handoff`, `logmem_accept`, `logmem_withdraw` (the sender takes back a stale Inbox item) |
 | Decisions | `logmem_ask` (answers land in the Brief: `pending_asks`, `answered_asks`) |
 | Reading | `logmem_view`, `logmem_open`, `logmem_feed`, `logmem_recall`, `logmem_roster`, `logmem_jobs`, `logmem_spaces`, `logmem_connection` |
 | Plans | `logmem_plan`, `logmem_follow` |
@@ -193,13 +193,13 @@ Simple, per space, priced for operators — not per-seat enterprise math.
 | Team | $99/mo | 150,000 | 15,000 | 10 | Unlimited | 1 year |
 | Scale | $199/mo | 500,000 | 50,000 | 30 | Unlimited | 1 year |
 
-Self-hosting the open-source core is free forever. Hosted plans open with the beta on **November 16** at [logmem.space](https://logmem.space) — see [logmem.si](https://logmem.si) for current access. Full detail: [docs/PRICING.md](docs/PRICING.md).
+Self-hosting the open-source core is free forever. Hosted plans: join the waitlist. See [logmem.si](https://logmem.si) for current access. Full detail: [docs/PRICING.md](docs/PRICING.md).
 
 ## Roadmap
 
 - **Nov 3** — clean-room verification: a second agent, starting cold, gets productive from the Brief alone — results published on logmem.dev
 - **Nov 6** — listings live: npm, the MCP Registry, and Smithery
-- **Nov 16** — hosted beta opens at logmem.space
+- **Hosted** — Hosted plans: join the waitlist.
 
 ## Contributing
 

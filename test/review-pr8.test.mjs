@@ -754,9 +754,10 @@ test("M1: a claim whose log writes all vanished still answers the ask (claim-fir
 test("L3: with two signed settling entries, the Brief and the Decisions page both report the claim holder", async () => {
   const { q, store, redis } = await team();
   const ask = await sc(q, "logmem_ask", { question: "q", action: "a", reversible: true });
-  await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin", now: () => 2e12 });
+  const T = Date.now() + 1000; // a clock just after the ask; a far-future stamp is refused on write
+  await writeDecision(store, ask.trail, { verdict: "approve", by: "human:admin", now: () => T });
   await redis("DEL", `lm:fieldnotes:decision:${ask.trail}`);
-  await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin", now: () => 2e12 + 5 });
+  await writeDecision(store, ask.trail, { verdict: "reject", by: "human:admin", now: () => T + 5 });
   const brief = (await sc(q, "logmem_brief", {})).answered_asks.find((x) => x.trail === ask.trail).verdict;
   const page = (await buildView(redis, "fieldnotes", "decisions")).decided.find((x) => x.ask.trail === ask.trail).answer.payload.verdict;
   assert.equal(brief, "reject");

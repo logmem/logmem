@@ -1,4 +1,4 @@
-// tools.mjs — the 24 logmem_* tools.
+// tools.mjs — the 25 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
@@ -83,7 +83,7 @@ export const isAskKind = (kind) => kind != null && normalizeKind(String(kind).tr
 /** Asks only come from logmem_ask, so their trail is always fresh and unguessable (never a reused or chosen one). */
 export const ASK_ONLY = "approval entries are written by logmem_ask, which picks a fresh trail; call logmem_ask instead";
 export const HANDOFF_ONLY =
-  "accepted entries and declined feedback are written by logmem_accept (pass decline=true to refuse a handoff); call logmem_accept";
+  "accepted entries and declined feedback are written by logmem_accept (pass decline=true to refuse a handoff); call logmem_accept. Withdrawn feedback is written by logmem_withdraw";
 export const HANDOFF_WRITE_ONLY = "handoff entries are written by logmem_handoff; call logmem_handoff";
 
 /**
@@ -93,6 +93,14 @@ export const HANDOFF_WRITE_ONLY = "handoff entries are written by logmem_handoff
  */
 export function isDeclined(payload) {
   return payload != null && payload.declined === true;
+}
+
+/**
+ * A withdrawal is the sender taking back an open Inbox item (logmem_withdraw).
+ * Like a decline it settles a handoff, so only that tool can write it.
+ */
+export function isWithdrawn(payload) {
+  return payload != null && payload.withdrawn === true;
 }
 
 /** Shown when a write carries payload.declined that is not a boolean. */
@@ -106,11 +114,32 @@ export function assertDeclinedType(payload) {
   if (typeof payload.declined !== "boolean") throw new Error(DECLINED_TYPE);
 }
 
+/**
+ * Settle the coordination item of a handoff the agent accepted or declined.
+ * One retry on a thrown backend error: the CAS is idempotent, so a retry after
+ * a write that did land returns already_settled, never a double settle.
+ * Status: ok | already_settled | not_found (handoff predates items) |
+ * wrong_recipient | error (both attempts threw).
+ */
+async function settleHandoffItem(ctx, { trail, agent, declined, settledAt, settlementTrail, disposition }) {
+  const id = computeItemId(ctx.store.space, "handoff", trail, agent);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await settleCoordItem(ctx.store, {
+        space: ctx.store.space, id, recipient: agent, response: declined ? "declined" : "answered",
+        settledBy: agentRef(agent), settledAt, settlementTrail, disposition,
+      });
+      return { id, status: res.status };
+    } catch (_) { /* retry once, then report */ }
+  }
+  return { id, status: "error" };
+}
+
 /** True when this kind/payload would settle a handoff (accepted, or feedback marked declined). */
 export function handoffSettlement(kind, payload) {
   const word = normalizeKind(kind == null || String(kind).trim() === "" ? "memo" : String(kind).trim().toLowerCase()).kind;
   if (word === "accepted") return true;
-  if (word === "feedback" && isDeclined(payload)) return true;
+  if (word === "feedback" && (isDeclined(payload) || isWithdrawn(payload))) return true;
   return false;
 }
 
@@ -461,7 +490,7 @@ async function brief(ctx, agent, opts = {}) {
     s.readLog("agent", a, { reverse: true, sinceMs: nowMs - WEEK_MS, limit: 2000 }),
   ]);
   const settled = new Set(
-    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin),
+    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && (isDeclined(e.payload) || isWithdrawn(e.payload))))).map((e) => e.origin),
   );
   let waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
   try {
@@ -484,9 +513,13 @@ async function brief(ctx, agent, opts = {}) {
   } catch (_) {}
   const verify = { secret: decideSecret(ctx), space: s.space };
   const state = await askState(s, week);
-  // No signing key here (a local agent): ask the trusted server which decisions verify.
-  if (!usableSecret(verify.secret) && ctx.verifyUrl) {
-    verify.remote = await remoteVerified([...week, ...log.slice(0, 20), ...state.claims.values()], { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
+  // A local signing key can be stale after rotation. Ask the trusted server
+  // about rows it rejects, as well as when this process has no signing key.
+  const decisions = [...week, ...log.slice(0, 20), ...state.claims.values()];
+  const needsRemote = !usableSecret(verify.secret) || decisions.some((e) =>
+    e?.kind === "decided" && !verifyDecision(e, { secret: verify.secret, space: s.space }));
+  if (needsRemote && ctx.verifyUrl) {
+    verify.remote = await remoteVerified(decisions, { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
   }
   const tasks = await blockersFrom(s, agentRef(a));
   const asks = asksOf(a, week, { ...verify, ...state });
@@ -854,7 +887,7 @@ export const TOOLS = [
     name: "logmem_accept",
     title: "Accept",
     description:
-      "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log.",
+      "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
     params: params({
       trail: { type: "string", desc: "Trail of the handoff, from handoffs_to_me in your Brief" },
       decline: { type: "boolean", desc: "true to turn the work down (default false = accept)", optional: true },
@@ -868,8 +901,25 @@ export const TOOLS = [
       const log = await ctx.store.readLog("agent", a, { reverse: true, limit: 500 });
       const ho = log.find((e) => e.kind === "handoff" && e.trail === trail && e.to === agentRef(a));
       if (!ho) return { ok: false, error: `no handoff with trail '${trail}' was passed to ${a}; check handoffs_to_me in your Brief` };
-      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload))));
-      if (done) return { ok: false, error: `you already ${done.kind === "accepted" ? "accepted" : "declined"} this handoff`, entry: done };
+      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && (isDeclined(e.payload) || isWithdrawn(e.payload)))));
+      if (done && done.kind === "feedback" && isWithdrawn(done.payload)) {
+        return { ok: false, error: `the sender withdrew this handoff: ${done.payload.reason || "no reason given"}`, entry: done };
+      }
+      if (done) {
+        // The entry landed but its coordination item can still be open: the
+        // settle after the write failed (a transient backend error). Re-running
+        // accept repairs it from the entry already written, so Inbox and sync
+        // counts stop listing work that was answered.
+        const declinedBefore = done.kind !== "accepted";
+        const repair = await settleHandoffItem(ctx, {
+          trail, agent: a, declined: declinedBefore, settledAt: Number(done.ts) || clock(ctx), settlementTrail: done.trail,
+          disposition: declinedBefore ? (done.payload?.reason || "declined") : "accepted",
+        });
+        if (repair.status === "ok") {
+          return { ok: true, repaired: true, origin: trail, trail: done.trail, item_id: repair.id, declined: declinedBefore, entry: done };
+        }
+        return { ok: false, error: `you already ${declinedBefore ? "declined" : "accepted"} this handoff`, entry: done, item_id: repair.id, item_status: repair.status };
+      }
 
       const where = ho.job ? parseRef(ho.job) : null;
       const t = clock(ctx);
@@ -891,21 +941,66 @@ export const TOOLS = [
         seenLogs.add(`${ns}:${id}`);
         entries.push(await write(ctx, ns, id, { ...one, settle: true }));
       }
-      let itemId = null;
-      try {
-        itemId = computeItemId(ctx.store.space, "handoff", trail, a);
-        await settleCoordItem(ctx.store, {
-          space: ctx.store.space,
-          id: itemId,
-          recipient: a,
-          response: decline ? "declined" : "answered",
-          settledBy: agentRef(a),
-          settledAt: t,
-          settlementTrail: tr,
-          disposition: decline ? (reason || "declined") : "accepted",
-        });
-      } catch (_) {}
-      return { ok: true, trail: tr, origin: trail, item_id: itemId || undefined, declined: !!decline, where: where ? `${where.ns}:${where.id}` : null, entries };
+      const settled = await settleHandoffItem(ctx, {
+        trail, agent: a, declined: !!decline, settledAt: t, settlementTrail: tr,
+        disposition: decline ? (reason || "declined") : "accepted",
+      });
+      const out = { ok: true, trail: tr, origin: trail, item_id: settled.id, item_status: settled.status, declined: !!decline, where: where ? `${where.ns}:${where.id}` : null, entries };
+      if (settled.status === "error") out.warning = "The entry is written but its Inbox item is still open. Call logmem_accept again with the same trail to settle it.";
+      return out;
+    },
+  },
+  {
+    name: "logmem_withdraw",
+    title: "Withdraw",
+    description:
+      "Take back an open Inbox item you sent: a handoff, a directed request or a huddle seat that is stale, done another way, or sent to an agent that no longer works. A reason is required. Writes a Feedback entry marked withdrawn where the work lives, on the recipient's log and on your own log, and settles the item so it leaves the recipient's Inbox and sync counts. Only the sender can withdraw. A person can resolve any item from the Inbox page.",
+    params: params({
+      item: { type: "string", desc: "Item id to withdraw, e.g. 'ci_...' (from logmem_sync)" },
+      reason: { type: "string", desc: "Why, in one line (shown to the recipient), e.g. 'stale: done in PR 299'" },
+    }),
+    annotations: WRITE,
+    async run({ item, reason }, ctx) {
+      const a = me(ctx);
+      capText("item", item, LIMITS.trail);
+      capText("reason", reason);
+      const why = String(reason || "").trim();
+      if (!why) return { ok: false, error: "reason is required: say in one line why you withdraw this item" };
+      const it = await getCoordItem(ctx.store, ctx.store.space, item);
+      if (!it) return { ok: false, error: `coordination item '${item}' not found` };
+      const sender = String(it.from || "").replace(/^agent:/, "");
+      if (sender !== a) return { ok: false, error: `only the sender ('${sender || "unknown"}') can withdraw item '${item}' (you are ${a})` };
+      if (it.response !== "open") return { ok: false, error: `item '${item}' is already settled (${it.response})` };
+      const to = String(it.to || "").replace(/^agent:/, "");
+      let where = null;
+      if (it.where) { try { where = parseRef(it.where); } catch (_) { where = null; } }
+      const t = clock(ctx);
+      const tr = makeTrail("withdrawn", where ? where.id : to, t);
+      const one = {
+        kind: "feedback",
+        summary: `Withdrawn ${it.type} for ${to}: ${why}`.slice(0, LIMITS.summary),
+        trail: tr,
+        origin: it.request_trail,
+        payload: { withdrawn: true, reason: why, item: it.id, type: it.type, to: agentRef(to) },
+        ts: t,
+      };
+      const logs = [];
+      if (where) logs.push([where.ns, where.id]);
+      if (to) logs.push(["agent", to]);
+      logs.push(["agent", a]);
+      const seen = new Set();
+      const entries = [];
+      for (const [ns, id] of logs) {
+        if (seen.has(`${ns}:${id}`)) continue;
+        seen.add(`${ns}:${id}`);
+        entries.push(await write(ctx, ns, id, { ...one, settle: true }));
+      }
+      const res = await settleCoordItem(ctx.store, {
+        space: ctx.store.space, id: it.id, recipient: to, response: "declined",
+        settledBy: agentRef(a), settledAt: t, settlementTrail: tr, disposition: `withdrawn: ${why}`.slice(0, LIMITS.summary),
+      });
+      return { ok: res.ok, item_id: it.id, item_status: res.status, trail: tr, to: agentRef(to), where: where ? `${where.ns}:${where.id}` : null, entries,
+        ...(res.ok ? {} : { error: `entries written but the item did not settle (${res.status}); call logmem_withdraw again` }) };
     },
   },
   {
@@ -1229,6 +1324,9 @@ export const TOOLS = [
     }),
     annotations: SET,
     async run({ job, stage, note, blocked_on }, ctx) {
+      // The params enum is advisory to clients; re-check here so a free-text
+      // stage never lands in Now and drops the job out of every stage count.
+      if (!STAGES.includes(stage)) return { ok: false, error: `stage must be one of ${STAGES.join(", ")}; got ${JSON.stringify(stage)}` };
       capText("note", note);
       const { id } = parseRef(job, "job");
       let reason = null;
@@ -1655,16 +1753,16 @@ export function verifyDecision(e, { secret, space, ask, remote } = {}) {
     if (ask_hash != null && ask_hash !== want) return false;
     ask_hash = want;
   }
-  if (!usableSecret(secret)) {
-    // No key here: only a decision the trusted server verified, field for field, counts.
-    return remote instanceof Set && e.payload?.ask_hash != null && e.payload.ask_hash === ask_hash && remote.has(remoteKey(e, space));
+  if (usableSecret(secret)) {
+    const want = createHmac("sha256", secret)
+      .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
+      .digest();
+    const got = Buffer.from(sig, "hex");
+    if (got.length === want.length && timingSafeEqual(want, got)) return true;
   }
-  const want = createHmac("sha256", secret)
-    .update(decisionMessage({ space, origin: e.origin, ask_hash, verdict: e.payload?.verdict, note: e.payload?.note, by: e.by, ts: e.ts }))
-    .digest();
-  const got = Buffer.from(sig, "hex");
-  if (got.length !== want.length) return false;
-  return timingSafeEqual(want, got);
+  // A successful local check is enough. Otherwise, trust only the configured
+  // verifier's field-bound response, including when this process has a stale key.
+  return remote instanceof Set && e.payload?.ask_hash != null && e.payload.ask_hash === ask_hash && remote.has(remoteKey(e, space));
 }
 const VERDICT_LABEL = { approve: "Approved", reject: "Rejected", defer: "Deferred" };
 

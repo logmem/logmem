@@ -324,7 +324,7 @@
     {
       "name": "logmem_accept",
       "title": "Accept",
-      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log.",
+      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -363,6 +363,45 @@
         "openWorldHint": false
       },
       "acmi_equivalent": null
+    },
+    {
+      "name": "logmem_withdraw",
+      "title": "Withdraw",
+      "description": "Take back an open Inbox item you sent: a handoff, a directed request or a huddle seat that is stale, done another way, or sent to an agent that no longer works. A reason is required. Writes a Feedback entry marked withdrawn where the work lives, on the recipient's log and on your own log, and settles the item so it leaves the recipient's Inbox and sync counts. Only the sender can withdraw. A person can resolve any item from the Inbox page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "Item id to withdraw, e.g. 'ci_...' (from logmem_sync)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, in one line (shown to the recipient), e.g. 'stale: done in PR 299'"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "reason"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Withdraw",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "name": "logmem_ask",
