@@ -91,6 +91,7 @@ export function createCustomerDashboard(deps={}) {return async(req,res)=>{
   if(e instanceof WorkspaceError)return customerError(res,e,'customer-dashboard');
   if(e.name==='DecisionError')return res.status(statuses[e.code]||400).json({error:e.message,code:e.code});
   if(e.name==='BlockerError'||e.name==='WorkError')return res.status(e.status||400).json({error:e.message});
+  if(e.code==='bad_cursor')return res.status(400).json({error:e.message,code:e.code});
   return customerError(res,e,'customer-dashboard');
  }
 };}
