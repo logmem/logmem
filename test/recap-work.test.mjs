@@ -70,6 +70,38 @@ test("recap exposes unreadable sources rather than claiming complete coverage", 
   assert.ok(recap.read_errors.some(e => e.ref === "channel:broken"));
 });
 
+test("recap retries a transient log read once before reporting partial coverage", async () => {
+  const memory = createMemoryRedis();
+  let failReads = false;
+  let readAttempts = 0;
+  const redis = async (...cmd) => {
+    if (failReads && cmd[0] === "ZRANGEBYSCORE" && cmd[1] === "lm:acme:channel:retry:log") {
+      readAttempts++;
+      if (readAttempts === 1) throw Object.assign(new Error("temporary read failure"), { transient: true });
+    }
+    return memory(...cmd);
+  };
+  const { lm, advance } = setup({ redis });
+  const started = await call(lm, "logmem_start", { agent: "atlas" });
+  await lm.store.append("channel", "retry", {
+    ts: started.started.started_at + 1,
+    by: "agent:atlas",
+    shift: started.started.shift,
+    kind: "progress",
+    trail: "retry-read",
+    summary: "Written work",
+  });
+  failReads = true;
+  advance(31 * 60 * 1000);
+  await lm.shifts.sweep();
+  const recap = await lm.store.getRecap("atlas");
+  assert.equal(readAttempts, 2);
+  assert.equal(recap.coverage, "complete");
+  assert.equal(recap.entry_count, 2);
+  assert.equal(recap.last_entries.at(-1).summary, "Written work");
+  assert.equal(started.started.agent, "atlas");
+});
+
 test("recap counts more than 200 job entries without a recent-log cutoff", async () => {
   const { lm, advance } = setup();
   const started = await call(lm, "logmem_start", { agent: "atlas" });

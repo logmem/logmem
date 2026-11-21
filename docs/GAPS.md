@@ -92,7 +92,7 @@ Still open:
 | O2 | No timeouts on bridge fetches | `AbortSignal.timeout(5000)`; retry idempotent reads once |
 | O3 | No backups or restore | Nightly RDB to off-box storage; AOF; a monthly restore drill |
 | O4 | No health check, logs or metrics | `/api/health` (PING + version/SHA); structured request logs; a log drain; SLO 99.5% / p95 < 1.5 s |
-| O5 | Silent data loss in stdio degraded mode | Re-probe, spool to disk, or `LOGMEM_REQUIRE_BACKEND=1` |
+| O5 | Stdio degraded mode had accepted writes that could not persist | Mutating calls now fail by default with `durable: false`; disk replay remains open |
 | O6 | Node and dependency drift | Node 22 pinned, exact SDK version, Dependabot |
 | O7 | No runbook | `docs/RUNBOOK.md`: rollback, bridge down, restore, token compromise |
 
