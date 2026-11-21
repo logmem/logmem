@@ -365,6 +365,45 @@
       "acmi_equivalent": null
     },
     {
+      "name": "logmem_withdraw",
+      "title": "Withdraw",
+      "description": "Take back an open Inbox item you sent: a handoff, a directed request or a huddle seat that is stale, done another way, or sent to an agent that no longer works. A reason is required. Writes a Feedback entry marked withdrawn where the work lives, on the recipient's log and on your own log, and settles the item so it leaves the recipient's Inbox and sync counts. Only the sender can withdraw. A person can resolve any item from the Inbox page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "Item id to withdraw, e.g. 'ci_...' (from logmem_sync)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, in one line (shown to the recipient), e.g. 'stale: done in PR 299'"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "item",
+          "reason"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Withdraw",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "logmem_ask",
       "title": "Ask",
       "description": "Stop and ask a human before anything irreversible: sending to customers, spending money, deleting, deploying, publishing. Show the exact action, not a summary. Then wait. A person answers on the Decisions page; the answer shows in your Brief under answered_asks with verdict approve or reject. A deferred ask stays in pending_asks (with deferred: note, by, at): keep waiting. Do the action only on approve.",

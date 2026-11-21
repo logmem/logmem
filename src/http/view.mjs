@@ -7,7 +7,7 @@
 import { getSecret } from "../lib/secrets.mjs";
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, isHandoffKind, handoffSettlement, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, isWithdrawn, isHandoffKind, handoffSettlement, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
 import { listBlockers } from "../core/blockers.mjs";
 import { listPlans, getPlan, getPlans } from "../core/plans.mjs";
 import { lmDecisionKey } from "../core/keys.mjs";
@@ -610,7 +610,7 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
       store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 200 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);
     // Accepted and declined both settle a handoff (same rule as the Brief: boolean true only).
-    const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && isDeclined(e.payload)))).map((e) => e.origin));
+    const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && (isDeclined(e.payload) || isWithdrawn(e.payload))))).map((e) => e.origin));
     const slimLog = log.map((e) => slim(e, `agent:${id}`));
     return { id, who, now: nowSlot, recap, follows, shifts, log: await annotate(slimLog), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
   }
