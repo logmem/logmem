@@ -54,5 +54,6 @@ test('shell uses the shared primary nav and keeps five phone tabs', async () => 
   assert.ok(phone);
   const tabs = JSON.parse(phone[1].replace(/'/g, '"'));
   assert.equal(tabs.length, 5);
-  assert.deepEqual(tabs.map((t) => t[1]), ['Brief', 'Work', 'Inbox', 'Team', 'More']);
+  assert.deepEqual(tabs.map((t) => t[1]), ['Brief', 'Work', 'Inbox', 'Agents', 'More']);
+  assert.ok(!PRIMARY_NAV.some((n) => n[1] === 'Team'));
 });

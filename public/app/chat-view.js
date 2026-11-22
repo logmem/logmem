@@ -54,9 +54,9 @@ function message(m) {
   const src = m.role === 'assistant' ? sourceLabel(m) : '';
   return html`<li class="lmx-chat-msg" data-role=${m.role}>
     <div class="lmx-chat-who">${m.role === 'user' ? 'You' : 'LogMem'}${src ? html`<span> · ${src}</span>` : nothing}</div>
-    ${m.pending ? html`<p class="lmx-chat-wait" role="status">Reading this space…</p>` : html`<p class="lmx-chat-text">${m.text}</p>`}
+    ${m.pending ? html`<p class="lmx-chat-wait" role="status"><span class="lm-orb" data-state="working" aria-hidden="true"></span><span>Reading this space…</span></p>` : html`<p class=${m.failed ? 'lmx-chat-text lmx-chat-err' : 'lmx-chat-text'} role=${m.failed ? 'alert' : nothing}>${m.text}</p>`}
     ${m.action ? html`<div class="lmx-chat-approve">
-      <strong>Needs your approval: ${m.action.label}</strong>
+      <div class="lmx-chat-approve-head"><span class="lm-orb" data-state="waiting" aria-hidden="true"></span><strong>Needs your approval: ${m.action.label}</strong></div>
       <p>${m.action.detail}</p>
       <p class="lmx-chat-meta">Cannot be undone. Nothing runs until you approve.</p>
       ${m.action.state === 'pending'

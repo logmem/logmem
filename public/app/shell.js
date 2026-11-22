@@ -13,7 +13,7 @@ import { ADMIN, PRIMARY_NAV } from './nav-model.js';
 
 export const NAV = PRIMARY_NAV;
 // Phone: five tabs at most, Inbox in the middle. Everything else lives under More.
-export const PHONE_NAV = [['home', 'Brief', 'overview'], ['work', 'Work', 'work'], ['queue', 'Inbox', 'handoff'], ['agents', 'Team', 'agents'], ['more', 'More', 'settings']];
+export const PHONE_NAV = [['home', 'Brief', 'overview'], ['work', 'Work', 'work'], ['queue', 'Inbox', 'handoff'], ['agents', 'Agents', 'agents'], ['more', 'More', 'settings']];
 const PHONE_TAB = { overview: 'home' };
 export { ADMIN };
 const ROUTE_NAV = { brief: 'home', needs: 'home', plan: 'work', plans: 'work', lanes: 'work', jobs: 'work', overview: 'home', agent: 'agents', job: 'work', log: 'activity', channels: 'activity', recall: 'activity', decisions: 'home', blockers: 'home', slots: 'agents' };
