@@ -335,3 +335,470 @@
 .lm-i[data-i="eye"]{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M2.5%2012S6%205.5%2012%205.5%2021.5%2012%2021.5%2012%2018%2018.5%2012%2018.5%202.5%2012%202.5%2012z%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3C/svg%3E")}
 .lm-i[data-i="menu"]{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%207h16M4%2012h16M4%2017h16%22/%3E%3C/svg%3E")}
 .lm-i[data-i="commit"]{--i:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223.5%22/%3E%3Cpath%20d%3D%22M3%2012h5.5M15.5%2012H21%22/%3E%3C/svg%3E")}
+
+
+/* ==========================================================================
+   LogMem Design System v0.2 — Action Map & Instrument Precision Primitives
+   100% semantic CSS custom properties (zero raw hex literals).
+   ========================================================================== */
+
+/* Browser surface polish (craft-floor) */
+::selection {
+  background: var(--brand-subtle);
+  color: var(--text);
+}
+input, textarea {
+  caret-color: var(--brand);
+}
+a {
+  text-underline-offset: 2px;
+}
+
+/* 1. PageHeader (audit G6: one title per page matching nav label & route) */
+.lm-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.lm-page-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.lm-page-header-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.lm-page-header-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-muted);
+}
+.lm-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 2. StatusStrip (audit G1: single-line ~40px dismissible status bar) */
+.lm-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--warning-subtle);
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 18px;
+}
+.lm-status-strip[data-tone="info"] {
+  background: var(--info-subtle);
+  color: var(--info);
+}
+.lm-status-strip[data-tone="danger"] {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+.lm-status-strip[data-tone="success"] {
+  background: var(--success-subtle);
+  color: var(--success);
+}
+.lm-status-strip-text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.lm-status-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.lm-status-strip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: 500 12px/1 var(--font-sans);
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.lm-status-strip-btn:hover {
+  opacity: 0.8;
+}
+.lm-status-strip-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* 3. StatTileLink (audit G5/G12: linked tile, dimmed zero, additive totals) */
+.lm-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+.lm-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: var(--row-h);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
+a.lm-stat-tile:hover,
+button.lm-stat-tile:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
+}
+.lm-stat-tile:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lm-stat-tile-value {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.lm-stat-tile.is-zero .lm-stat-tile-value {
+  color: var(--text-subtle);
+}
+.lm-stat-tile-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.lm-stat-tile-note {
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+
+/* 4. CopyId (audit G9: middle-truncated ID, hover full, click copies) */
+.lm-copy-id {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.lm-copy-id:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lm-copy-id:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lm-copy-id.is-copied {
+  border-color: var(--success);
+  background: var(--success-subtle);
+  color: var(--success);
+}
+
+/* 5. AgeBucketChips (audit I1/I6: empty buckets disabled, never hidden) */
+.lm-age-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.lm-age-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: 500 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.lm-age-chip:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lm-age-chip[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--brand-subtle);
+  color: var(--brand);
+  font-weight: 600;
+}
+.lm-age-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.lm-age-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lm-age-chip-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 6. KindChip (23 kinds colored strictly by 6 semantic groups --viz-1..6) */
+.lm-kind-chip {
+  --k: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--k) 28%, transparent);
+  background: color-mix(in srgb, var(--k) 12%, transparent);
+  color: var(--k);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.lm-kind-chip[data-group="work"] { --k: var(--viz-1); }
+.lm-kind-chip[data-group="handoff"] { --k: var(--viz-2); }
+.lm-kind-chip[data-group="signal"] { --k: var(--viz-3); }
+.lm-kind-chip[data-group="decision"] { --k: var(--viz-4); }
+.lm-kind-chip[data-group="error"] { --k: var(--viz-5); }
+.lm-kind-chip[data-group="system"] { --k: var(--viz-6); }
+
+/* 7. EntryRow (timestamp · KindChip · agent · verbatim summary · provenance) */
+.lm-entry-row {
+  display: grid;
+  grid-template-columns: 76px auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  transition: background var(--duration-instant) var(--ease-standard);
+}
+.lm-entry-row:last-child {
+  border-bottom: 0;
+}
+.lm-entry-row:hover {
+  background: var(--surface-sunken);
+}
+.lm-entry-time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+.lm-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.lm-entry-line {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.lm-entry-actor {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.lm-entry-prov {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-subtle);
+}
+@media (max-width: 560px) {
+  .lm-entry-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+}
+
+/* 8. ReadOnlyFlag (audit S3: status chip, never a fake toggle switch) */
+.lm-readonly-flag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-height: var(--row-h);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  cursor: default;
+}
+.lm-readonly-flag:last-child {
+  border-bottom: 0;
+}
+.lm-readonly-flag-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lm-readonly-flag-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.lm-readonly-flag-hint {
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+.lm-readonly-flag-hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.lm-readonly-flag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lm-readonly-flag-chip[data-tone="ok"] {
+  border-color: var(--success);
+  background: var(--success-subtle);
+  color: var(--success);
+}
+.lm-readonly-flag-chip[data-tone="warn"] {
+  border-color: var(--warning);
+  background: var(--warning-subtle);
+  color: var(--warning);
+}
+.lm-readonly-flag-chip[data-tone="danger"] {
+  border-color: var(--danger);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* 9. ChatStateOrb (20px 6-state orb) & CiteChip (inline [1] source link) */
+@keyframes lm-orb-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.9); opacity: 0.72; }
+}
+.lm-orb {
+  --orb-c: var(--brand);
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--orb-c);
+  background: radial-gradient(circle at 35% 35%, color-mix(in srgb, var(--orb-c) 35%, var(--surface)), var(--orb-c));
+  animation: lm-orb-pulse 1.6s var(--ease-standard) infinite;
+}
+.lm-orb[data-state="idle"] {
+  --orb-c: var(--text-subtle);
+  animation: none;
+}
+.lm-orb[data-state="working"] { --orb-c: var(--brand); }
+.lm-orb[data-state="reasoning"] { --orb-c: var(--info); }
+.lm-orb[data-state="searching"] { --orb-c: var(--brand-hover); }
+.lm-orb[data-state="retrying"] { --orb-c: var(--warning); }
+.lm-orb[data-state="compacting"] { --orb-c: var(--viz-6); }
+.lm-orb[data-state="waiting"] { --orb-c: var(--decision); }
+
+.lm-cite-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin: 0 2px;
+  vertical-align: text-top;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--brand);
+  background: var(--brand-subtle);
+  color: var(--brand);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.lm-cite-chip:hover {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+.lm-cite-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Skeleton block for loading.tsx states */
+@keyframes lm-skeleton-fade {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.45; }
+}
+.lm-skeleton {
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  animation: lm-skeleton-fade 1.5s var(--ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lm-orb,
+  .lm-skeleton {
+    animation: none;
+  }
+}
