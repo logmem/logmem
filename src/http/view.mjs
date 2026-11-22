@@ -7,7 +7,7 @@
 import { getSecret } from "../lib/secrets.mjs";
 import { createStore } from "../core/store.mjs";
 import { readOnly } from "../lib/read-only.mjs";
-import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, isWithdrawn, isHandoffKind, handoffSettlement, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
+import { keywordRecall, askDigest, canonicalAsks, decisionsFor, askState, annotateDecisions, isDeclined, isClosed, isHandoffKind, handoffSettlement, handoffAddresses, findAsk, verifyDecision, DecisionError } from "../core/tools.mjs";
 import { listBlockers } from "../core/blockers.mjs";
 import { listPlans, getPlan, getPlans } from "../core/plans.mjs";
 import { lmDecisionKey } from "../core/keys.mjs";
@@ -399,7 +399,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
         // Read the full log until coverage is complete. A fixed window can drop
         // old settlements while their original handoffs still appear in the window.
         const log = await store.readLog("agent", agent, { reverse: true });
-        const settled = new Set(log.filter(e => e.by === `agent:${agent}` && e.origin && handoffSettlement(e.kind, e.payload)).map(e => e.origin));
+        const settled = new Set(log.filter(e => e.origin && handoffSettlement(e.kind, e.payload) && (e.by === `agent:${agent}` || isClosed(e.payload))).map(e => e.origin));
         const jobNowById = new Map();
         const completedJobHandoff = async (entry) => {
           const job = jobOf(entry.job || entry.where);
@@ -411,7 +411,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
         const rows = [];
         const seen = new Set();
         for (const e of log) {
-          if (!isHandoffKind(e.kind) || e.to !== `agent:${agent}` || !e.trail || settled.has(e.trail) || seen.has(e.trail)) continue;
+          if (!isHandoffKind(e.kind) || !handoffAddresses(e.to, agent) || !e.trail || settled.has(e.trail) || seen.has(e.trail)) continue;
           seen.add(e.trail);
           // A completed job settles only the handoff trail it records.
           if (await completedJobHandoff(e)) continue;
@@ -423,7 +423,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
             dataErrors.push({ type: "invalid_handoff_timestamp", id });
             continue;
           }
-          rows.push({ id, space, type: "handoff", request_trail: e.trail, from: e.by, to: e.to,
+          rows.push({ id, space, type: "handoff", request_trail: e.trail, from: e.by, to: `agent:${agent}`,
             where: e.job || e.where || "", summary: e.summary, created_at: created,
             deadline: created + COORD_DEADLINE_MS, response: "open", source: "agent_log", read_only: true });
         }
@@ -478,7 +478,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   }
   if (params.recipient) {
     const norm = String(params.recipient).replace(/^agent:/, "");
-    filtered = filtered.filter((i) => String(i.to).replace(/^agent:/, "") === norm);
+    filtered = filtered.filter((i) => handoffAddresses(i.to, norm));
   }
   if (params.plan) {
     filtered = filtered.filter((i) => i.plan === params.plan || (i.where && i.where.includes(params.plan)));
@@ -632,9 +632,9 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
       store.getWho("agent", id), store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 200 }), store.getRecap(id), store.follows(id), store.recentShifts(id, 8),
     ]);
     // Accepted and declined both settle a handoff (same rule as the Brief: boolean true only).
-    const settled = new Set(log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && (isDeclined(e.payload) || isWithdrawn(e.payload))))).map((e) => e.origin));
+    const settled = new Set(log.filter((e) => e.origin && handoffSettlement(e.kind, e.payload)).map((e) => e.origin));
     const slimLog = log.map((e) => slim(e, `agent:${id}`));
-    return { id, who, now: nowSlot, recap, follows, shifts, log: await annotate(slimLog), handoffs: log.filter((e) => e.kind === "handoff" && e.to === `agent:${id}` && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
+    return { id, who, now: nowSlot, recap, follows, shifts, log: await annotate(slimLog), handoffs: log.filter((e) => e.kind === "handoff" && handoffAddresses(e.to, id) && !settled.has(e.trail)).map((e) => slim(e, `agent:${id}`)), seen: seen(log[0]?.ts, now) };
   }
 
   if (what === "jobs") return { jobs: await jobsView(store) };

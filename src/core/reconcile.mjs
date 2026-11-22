@@ -33,7 +33,7 @@
 import { randomUUID } from "node:crypto";
 import { stableJson } from "./store.mjs";
 import { registerEvalScript } from "../lib/lua-scripts.mjs";
-import { isHandoffKind, handoffSettlement, makeTrail } from "./tools.mjs";
+import { isHandoffKind, handoffSettlement, handoffAddresses, makeTrail } from "./tools.mjs";
 import { computeItemId, getCoordItem, settleCoordItem } from "./coord.mjs";
 
 export const RECONCILER = "logmem-reconciler";
@@ -404,7 +404,7 @@ export async function reconcileStaleHandoffs(store, {
 
     const seen = new Set();
     for (const e of log) {
-      if (!isHandoffKind(e.kind) || e.to !== `agent:${agent}` || !e.trail || settled.has(e.trail) || seen.has(e.trail)) {
+      if (!isHandoffKind(e.kind) || !handoffAddresses(e.to, agent) || !e.trail || settled.has(e.trail) || seen.has(e.trail)) {
         continue;
       }
       seen.add(e.trail);

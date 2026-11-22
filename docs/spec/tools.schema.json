@@ -263,13 +263,24 @@
     {
       "name": "logmem_handoff",
       "title": "Handoff",
-      "description": "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): a task. It needs where='job:<id>' (the job it belongs to) and takes an optional walkthrough (steps, time, place, done_when, reply, due). The job is blocked until the person marks it done or says they can't. Their progress shows in your Brief under needs_people.",
+      "description": "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. Pass a list of agents to give each one its own part. Accepting or closing one part leaves the others open. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): a task. It needs where='job:<id>' (the job it belongs to) and takes an optional walkthrough (steps, time, place, done_when, reply, due). The job is blocked until the person marks it done or says they can't. Their progress shows in your Brief under needs_people.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "to": {
-            "type": "string",
-            "description": "Agent receiving the work, e.g. 'atlas', or a person as 'human:<id>'"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            ],
+            "description": "Agent receiving the work, e.g. 'atlas', a list of agents, or a person as 'human:<id>'"
           },
           "summary": {
             "type": "string",
@@ -324,7 +335,7 @@
     {
       "name": "logmem_accept",
       "title": "Accept",
-      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
+      "description": "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. When the handoff names several agents, this settles only your part. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -397,6 +408,49 @@
       },
       "annotations": {
         "title": "Withdraw",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "logmem_close",
+      "title": "Close",
+      "description": "Close your part of a handoff that is stale or already answered. A coordinator (chief-of-staff, unless LOGMEM_COORDINATORS names others) can close a recipient's part, including an agent that cannot answer. A reason is required. Writes a Feedback entry marked closed on the handoff's log and names who closed it. Other recipients' parts stay open. Anyone else is refused.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "trail": {
+            "type": "string",
+            "description": "Trail of the handoff"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, in one line (required). Recorded with your name"
+          },
+          "to": {
+            "type": "string",
+            "description": "Whose part to close, e.g. 'avery'. Default: you, when the handoff was passed to you. A coordinator names the recipient when closing someone else's part"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "trail",
+          "reason"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "title": "Close",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,

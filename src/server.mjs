@@ -14,7 +14,7 @@ import { createUsageMeter, applyUsageMeter, meterOnFromEnv } from "./core/usage-
 import { createStore, normTs } from "./core/store.mjs";
 import { createMirror, mirrorConfigFromEnv } from "./core/mirror.mjs";
 import { createShifts } from "./core/session.mjs";
-import { TOOLS, keywordRecall } from "./core/tools.mjs";
+import { TOOLS, keywordRecall, coordinatorList } from "./core/tools.mjs";
 import { ACMI_TOOLS } from "./compat/acmi-tools.mjs";
 import { INSTRUCTIONS } from "./core/instructions.mjs";
 import { styleFor } from "./core/style.mjs";
@@ -171,6 +171,10 @@ export function createLogmem({
   // Work rules (taxonomy spec): "strict" refuses tasks and decisions off a job and
   // blocked with no reason; "warn" allows them with a warning. Default: LOGMEM_WORK_RULES, else strict.
   workRules = process.env.LOGMEM_WORK_RULES === "warn" ? "warn" : "strict",
+  // Agents who may close a stale or answered handoff part they do not hold.
+  // Default chief-of-staff. LOGMEM_COORDINATORS is a comma-separated list.
+  // An explicit option replaces the env value.
+  coordinators,
 } = {}) {
   if (!redis && !live) throw new Error("createLogmem: redis runner required");
   const scope = live ? new AsyncLocalStorage() : null;
@@ -208,6 +212,7 @@ export function createLogmem({
     now: now || Date.now,
     recall: countedRecall(limitedRecall(recall || ((q, n) => keywordRecall(store, q, n)), limits), usage, () => ctx.pure === true),
     workRules: workRules === "warn" ? "warn" : "strict",
+    coordinators: coordinatorList(coordinators !== undefined ? coordinators : process.env.LOGMEM_COORDINATORS),
     get decideSecret() { return decideSecret !== undefined ? decideSecret : getSecret("LOGMEM_DECIDE_SECRET"); },
     // Trusted server verifies decisions for agents without the signing key.
     // Vercel uses this deployment's verifier by default; other hosts need LOGMEM_VERIFY_URL.
