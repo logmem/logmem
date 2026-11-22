@@ -212,6 +212,55 @@ async function resolveHandoffPart(ctx, trail, agent) {
   return { ho, log };
 }
 
+/** Inbox item ids are ci_ plus 24 hex chars from computeItemId. */
+const ITEM_ID_RE = /^ci_[0-9a-f]{24}$/;
+
+/**
+ * Recipients named on an Inbox item.
+ * A handoff, a request, or a group mention may store `to` as one agent, a list,
+ * a JSON list, or a comma-separated list. A missing sender does not matter here.
+ */
+function inboxRecipients(to) {
+  const out = [];
+  const push = (id) => {
+    const bare = agentId(String(id || "").trim());
+    if (!bare || bare === "unknown" || out.includes(bare)) return;
+    if (bare.includes(",")) {
+      for (const part of bare.split(",")) push(part);
+      return;
+    }
+    out.push(bare);
+  };
+  for (const id of handoffRecipients(to)) push(id);
+  if (!out.length && to != null && String(to).trim()) push(to);
+  return out;
+}
+
+/** The recipient string settleCoordItem compares with the stored `to`. */
+function settleRecipientOf(storedTo, fallback) {
+  const raw = String(storedTo || "").trim();
+  if (!raw) return agentId(fallback || "");
+  return raw.replace(/^agent:/, "");
+}
+
+async function readAgentLog(ctx, agent) {
+  if (!agent) return [];
+  try {
+    return await ctx.store.readLog("agent", agent, { reverse: true, limit: 500 });
+  } catch {
+    return [];
+  }
+}
+
+async function coordItemsForTrail(ctx, trail) {
+  if (!trail) return [];
+  try {
+    return await listCoordItemsForTrail(ctx.store, ctx.store.space, trail);
+  } catch {
+    return [];
+  }
+}
+
 /** Shown when a write carries payload.declined that is not a boolean. */
 export const DECLINED_TYPE =
   "payload.declined must be a boolean; only true declines a handoff, and only logmem_accept (decline=true) can write that";
@@ -1146,98 +1195,152 @@ export const TOOLS = [
     name: "logmem_close",
     title: "Close",
     description:
-      "Close your part of a handoff that is stale or already answered. A coordinator (chief-of-staff, unless LOGMEM_COORDINATORS names others) can close a recipient's part, including an agent that cannot answer. A reason is required. Writes a Feedback entry marked closed on the handoff's log and names who closed it. Other recipients' parts stay open. Anyone else is refused.",
+      "Close your part of a handoff, or an Inbox item, that is stale or already answered. Pass item (an id like ci_...) or a trail. item also closes a mention or request that has no handoff entry and no sender. A coordinator (chief-of-staff, unless LOGMEM_COORDINATORS names others) can close any part, including an agent that cannot answer. A reason is required. Writes a Feedback entry marked closed on that item's log and names who closed it. Other recipients' parts stay open. Anyone else is refused.",
     params: params({
-      trail: { type: "string", desc: "Trail of the handoff" },
+      trail: { type: "string", desc: "Trail of the handoff or mention. A ci_ id here is the Inbox item", optional: true },
+      item: { type: "string", desc: "Inbox item id to close, e.g. 'ci_...' (from logmem_sync). Use this for a mention or request that has no handoff", optional: true },
       reason: { type: "string", desc: "Why, in one line (required). Recorded with your name" },
-      to: { type: "string", desc: "Whose part to close, e.g. 'avery'. Default: you, when the handoff was passed to you. A coordinator names the recipient when closing someone else's part", optional: true },
+      to: { type: "string", desc: "Whose part to close, e.g. 'avery'. Default: you, when the item was passed to you. A coordinator names the recipient when closing someone else's part", optional: true },
     }),
     annotations: WRITE,
-    async run({ trail, reason, to }, ctx) {
+    async run({ trail, item, reason, to }, ctx) {
       const caller = me(ctx);
       capText("trail", trail, LIMITS.trail);
+      capText("item", item, LIMITS.trail);
       capText("reason", reason);
       capText("to", to, LIMITS.trail);
       const why = String(reason || "").trim();
       if (!why) return { ok: false, error: "reason is required: say in one line why you close this handoff" };
       const coordNames = (Array.isArray(ctx.coordinators) ? ctx.coordinators : coordinatorList(undefined)).join(", ") || "none";
-      const forbidden = (target) => ({
+      const forbidden = (target, label = "handoff") => ({
         ok: false,
         error: target
-          ? `forbidden: only ${target} or a coordinator (${coordNames}) can close this handoff (you are ${caller})`
-          : `forbidden: only a recipient or a coordinator (${coordNames}) can close handoff '${trail}' (you are ${caller})`,
+          ? `forbidden: only ${target} or a coordinator (${coordNames}) can close this ${label} (you are ${caller})`
+          : `forbidden: only a recipient or a coordinator (${coordNames}) can close ${label} '${trail || item || ""}' (you are ${caller})`,
       });
+
+      // A ci_ id is one Inbox part. Mentions are request items, not handoffs, so
+      // searching the agent log for kind "handoff" never finds them.
+      const explicitItem = String(item || "").trim() || (ITEM_ID_RE.test(String(trail || "").trim()) ? String(trail).trim() : "");
+      let record = null;
+      if (explicitItem) {
+        if (!ITEM_ID_RE.test(explicitItem)) return { ok: false, error: `coordination item '${explicitItem}' not found` };
+        record = await getCoordItem(ctx.store, ctx.store.space, explicitItem);
+        if (!record) return { ok: false, error: `coordination item '${explicitItem}' not found` };
+      }
 
       let target = caller;
       if (to != null && String(to).trim() !== "") target = checkAgentId(to, "to");
-      let { ho, log } = await resolveHandoffPart(ctx, trail, target);
-      if (!ho && (to == null || String(to).trim() === "") && isCoordinator(ctx, caller)) {
-        const parts = await listCoordItemsForTrail(ctx.store, ctx.store.space, trail).catch(() => []);
-        const handoffs = parts.filter((it) => (it.type || "handoff") === "handoff");
-        if (handoffs.length === 1) {
-          target = agentId(handoffs[0].to);
-          ({ ho, log } = await resolveHandoffPart(ctx, trail, target));
-        } else if (handoffs.length > 1) {
-          return { ok: false, error: "name the recipient in to: this handoff has more than one part" };
-        }
-      }
-      if (!ho) {
-        if (!isCoordinator(ctx, caller) && agentId(target) !== agentId(caller)) return forbidden(target);
-        let parts = [];
-        try {
-          parts = await listCoordItemsForTrail(ctx.store, ctx.store.space, trail);
-        } catch {
-          parts = [];
-        }
-        const handoffs = parts.filter((it) => (it.type || "handoff") === "handoff");
-        if (handoffs.length && !isCoordinator(ctx, caller) && !handoffs.some((it) => agentId(it.to) === agentId(caller))) return forbidden();
-        return { ok: false, error: `no handoff with trail '${trail}' was passed to ${target}` };
-      }
-      if (agentId(target) !== agentId(caller) && !isCoordinator(ctx, caller)) return forbidden(target);
+      const requestTrail = record?.request_trail || (explicitItem ? "" : String(trail || ""));
+      if (!record && !requestTrail) return { ok: false, error: "pass a trail or an Inbox item id (ci_...)" };
 
-      const prior = log.find((e) => e.origin === trail && isClosed(e.payload));
-      const itemId = computeItemId(ctx.store.space, "handoff", trail, target);
+      let ho = null;
+      let log = [];
+      if (record && explicitItem) {
+        const recipients = inboxRecipients(record.to);
+        const named = to != null && String(to).trim() !== "" ? agentId(target) : null;
+        if (named && recipients.length && !recipients.includes(named)) {
+          return { ok: false, error: `coordination item '${record.id}' was not passed to ${named}` };
+        }
+        let part = named || (recipients.includes(agentId(caller)) ? agentId(caller) : null);
+        if (!part && recipients.length === 1) part = recipients[0];
+        if (!part && recipients.length > 1) return { ok: false, error: "name the recipient in to: this item has more than one part" };
+        const allowed = isCoordinator(ctx, caller) || (part && part === agentId(caller) && recipients.includes(agentId(caller)));
+        const allowedEmpty = !recipients.length && isCoordinator(ctx, caller);
+        if (!allowed && !allowedEmpty) return forbidden(part || named || agentId(caller), record.type || "item");
+        target = part || agentId(caller);
+        log = await readAgentLog(ctx, target);
+      } else {
+        let resolved = await resolveHandoffPart(ctx, requestTrail, target);
+        ho = resolved.ho;
+        log = resolved.log;
+        const parts = await coordItemsForTrail(ctx, requestTrail);
+        if (!ho && (to == null || String(to).trim() === "") && isCoordinator(ctx, caller)) {
+          const mine = parts.find((it) => inboxRecipients(it.to).includes(agentId(caller)));
+          if (mine) {
+            target = agentId(caller);
+            record = mine;
+          } else if (parts.length === 1) {
+            const only = inboxRecipients(parts[0].to)[0] || agentId(parts[0].to);
+            if (only) {
+              target = only;
+              record = parts[0];
+            }
+          } else if (parts.length > 1) {
+            return { ok: false, error: "name the recipient in to: this handoff has more than one part" };
+          }
+          if (record && target) {
+            resolved = await resolveHandoffPart(ctx, requestTrail, target);
+            ho = resolved.ho;
+            log = resolved.log;
+          }
+        }
+        if (!record) record = parts.find((it) => inboxRecipients(it.to).includes(agentId(target))) || null;
+        if (record && !log.length) log = await readAgentLog(ctx, target);
+        if (!ho && !record) {
+          if (!isCoordinator(ctx, caller) && agentId(target) !== agentId(caller)) return forbidden(target);
+          if (parts.length && !isCoordinator(ctx, caller) && !parts.some((it) => inboxRecipients(it.to).includes(agentId(caller)))) return forbidden();
+          return { ok: false, error: `no handoff with trail '${requestTrail}' was passed to ${target}` };
+        }
+        const recipients = inboxRecipients(record?.to ?? ho?.to);
+        if (!isCoordinator(ctx, caller) && agentId(target) !== agentId(caller)) return forbidden(target, record?.type || "handoff");
+        if (!isCoordinator(ctx, caller) && recipients.length && !recipients.includes(agentId(caller))) return forbidden(target, record?.type || "handoff");
+      }
+
+      const requestOrigin = record?.request_trail || requestTrail;
+      const itemId = record?.id || computeItemId(ctx.store.space, "handoff", requestOrigin, target);
+      // Settle the stored item. A request id is not the handoff id for the same trail.
+      const settleWho = record ? settleRecipientOf(record.to, target) : target;
+      const prior = (log || []).find((e) => e.origin === requestOrigin && isClosed(e.payload) && (!e.payload.item || e.payload.item === itemId));
       if (prior) {
         const res = await settleCoordItem(ctx.store, {
-          space: ctx.store.space, id: itemId, recipient: target, response: "declined",
+          space: ctx.store.space, id: itemId, recipient: settleWho, response: "declined",
           settledBy: prior.payload.closed_by || prior.by || agentRef(caller),
           settledAt: Number(prior.ts) || clock(ctx),
           settlementTrail: prior.trail,
           disposition: `closed: ${prior.payload.reason || why}`.slice(0, LIMITS.summary),
         });
-        if (res.ok) return { ok: true, repaired: true, item_id: itemId, item_status: res.status, trail: prior.trail, origin: trail, to: agentRef(target), closed_by: prior.payload.closed_by || prior.by };
+        if (res.ok) return { ok: true, repaired: true, item_id: itemId, item_status: res.status, trail: prior.trail, origin: requestOrigin, to: agentRef(target), closed_by: prior.payload.closed_by || prior.by };
         return { ok: false, error: `this handoff is already closed: ${prior.payload.reason || "no reason given"}`, entry: prior, item_id: itemId, item_status: res.status };
       }
 
+      const whereRef = ho?.job || record?.where || "";
       let where = null;
-      if (ho.job) {
-        try { where = parseRef(ho.job); } catch { where = null; }
+      if (whereRef) {
+        try { where = parseRef(whereRef); } catch { where = null; }
       }
       const t = clock(ctx);
-      const tr = makeTrail("closed", where ? where.id : target, t);
+      const tr = makeTrail("closed", where ? where.id : (target || "item"), t);
+      const kindWord = record?.type && record.type !== "handoff" ? record.type : "handoff";
       const one = {
         kind: "feedback",
-        summary: `${caller} closed the handoff for ${target}: ${why}`.slice(0, LIMITS.summary),
+        summary: `${caller} closed the ${kindWord} for ${target}: ${why}`.slice(0, LIMITS.summary),
         trail: tr,
-        origin: trail,
-        payload: { closed: true, reason: why, closed_by: agentRef(caller), to: agentRef(target) },
+        origin: requestOrigin,
+        payload: {
+          closed: true,
+          reason: why,
+          closed_by: agentRef(caller),
+          to: target ? agentRef(target) : "",
+          ...(record ? { item: record.id, type: record.type || "" } : {}),
+        },
         ts: t,
       };
+      const addressed = inboxRecipients(record?.to ?? ho?.to);
       const logs = [];
       if (where) logs.push([where.ns, where.id]);
       if (target) logs.push(["agent", target]);
-      // The closer's own log gets a copy only when they do not hold a part.
-      // A copy on their log would settle that part, because it shares the trail.
-      if (agentId(caller) !== agentId(target) && !handoffAddresses(ho.to, caller)) logs.push(["agent", caller]);
+      // The closer's own log gets a copy only when they do not hold this part.
+      if (target && agentId(caller) !== agentId(target) && !addressed.includes(agentId(caller))) logs.push(["agent", caller]);
       const seen = new Set();
       const entries = [];
       for (const [ns, id] of logs) {
-        if (seen.has(`${ns}:${id}`)) continue;
+        if (!id || seen.has(`${ns}:${id}`)) continue;
         seen.add(`${ns}:${id}`);
         entries.push(await write(ctx, ns, id, { ...one, settle: true }));
       }
       const res = await settleCoordItem(ctx.store, {
-        space: ctx.store.space, id: itemId, recipient: target, response: "declined",
+        space: ctx.store.space, id: itemId, recipient: settleWho, response: "declined",
         settledBy: agentRef(caller), settledAt: t, settlementTrail: tr,
         disposition: `closed: ${why}`.slice(0, LIMITS.summary),
       });
@@ -1247,8 +1350,8 @@ export const TOOLS = [
         item_id: itemId,
         item_status: res.status,
         trail: tr,
-        origin: trail,
-        to: agentRef(target),
+        origin: requestOrigin,
+        to: target ? agentRef(target) : "",
         closed_by: agentRef(caller),
         where: where ? `${where.ns}:${where.id}` : null,
         entries,
