@@ -10,6 +10,12 @@ const T = {
   boolean: () => ({ zod: z.boolean(), json: { type: "boolean" } }),
   object: () => ({ zod: z.record(z.any()), json: { type: "object", additionalProperties: true } }),
   strings: () => ({ zod: z.array(z.string()), json: { type: "array", items: { type: "string" } } }),
+  // One agent id, or a list of them. Handoffs use this so a single recipient
+  // stays a string and several recipients stay a list.
+  stringOrStrings: () => ({
+    zod: z.union([z.string(), z.array(z.string()).min(1)]),
+    json: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" }, minItems: 1 }] },
+  }),
 };
 
 /**

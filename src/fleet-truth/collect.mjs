@@ -1,4 +1,5 @@
 import { makeFact, scrubSecrets } from "./schema.mjs";
+import { handoffAddresses, handoffSettlement } from "../core/tools.mjs";
 
 const HANDOFF_WINDOW_MS = 48 * 3600e3;
 
@@ -104,18 +105,13 @@ async function collectJobs(store, nowMs) {
 }
 
 function unansweredHandoffs(entries, agentId, nowMs) {
-  const to = `agent:${agentId}`;
   const since = nowMs - HANDOFF_WINDOW_MS;
-  const handoffs = entries.filter((e) => e.kind === "handoff" && e.to === to && (e.ts || 0) >= since);
+  const handoffs = entries.filter((e) => e.kind === "handoff" && handoffAddresses(e.to, agentId) && (e.ts || 0) >= since);
   let open = 0;
   for (const h of handoffs) {
     const trail = h.trail;
     const later = entries.filter((e) => (e.ts || 0) > (h.ts || 0));
-    const settled = later.some(
-      (e) =>
-        (e.kind === "accepted" && e.origin === trail) ||
-        (e.kind === "feedback" && e.payload?.declined === true && e.origin === trail),
-    );
+    const settled = later.some((e) => e.origin === trail && handoffSettlement(e.kind, e.payload));
     if (!settled) open++;
   }
   return open;

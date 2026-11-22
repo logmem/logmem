@@ -43,12 +43,12 @@ if (dryRun) {
 
   for (const agent of agents) {
     const log = await store.readLog("agent", agent, { reverse: true }).catch(() => []);
-    const { isHandoffKind, handoffSettlement } = await import("../src/core/tools.mjs");
+    const { isHandoffKind, handoffSettlement, handoffAddresses } = await import("../src/core/tools.mjs");
     const { computeItemId, getCoordItem } = await import("../src/core/coord.mjs");
     const settled = new Set(log.filter(e => e.by === `agent:${agent}` && e.origin && handoffSettlement(e.kind, e.payload)).map(e => e.origin));
     const seen = new Set();
     for (const e of log) {
-      if (!isHandoffKind(e.kind) || e.to !== `agent:${agent}` || !e.trail || settled.has(e.trail) || seen.has(e.trail)) continue;
+      if (!isHandoffKind(e.kind) || !handoffAddresses(e.to, agent) || !e.trail || settled.has(e.trail) || seen.has(e.trail)) continue;
       seen.add(e.trail);
       const created = Number(e.ts);
       if (!Number.isFinite(created) || created <= 0 || (now - created) < maxAgeMs) continue;

@@ -1,4 +1,4 @@
-// tools.mjs — the 25 logmem_* tools.
+// tools.mjs — the 26 logmem_* tools.
 //
 // Plain-language descriptions on purpose: the descriptions plus the server
 // instructions are the portable "skill" that Claude, Codex, Grok and
@@ -83,7 +83,7 @@ export const isAskKind = (kind) => kind != null && normalizeKind(String(kind).tr
 /** Asks only come from logmem_ask, so their trail is always fresh and unguessable (never a reused or chosen one). */
 export const ASK_ONLY = "approval entries are written by logmem_ask, which picks a fresh trail; call logmem_ask instead";
 export const HANDOFF_ONLY =
-  "accepted entries and declined feedback are written by logmem_accept (pass decline=true to refuse a handoff); call logmem_accept. Withdrawn feedback is written by logmem_withdraw";
+  "accepted entries and declined feedback are written by logmem_accept (pass decline=true to refuse a handoff); call logmem_accept. Withdrawn feedback is written by logmem_withdraw. Closed feedback is written by logmem_close";
 export const HANDOFF_WRITE_ONLY = "handoff entries are written by logmem_handoff; call logmem_handoff";
 
 /**
@@ -101,6 +101,115 @@ export function isDeclined(payload) {
  */
 export function isWithdrawn(payload) {
   return payload != null && payload.withdrawn === true;
+}
+
+/**
+ * A close is a recipient or a coordinator ending one handoff part (logmem_close).
+ * Only boolean true counts, same rule as a decline.
+ */
+export function isClosed(payload) {
+  return payload != null && payload.closed === true;
+}
+
+/**
+ * Agent ids named by a handoff `to` field.
+ * One recipient is a string (`avery` or `agent:avery`).
+ * Several recipients are an array of those strings, or the JSON text of that array.
+ * A person (`human:<id>`) is not an agent recipient.
+ */
+export function handoffRecipients(to) {
+  let raw = to;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) raw = parsed;
+      } catch {
+        /* one recipient string that happens to start with [ */
+      }
+    }
+  }
+  const list = Array.isArray(raw) ? raw : raw == null || raw === "" ? [] : [raw];
+  const out = [];
+  for (const item of list) {
+    if (item == null) continue;
+    const text = String(item).trim();
+    if (!text || text.startsWith("human:")) continue;
+    const id = text.replace(/^agent:/, "");
+    if (!id || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+/** True when `agent` is one recipient of this handoff `to` field. */
+export function handoffAddresses(to, agent) {
+  if (agent == null || agent === "") return false;
+  return handoffRecipients(to).includes(agentId(agent));
+}
+
+/**
+ * Coordinators who may close a stale or answered handoff part.
+ * Unset or blank uses chief-of-staff. A comma-separated list or an array
+ * replaces that default. An explicit empty array means no coordinators.
+ */
+export function coordinatorList(source) {
+  if (source == null) return ["chief-of-staff"];
+  const parts = Array.isArray(source) ? source : String(source).split(",");
+  if (!Array.isArray(source) && String(source).trim() === "") return ["chief-of-staff"];
+  const ids = [];
+  for (const part of parts) {
+    const id = agentId(String(part).trim());
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+function isCoordinator(ctx, agent) {
+  const list = Array.isArray(ctx.coordinators) ? ctx.coordinators : coordinatorList(undefined);
+  const names = new Set(list.map((id) => agentId(id)));
+  if (agent != null && agent !== "" && names.has(agentId(agent))) return true;
+  const surface = String(ctx?.surface || "").trim();
+  return surface !== "" && names.has(agentId(surface));
+}
+
+/**
+ * The handoff part owed by `agent`.
+ * Looks on that agent's log first. `to` may be one agent or a list.
+ * If the copy lives only on the shared job or channel, the per-recipient
+ * Inbox item still points at it. Returns the agent's own log either way,
+ * so a settlement written there stays that agent's part.
+ */
+async function resolveHandoffPart(ctx, trail, agent) {
+  const log = await ctx.store.readLog("agent", agent, { reverse: true, limit: 500 });
+  const onLog = log.filter((e) => e.kind === "handoff" && e.trail === trail);
+  const own = onLog.find((e) => handoffAddresses(e.to, agent));
+  if (own) return { ho: own, log };
+  if (onLog.length) return { ho: null, log };
+  let ho = null;
+  try {
+    const items = await listCoordItemsForTrail(ctx.store, ctx.store.space, trail);
+    const mine = items.find((it) => (it.type || "handoff") === "handoff" && agentId(it.to) === agentId(agent));
+    if (mine?.where) {
+      const { ns, id } = parseRef(mine.where);
+      const whereLog = await ctx.store.readLog(ns, id, { reverse: true, limit: 500 });
+      ho = whereLog.find((e) => e.kind === "handoff" && e.trail === trail && handoffAddresses(e.to, agent)) || null;
+    }
+    if (!ho && mine) {
+      ho = {
+        kind: "handoff",
+        trail,
+        to: mine.to,
+        summary: mine.summary,
+        job: mine.where || undefined,
+        by: mine.from,
+      };
+    }
+  } catch {
+    /* a missing index still leaves the log result */
+  }
+  return { ho, log };
 }
 
 /** Shown when a write carries payload.declined that is not a boolean. */
@@ -139,7 +248,7 @@ async function settleHandoffItem(ctx, { trail, agent, declined, settledAt, settl
 export function handoffSettlement(kind, payload) {
   const word = normalizeKind(kind == null || String(kind).trim() === "" ? "memo" : String(kind).trim().toLowerCase()).kind;
   if (word === "accepted") return true;
-  if (word === "feedback" && (isDeclined(payload) || isWithdrawn(payload))) return true;
+  if (word === "feedback" && (isDeclined(payload) || isWithdrawn(payload) || isClosed(payload))) return true;
   return false;
 }
 
@@ -490,9 +599,9 @@ async function brief(ctx, agent, opts = {}) {
     s.readLog("agent", a, { reverse: true, sinceMs: nowMs - WEEK_MS, limit: 2000 }),
   ]);
   const settled = new Set(
-    log.filter((e) => e.origin && (e.kind === "accepted" || (e.kind === "feedback" && (isDeclined(e.payload) || isWithdrawn(e.payload))))).map((e) => e.origin),
+    log.filter((e) => e.origin && handoffSettlement(e.kind, e.payload)).map((e) => e.origin),
   );
-  let waiting = log.filter((e) => e.kind === "handoff" && e.to === agentRef(a) && !settled.has(e.trail));
+  let waiting = log.filter((e) => e.kind === "handoff" && handoffAddresses(e.to, a) && !settled.has(e.trail));
   try {
     const openItems = await listOpenCoordItemsForAgent(s, s.space, a);
     if (openItems && openItems.length > 0) {
@@ -824,9 +933,9 @@ export const TOOLS = [
     name: "logmem_handoff",
     title: "Handoff",
     description:
-      "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): a task. It needs where='job:<id>' (the job it belongs to) and takes an optional walkthrough (steps, time, place, done_when, reply, due). The job is blocked until the person marks it done or says they can't. Their progress shows in your Brief under needs_people.",
+      "Pass work to another agent, or to a person. To an agent: writes a Handoff entry on the job (or channel) and on the receiver's log, and makes the receiver follow it. Pass a list of agents to give each one its own part. Accepting or closing one part leaves the others open. The receiver must already be in the roster; a typo is refused with close matches (pass create_agent=true to hand off to a brand-new agent). The receiver takes it with logmem_accept. To a person (to='human:<id>'): a task. It needs where='job:<id>' (the job it belongs to) and takes an optional walkthrough (steps, time, place, done_when, reply, due). The job is blocked until the person marks it done or says they can't. Their progress shows in your Brief under needs_people.",
     params: params({
-      to: { type: "string", desc: "Agent receiving the work, e.g. 'atlas', or a person as 'human:<id>'" },
+      to: { type: "stringOrStrings", desc: "Agent receiving the work, e.g. 'atlas', a list of agents, or a person as 'human:<id>'" },
       summary: { type: "string", desc: "What is being handed over and what 'done' looks like" },
       where: { type: "string", desc: "Job or channel the work lives in, e.g. 'job:issue-14'", optional: true },
       trail: { type: "string", desc: "Trail id (auto if omitted). Refused when that trail is already used on the receiver", optional: true },
@@ -838,56 +947,79 @@ export const TOOLS = [
     async run({ to, summary, where: whereRef, trail, origin, create_agent, walkthrough }, ctx) {
       if (typeof to === "string" && to.startsWith("human:")) return personHandoff({ to, summary, whereRef, trail, origin, walkthrough }, ctx);
       if (walkthrough !== undefined) return { ok: false, error: "walkthrough is only for handoffs to a person (to='human:<id>')" };
-      const receiver = checkAgentId(to, "to");
+      if (Array.isArray(to) && to.some((x) => typeof x === "string" && x.startsWith("human:"))) {
+        return { ok: false, error: "a handoff to a person is one recipient: to='human:<id>'" };
+      }
+      const receivers = [];
+      for (const item of Array.isArray(to) ? to : [to]) {
+        const id = checkAgentId(item, "to");
+        if (!receivers.includes(id)) receivers.push(id);
+      }
+      if (!receivers.length) return { ok: false, error: "name an agent in to" };
       capEntry({ summary, trail, origin });
       const roster = await ctx.store.list("agent");
-      if (!roster.includes(receiver) && create_agent !== true) {
-        const suggestions = closeMatches(receiver, roster);
-        return {
-          ok: false,
-          error: `no agent '${receiver}' in this space${suggestions.length ? `; did you mean ${suggestions.map((x) => `'${x}'`).join(", ")}?` : "."} Pass create_agent=true to hand off to a new agent.`,
-          suggestions,
-        };
+      if (create_agent !== true) {
+        for (const receiver of receivers) {
+          if (!roster.includes(receiver)) {
+            const suggestions = closeMatches(receiver, roster);
+            return {
+              ok: false,
+              error: `no agent '${receiver}' in this space${suggestions.length ? `; did you mean ${suggestions.map((x) => `'${x}'`).join(", ")}?` : "."} Pass create_agent=true to hand off to a new agent.`,
+              suggestions,
+            };
+          }
+        }
       }
       const where = whereRef ? parseRef(whereRef, "job") : null;
       if (trail) {
-        const prior = await ctx.store.readLog("agent", receiver);
-        if (prior.some((e) => e.trail === trail)) {
-          return { ok: false, error: `trail '${trail}' is already used on ${receiver}; omit trail and LogMem will mint a fresh one` };
+        for (const receiver of receivers) {
+          const prior = await ctx.store.readLog("agent", receiver);
+          if (prior.some((e) => e.trail === trail)) {
+            return { ok: false, error: `trail '${trail}' is already used on ${receiver}; omit trail and LogMem will mint a fresh one` };
+          }
         }
       }
       const t = clock(ctx);
-      const tr = trail || makeTrail("handoff", where ? where.id : receiver, t);
-      const extra = { to: agentRef(receiver), ...(where ? { job: `${where.ns}:${where.id}` } : {}) };
+      const tr = trail || makeTrail("handoff", where ? where.id : receivers[0], t);
+      // One recipient keeps a string `to`. Several recipients keep the full list on every copy.
+      const toField = receivers.length === 1 ? agentRef(receivers[0]) : receivers.map(agentRef);
+      const extra = { to: toField, ...(where ? { job: `${where.ns}:${where.id}` } : {}) };
       const entries = [];
       if (where) entries.push(await write(ctx, where.ns, where.id, { kind: "handoff", summary, trail: tr, origin, ts: t, extra, handoff: true }));
-      entries.push(await write(ctx, "agent", receiver, { kind: "handoff", summary, trail: tr, origin, ts: t, extra, handoff: true }));
-      if (where) {
-        await ctx.store.follow(receiver, `${where.ns}:${where.id}`, { role: "owner", joined_at: t, via: "handoff", trail: tr });
-        if (where.ns === "job") await ctx.store.setNow("job", where.id, { owner: agentRef(receiver), handoff_trail: tr });
+      for (const receiver of receivers) {
+        entries.push(await write(ctx, "agent", receiver, { kind: "handoff", summary, trail: tr, origin, ts: t, extra, handoff: true }));
       }
-      let itemId = null;
-      try {
-        const coordRes = await createCoordItem(ctx.store, {
-          space: ctx.store.space,
-          type: "handoff",
-          requestTrail: tr,
-          from: agentRef(me(ctx)),
-          to: agentRef(receiver),
-          where: where ? `${where.ns}:${where.id}` : "",
-          summary,
-          createdAt: t,
-        });
-        if (coordRes && coordRes.id) itemId = coordRes.id;
-      } catch (_) {}
-      return { ok: true, trail: tr, to: agentRef(receiver), item_id: itemId || undefined, entries };
+      if (where) {
+        for (const receiver of receivers) {
+          await ctx.store.follow(receiver, `${where.ns}:${where.id}`, { role: "owner", joined_at: t, via: "handoff", trail: tr });
+        }
+        if (receivers.length === 1 && where.ns === "job") await ctx.store.setNow("job", where.id, { owner: agentRef(receivers[0]), handoff_trail: tr });
+      }
+      const itemIds = [];
+      for (const receiver of receivers) {
+        try {
+          const coordRes = await createCoordItem(ctx.store, {
+            space: ctx.store.space,
+            type: "handoff",
+            requestTrail: tr,
+            from: agentRef(me(ctx)),
+            to: agentRef(receiver),
+            where: where ? `${where.ns}:${where.id}` : "",
+            summary,
+            createdAt: t,
+          });
+          if (coordRes && coordRes.id) itemIds.push(coordRes.id);
+        } catch (_) {}
+      }
+      if (receivers.length === 1) return { ok: true, trail: tr, to: agentRef(receivers[0]), item_id: itemIds[0] || undefined, entries };
+      return { ok: true, trail: tr, to: toField, item_ids: itemIds, entries };
     },
   },
   {
     name: "logmem_accept",
     title: "Accept",
     description:
-      "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
+      "Take on a handoff that was passed to you, or decline it with a reason. Writes an Accepted entry (or, for decline=true, a Feedback entry marked declined) on the job or channel the work lives in and on your own log, so your Brief stops listing it. A decline is also written to the sender's log. When the handoff names several agents, this settles only your part. Calling it again on a handoff you already answered settles its Inbox item if that item is still open.",
     params: params({
       trail: { type: "string", desc: "Trail of the handoff, from handoffs_to_me in your Brief" },
       decline: { type: "boolean", desc: "true to turn the work down (default false = accept)", optional: true },
@@ -898,12 +1030,15 @@ export const TOOLS = [
       const a = me(ctx);
       capText("trail", trail, LIMITS.trail);
       capText("reason", reason);
-      const log = await ctx.store.readLog("agent", a, { reverse: true, limit: 500 });
-      const ho = log.find((e) => e.kind === "handoff" && e.trail === trail && e.to === agentRef(a));
+      const { ho, log } = await resolveHandoffPart(ctx, trail, a);
       if (!ho) return { ok: false, error: `no handoff with trail '${trail}' was passed to ${a}; check handoffs_to_me in your Brief` };
-      const done = log.find((e) => e.origin === trail && (e.kind === "accepted" || (e.kind === "feedback" && (isDeclined(e.payload) || isWithdrawn(e.payload)))));
+      const done = log.find((e) => e.origin === trail && handoffSettlement(e.kind, e.payload));
       if (done && done.kind === "feedback" && isWithdrawn(done.payload)) {
         return { ok: false, error: `the sender withdrew this handoff: ${done.payload.reason || "no reason given"}`, entry: done };
+      }
+      if (done && isClosed(done.payload)) {
+        const who = agentId(done.payload.closed_by || done.by || "someone");
+        return { ok: false, error: `this handoff was closed by ${who}: ${done.payload.reason || "no reason given"}`, entry: done };
       }
       if (done) {
         // The entry landed but its coordination item can still be open: the
@@ -933,7 +1068,9 @@ export const TOOLS = [
       if (where) logs.push([where.ns, where.id]);
       logs.push(["agent", a]);
       const sender = String(ho.by || "").startsWith("agent:") ? agentId(ho.by) : null;
-      if (decline && sender && sender !== a) logs.push(["agent", sender]);
+      // A decline notice on the sender's log uses this trail as origin. Skip it
+      // when the sender is also a recipient, or it would settle their part too.
+      if (decline && sender && sender !== a && !handoffAddresses(ho.to, sender)) logs.push(["agent", sender]);
       const seenLogs = new Set();
       const entries = [];
       for (const [ns, id] of logs) {
@@ -968,8 +1105,10 @@ export const TOOLS = [
       if (!why) return { ok: false, error: "reason is required: say in one line why you withdraw this item" };
       const it = await getCoordItem(ctx.store, ctx.store.space, item);
       if (!it) return { ok: false, error: `coordination item '${item}' not found` };
+      // Sender check: `from` is the agent who created the item. The recipient
+      // and every other agent are refused, before any entry is written.
       const sender = String(it.from || "").replace(/^agent:/, "");
-      if (sender !== a) return { ok: false, error: `only the sender ('${sender || "unknown"}') can withdraw item '${item}' (you are ${a})` };
+      if (!sender || sender !== a) return { ok: false, error: `only the sender ('${sender || "unknown"}') can withdraw item '${item}' (you are ${a})` };
       if (it.response !== "open") return { ok: false, error: `item '${item}' is already settled (${it.response})` };
       const to = String(it.to || "").replace(/^agent:/, "");
       let where = null;
@@ -1001,6 +1140,120 @@ export const TOOLS = [
       });
       return { ok: res.ok, item_id: it.id, item_status: res.status, trail: tr, to: agentRef(to), where: where ? `${where.ns}:${where.id}` : null, entries,
         ...(res.ok ? {} : { error: `entries written but the item did not settle (${res.status}); call logmem_withdraw again` }) };
+    },
+  },
+  {
+    name: "logmem_close",
+    title: "Close",
+    description:
+      "Close your part of a handoff that is stale or already answered. A coordinator (chief-of-staff, unless LOGMEM_COORDINATORS names others) can close a recipient's part, including an agent that cannot answer. A reason is required. Writes a Feedback entry marked closed on the handoff's log and names who closed it. Other recipients' parts stay open. Anyone else is refused.",
+    params: params({
+      trail: { type: "string", desc: "Trail of the handoff" },
+      reason: { type: "string", desc: "Why, in one line (required). Recorded with your name" },
+      to: { type: "string", desc: "Whose part to close, e.g. 'avery'. Default: you, when the handoff was passed to you. A coordinator names the recipient when closing someone else's part", optional: true },
+    }),
+    annotations: WRITE,
+    async run({ trail, reason, to }, ctx) {
+      const caller = me(ctx);
+      capText("trail", trail, LIMITS.trail);
+      capText("reason", reason);
+      capText("to", to, LIMITS.trail);
+      const why = String(reason || "").trim();
+      if (!why) return { ok: false, error: "reason is required: say in one line why you close this handoff" };
+      const coordNames = (Array.isArray(ctx.coordinators) ? ctx.coordinators : coordinatorList(undefined)).join(", ") || "none";
+      const forbidden = (target) => ({
+        ok: false,
+        error: target
+          ? `forbidden: only ${target} or a coordinator (${coordNames}) can close this handoff (you are ${caller})`
+          : `forbidden: only a recipient or a coordinator (${coordNames}) can close handoff '${trail}' (you are ${caller})`,
+      });
+
+      let target = caller;
+      if (to != null && String(to).trim() !== "") target = checkAgentId(to, "to");
+      let { ho, log } = await resolveHandoffPart(ctx, trail, target);
+      if (!ho && (to == null || String(to).trim() === "") && isCoordinator(ctx, caller)) {
+        const parts = await listCoordItemsForTrail(ctx.store, ctx.store.space, trail).catch(() => []);
+        const handoffs = parts.filter((it) => (it.type || "handoff") === "handoff");
+        if (handoffs.length === 1) {
+          target = agentId(handoffs[0].to);
+          ({ ho, log } = await resolveHandoffPart(ctx, trail, target));
+        } else if (handoffs.length > 1) {
+          return { ok: false, error: "name the recipient in to: this handoff has more than one part" };
+        }
+      }
+      if (!ho) {
+        if (!isCoordinator(ctx, caller) && agentId(target) !== agentId(caller)) return forbidden(target);
+        let parts = [];
+        try {
+          parts = await listCoordItemsForTrail(ctx.store, ctx.store.space, trail);
+        } catch {
+          parts = [];
+        }
+        const handoffs = parts.filter((it) => (it.type || "handoff") === "handoff");
+        if (handoffs.length && !isCoordinator(ctx, caller) && !handoffs.some((it) => agentId(it.to) === agentId(caller))) return forbidden();
+        return { ok: false, error: `no handoff with trail '${trail}' was passed to ${target}` };
+      }
+      if (agentId(target) !== agentId(caller) && !isCoordinator(ctx, caller)) return forbidden(target);
+
+      const prior = log.find((e) => e.origin === trail && isClosed(e.payload));
+      const itemId = computeItemId(ctx.store.space, "handoff", trail, target);
+      if (prior) {
+        const res = await settleCoordItem(ctx.store, {
+          space: ctx.store.space, id: itemId, recipient: target, response: "declined",
+          settledBy: prior.payload.closed_by || prior.by || agentRef(caller),
+          settledAt: Number(prior.ts) || clock(ctx),
+          settlementTrail: prior.trail,
+          disposition: `closed: ${prior.payload.reason || why}`.slice(0, LIMITS.summary),
+        });
+        if (res.ok) return { ok: true, repaired: true, item_id: itemId, item_status: res.status, trail: prior.trail, origin: trail, to: agentRef(target), closed_by: prior.payload.closed_by || prior.by };
+        return { ok: false, error: `this handoff is already closed: ${prior.payload.reason || "no reason given"}`, entry: prior, item_id: itemId, item_status: res.status };
+      }
+
+      let where = null;
+      if (ho.job) {
+        try { where = parseRef(ho.job); } catch { where = null; }
+      }
+      const t = clock(ctx);
+      const tr = makeTrail("closed", where ? where.id : target, t);
+      const one = {
+        kind: "feedback",
+        summary: `${caller} closed the handoff for ${target}: ${why}`.slice(0, LIMITS.summary),
+        trail: tr,
+        origin: trail,
+        payload: { closed: true, reason: why, closed_by: agentRef(caller), to: agentRef(target) },
+        ts: t,
+      };
+      const logs = [];
+      if (where) logs.push([where.ns, where.id]);
+      if (target) logs.push(["agent", target]);
+      // The closer's own log gets a copy only when they do not hold a part.
+      // A copy on their log would settle that part, because it shares the trail.
+      if (agentId(caller) !== agentId(target) && !handoffAddresses(ho.to, caller)) logs.push(["agent", caller]);
+      const seen = new Set();
+      const entries = [];
+      for (const [ns, id] of logs) {
+        if (seen.has(`${ns}:${id}`)) continue;
+        seen.add(`${ns}:${id}`);
+        entries.push(await write(ctx, ns, id, { ...one, settle: true }));
+      }
+      const res = await settleCoordItem(ctx.store, {
+        space: ctx.store.space, id: itemId, recipient: target, response: "declined",
+        settledBy: agentRef(caller), settledAt: t, settlementTrail: tr,
+        disposition: `closed: ${why}`.slice(0, LIMITS.summary),
+      });
+      const settledOk = res.ok || res.status === "already_settled" || res.status === "not_found";
+      return {
+        ok: settledOk,
+        item_id: itemId,
+        item_status: res.status,
+        trail: tr,
+        origin: trail,
+        to: agentRef(target),
+        closed_by: agentRef(caller),
+        where: where ? `${where.ns}:${where.id}` : null,
+        entries,
+        ...(settledOk ? {} : { error: `entries written but the item did not settle (${res.status}); call logmem_close again` }),
+      };
     },
   },
   {
