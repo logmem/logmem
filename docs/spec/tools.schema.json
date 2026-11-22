@@ -417,13 +417,17 @@
     {
       "name": "logmem_close",
       "title": "Close",
-      "description": "Close your part of a handoff that is stale or already answered. A coordinator (chief-of-staff, unless LOGMEM_COORDINATORS names others) can close a recipient's part, including an agent that cannot answer. A reason is required. Writes a Feedback entry marked closed on the handoff's log and names who closed it. Other recipients' parts stay open. Anyone else is refused.",
+      "description": "Close your part of a handoff, or an Inbox item, that is stale or already answered. Pass item (an id like ci_...) or a trail. item also closes a mention or request that has no handoff entry and no sender. A coordinator (chief-of-staff, unless LOGMEM_COORDINATORS names others) can close any part, including an agent that cannot answer. A reason is required. Writes a Feedback entry marked closed on that item's log and names who closed it. Other recipients' parts stay open. Anyone else is refused.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "trail": {
             "type": "string",
-            "description": "Trail of the handoff"
+            "description": "Trail of the handoff or mention. A ci_ id here is the Inbox item"
+          },
+          "item": {
+            "type": "string",
+            "description": "Inbox item id to close, e.g. 'ci_...' (from logmem_sync). Use this for a mention or request that has no handoff"
           },
           "reason": {
             "type": "string",
@@ -431,12 +435,11 @@
           },
           "to": {
             "type": "string",
-            "description": "Whose part to close, e.g. 'avery'. Default: you, when the handoff was passed to you. A coordinator names the recipient when closing someone else's part"
+            "description": "Whose part to close, e.g. 'avery'. Default: you, when the item was passed to you. A coordinator names the recipient when closing someone else's part"
           }
         },
         "additionalProperties": false,
         "required": [
-          "trail",
           "reason"
         ]
       },
