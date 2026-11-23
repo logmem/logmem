@@ -32,6 +32,8 @@ export const REGISTRY = Object.freeze({
   LOGMEM_ADMIN_SECRET: { source: "env", rotated: null },
   LOGMEM_CUSTOMER_REDIS_URI: { source: "env", rotated: null },
   LOGMEM_DECIDE_SECRET: { source: "env", rotated: null },
+  // Only for scripts/decide-resign.mjs, during one migration after a swap. Unset it afterwards.
+  LOGMEM_DECIDE_SECRET_OLD: { source: "env", rotated: null },
   LOGMEM_DEPLOY_REDIS_URI: { source: "env", rotated: null },
   LOGMEM_DEPLOY_REST_TOKEN: { source: "env", rotated: null },
   LOGMEM_DIRECT_AUTH_TOKEN: { source: "env", rotated: null },
