@@ -92,25 +92,101 @@ export function timeScrubber({ entries, t = null, scrub, now = Date.now() }) {
   </section>`;
 }
 
-/** Fleet pulse: one lane per agent. Dots grow with entries, diamonds are recaps, amber spans are long silences.
- *  By default agents with no entries in the window sit in a drawer, so the chart shows who is writing. */
+/** Fleet pulse (21st.dev Heat Strip id: 29464 + Status Bar id: 26906):
+ *  One compact heat-strip row per agent. Vertical bars scale in height & opacity with entry volume,
+ *  green ticks mark recaps, muted blocks mark quiet stretches, and all quiet agents stay visible as inline chips. */
 export function fleetPulse({ entries, agents = [], win = 24, sel = '', show = 'active', setShow, setWin, pick, now = Date.now() }) {
   const lanes = pulseLanes(entries, win, now, agents);
   if (!lanes.length) return nothing;
   const n = laneCounts(lanes), shown = laneView(lanes, show), tucked = show === 'active' ? lanes.filter(l => l.empty) : [];
-  const row = l => html`<div class="lmx-lane" data-dim=${String(!!sel && sel !== l.id)}>
-      <button type="button" class="lmx-lanename mono" aria-pressed=${String(sel === l.id)} @click=${() => pick(sel === l.id ? '' : l.id)}>${l.id}</button>
-      <div class="lmx-lanetrack">${l.quiet.map(q => html`<span class="lmx-quiet" style=${`left:${q.left}%;width:${q.width}%`}>${q.width > 22 ? `quiet ${q.hours} h` : ''}</span>`)}${l.bars.map(b => html`<i class="lmx-bar" data-level=${b.level} title=${`${b.n} ${b.n === 1 ? 'entry' : 'entries'}`} style=${`left:min(${b.left}%, calc(100% - 12px));width:${b.width}%`}></i>`)}${l.recaps.map(r => html`<i class="lmx-pulse-recap" style=${`left:calc(${r}% - 6px)`}></i>`)}</div>
-      <span class="lmx-lanestate" data-s=${l.status}>${l.state}</span></div>`;
+  const BINS = 24;
+  const spanMs = win * 3600e3;
+  const startMs = now - spanMs;
+  const binMs = spanMs / BINS;
+
+  // Build exact per-agent 24-bucket counts from real entries (oldest left -> newest right).
+  const byAgent = new Map();
+  for (const l of lanes) {
+    byAgent.set(l.id, Array.from({ length: BINS }, () => ({ count: 0, recap: false })));
+  }
+  let totalEntries = 0;
+  for (const e of entries || []) {
+    const ts = Number(e?.ts);
+    if (!Number.isFinite(ts) || ts < startMs || ts > now) continue;
+    const aid = String(e?.by || '').replace(/^agent:/, '');
+    const arr = byAgent.get(aid);
+    if (!arr) continue;
+    const idx = Math.min(BINS - 1, Math.max(0, Math.floor((ts - startMs) / binMs)));
+    arr[idx].count++;
+    if (e.kind === 'recap') arr[idx].recap = true;
+    totalEntries++;
+  }
+  let peakBin = 0;
+  for (const arr of byAgent.values()) {
+    for (const b of arr) if (b.count > peakBin) peakBin = b.count;
+  }
+  const safeMax = Math.max(peakBin, 1);
+
+  const binLabel = (idx) => {
+    const t0 = startMs + idx * binMs;
+    const t1 = t0 + binMs;
+    return `${hhmm(t0)}–${hhmm(t1)}`;
+  };
+
+  const row = l => {
+    const bins = byAgent.get(l.id) || [];
+    const agentTotal = bins.reduce((s, b) => s + b.count, 0);
+    return html`<div class="lm-fp-row" data-dim=${String(!!sel && sel !== l.id)} data-selected=${String(sel === l.id)}>
+      <button type="button" class="lm-fp-agent" aria-pressed=${String(sel === l.id)} @click=${() => pick(sel === l.id ? '' : l.id)}>
+        <span class="lm-fp-dot" data-s=${l.status} aria-hidden="true"></span>
+        <span class="lm-fp-name mono">${l.id}</span>
+        <span class="lm-fp-total mono">${agentTotal}</span>
+      </button>
+      <div class="lm-fp-strip" role="img" aria-label=${`${l.id}: ${agentTotal} entries in the last ${win} hours`}>
+        ${bins.map((b, i) => {
+          const pct = b.count ? Math.max(18, Math.round((b.count / safeMax) * 100)) : 10;
+          const op = b.count ? (0.32 + 0.68 * (b.count / safeMax)).toFixed(2) : '';
+          return html`<span class=${'lm-fp-cell' + (b.count ? ' has-hit' : '') + (b.recap ? ' has-recap' : '')} title=${`${l.id} · ${binLabel(i)}: ${b.count} ${b.count === 1 ? 'entry' : 'entries'}${b.recap ? ' (recap)' : ''}`}>
+            <i style=${`height:${pct}%;${op ? 'opacity:' + op : ''}`}></i>
+          </span>`;
+        })}
+      </div>
+      <span class="lm-fp-state" data-s=${l.status}>${l.state}</span>
+    </div>`;
+  };
   const views = [['active', 'Active', n.active], ['live', 'Live now', n.live], ['quiet', 'Quiet', n.quiet], ['all', 'All', n.all]];
-  return html`<section class="lmx-flow lmx-card" aria-label="Fleet pulse">
-    <div class="lmx-flowhead"><div><h2>Fleet pulse</h2><span class="lmx-meta">One lane per agent. This shows reporting activity, not whether a process is running.</span></div>
-      <div class="lmx-filter" role="group" aria-label="Pulse window">${[24, 6].map(h => pill(`Last ${h} h`, win === h, () => setWin(h)))}</div></div>
-    ${setShow ? html`<div class="lmx-filter" role="group" aria-label="Show agents">${views.map(([k, label, c]) => pill(html`${label} <b class="lmx-pillcount">${c}</b>`, show === k, () => setShow(k)))}</div>` : nothing}
-    <div class="lmx-lanes">${shown.length ? shown.map(row) : html`<p class="lmx-meta">No agents match this view in the last ${win} h.</p>`}</div>
-    ${shown.length ? html`<div class="lmx-laneaxis mono">${pulseAxis(win).map(a => html`<span>${a}</span>`)}</div>` : nothing}
-    ${tucked.length ? html`<details class="lmx-emptylanes"><summary>${tucked.length} ${tucked.length === 1 ? 'agent has' : 'agents have'} no entries in the last ${win} h</summary><div class="lmx-filter">${tucked.map(l => pill(l.id, sel === l.id, () => pick(sel === l.id ? '' : l.id)))}</div></details>` : nothing}
-    <ul class="lmx-flowkey"><li><i data-k="dot" data-level="one"></i>One entry</li><li><i data-k="dot" data-level="few"></i>2 to 4</li><li><i data-k="dot" data-level="many"></i>5 or more</li><li><i data-k="recap"></i>Recap</li><li><i data-k="quiet"></i>Quiet ${6} hours or more</li></ul>
+  return html`<section class="lm-fp" aria-label="Fleet pulse">
+    <div class="lm-fp-head">
+      <div class="lm-fp-titleblock">
+        <div class="lm-fp-toprow">
+          <h2>Fleet pulse</h2>
+          <div class="lm-fp-stats mono">
+            <span>total <strong>${totalEntries}</strong></span>
+            <span>peak <strong>${peakBin}</strong>/slot</span>
+            <span>active <strong>${n.active}/${n.all}</strong></span>
+          </div>
+        </div>
+        <span class="lmx-meta">Reporting activity across ${BINS} intervals · not runtime reachability.</span>
+      </div>
+      <div class="lm-fp-controls">
+        ${setShow ? html`<div class="lm-fp-seg" role="group" aria-label="Show agents">${views.map(([k, label, c]) => html`<button type="button" aria-pressed=${String(show === k)} @click=${() => setShow(k)}>${label} <span>${c}</span></button>`)}</div>` : nothing}
+        <div class="lm-fp-seg" role="group" aria-label="Pulse window">${[24, 6].map(h => html`<button type="button" aria-pressed=${String(win === h)} @click=${() => setWin(h)}>${h}h</button>`)}</div>
+      </div>
+    </div>
+    <div class="lm-fp-body">
+      ${shown.length ? shown.map(row) : html`<p class="lmx-meta" style="padding:14px 4px;margin:0">No agents match this view in the last ${win} h.</p>`}
+    </div>
+    ${shown.length ? html`<div class="lm-fp-axis mono"><span></span><div class="lm-fp-ticks">${pulseAxis(win).map(a => html`<span>${a}</span>`)}</div><span></span></div>` : nothing}
+    ${tucked.length ? html`<div class="lm-fp-quietbar"><span class="lmx-meta">No entries in ${win}h (${tucked.length}):</span><div class="lm-fp-quietchips">${tucked.map(l => html`<button type="button" class="lm-fp-qchip mono" aria-pressed=${String(sel === l.id)} @click=${() => pick(sel === l.id ? '' : l.id)}>${l.id}</button>`)}</div></div>` : nothing}
+    <div class="lm-fp-foot">
+      <ul class="lm-fp-legend">
+        <li><i class="is-low"></i>Low</li>
+        <li><i class="is-mid"></i>Moderate</li>
+        <li><i class="is-high"></i>Peak</li>
+        <li><i class="is-recap"></i>Recap tick</li>
+      </ul>
+      <span class="lmx-meta">Click an agent to isolate its lane · hover any bar for exact counts.</span>
+    </div>
   </section>`;
 }
 

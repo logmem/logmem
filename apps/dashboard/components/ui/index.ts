@@ -59,3 +59,5 @@ export { IllosAiChatEmptyState, StreamingTokensArt } from './illos-ai-chat-empty
 export type { IllosAiChatEmptyStateProps } from './illos-ai-chat-empty-state';
 export { AgentRoster } from './agent-roster';
 export type { AgentRosterProps, AgentRosterStatus, RosterAgent } from './agent-roster';
+export { HeatStrip } from './heat-strip';
+export type { HeatStripProps, HeatStripBucket } from './heat-strip';

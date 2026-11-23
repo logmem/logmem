@@ -148,8 +148,10 @@ function drawJobs() {
   const unknown = list.filter(j => !BOARD.some(b => b[0] === j.stage));
   const doneList = list.filter(j => j.stage === 'done');
   const map=blockerMap({jobs:base,space:state.space,sel:f.blocker||'',kind:f.bkind||'',setKind:k=>{f.bkind=k;f.blocker='';saveFilt();drawJobs();},pick:k=>{f.blocker=f.blocker===k?'':k;saveFilt();drawJobs();},copy});
-  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-map-top" data-map-page="work">${map||emptyState('No blocker groups in loaded work.','The map shows recorded blockers. Clear blockers or add details to create groups.')}</div><div class="lmx-work-detail"><div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button><a href="#/plans" class="lmx-tabslink">Plans</a></div><div class="lmx-work-links"><a href="#/queue" class="lm-btn lm-btn--secondary">Inbox</a></div></div>
-    <div class="lmx-filters">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}</div>
+  const hasWorkFilter = Boolean(f.plan || f.track || f.owner || f.q || f.blocker || f.bkind);
+  const clearWorkFilters = () => { f.plan = f.track = f.owner = f.q = f.blocker = f.bkind = ''; saveFilt(); drawJobs(); };
+  renderView('work', ['Work'], html`${head('Work', 'Priorities, owners, and the next step.')}<div class="lmx-work-map-top" data-map-page="work">${map||emptyState('No blocker groups in loaded work.','The map shows recorded blockers. Clear blockers or add details to create groups.')}</div><div class="lmx-work-detail"><div class="lmx-work-toolbar"><div class="lmx-tabsbar" role="group" aria-label="Work layout"><button type="button" aria-pressed=${layout === 'list'} @click=${setLayout('list')}>List</button><button type="button" aria-pressed=${layout === 'board'} @click=${setLayout('board')}>Board</button><a href="#/plans" class="lmx-tabslink">Plans</a></div><div class="lmx-work-links"><a href="#/queue" class="lm-btn lm-btn--secondary" style="text-decoration:none">Inbox</a></div></div>
+    <div class="lm-ftbar lmx-filters" role="region" aria-label="Filter work">${selectBox(R, 'plan', 'Plan', uniq(all.map(j=>j.plan)), drawJobs)}${selectBox(R, 'track', 'Track', tracks, drawJobs)}${selectBox(R, 'owner', 'Owner', uniq(all.map(j=>agentName(j.owner))), drawJobs)}${searchBox(R, 'Title or last entry', drawJobs)}${hasWorkFilter ? html`<button type="button" class="lm-ftbar-clear" @click=${clearWorkFilters}>Clear</button>` : nothing}</div>
     ${layout === 'board' ? html`<div class="lmx-filter" role="group" aria-label="Filter the board">${BOARD_FILTERS.map(([k, l]) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(bmode === k)} @click=${setBoardMode(k)}>${l} (${bcounts[k]})</button>`)}</div>` : nothing}
     ${layout === 'list' ? html`<div class="lmx-filter" role="group" aria-label="Filter by status">${WORK_MODES.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${setMode(k)}>${l} (${counts[k]})</button>`)}${shared.size ? html`<button type="button" class="lmx-typepill lmx-typepill--toggle" aria-pressed=${String(f.group === 'blocker')} @click=${toggleGroup}>Group by blocker</button>` : nothing}</div>` : nothing}
     ${layout === 'list' ? html`<div class="lmx-work-list">${list.length ? (f.group === 'blocker' && shared.size ? grouped() : keyed(list, j=>j.id, row)) : emptyState('No work matches these filters.', 'Clear a filter or pick another status.')}</div>` : html`
@@ -241,8 +243,17 @@ pages.agent = async (id) => {
   draw();
 };
 
-// ─── Log: "What exactly happened?" ──────────────────────────────────
-function drawLog() {
+// ─── Unified Activity / Log & Inspector / Recall ────────────────────
+// One consolidated workspace with three clear tabs while preserving #/activity, #/log, and #/recall deep-links.
+function activityTabs(active) {
+  return html`<nav class="lm-ctabs-list lm-act-tabs" aria-label="Activity views">
+    <a class="lm-ctabs-btn" href="#/activity" aria-current=${active === 'feed' ? 'page' : nothing} aria-selected=${String(active === 'feed')}>Feed</a>
+    <a class="lm-ctabs-btn" href="#/log" aria-current=${active === 'log' ? 'page' : nothing} aria-selected=${String(active === 'log')}>Log &amp; Inspector</a>
+    <a class="lm-ctabs-btn" href="#/recall" aria-current=${active === 'recall' ? 'page' : nothing} aria-selected=${String(active === 'recall')}>Recall</a>
+  </nav>`;
+}
+
+function drawLog(recallOnly = false) {
   const all = live.log || [], f = filt('log'), q = (f.q || '').toLowerCase(), rc = live.recall;
   const list = all.filter((e) => (f.allEvents || e.group !== 'system') && (!f.where || String(e.where || '').indexOf(f.where + ':') === 0 || e.where === f.where) && (!f.agent || agentName(e.by) === f.agent) && (!f.kind || e.group === f.kind) && (!q || String(e.summary || '').toLowerCase().includes(q)));
   const places = ['job', 'channel', 'agent'].concat(uniq(all.map((e) => (/^channel:/.test(e.where || '') ? e.where : null))));
@@ -250,23 +261,67 @@ function drawLog() {
   const grouped = groupUpdates(list);
   const mode = groupByMode(f.group), terms = rc ? matchTerms(rc.q) : [];
   const sel = (live.logSel && (all.find((e) => entryKey(e) === entryKey(live.logSel)) || live.logSel)) || null, selKey = sel ? entryKey(sel) : '';
-  const pick = (e) => { live.logSel = e; drawLog(); if (matchMedia('(max-width:639px)').matches) requestAnimationFrame(() => document.querySelector('.lmx-inspector')?.scrollIntoView({ block: 'start' })); };
+  const pick = (e) => { live.logSel = e; drawLog(false); if (matchMedia('(max-width:639px)').matches) requestAnimationFrame(() => document.querySelector('.lmx-inspector')?.scrollIntoView({ block: 'start' })); };
   const openOriginal = (r) => {
     live.logSel = all.find((e) => String(e.trail || '') === r.trail && Number(e.ts) === r.ts) || { ts: r.ts, kind: r.kind, summary: r.summary, trail: r.trail || undefined, where: r.from, by: r.by || undefined, group: all.find((e) => e.kind === r.kind)?.group };
     f.where = f.agent = f.kind = f.q = ''; f.allEvents = true; saveFilt(); live.recall = null;
-    if (location.hash !== '#/log') location.hash = '#/log'; else drawLog();
+    if (location.hash !== '#/log') location.hash = '#/log'; else drawLog(false);
   };
-  renderView('log', [html`<a href="#/activity">Activity</a>`, 'Log'], html`${head('Log', 'Recent entries with the inspector and Recall. It shows a recent window, not every request.')}<div class="lmx-tabsbar" role="group" aria-label="Activity detail"><button type="button" aria-pressed=${!f.allEvents} @click=${()=>{f.allEvents=false;saveFilt();drawLog();}}>Work updates</button><button type="button" aria-pressed=${!!f.allEvents} @click=${()=>{f.allEvents=true;saveFilt();drawLog();}}>All events</button></div>
-    <form class="lmx-filters" role="search" @submit=${(e) => { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(e.target.q.value); }}>
-      <label class="lmx-f lmx-f-q"><span>Recall</span><input class="lm-input" name="q" .value=${liveDir(rq)} placeholder="what did we decide about…"></label><button class="lm-btn lm-btn--primary" style="align-self:flex-end">Recall</button></form>
-    <details class="lmx-filter-fold" ?open=${!matchMedia('(max-width:639px)').matches}><summary>Filters</summary><div class="lmx-filters">${selectBox('log', 'where', 'Where', places, drawLog)}${selectBox('log', 'agent', 'Who', uniq(all.map((e) => agentName(e.by))), drawLog)}${selectBox('log', 'kind', 'Kind', uniq(all.map((e) => e.group)), drawLog)}${searchBox('log', 'Words in the entry', drawLog)}</div></details>
-    ${rc ? html`<section class="lm-panel lmx-recall-panel" aria-label="Recall results"><div class="lm-panel-head"><h3 class="lm-title-3" style="margin:0;font-size:14px">Recall: “${rc.q}”</h3><span class="lm-spacer"></span><span class="lmx-meta">${(rc.results || []).length} ${(rc.results || []).length === 1 ? 'result' : 'results'}</span></div>${recallExplainer()}${(rc.results || []).length ? (rc.results || []).map((r) => recallCard(r, terms, openOriginal)) : html`<p class="lmx-meta" style="padding:12px 16px">No matches. Try fewer or different words.</p>`}</section>` : nothing}
-    <div class="lmx-groupbar"><span class="lmx-meta">Group by</span>${groupControl(mode, (k) => { f.group = k; saveFilt(); drawLog(); })}</div>
-    ${timeScrubber({ entries: all, t: f.scrubT ?? null, scrub: (t) => { f.scrubT = t; drawLog(); } })}
-    <div class="lmx-log-layout${sel ? ' has-sel' : ''}">${inspector({ sel, all, close: () => { live.logSel = null; drawLog(); } })}<section class="lm-panel lmx-log-list" style="padding:8px 16px 16px">${mode !== 'time' || f.allEvents ? (list.length ? logList(logRows(list, mode), selKey, pick) : emptyState('No entries match.', 'Clear a filter. This is a bounded read window.')) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g=>html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/'+encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${logList(g.entries.map((e) => ({ type: 'entry', e })), selKey, pick)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}` }<p class="lmx-meta">${list.length} of ${all.length} recent entries.${mode === 'shift' || (mode === 'time' && f.allEvents) ? ' Shift markers come from entry times: a new writer or a gap over 30 minutes starts a shift.' : ''}</p></section></div>`);
+  const activeTab = recallOnly ? 'recall' : 'log';
+  const hasLogFilter = Boolean(f.where || f.agent || f.kind || f.q);
+  const clearLogFilters = () => { f.where = f.agent = f.kind = f.q = ''; saveFilt(); drawLog(false); };
+
+  renderView(activeTab === 'recall' ? 'recall' : 'log', ['Activity', activeTab === 'recall' ? 'Recall' : 'Log & Inspector'], html`
+    <header class="lmx-pageheader">
+      <div>
+        <span class="lm-eyebrow">${activeTab === 'recall' ? 'Search shared memory across the space' : 'Raw event stream · inspector · replay scrubber'}</span>
+        <h1>Activity</h1>
+      </div>
+      <div class="lmx-pageheader-links">${activityTabs(activeTab)}</div>
+    </header>
+
+    ${activeTab === 'recall' ? html`
+      <form class="lm-recall-bar" role="search" @submit=${(e) => { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(e.target.q.value.trim()); }}>
+        <label class="lmx-chat-sr" for="recall-query">Recall query</label>
+        <input id="recall-query" class="lm-input" name="q" .value=${liveDir(rq)} placeholder="Search shared memory: what did we decide about…">
+        <button class="lm-btn lm-btn--primary">Recall</button>
+      </form>
+      ${rc ? html`<section class="lm-panel lmx-recall-panel" aria-label="Recall results">
+        <div class="lm-panel-head"><h2 class="lm-title-3" style="margin:0;font-size:14px">Recall: “${rc.q}”</h2><span class="lm-spacer"></span><span class="lmx-meta">${(rc.results || []).length} ${(rc.results || []).length === 1 ? 'result' : 'results'}</span></div>
+        ${recallExplainer()}
+        ${(rc.results || []).length ? (rc.results || []).map((r) => recallCard(r, terms, openOriginal)) : html`<p class="lmx-meta" style="padding:14px 16px">No matches. Try fewer or different words.</p>`}
+      </section>` : html`<section class="lm-plain-panel">
+        <h2 style="margin:0;font-size:14px;color:var(--text)">Search older entries beyond the live window</h2>
+        ${recallExplainer()}
+        <p class="lmx-meta">Type any keyword, decision topic, job name, or agent name above. Clicking <strong>Open original entry</strong> jumps directly into the Log &amp; Inspector view.</p>
+      </section>`}
+    ` : html`
+      <details class="lmx-filter-fold" ?open=${!matchMedia('(max-width:639px)').matches}><summary>Filters</summary><div class="lm-ftbar" role="region" aria-label="Filter log">
+        <div class="lmx-tabsbar" role="group" aria-label="Activity detail">
+          <button type="button" aria-pressed=${!f.allEvents} @click=${() => { f.allEvents = false; saveFilt(); drawLog(false); }}>Work updates</button>
+          <button type="button" aria-pressed=${!!f.allEvents} @click=${() => { f.allEvents = true; saveFilt(); drawLog(false); }}>All events</button>
+        </div>
+        ${selectBox('log', 'where', 'Where', places, () => drawLog(false))}
+        ${selectBox('log', 'agent', 'Who', uniq(all.map((e) => agentName(e.by))), () => drawLog(false))}
+        ${selectBox('log', 'kind', 'Kind', uniq(all.map((e) => e.group)), () => drawLog(false))}
+        ${searchBox('log', 'Filter entries…', () => drawLog(false))}
+        ${hasLogFilter ? html`<button type="button" class="lm-ftbar-clear" @click=${clearLogFilters}>Clear</button>` : nothing}
+      </div></details>
+
+      <div class="lm-log-subbar">
+        <div class="lmx-groupbar" style="margin:0"><span class="lmx-meta">Group by</span>${groupControl(mode, (k) => { f.group = k; saveFilt(); drawLog(false); })}</div>
+        <form class="lm-inline-recall" role="search" @submit=${(e) => { e.preventDefault(); location.hash = '#/recall/' + encodeURIComponent(e.target.q.value.trim()); }}>
+          <input class="lm-ftbar-search" name="q" .value=${liveDir(rq)} placeholder="Quick Recall search…">
+          <button class="lm-btn lm-btn--secondary">Recall</button>
+        </form>
+      </div>
+
+      ${timeScrubber({ entries: all, t: f.scrubT ?? null, scrub: (t) => { f.scrubT = t; drawLog(false); } })}
+      <div class="lmx-log-layout${sel ? ' has-sel' : ''}">${inspector({ sel, all, close: () => { live.logSel = null; drawLog(false); } })}<section class="lm-panel lmx-log-list" style="padding:8px 16px 16px">${mode !== 'time' || f.allEvents ? (list.length ? logList(logRows(list, mode), selKey, pick) : emptyState('No entries match.', 'Clear a filter. This is a bounded read window.')) : html`${grouped.invalid.length ? html`<p role="alert">${grouped.invalid.length} updates have invalid or future timestamps. Inspect All events for their source records.</p>` : nothing}${grouped.groups.length ? grouped.groups.map(g => html`<section class="lmx-activity-group"><h2 class="lmx-section-title">${g.where.startsWith('job:') ? html`<a href=${'#/job/' + encodeURIComponent(g.where.slice(4))}>${g.where}</a>` : g.where}</h2>${logList(g.entries.map((e) => ({ type: 'entry', e })), selKey, pick)}</section>`) : emptyState('No work updates match.', 'Clear a filter or inspect All events. This is a bounded read window.')}`}<p class="lmx-meta">${list.length} of ${all.length} recent entries.${mode === 'shift' || (mode === 'time' && f.allEvents) ? ' Shift markers come from entry times: a new writer or a gap over 30 minutes starts a shift.' : ''}</p></section></div>
+    `}
+  `);
 }
-// ─── Activity: the full feed, newest first, grouped by day ─────────
-// The raw log with the inspector and Recall stays at #/log.
+// ─── Activity Feed: newest first, grouped by day, Show older cursor ──
 const ACTIVITY_PAGE = 50;
 function drawActivity() {
   const all = live.log || [], f = filt('activity:' + state.space), now = Date.now();
@@ -280,11 +335,28 @@ function drawActivity() {
   const row = (e) => html`<li class="lmx-activity-row" data-k=${e.group || 'system'}><time datetime=${new Date(Number(e.ts)).toISOString()} title=${fullTime(e.ts)}>${clock24(e.ts)}</time>
     <span class="lmx-kind-chip" data-k=${e.group || 'system'}>${e.kind}</span>${agent(e.by)}
     <div class="lmx-activity-main"><p>${textWithIds(e.summary)}</p><span class="lmx-feed-meta">${placeLink(e.where) ? html`<a href=${placeLink(e.where).href}>${placeLink(e.where).label}</a>` : html`<span>${e.where || 'No place recorded'}</span>`}${e.trail ? idChip(e.trail, 'trail') : nothing}<span title=${fullTime(e.ts)}>${relTime(e.ts, now)}</span></span></div></li>`;
-  renderView('activity', ['Activity'], html`<header class="lmx-pageheader"><div><span class="lm-eyebrow">Every entry · newest first</span><h1>Activity</h1></div><div class="lmx-pageheader-links"><div class="lmx-filter" role="group" aria-label="Activity display mode"><button type="button" class="lmx-typepill" aria-pressed=${String(mode === 'timeline')} @click=${() => { f.view = 'timeline'; saveFilt(); drawActivity(); }}>Timeline</button><button type="button" class="lmx-typepill" aria-pressed=${String(mode === 'compact')} @click=${() => { f.view = 'compact'; saveFilt(); drawActivity(); }}>Compact</button></div><a href="#/log">Log and Recall</a></div></header>
-    <div class="lmx-activity-filters"><label class="lmx-f"><span>Agent</span><select class="lm-select" aria-label="Filter by agent" @change=${(e) => set('agent', e.target.value)()}><option value="">All agents</option>${agents.map((n) => html`<option ?selected=${n === f.agent}>${n}</option>`)}</select></label>
-      <div class="lmx-filter" role="group" aria-label="Filter by kind"><button type="button" class="lmx-typepill" aria-pressed=${String(!f.kind)} @click=${set('kind', '')}>All ${f.agent ? all.filter((e) => agentName(e.by) === f.agent).length : all.length}</button>${KIND_GROUPS.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-k=${k} aria-pressed=${String(f.kind === k)} ?disabled=${!kinds[k] && f.kind !== k} @click=${set('kind', f.kind === k ? '' : k)}>${l} ${kinds[k]}</button>`)}</div></div>
+  const hasActFilter = Boolean(f.agent || f.kind);
+  renderView('activity', ['Activity'], html`
+    <header class="lmx-pageheader">
+      <div><span class="lm-eyebrow">Every entry · newest first</span><h1>Activity</h1></div>
+      <div class="lmx-pageheader-links">${activityTabs('feed')}</div>
+    </header>
+    <div class="lm-ftbar" role="region" aria-label="Filter activity">
+      <label class="lmx-f"><span>Agent</span><select class="lm-select" aria-label="Filter by agent" @change=${(e) => set('agent', e.target.value)()}><option value="">All agents</option>${agents.map((n) => html`<option ?selected=${n === f.agent}>${n}</option>`)}</select></label>
+      <div class="lm-ftbar-pills" role="group" aria-label="Filter by kind">
+        <button type="button" class="lm-ftbar-pill" aria-pressed=${String(!f.kind)} @click=${set('kind', '')}>All <span>${f.agent ? all.filter((e) => agentName(e.by) === f.agent).length : all.length}</span></button>
+        ${KIND_GROUPS.map(([k, l]) => html`<button type="button" class="lm-ftbar-pill" data-k=${k} aria-pressed=${String(f.kind === k)} ?disabled=${!kinds[k] && f.kind !== k} @click=${set('kind', f.kind === k ? '' : k)}>${l} <span>${kinds[k]}</span></button>`)}
+      </div>
+      <div class="lm-ftbar-right">
+        ${hasActFilter ? html`<button type="button" class="lm-ftbar-clear" @click=${() => { f.agent = ''; f.kind = ''; f.shown = ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Clear</button>` : nothing}
+        <div class="lm-ar-view" role="group" aria-label="Activity display mode">
+          <button type="button" aria-pressed=${String(mode === 'timeline')} @click=${() => { f.view = 'timeline'; saveFilt(); drawActivity(); }}>Timeline</button>
+          <button type="button" aria-pressed=${String(mode === 'compact')} @click=${() => { f.view = 'compact'; saveFilt(); drawActivity(); }}>Compact</button>
+        </div>
+      </div>
+    </div>
     ${shown.length ? dayGroups(shown, now).map((g) => mode === 'timeline' ? activityTimelineGroup(g, { now }) : html`<section class="lmx-activity-day" aria-label=${g.label}><h2 class="lmx-activity-dayhead">${g.label} <span class="lmx-meta">${g.entries.length}</span></h2><ol class="lmx-activity-list">${repeat(g.entries, entryKey, row)}</ol></section>`) : emptyState(all.length ? 'No entries match these filters.' : 'No activity yet.', all.length ? 'Pick All agents or All kinds.' : 'Entries appear here as agents write.')}
-    <div class="lmx-activity-foot">${list.length > shown.length ? html`<button type="button" class="lm-btn lm-btn--secondary" @click=${() => { f.shown = shown.length + ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Load ${Math.min(ACTIVITY_PAGE, list.length - shown.length)} more</button>` : nothing}${list.length <= shown.length && live.logNext ? html`<button type="button" class="lm-btn lm-btn--secondary" ?disabled=${!!live.logBusy} @click=${showOlder}>${live.logBusy ? 'Loading older entries' : 'Show older'}</button>` : nothing}<span class="lmx-meta" role="status">${shown.length} of ${list.length} shown.${live.logErr ? ' ' + live.logErr : live.logNext ? ' Older entries are available.' : live.logIndexed ? ' This is the oldest indexed entry. Use ' : ' This screen reads the latest ' + all.length + ' entries. Use '}${live.logNext && !live.logErr ? nothing : html`<a href="#/log">Recall</a> for older ones.`}</span></div>`);
+    <div class="lmx-activity-foot">${list.length > shown.length ? html`<button type="button" class="lm-btn lm-btn--secondary" @click=${() => { f.shown = shown.length + ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Load ${Math.min(ACTIVITY_PAGE, list.length - shown.length)} more</button>` : nothing}${list.length <= shown.length && live.logNext ? html`<button type="button" class="lm-btn lm-btn--secondary" ?disabled=${!!live.logBusy} @click=${showOlder}>${live.logBusy ? 'Loading older entries' : 'Show older'}</button>` : nothing}<span class="lmx-meta" role="status">${shown.length} of ${list.length} shown.${live.logErr ? ' ' + live.logErr : live.logNext ? ' Older entries are available.' : live.logIndexed ? ' This is the oldest indexed entry. Use ' : ' This screen reads the latest ' + all.length + ' entries. Use '}${live.logNext && !live.logErr ? nothing : html`<a href="#/recall">Recall</a> for older ones.`}</span></div>`);
 }
 async function showOlder() {
   if (live.logBusy || !live.logNext) return;
@@ -302,60 +374,131 @@ async function showOlder() {
   drawActivity();
 }
 pages.activity = async () => { const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; live.logNext = olderCursor(d); live.logIndexed = d.coverage?.source === 'index'; live.logBusy = false; live.logErr = ''; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawActivity(); };
-pages.log = async () => { live.recall = null; const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(); };
+pages.log = async () => { live.recall = null; const d = await load('log'); if (!ok(d)) return; live.log = d.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(d.entries)?d.entries.length:null}}); drawLog(false); };
 pages.recall = async (q) => {
   const query = q || '';
   const [l, r] = await Promise.all([load('log'), query ? load('recall', { q: query }) : Promise.resolve({ results: [] })]);
   if (!ok(l)) return;
-  live.log = l.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog();
+  live.log = l.entries || []; observeTelemetry(state.space,{activity:{value:Array.isArray(l.entries)?l.entries.length:null}}); live.recall = query ? { q: query, results: r.results || [] } : null; drawLog(true);
 };
 pages.channels = async (id) => { filt('log').where = id ? 'channel:' + id : 'channel'; saveFilt(); return pages.log(); };
 
-// Knowledge keeps decisions and discussions attached to their existing sources.
+// Knowledge: Decisions & Shared Channels — why choices were made and where agents coordinate.
 pages.knowledge = async () => {
   const [d, c, fleet] = await Promise.all([load('decisions'), load('channels'), load('agents').catch(() => null)]);
   if (!ok(d) || !ok(c)) return;
-  const waiting = d.waiting || [], decided = d.decided || [];
+  const waiting = d.waiting || [], decided = d.decided || [], channels = c.channels || [];
+  const fleetAgents = Array.isArray(fleet?.agents) ? fleet.agents : [];
+  const activeAgents = fleetAgents.filter((a) => a.seen?.state === 'active').length;
   const pf = filt('knowledge:' + state.space);
   const byAgent = new Map();
   decided.forEach((row) => { const id = String(row.ask?.by || 'unknown'); byAgent.set(id, (byAgent.get(id) || 0) + 1); });
   const decisionAgents = [...byAgent.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const applyDecisionAgent = (agentId) => {
-    pf.historyAgent = pf.historyAgent === agentId ? '' : agentId; saveFilt();
-    document.querySelectorAll('[data-agent-filter]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.agentFilter === (pf.historyAgent || ''))));
-    document.querySelectorAll('.lmx-hist-card').forEach((card) => { card.hidden = Boolean(pf.historyAgent) && card.dataset.agent !== pf.historyAgent; });
-  };
   const exportAudit = () => copy(['LogMem settled decisions', `Space: ${state.space}`, ...decided.map(({ ask, answer }) => `- ${ask?.summary || 'Untitled decision'} | ${answer?.payload?.verdict || 'outcome unavailable'} | ${agentName(answer?.by)} | ${answer?.ts || 'time unavailable'} | trail ${ask?.trail || 'unavailable'}`)].join('\n'));
-  observeTelemetry(state.space,{decisions:{value:Array.isArray(d.waiting)?d.waiting.length:null}});
-  // The card you picked glows and the rest dim for three seconds. Picking another card restarts the timer.
-  const focusCard = (el) => { clearTimeout(focusCard.t); document.querySelectorAll('.lmx-focus').forEach((x) => x.classList.remove('lmx-focus')); el.classList.add('lmx-focus'); document.body.classList.add('lmx-focusing'); focusCard.t = setTimeout(() => { el.classList.remove('lmx-focus'); document.body.classList.remove('lmx-focusing'); }, 3000); };
-  const jump = (trail) => { const el = document.querySelector('[data-key="decision:' + trail + '"]'); if (!el) return; const box = el.closest('details'); if (box) box.setAttribute('open', ''); el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' }); focusCard(el); };
-  const { waiting: hot, clear } = splitDecisionRows(decisionGraph(waiting, decided)), W = 900, H = Math.max(60, hot.length * 34 + 24);
-  const tip = (row, n) => `${agentName(row.agent)}: ${n.summary || 'Untitled decision'} · ${n.ts ? ago(n.ts) : 'time unavailable'}${n.state === 'pending' ? ' · waiting for you' : ' · settled'}`;
-  const map = hot.length || clear.length ? html`<section class="lmx-neural" aria-label="Decision map"><h2 class="lmx-section-title">Decision map</h2><p class="lmx-meta">One row for each agent with something waiting. Glowing nodes wait on you. Hover a node to read it. Click a node to jump to its card. The cards below hold the same decisions.</p>
-    ${hot.length ? html`<svg viewBox=${'0 0 ' + W + ' ' + H} role="presentation" aria-hidden="true">${hot.map((row, i) => { const y = 24 + i * 34, col = agentColor(row.agent), bx = 186 + row.nodes.length * 30 + 4; return svg`<g style=${'color:' + col}><text x="6" y=${y + 4} class="lmx-neural-label">${agentName(row.agent)}</text><line x1="170" y1=${y} x2=${170 + row.nodes.length * 30} y2=${y} class="lmx-neural-line"/>${row.nodes.map((n, j) => svg`<circle cx=${186 + j * 30} cy=${y} r="8" class=${'lmx-neural-node' + (n.state === 'pending' ? ' is-pending' : '')} @click=${() => jump(n.trail)}><title>${tip(row, n)}</title></circle>`)}<rect x=${bx} y=${y - 10} width="78" height="20" rx="10" class="lmx-neural-badgebg"/><text x=${bx + 39} y=${y + 4} class="lmx-neural-badge">${row.pending} pending</text></g>`; })}</svg>` : nothing}
-    ${clear.length ? html`<p class="lmx-neural-clear"><b>All clear</b> ${clear.map((r) => html`<span class="lmx-neural-chip">${agentName(r.agent)}<i>${r.decided} settled</i></span>`)}</p>` : nothing}
-    <ul class="lmx-flowkey"><li><i data-k="pend"></i>Waiting on you</li><li><i data-k="done"></i>Settled</li></ul></section>` : nothing;
-  const histCard = ({ ask: a, answer }) => { const v = verdictLabel(answer?.payload?.verdict); return html`<article class="lmx-card lmx-hist-card" data-agent=${String(a.by || 'unknown')} data-key=${'decision:' + a.trail} ?hidden=${Boolean(pf.historyAgent) && pf.historyAgent !== String(a.by || 'unknown')}><div class="lmx-histhead"><h3>${a.summary}</h3>${v ? html`<span class="lmx-verdict" data-v=${answer.payload.verdict}>${v}</span>` : nothing}</div><div class="lmx-meta">${agentName(answer.by)} · ${answer.ts ? ago(answer.ts) : 'Timestamp unavailable'} <button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></div>${entries([answer])}<a href=${'#/discussion/decision/'+encodeURIComponent(a.trail)}>Source comments</a></article>`; };
-  const fleetAgents = Array.isArray(fleet?.agents) ? fleet.agents : [];
-  const activeAgents = fleetAgents.filter((a) => a.seen?.state === 'active').length;
-  const knowledgeHud = html`<section class="lmx-knowledge-hud" aria-label="Decision and fleet overview">
-    <div class="lmx-knowledge-hud-main">${map || emptyState('No decision map yet.', 'The map appears when this space has decision records.')}
-      <div class="lmx-spatial-node-strip" role="group" aria-label="Filter settled decisions by agent"><button type="button" class="lmx-spatial-node" data-agent-filter="" aria-pressed=${String(!pf.historyAgent)} @click=${() => applyDecisionAgent('')}><span>All agents</span><span class="lmx-count-badge">${decided.length} settled</span></button>${decisionAgents.map(([id, count]) => html`<button type="button" class="lmx-spatial-node" data-agent-filter=${id} aria-pressed=${String(pf.historyAgent === id)} @click=${() => applyDecisionAgent(id)}><span>${agentName(id)}</span><span class="lmx-count-badge">${count} settled</span></button>`)}</div>
-      <div class="lmx-hud-action-row"><span class="lmx-status-pill"><i aria-hidden="true"></i>${decided.length} settled decisions loaded</span><button type="button" class="lm-btn lm-btn--secondary" @click=${exportAudit} ?disabled=${!decided.length}>Copy decision audit</button></div>
-    </div>
-    <aside class="lmx-fleet-bonsai" aria-label="Fleet pulse"><span class="lmx-label">FLEET PULSE</span><svg viewBox="0 0 120 96" role="img" aria-label=${fleetAgents.length ? `${activeAgents} of ${fleetAgents.length} agents wrote in the last 15 minutes` : 'Fleet activity data unavailable'}><path d="M59 80V42M60 59 34 38M60 64 88 39M59 47 48 25M60 48 72 23" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M49 80h22M43 86h34" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="33" cy="35" r="11"/><circle cx="47" cy="22" r="9"/><circle cx="73" cy="20" r="10"/><circle cx="89" cy="36" r="12"/><circle cx="61" cy="43" r="13"/></svg><strong>${fleetAgents.length ? `${activeAgents} / ${fleetAgents.length}` : 'Unavailable'}</strong><span class="lmx-meta">agents wrote in the last 15 minutes</span><span class="lmx-meta">${waiting.length} decisions need review</span></aside>
-  </section>`;
-  renderView('knowledge', ['Knowledge'], html`${head('Knowledge', 'Find the reason behind the work. Decisions and discussions stay linked to their sources.')}
-    <div class="lmx-map-layout" data-map-page="knowledge"><div class="lmx-map-canvas">${knowledgeHud}</div><div class="lmx-map-detail">
-    <p class="lmx-meta">Decisions come from a bounded source window. An empty result does not prove there are no older decisions.</p>
-    <div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" href="#/activity">Browse Activity</a><a class="lm-btn lm-btn--secondary" href="#/plans">Plans</a><a class="lm-btn lm-btn--secondary" href="#/recall">Search shared memory</a><a class="lm-btn lm-btn--secondary" href="#/channels/fleet-truth">Fleet truth</a></div>
-    <section class="lmx-stack lmx-decisions" aria-label="Waiting decisions"><h2 class="lmx-section-title">Waiting decisions <span>${waiting.length}</span></h2>
-      ${waiting.length ? keyed(waiting, a => a.trail, a => canAnswerDecision(a, {person:d.person,canApprove:!state.customer||Boolean(d.permissions?.approve)}) ? askCard(a) : html`<article class="lmx-card"><h3>${a.summary}</h3><p class="lmx-meta">${a.to ? 'Requested from '+agentName(a.to) : 'Approval permission required'}. This request is read-only here.</p><p>${a.payload?.action || 'Open the source for details.'}</p><a href=${'#/discussion/decision/'+encodeURIComponent(a.trail)}>Source comments</a></article>`) : emptyState('No waiting decisions were returned.', 'Open Inbox for requests between agents and people.')}</section></div></div>
-    <section class="lmx-stack" aria-label="Decision history"><h2 class="lmx-section-title">Decision history <span>${decided.length}</span></h2>
-      ${decided.length ? groupDecisions(decided).map((g) => html`<details class="lmx-bucket" ?open=${g.label === 'Today'}><summary>${g.label} <span>${g.items.length}</span></summary><div class="lmx-stack">${g.items.map(histCard)}</div></details>`) : emptyState('No settled decisions were returned.', 'Settled decisions appear when a verified answer matches the original request.')}</section>
-    <section class="lmx-stack" aria-label="Shared discussions"><h2 class="lmx-section-title">Shared discussions</h2>
-      ${(c.channels || []).length ? (c.channels || []).map(ch => html`<article class="lmx-card"><h3><a href=${'#/channels/'+encodeURIComponent(ch.id)}>${ch.id}</a></h3><p>${ch.last?.summary || 'No recent entry was returned.'}</p><div class="lmx-meta">${ch.last?.by ? agentName(ch.last.by) : 'Author unavailable'}${ch.last?.ts ? ' · '+ago(ch.last.ts) : ''}</div><a href=${'#/channels/'+encodeURIComponent(ch.id)}>Read source entries →</a></article>`) : emptyState('No discussion channels were returned.', 'Source discussions appear here when they exist in this space.')}</section>`);
+  observeTelemetry(state.space, { decisions: { value: Array.isArray(d.waiting) ? d.waiting.length : null } });
+
+  const defaultTab = waiting.length ? 'waiting' : decided.length ? 'settled' : 'channels';
+  const draw = () => {
+    const tab = ['waiting', 'settled', 'channels'].includes(pf.tab) ? pf.tab : defaultTab;
+    const setTab = (k) => { pf.tab = k; saveFilt(); draw(); };
+    const q = String(pf.q || '').trim().toLowerCase();
+    const filteredDecided = decided.filter(({ ask, answer }) => {
+      if (pf.historyAgent && String(ask?.by || 'unknown') !== pf.historyAgent) return false;
+      if (!q) return true;
+      return [ask?.summary, ask?.by, answer?.summary, answer?.by, answer?.payload?.verdict].filter(Boolean).join(' ').toLowerCase().includes(q);
+    });
+    const histCard = ({ ask: a, answer }) => {
+      const v = verdictLabel(answer?.payload?.verdict);
+      return html`<article class="lm-kn-card lmx-hist-card" data-agent=${String(a.by || 'unknown')} data-key=${'decision:' + a.trail}>
+        <div class="lmx-histhead">
+          <h3>${a.summary}</h3>
+          ${v ? html`<span class="lmx-verdict" data-v=${answer.payload.verdict}>${v}</span>` : nothing}
+        </div>
+        <div class="lmx-meta">${agentName(answer.by)} · ${answer.ts ? ago(answer.ts) : 'Timestamp unavailable'} <button type="button" class="lmx-idchip" title=${'Copy ' + a.trail} @click=${() => copy(a.trail)}>trail:…${String(a.trail).slice(-8)}</button></div>
+        ${entries([answer])}
+        <a class="lm-kn-link" href=${'#/discussion/decision/' + encodeURIComponent(a.trail)}>Source comments →</a>
+      </article>`;
+    };
+
+    const { waiting: hot, clear } = splitDecisionRows(decisionGraph(waiting, decided));
+    renderView('knowledge', ['Knowledge'], html`
+      <header class="lmx-pageheader">
+        <div>
+          <span class="lm-eyebrow">Decision log &amp; shared channels</span>
+          <h1>Knowledge</h1>
+          <p class="lmx-meta" style="margin:4px 0 0">The institutional memory of this space: open approvals, settled decisions with audit trails, and shared agent channels.</p>
+        </div>
+        <div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/recall">Search shared memory</a><a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/channels/fleet-truth">Fleet truth</a></div>
+      </header>
+
+      <section class="lm-kpi-strip" aria-label="Knowledge summary">
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'waiting')} @click=${() => setTab('waiting')}><span class="lm-kpi-lbl">Waiting decisions</span><span class="lm-kpi-val">${waiting.length}</span><span class="lm-kpi-sub">awaiting sign-off</span></button>
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'settled')} @click=${() => setTab('settled')}><span class="lm-kpi-lbl">Settled archive</span><span class="lm-kpi-val">${decided.length}</span><span class="lm-kpi-sub">recorded verdicts</span></button>
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'channels')} @click=${() => setTab('channels')}><span class="lm-kpi-lbl">Shared channels</span><span class="lm-kpi-val">${channels.length}</span><span class="lm-kpi-sub">topic streams</span></button>
+        <div class="lm-kpi-cell"><span class="lm-kpi-lbl">Active writers</span><span class="lm-kpi-val">${fleetAgents.length ? `${activeAgents}/${fleetAgents.length}` : '—'}</span><span class="lm-kpi-sub">wrote in last 15 min</span></div>
+      </section>
+
+      <section class="lm-ctabs" aria-label="Knowledge sections">
+        <div class="lm-ctabs-bar">
+          <div class="lm-ctabs-list" role="tablist" aria-label="Knowledge tabs">
+            <button type="button" role="tab" class="lm-ctabs-btn" aria-selected=${String(tab === 'waiting')} @click=${() => setTab('waiting')}>Waiting Decisions <span class="lm-ctabs-count">${waiting.length}</span></button>
+            <button type="button" role="tab" class="lm-ctabs-btn" aria-selected=${String(tab === 'settled')} @click=${() => setTab('settled')}>Settled Archive <span class="lm-ctabs-count">${decided.length}</span></button>
+            <button type="button" role="tab" class="lm-ctabs-btn" aria-selected=${String(tab === 'channels')} @click=${() => setTab('channels')}>Shared Channels <span class="lm-ctabs-count">${channels.length}</span></button>
+          </div>
+          <div class="lm-ar-head-right">
+            <button type="button" class="lm-btn lm-btn--secondary" @click=${exportAudit} ?disabled=${!decided.length}>Copy decision audit</button>
+          </div>
+        </div>
+
+        <div class="lm-ctabs-panel">
+          ${tab === 'waiting' ? html`
+            ${hot.length || clear.length ? html`<div class="lm-kn-strip">
+              ${hot.map((r) => html`<span class="lm-kn-agentchip is-hot"><strong>${agentName(r.agent)}</strong> <span>${r.pending} waiting</span></span>`)}
+              ${clear.map((r) => html`<span class="lm-kn-agentchip"><strong>${agentName(r.agent)}</strong> <span>${r.decided} settled</span></span>`)}
+            </div>` : nothing}
+            ${waiting.length
+              ? html`<div class="lmx-stack">${keyed(waiting, a => a.trail, a => canAnswerDecision(a, { person: d.person, canApprove: !state.customer || Boolean(d.permissions?.approve) }) ? askCard(a) : html`<article class="lm-kn-card"><h3>${a.summary}</h3><p class="lmx-meta">${a.to ? 'Requested from ' + agentName(a.to) : 'Approval permission required'}. This request is read-only here.</p><p>${a.payload?.action || 'Open the source for details.'}</p><a class="lm-kn-link" href=${'#/discussion/decision/' + encodeURIComponent(a.trail)}>Source comments →</a></article>`)}</div>`
+              : emptyState('No waiting decisions right now.', 'When an agent asks for approval via logmem_ask, it appears here and in Inbox.')}
+          ` : nothing}
+
+          ${tab === 'settled' ? html`
+            <div class="lm-ftbar" role="region" aria-label="Filter settled decisions">
+              <div class="lm-ftbar-pills" role="group" aria-label="Filter settled decisions by agent">
+                <button type="button" class="lm-ftbar-pill" aria-pressed=${String(!pf.historyAgent)} @click=${() => { pf.historyAgent = ''; saveFilt(); draw(); }}>All agents <span>${decided.length}</span></button>
+                ${decisionAgents.map(([id, count]) => html`<button type="button" class="lm-ftbar-pill" aria-pressed=${String(pf.historyAgent === id)} @click=${() => { pf.historyAgent = pf.historyAgent === id ? '' : id; saveFilt(); draw(); }}>${agentName(id)} <span>${count}</span></button>`)}
+              </div>
+              <div class="lm-ftbar-right">
+                <label class="lmx-chat-sr" for="knowledge-search">Search decisions</label>
+                <input id="knowledge-search" type="search" class="lm-ftbar-search" placeholder="Search settled decisions…" .value=${pf.q || ''} @input=${(e) => { pf.q = e.currentTarget.value; draw(); }}>
+                ${pf.historyAgent || pf.q ? html`<button type="button" class="lm-ftbar-clear" @click=${() => { pf.historyAgent = ''; pf.q = ''; saveFilt(); draw(); }}>Clear</button>` : nothing}
+              </div>
+            </div>
+            ${filteredDecided.length
+              ? groupDecisions(filteredDecided).map((g) => html`<section class="lm-kn-group"><h3 class="lm-kn-dayhead">${g.label} <span class="mono">${g.items.length}</span></h3><div class="lm-kn-grid">${g.items.map(histCard)}</div></section>`)
+              : emptyState(decided.length ? 'No decisions match this filter.' : 'No settled decisions yet.', decided.length ? 'Clear the search or pick All agents.' : 'Settled decisions appear once an approval request is answered.')}
+          ` : nothing}
+
+          ${tab === 'channels' ? html`
+            ${channels.length
+              ? html`<div class="lm-kn-grid">${channels.map((ch) => html`<article class="lm-kn-card">
+                  <div class="lmx-histhead">
+                    <h3><a href=${'#/channels/' + encodeURIComponent(ch.id)}>#${ch.id}</a></h3>
+                    ${ch.id === 'fleet-truth' ? html`<span class="lm-badge lm-badge--brand">Truth Board</span>` : nothing}
+                  </div>
+                  <p class="lm-kn-sum">${ch.last?.summary || 'No recent entry was returned.'}</p>
+                  <div class="lm-kn-foot">
+                    <span class="lmx-meta">${ch.last?.by ? agentName(ch.last.by) : 'Author unavailable'}${ch.last?.ts ? ' · ' + ago(ch.last.ts) : ''}</span>
+                    <a class="lm-kn-link" href=${'#/channels/' + encodeURIComponent(ch.id)}>${ch.id === 'fleet-truth' ? 'Open board →' : 'Read channel →'}</a>
+                  </div>
+                </article>`)}</div>`
+              : emptyState('No shared channels yet.', 'Topic streams appear here when agents post notes to a channel.')}
+          ` : nothing}
+        </div>
+      </section>
+      <p class="lmx-meta">Decisions come from a bounded source window. Use <a href="#/recall">Recall</a> to search older shared memory.</p>
+    `);
+  };
+  draw();
 };
 
 // ─── Admin pages ─────────────────────────────────────────────────────
@@ -397,49 +540,113 @@ pages.slots = async (date) => {
 async function auditPage(route = 'audit') {
   const d = await load('audit');
   if (!ok(d)) return;
-  const pf=filt('health:'+state.space);
-  const observedAudit=d.days?.at(-1);
-  observeTelemetry(state.space,{mirror:{value:d.source_status?.audit==='error'||observedAudit?.mirror_checked===false?null:typeof observedAudit?.mirror_mismatches==='number'?observedAudit.mirror_mismatches:null,label:d.source_status?.audit==='error'?'Unavailable':observedAudit?.mirror_checked===false?'Not enabled':'Unknown'}});
-  const draw=()=>{
-  const g = d.gate || {}, last7 = (d.days || []).slice(-7), earliest = earliestPass(d.days, g);
-  const strip = Array.from({ length: 7 }, (_, i) => { const x = last7[i - (7 - last7.length)]; const st = !x ? 'background:var(--surface-sunken);color:var(--text-subtle)' : x.pass ? 'background:var(--success-subtle);color:var(--success)' : 'background:var(--danger-subtle);color:var(--danger)'; return html`<div style=${'display:flex;flex-direction:column;align-items:center;padding:10px 4px;border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;' + st}><span>${x ? x.date.slice(5) : '—'}</span><span>${x ? (x.paused ? 'PAUSED' : x.pass===true ? 'PASS' : x.pass===false ? 'FAIL' : 'UNKNOWN') : '—'}</span></div>`; });
-  const rows = auditDays(d.days||[],pf.auditFilter||'all');
-  // The coordination queue: open handoffs, seats and directed requests, sorted by how overdue they are.
-  const q = d.pending || { items: [], total: 0, counts: {} };
-  const c = q.counts || {};
-  const queueItems=q.items||[],filtered=healthQueueItems(queueItems,pf.queueFilter||'all');
-  const activeQueue=filtered.filter(i=>!isStaleTicket(i));
-  const staleQueue=filtered.filter(i=>isStaleTicket(i));
-  const selectQueue=filter=>{pf.queueFilter=filter;saveFilt();draw();document.getElementById('health-queue')?.scrollIntoView({block:'nearest'});};
-  const selectAudit=filter=>{pf.auditFilter=filter;saveFilt();draw();document.getElementById('health-history')?.scrollIntoView({block:'nearest'});};
-  const queue = html`<section class="lmx-stack" id="health-queue">
-    <h2 class="lmx-section-title">Requests waiting for a reply <span>${num(q.total)}</span></h2>
-    <p class="muted" style="font-size:13px">${num(c.handoffs)} handoffs · ${num(c.seats)} seats · ${num(c.directed)} directed · ${num(c.overdue)} overdue · coverage ${d.coverage || 'partial'}. Sorted by how overdue they are.</p>
-    ${d.coverage !== 'full' ? html`<section class="lmx-coverage-note"><strong>Older requests still need indexing</strong><p>Saved requests remain in their source logs. This list combines indexed requests with recent source handoffs.</p><p>Run verified history indexing before treating this as the full backlog. Indexed requests support manager resolution in Inbox.</p></section>` : nothing}
-    <div class="lmx-health-filters" role="group" aria-label="Request filters">${[['all','All',queueItems.length],['overdue','Overdue',queueItems.filter(i=>overdueRequest(i)).length],['unindexed','Not indexed',queueItems.filter(unindexedRequest).length]].map(([value,label,count])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String((pf.queueFilter||'all')===value)} @click=${()=>selectQueue(value)}>${label} (${count})</button>`)}<span class="lmx-meta">Filters cover loaded records.</span></div>
-    <p class="lmx-meta">${!pf.queueFilter||pf.queueFilter==='all'?'Showing '+queueItems.length+' of '+num(q.total)+' returned records.':'Showing '+filtered.length+' matching records from '+queueItems.length+' loaded. '+num(q.total)+' reported in total.'}</p>
-    ${activeQueue.length?html`<div class="lmx-health-requests">${activeQueue.map(item=>healthRequestRow(item,state.space))}</div>`:emptyState(queueItems.length?(staleQueue.length?'Active queue is clear. Older overdue requests are in the backlog drawer below.':'No loaded records match this filter.'):'No open records were returned.',queueItems.length?(staleQueue.length?'Older overdue records are collapsed in the archive drawer below.':'Choose another filter.'):d.coverage==='full'?'No unanswered handoffs, seats or directed requests were found.':'Check coverage before treating this as an empty backlog.')}
-    ${staleQueue.length?html`<details class="lmx-coverage lmx-stale-drawer" aria-label="Older overdue requests backlog"><summary><strong>Older overdue requests (${staleQueue.length})</strong><span class="lmx-meta">Overdue for more than 48 hours</span></summary><div class="lmx-health-requests" style="margin-top:12px">${staleQueue.map(item=>healthRequestRow(item,state.space))}</div></details>`:nothing}
-    <a class="lm-btn lm-btn--secondary" href="#/queue">Review requests in Inbox</a>
-    ${(d.data_errors || []).length ? html`<p class="muted" style="font-size:12px">${d.data_errors.length} data error(s) flagged: ${d.data_errors.slice(0, 3).map((e) => e.type).join(', ')}</p>` : nothing}</section>`;
-  const runs = d.slots || [];
-  const runState = (slot) => {
-    const value = slot?.state || 'unknown';
-    const tone = value === 'pass' ? 'success' : ['failed', 'missed'].includes(value) ? 'danger' : 'neutral';
-    return html`<span class=${'lm-badge lm-badge--' + tone}>${value}</span><span class="lmx-meta"> · ${num(slot?.attempts?.length || 0)} attempts</span>`;
-  };
-  const recordedRuns = runs.filter(a => Object.values(a.slots || {}).some(slot => slot?.attempts?.length));
-  const latestAudit = d.days?.at(-1);
-  const mirrorValue = d.source_status?.audit === 'error' ? 'Unavailable' : !latestAudit ? 'Unknown' : latestAudit.mirror_checked === false ? 'Not enabled' : latestAudit.mirror_mismatches;
-  const runRows = recordedRuns.map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td><td>${a.date || 'Unknown date'}</td>${['morning', 'midday', 'closeout'].map((slot) => html`<td>${runState(a.slots?.[slot])}</td>`)}</tr>`);
-  const dailyRuns = html`<details class="lmx-coverage" aria-label="Saved coordination checks"><summary>Saved coordination checks (${recordedRuns.length} agents)</summary>
-    <p>These are saved receipts. This page has no scheduler connection and does not start agent runs.</p>
-    ${d.source_status?.receipts === 'error' ? html`<p role="alert">Receipt storage could not be read. Retry this page.</p>` : runRows.length ? table(['Agent', 'Date', 'Morning', 'Midday', 'Closeout'], runRows) : html`<p>No coordination receipts were saved for this date. Agent execution and scheduling need a separate runner.</p>`}
-    <a href="#/slots">Open receipt calendar</a></details>`;
-  renderView(route, [route === 'health' ? 'Health' : 'Audit'], html`${route === 'health' ? html`${head('Health', 'See missing receipts and unresolved coordination before work falls through.')}<div class="lmx-cockpit-links"><a class="lm-btn lm-btn--secondary" href="#/slots">Daily receipt calendar</a><a class="lm-btn lm-btn--secondary" href="#/activity">Activity</a><a class="lm-btn lm-btn--secondary" href="#/agents">Team records</a></div><section class="lmx-health-metrics" aria-label="Coordination health summary">${[['Requests waiting',q.total,'all'],['Overdue responses',c.overdue,'overdue'],['Agents with saved checks',d.source_status?.receipts==='error'?'Unavailable':recordedRuns.length,'receipts'],['Missing compatibility copies',mirrorValue,'mirror']].map(([label,value,filter])=>html`<button type="button" data-tone=${filter} @click=${()=>{if(filter==='receipts'){const el=document.querySelector('[aria-label="Saved coordination checks"]');if(el){el.open=true;el.scrollIntoView({block:'nearest'});}}else if(filter==='mirror')selectAudit('mirror');else selectQueue(filter);}}><strong>${value??'Unknown'}</strong><span>${label}</span></button>`)}</section><p class="lmx-meta">Updated ${d.generated_at ? hhmm(d.generated_at) : 'with this request'} · ${d.coverage || 'partial'} index coverage. Mirror counts describe the latest audit window.</p><details class="lmx-coverage"><summary>About missing compatibility copies</summary>${d.source_status?.audit === 'error' ? html`<p role="alert">Audit history could not be read. Retry this page.</p>` : latestAudit ? html`<p>Audit date: ${latestAudit.date}. ${latestAudit.window ? 'Window: '+new Date(latestAudit.window[0]).toLocaleString()+' to '+new Date(latestAudit.window[1]).toLocaleString()+'.' : 'The saved audit has no exact window metadata.'}</p><p>This counts log rows without an ACMI copy in that window. It does not measure a cumulative backlog or prove the original LogMem entry was lost.</p><p>Intentional mirror opt-outs: ${num(latestAudit.mirror_opt_out)}. Diagnose the writer policy and retry queue before replaying records.</p>` : html`<p>No audit result is available.</p>`}</details><details class="lmx-coverage"><summary>Runtime, billing and usage coverage</summary><p>This page has no live provider usage, billing, runner or schedule feed. Receipt records show saved checks only.</p></details>` : nothing}${queue}${dailyRuns}${head('Audit', 'The daily check that nothing was lost or left hanging. Each run writes a checkup entry to job:logmem-dogfood.')}${route === 'audit' ? viewOnlyNote(AUDIT_NOTE) : nothing}
-    <section class="lm-panel" style="padding:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center"><div style="flex:1 1 280px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">7-day gate</span><span style="font-size:22px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span><span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span>${earliest?html`<span class="lmx-earliest" style="font-size:13px">${earliest.restart?html`The run restarts ${earliest.restart}. `:nothing}Earliest pass: <strong>${earliest.earliest}</strong>, if every day passes.</span>`:nothing}</div>
-      <div style="flex:2 1 420px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${strip}</div><div style="flex:1 1 200px;display:flex;flex-direction:column;gap:6px"><span class="lm-eyebrow">Deliverable</span>${stage((d.deliverable || {}).stage)}<span class="mono subtle" style="font-size:12px">job:${(d.deliverable || {}).job || ''}</span></div></section>
-    <section id="health-history"><h2 class="lmx-section-title">Audit history</h2><div class="lmx-filter" role="group" aria-label="Audit failure filters">${[['all','All days'],['mirror','Missing copies'],['unanswered','Unanswered'],['degraded','Degraded']].map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String((pf.auditFilter||'all')===value)} @click=${()=>selectAudit(value)}>${label} (${auditDays(d.days||[],value).length})</button>`)}</div><div class="lmx-audit-history">${rows.length?rows.map(day=>auditBreakdownCard(day)):emptyState((d.days||[]).length?'No saved days match this filter.':'No checks yet.',(d.days||[]).length?'Choose All days to inspect every returned audit.':'The first daily check writes its result here.')}</div></section>`);
+  const pf = filt('health:' + state.space);
+  const observedAudit = d.days?.at(-1);
+  observeTelemetry(state.space, { mirror: { value: d.source_status?.audit === 'error' || observedAudit?.mirror_checked === false ? null : typeof observedAudit?.mirror_mismatches === 'number' ? observedAudit.mirror_mismatches : null, label: d.source_status?.audit === 'error' ? 'Unavailable' : observedAudit?.mirror_checked === false ? 'Not enabled' : 'Unknown' } });
+  const draw = () => {
+    const g = d.gate || {}, last7 = (d.days || []).slice(-7), earliest = earliestPass(d.days, g);
+    const strip = Array.from({ length: 7 }, (_, i) => { const x = last7[i - (7 - last7.length)]; const st = !x ? 'background:var(--surface-sunken);color:var(--text-subtle)' : x.pass ? 'background:var(--success-subtle);color:var(--success)' : 'background:var(--danger-subtle);color:var(--danger)'; return html`<div style=${'display:flex;flex-direction:column;align-items:center;padding:10px 4px;border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;' + st}><span>${x ? x.date.slice(5) : '—'}</span><span>${x ? (x.paused ? 'PAUSED' : x.pass === true ? 'PASS' : x.pass === false ? 'FAIL' : 'UNKNOWN') : '—'}</span></div>`; });
+    const rows = auditDays(d.days || [], pf.auditFilter || 'all');
+    const q = d.pending || { items: [], total: 0, counts: {} };
+    const c = q.counts || {};
+    const queueItems = q.items || [], filtered = healthQueueItems(queueItems, pf.queueFilter || 'all');
+    const activeQueue = filtered.filter(i => !isStaleTicket(i));
+    const staleQueue = filtered.filter(i => isStaleTicket(i));
+    const runs = d.slots || [];
+    const runState = (slot) => {
+      const value = slot?.state || 'unknown';
+      const tone = value === 'pass' ? 'success' : ['failed', 'missed'].includes(value) ? 'danger' : 'neutral';
+      return html`<span class=${'lm-badge lm-badge--' + tone}>${value}</span><span class="lmx-meta"> · ${num(slot?.attempts?.length || 0)} attempts</span>`;
+    };
+    const recordedRuns = runs.filter(a => Object.values(a.slots || {}).some(slot => slot?.attempts?.length));
+    const latestAudit = d.days?.at(-1);
+    const mirrorValue = d.source_status?.audit === 'error' ? 'Unavailable' : !latestAudit ? 'Unknown' : latestAudit.mirror_checked === false ? 'Not enabled' : latestAudit.mirror_mismatches;
+    const runRows = recordedRuns.map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td><td>${a.date || 'Unknown date'}</td>${['morning', 'midday', 'closeout'].map((slot) => html`<td>${runState(a.slots?.[slot])}</td>`)}</tr>`);
+
+    const defaultTab = route === 'audit' ? 'audit' : 'requests';
+    const tab = ['requests', 'audit', 'receipts'].includes(pf.tab) ? pf.tab : defaultTab;
+    const setTab = (k) => { pf.tab = k; saveFilt(); draw(); };
+    const selectQueue = (filter) => { pf.tab = 'requests'; pf.queueFilter = filter; saveFilt(); draw(); };
+    const selectAudit = (filter) => { pf.tab = 'audit'; pf.auditFilter = filter; saveFilt(); draw(); };
+
+    renderView(route, [route === 'health' ? 'Health' : 'Audit'], html`
+      <header class="lmx-pageheader">
+        <div>
+          <span class="lm-eyebrow">Updated ${d.generated_at ? hhmm(d.generated_at) : 'with this request'} · ${d.coverage || 'partial'} index coverage</span>
+          <h1>${route === 'health' ? 'Health' : 'Audit'}</h1>
+          <p class="lmx-meta" style="margin:4px 0 0">${route === 'health' ? 'Missing receipts, overdue handoffs, and daily coordination audits in one view.' : 'The daily check that nothing was lost or left hanging.'}</p>
+        </div>
+        <div class="lmx-cockpit-links">
+          <a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/channels/fleet-truth">Fleet truth</a>
+          <a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/slots">Daily slots</a>
+          <a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/queue">Inbox</a>
+        </div>
+      </header>
+      ${route === 'audit' ? viewOnlyNote(AUDIT_NOTE) : nothing}
+
+      <section class="lm-kpi-strip" aria-label="Coordination health summary">
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'requests' && (pf.queueFilter || 'all') === 'all')} @click=${() => selectQueue('all')}><span class="lm-kpi-lbl">Requests waiting</span><span class="lm-kpi-val">${num(q.total)}</span><span class="lm-kpi-sub">${num(c.handoffs)} handoffs · ${num(c.directed)} directed</span></button>
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'requests' && pf.queueFilter === 'overdue')} @click=${() => selectQueue('overdue')}><span class="lm-kpi-lbl">Overdue responses</span><span class="lm-kpi-val">${num(c.overdue)}</span><span class="lm-kpi-sub">past reply deadline</span></button>
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'receipts')} @click=${() => setTab('receipts')}><span class="lm-kpi-lbl">Saved checks</span><span class="lm-kpi-val">${d.source_status?.receipts === 'error' ? 'Err' : recordedRuns.length}</span><span class="lm-kpi-sub">agents with receipts</span></button>
+        <button type="button" class="lm-kpi-cell lm-ft-kpi-btn" aria-pressed=${String(tab === 'audit' && pf.auditFilter === 'mirror')} @click=${() => selectAudit('mirror')}><span class="lm-kpi-lbl">Mirror gaps</span><span class="lm-kpi-val">${mirrorValue ?? '—'}</span><span class="lm-kpi-sub">latest audit window</span></button>
+      </section>
+
+      <section class="lm-ctabs" aria-label="Health & Audit views">
+        <div class="lm-ctabs-bar">
+          <div class="lm-ctabs-list" role="tablist" aria-label="Health sections">
+            <button type="button" role="tab" class="lm-ctabs-btn" aria-selected=${String(tab === 'requests')} @click=${() => setTab('requests')}>Waiting Requests <span class="lm-ctabs-count">${num(q.total)}</span></button>
+            <button type="button" role="tab" class="lm-ctabs-btn" aria-selected=${String(tab === 'audit')} @click=${() => setTab('audit')}>7-Day Gate &amp; Audit <span class="lm-ctabs-count">${(d.days || []).length}</span></button>
+            <button type="button" role="tab" class="lm-ctabs-btn" aria-selected=${String(tab === 'receipts')} @click=${() => setTab('receipts')}>Saved Receipts <span class="lm-ctabs-count">${recordedRuns.length}</span></button>
+          </div>
+          <a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/queue">Open Inbox →</a>
+        </div>
+
+        <div class="lm-ctabs-panel">
+          ${tab === 'requests' ? html`
+            <div class="lm-ftbar" id="health-queue">
+              <div class="lm-ftbar-pills" role="group" aria-label="Request filters">
+                ${[['all', 'All', queueItems.length], ['overdue', 'Overdue', queueItems.filter(i => overdueRequest(i)).length], ['unindexed', 'Not indexed', queueItems.filter(unindexedRequest).length]].map(([value, label, count]) => html`<button type="button" class="lm-ftbar-pill" aria-pressed=${String((pf.queueFilter || 'all') === value)} @click=${() => selectQueue(value)}>${label} <span>${count}</span></button>`)}
+              </div>
+              <span class="lmx-meta">${filtered.length} matching of ${queueItems.length} loaded (${num(q.total)} total)</span>
+            </div>
+            ${d.coverage !== 'full' ? html`<div class="lmx-coverage-note"><strong>Partial index coverage:</strong> combines indexed requests with recent source handoffs. Run history indexing before treating this as the complete backlog.</div>` : nothing}
+            ${activeQueue.length ? html`<div class="lmx-health-requests">${activeQueue.map(item => healthRequestRow(item, state.space))}</div>` : emptyState(queueItems.length ? (staleQueue.length ? 'Active queue is clear; older overdue requests are shown below.' : 'No loaded records match this filter.') : 'No open records were returned.', queueItems.length ? 'Choose another filter.' : 'No unanswered handoffs, seats, or directed requests were found.')}
+            ${staleQueue.length ? html`<section class="lmx-stack" aria-label="Older overdue requests backlog"><h3 class="lm-kn-dayhead">Older overdue backlog (&gt;48h) <span class="mono">${staleQueue.length}</span></h3><div class="lmx-health-requests">${staleQueue.map(item => healthRequestRow(item, state.space))}</div></section>` : nothing}
+            ${(d.data_errors || []).length ? html`<p class="muted" style="font-size:12px">${d.data_errors.length} data error(s) flagged: ${d.data_errors.slice(0, 3).map((e) => e.type).join(', ')}</p>` : nothing}
+          ` : nothing}
+
+          ${tab === 'audit' ? html`
+            <section class="lm-plain-panel" style="display:flex;flex-wrap:wrap;gap:20px;align-items:center">
+              <div style="flex:1 1 260px;display:flex;flex-direction:column;gap:6px">
+                <span class="lm-eyebrow">7-day gate</span>
+                <span style="font-size:20px;font-weight:600">${g.pass ? 'Pass' : `Not yet: ${g.days_passing || 0} of last 7 passing`}</span>
+                <span style="font-size:13px" class="muted">Needs 7 consecutive passing days and the deliverable done.</span>
+                ${earliest ? html`<span class="lmx-earliest" style="font-size:13px">${earliest.restart ? html`The run restarts ${earliest.restart}. ` : nothing}Earliest pass: <strong>${earliest.earliest}</strong>, if every day passes.</span>` : nothing}
+              </div>
+              <div style="flex:2 1 400px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${strip}</div>
+              <div style="flex:1 1 180px;display:flex;flex-direction:column;gap:6px">
+                <span class="lm-eyebrow">Deliverable</span>
+                ${stage((d.deliverable || {}).stage)}
+                <span class="mono subtle" style="font-size:12px">job:${(d.deliverable || {}).job || ''}</span>
+              </div>
+            </section>
+            <div class="lm-ftbar" id="health-history">
+              <div class="lm-ftbar-pills" role="group" aria-label="Audit failure filters">
+                ${[['all', 'All days'], ['mirror', 'Missing copies'], ['unanswered', 'Unanswered'], ['degraded', 'Degraded']].map(([value, label]) => html`<button type="button" class="lm-ftbar-pill" aria-pressed=${String((pf.auditFilter || 'all') === value)} @click=${() => selectAudit(value)}>${label} <span>${auditDays(d.days || [], value).length}</span></button>`)}
+              </div>
+              <span class="lmx-meta">${latestAudit ? `Latest audit: ${latestAudit.date} · opt-outs: ${num(latestAudit.mirror_opt_out)}` : 'No audit yet'}</span>
+            </div>
+            <div class="lmx-audit-history">${rows.length ? rows.map(day => auditBreakdownCard(day)) : emptyState((d.days || []).length ? 'No saved days match this filter.' : 'No checks yet.', (d.days || []).length ? 'Choose All days to inspect every returned audit.' : 'The first daily check writes its result here.')}</div>
+          ` : nothing}
+
+          ${tab === 'receipts' ? html`
+            <p class="lmx-meta" style="margin:0">Saved coordination receipts only — this page has no live runner, scheduler, or provider billing feed.</p>
+            ${d.source_status?.receipts === 'error' ? html`<p role="alert">Receipt storage could not be read. Retry this page.</p>` : runRows.length ? table(['Agent', 'Date', 'Morning', 'Midday', 'Closeout'], runRows) : emptyState('No coordination receipts saved for this date.', 'Agent execution and scheduling run in a separate runner.')}
+            <div><a class="lm-btn lm-btn--secondary" style="text-decoration:none" href="#/slots">Open receipt calendar →</a></div>
+          ` : nothing}
+        </div>
+      </section>
+    `);
   };
   draw();
 }
