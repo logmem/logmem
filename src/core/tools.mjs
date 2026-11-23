@@ -45,7 +45,6 @@ const KIND_WORDS = Object.keys(KINDS);
 const NOTE_KINDS = KIND_WORDS.filter((k) => !["decided", "accepted", "handoff"].includes(k));
 
 const clock = (ctx) => (ctx.now || Date.now)();
-const WEEK_MS = 7 * 86400e3;
 
 // ─── Write limits (S7) ───────────────────────────────────────────────────
 export const LIMITS = { summary: 1000, action: 4000, payload: 16 * 1024, trail: 200 };
@@ -638,14 +637,14 @@ async function brief(ctx, agent, opts = {}) {
   const s = ctx.store;
   const mode = opts.mode || "quiet";
   const nowMs = clock(ctx);
-  const [who, now, log, recap, follows, shifts, week] = await Promise.all([
+  // Pending asks and handoffs are durable; keep the full log for their projection.
+  const [who, now, log, recap, follows, shifts] = await Promise.all([
     s.getWho("agent", a),
     s.getNow("agent", a),
-    s.readLog("agent", a, { reverse: true, limit: 200 }),
+    s.readLog("agent", a, { reverse: true }),
     s.getRecap(a),
     s.follows(a),
     s.recentShifts(a, 5),
-    s.readLog("agent", a, { reverse: true, sinceMs: nowMs - WEEK_MS, limit: 2000 }),
   ]);
   const settled = new Set(
     log.filter((e) => e.origin && handoffSettlement(e.kind, e.payload)).map((e) => e.origin),
@@ -654,7 +653,7 @@ async function brief(ctx, agent, opts = {}) {
   try {
     const openItems = await listOpenCoordItemsForAgent(s, s.space, a);
     if (openItems && openItems.length > 0) {
-      const indexWaiting = openItems.map((item) => ({
+      const indexWaiting = openItems.filter((item) => !settled.has(item.request_trail)).map((item) => ({
         kind: "handoff",
         summary: item.summary,
         trail: item.request_trail,
@@ -670,17 +669,17 @@ async function brief(ctx, agent, opts = {}) {
     }
   } catch (_) {}
   const verify = { secret: decideSecret(ctx), space: s.space };
-  const state = await askState(s, week);
+  const state = await askState(s, log);
   // A local signing key can be stale after rotation. Ask the trusted server
   // about rows it rejects, as well as when this process has no signing key.
-  const decisions = [...week, ...log.slice(0, 20), ...state.claims.values()];
+  const decisions = [...log, ...state.claims.values()];
   const needsRemote = !usableSecret(verify.secret) || decisions.some((e) =>
     e?.kind === "decided" && !verifyDecision(e, { secret: verify.secret, space: s.space }));
   if (needsRemote && ctx.verifyUrl) {
     verify.remote = await remoteVerified(decisions, { space: s.space, url: ctx.verifyUrl, fetchImpl: ctx.fetchImpl });
   }
   const tasks = await blockersFrom(s, agentRef(a));
-  const asks = asksOf(a, week, { ...verify, ...state });
+  const asks = asksOf(a, log, { ...verify, ...state });
   // A brief is a briefing, not a snapshot: say what changed, what is stale, and what to do first.
   const boundary = sinceLastShift(shifts, nowMs);
   const [delta, stale] = await Promise.all([sinceDelta(s, a, follows, log, boundary), staleNow(s, a, now)]);
@@ -695,7 +694,7 @@ async function brief(ctx, agent, opts = {}) {
     recap,
     follows,
     // A decided row that does not verify against its canonical ask is still shown, marked unverified: it is not an answer.
-    log: annotateDecisions(log.slice(0, 20), { ...verify, canon: canonicalAsks(week, state.registry) }),
+    log: annotateDecisions(log.slice(0, 20), { ...verify, canon: canonicalAsks(log, state.registry) }),
     handoffs_to_me: waiting,
     needs_people: await needsPeople(s, tasks, asks.pending_asks),
     // Kept one release for older clients; needs_people replaces it.
@@ -2022,8 +2021,8 @@ const wireDecision = (e) => ({ origin: e.origin, ask_hash: e.payload?.ask_hash ?
 /** Decisions per request: the endpoint refuses more. */
 export const REMOTE_VERIFY_MAX = 200;
 /**
- * Decisions per Brief: the Brief reads at most 2,000 entries for the week, so
- * this covers every one in at most 10 requests, sent at the same time.
+ * Bound verifier work to 2,000 candidate decisions per Brief, in at most 10
+ * requests of 200 decisions each.
  */
 export const REMOTE_VERIFY_TOTAL = 2000;
 export const REMOTE_VERIFY_TIMEOUT_MS = 4000;
