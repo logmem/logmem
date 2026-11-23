@@ -1,8 +1,9 @@
 /* Native radios provide arrow-key navigation and announce the selected palette. */
 .lmx-theme-picker { position:relative; flex:none; }
-.lmx-theme-picker>summary { display:flex; align-items:center; gap:7px; min-height:36px; padding:0 9px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text-muted); font-size:12px; cursor:pointer; list-style:none; }
+.lmx-theme-picker>summary { display:grid; place-items:center; width:30px; height:30px; min-height:30px; padding:0; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text-muted); cursor:pointer; list-style:none; transition:border-color 140ms ease; }
+.lmx-theme-picker>summary:hover { border-color:var(--border-strong); }
 .lmx-theme-picker>summary::-webkit-details-marker { display:none; }
-.lmx-theme-current,.lmx-palette-dot { width:20px; height:20px; border:1px solid var(--border-strong, #71867c); border-radius:50%; background:linear-gradient(135deg,var(--palette-paper) 50%,var(--palette-ink) 50%); }
+.lmx-theme-current,.lmx-palette-dot { width:18px; height:18px; border:1px solid var(--border-strong, #71867c); border-radius:50%; background:linear-gradient(135deg,var(--palette-paper) 50%,var(--palette-ink) 50%); }
 .lmx-palette { position:absolute; z-index:45; top:calc(100% + 6px); right:0; display:flex; align-items:center; gap:0; margin:0; padding:5px; border:1px solid var(--border); border-radius:999px; background:var(--surface); box-shadow:0 8px 24px #0002; }
 .lmx-palette legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .lmx-palette-choice { position: relative; display: grid; place-items: center; width: 34px; height: 36px; cursor: pointer; }
@@ -14,12 +15,13 @@
 .lmx-palette-choice[data-palette="midnight"],.lmx-theme-current[data-palette="midnight"] { --palette-paper: #1b2828; --palette-ink: #6d9390; }
 .lmx-palette-choice input:checked + .lmx-palette-dot { outline: 2px solid var(--brand); outline-offset: 3px; }
 .lmx-palette-choice input:focus-visible + .lmx-palette-dot { outline: 3px solid var(--text); outline-offset: 4px; }
-.lmx-space-picker { position: relative; min-width: 0; margin: 4px 4px 14px; }
-.lmx-space-picker > summary { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; list-style: none; }
+.lmx-space-picker { position: relative; min-width: 0; margin: 2px 4px 10px; }
+.lmx-space-picker > summary { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; list-style: none; font-size: 13px; }
+.lmx-space-picker > summary:hover { border-color: var(--border-strong); }
 .lmx-space-picker > summary::-webkit-details-marker { display: none; }
-.lmx-space-avatar { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; background: var(--brand-subtle); color: var(--brand); font-weight: 600; }
-.lmx-space-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.lmx-space-label small { display: block; color: var(--text-subtle); font-size: 11px; font-weight: 400; }
+.lmx-space-avatar { display: grid; place-items: center; flex-shrink: 0; width: 20px; height: 20px; border-radius: 5px; background: var(--brand-subtle); color: var(--brand); font-size: 11px; font-weight: 700; }
+.lmx-space-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
+.lmx-space-label small { display: none; }
 .lmx-space-menu { position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: 268px; max-width: calc(100vw - 24px); padding: 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-3, 0 12px 32px rgba(0,0,0,.18)); }
 .lmx-space-options { max-height: 240px; overflow-y: auto; display: grid; gap: 2px; }
 .lmx-space-menu button, .lmx-space-menu a { display: flex; width: 100%; align-items: center; justify-content: flex-start; gap: 8px; min-height: 38px; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text); text-align: left; text-decoration: none; font: inherit; font-size: 13px; cursor: pointer; }
