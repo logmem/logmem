@@ -23,12 +23,12 @@
 
 /* Needs you button */
 .lmx-needs{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border-radius:var(--radius-pill,999px);border:1.5px solid var(--decision);background:var(--decision-subtle);color:var(--decision);font:600 13px/1 var(--font-sans);cursor:pointer}
-.lmx-needs b{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--decision);color:#fff;font-size:12px}
+.lmx-needs b{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--decision);color:var(--text-inverse);font-size:12px}
 .lmx-needs[data-n="0"]{border-color:var(--border);background:var(--surface);color:var(--text-muted)}
 .lmx-needs[data-n="0"] b{background:var(--surface-sunken);color:var(--text-subtle)}
 
 /* new-updates pill */
-.lmx-pill{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:var(--z-toast,60);border:0;border-radius:999px;padding:8px 16px;background:var(--info);color:#fff;font:600 13px/1 var(--font-sans);box-shadow:var(--shadow-2);cursor:pointer}
+.lmx-pill{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:var(--z-toast,60);border:0;border-radius:999px;padding:8px 16px;background:var(--info);color:var(--text-inverse);font:600 13px/1 var(--font-sans);box-shadow:var(--shadow-2);cursor:pointer}
 
 /* ── Home: three columns ───────────────────────────────────────── */
 .lmx-home{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}
@@ -90,7 +90,7 @@
 .lmx-toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:var(--z-toast,60);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 /* Toasts are text only, so taps pass through: they never block the button under them. */
 .lmx-toast{pointer-events:none;max-width:min(560px,calc(100vw - 32px));padding:10px 14px;border-radius:8px;background:var(--text);color:var(--bg);font-size:13px;box-shadow:var(--shadow-2)}
-.lmx-toast[data-s="err"]{background:var(--danger);color:#fff}
+.lmx-toast[data-s="err"]{background:var(--danger);color:var(--text-inverse)}
 
 
 /* ── views: filters, board, plans, agents ──────────────────────── */
@@ -194,7 +194,7 @@
   .lmx-tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:var(--z-sticky,20);padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--border)}
   .lmx-tabs a,.lmx-tabs button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:52px;justify-content:center;border:0;background:none;color:var(--text-muted);font:500 11px/1 var(--font-sans);text-decoration:none;position:relative;cursor:pointer}
   .lmx-tabs [aria-current="page"]{color:var(--brand)}
-  .lmx-tabs b{position:absolute;top:4px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--decision);color:#fff;font-size:10px;line-height:16px}
+  .lmx-tabs b{position:absolute;top:4px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--decision);color:var(--text-inverse);font-size:10px;line-height:16px}
   .lmx-toasts{top:calc(56px + env(safe-area-inset-top,0px));bottom:auto}
   .lmx-head .lmx-needs{display:none}
   .lmx-stagechips{display:flex}
@@ -1506,8 +1506,8 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-strip-close{flex:0 0 auto;display:grid;place-items:center;width:40px;height:40px;margin-left:auto;border:0;background:none;color:var(--text-muted);border-radius:var(--radius-sm);cursor:pointer}
 .lmx-strip-close:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .lmx-stat-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.lmx-stat-tile{display:grid;gap:2px;align-content:start;min-height:88px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text);text-decoration:none}
-.lmx-stat-tile:hover{border-color:var(--border-strong);background:var(--surface-raised)}
+.lmx-stat-tile{display:grid;gap:2px;align-content:start;min-height:88px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface);color:var(--text);text-decoration:none;transition:border-color var(--duration-fast) var(--ease-standard),box-shadow var(--duration-fast) var(--ease-standard),background var(--duration-fast) var(--ease-standard)}
+.lmx-stat-tile:hover{border-color:var(--border-strong);background:var(--surface-raised);box-shadow:var(--shadow-1)}
 .lmx-stat-tile:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .lmx-stat-label{font-size:12px;color:var(--text-muted)}
 .lmx-stat-tile strong{font:600 26px/1.15 var(--font-sans);font-variant-numeric:tabular-nums}
@@ -1700,19 +1700,21 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-chat-who{font:600 12px/1.4 var(--font-sans);color:var(--text-muted)}
 .lmx-chat-who span{font-weight:400}
 .lmx-chat-text{margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)}
-.lmx-chat-wait{margin:0;font-size:14px;color:var(--text-muted)}
+.lmx-chat-err{color:var(--danger)}
+.lmx-chat-wait{margin:0;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text-muted)}
 .lmx-chat-empty{max-width:68ch;display:flex;flex-direction:column;gap:12px}
 .lmx-chat-empty p{margin:0;font-size:14px}
 .lmx-chat-chips,.lmx-chat-btns{display:flex;flex-wrap:wrap;gap:8px}
 .lmx-chat-chips .lm-btn,.lmx-chat-btns .lm-btn{min-height:44px}
-.lmx-chat-approve{margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface-sunken);display:flex;flex-direction:column;gap:6px;font-size:14px}
+.lmx-chat-approve{margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-sunken);display:flex;flex-direction:column;gap:6px;font-size:14px}
+.lmx-chat-approve-head{display:flex;align-items:center;gap:8px}
 .lmx-chat-approve strong{color:var(--decision)}
 .lmx-chat-approve p{margin:0;overflow-wrap:anywhere}
 .lmx-chat-meta{font-size:12px;color:var(--text-muted)}
 .lmx-chat-result{font-weight:600}
-.lmx-chat-decide{min-height:44px;padding:0 16px;border:0;border-radius:var(--radius-sm,6px);background:var(--decision);color:var(--surface);font:600 14px/1 var(--font-sans);cursor:pointer}
-.lmx-chat-decide:hover{filter:brightness(1.08)}
-.lmx-chat-decide:focus-visible{outline:2px solid var(--decision);outline-offset:2px}
+.lmx-chat-decide{min-height:44px;padding:0 16px;border:0;border-radius:var(--radius-md);background:var(--decision);color:var(--text-inverse);font:600 14px/1 var(--font-sans);cursor:pointer;transition:opacity var(--duration-fast) var(--ease-standard)}
+.lmx-chat-decide:hover{opacity:0.9}
+.lmx-chat-decide:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .lmx-chat-form{display:flex;align-items:flex-end;gap:8px;padding:12px;border-top:1px solid var(--border)}
 .lmx-chat-form textarea.lm-input{flex:1;height:auto;min-height:44px;padding-top:10px;padding-bottom:10px;resize:none;font-size:16px}
 .lmx-chat-form .lm-btn{min-height:44px}

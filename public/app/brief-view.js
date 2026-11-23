@@ -8,8 +8,8 @@ import { attentionKind } from './dashboard-model.js';
 
 const ACTION = { decision: 'Review decision', task: 'Review task', review: 'Review evidence' };
 
-/** Compact page header: one eyebrow, one title. The title matches the nav label. */
-export const pageHeader = (eyebrow, title, right) => html`<header class="lmx-pageheader"><div><span class="lm-eyebrow">${eyebrow}</span><h1>${title}</h1></div>${right || nothing}</header>`;
+/** Compact page header: title first (matching nav label), subtitle below. */
+export const pageHeader = (subtitle, title, right) => html`<header class="lmx-pageheader lm-page-header"><div class="lm-page-header-main"><h1>${title}</h1>${subtitle ? html`<p class="lm-page-header-sub">${subtitle}</p>` : nothing}</div>${right || nothing}</header>`;
 
 /** The promise strip: the parts always add up to the total, and one action for the top item. */
 export function promiseStrip({ needs = [], review }) {
@@ -31,8 +31,8 @@ export function statTiles(input, onNeeds) {
 /** Agents list: avatar, name, what it is doing, presence, and when it last wrote. */
 export function agentsList(agents = [], limit = 8) {
   const shown = agents.slice(0, limit);
-  return html`<section class="lmx-brief-panel" aria-labelledby="brief-agents"><div class="lmx-brief-panel-head"><h2 id="brief-agents">Agents</h2><a href="#/agents">View team</a></div>
-    ${shown.length ? html`<ul class="lmx-agent-rows">${shown.map((a) => { const p = presence(a); return html`<li><a href=${'#/agent/' + encodeURIComponent(a.id)} class="lmx-agent-row">${agent(a.id)}<span class="lmx-agent-doing" title=${a.doing || ''}>${a.doing || (a.job ? 'On ' + a.job : 'Nothing recorded')}</span><span class="lm-presence" data-p=${p.state === 'paused' ? 'idle' : p.state}>${p.label}</span><span class="lmx-meta lmx-agent-updated">${updatedLabel(a.seen)}</span></a></li>`; })}</ul>${agents.length > limit ? html`<p class="lmx-meta">${agents.length - limit} more on the Team page.</p>` : nothing}` : emptyState('No agents yet.', 'Connect an agent and it appears here.')}
+  return html`<section class="lmx-brief-panel" aria-labelledby="brief-agents"><div class="lmx-brief-panel-head"><h2 id="brief-agents">Agents</h2><a href="#/agents">View agents</a></div>
+    ${shown.length ? html`<ul class="lmx-agent-rows">${shown.map((a) => { const p = presence(a); return html`<li><a href=${'#/agent/' + encodeURIComponent(a.id)} class="lmx-agent-row">${agent(a.id)}<span class="lmx-agent-doing" title=${a.doing || ''}>${a.doing || (a.job ? 'On ' + a.job : 'Nothing recorded')}</span><span class="lm-presence" data-p=${p.state === 'paused' ? 'idle' : p.state}>${p.label}</span><span class="lmx-meta lmx-agent-updated">${updatedLabel(a.seen)}</span></a></li>`; })}</ul>${agents.length > limit ? html`<p class="lmx-meta">${agents.length - limit} more on the Agents page.</p>` : nothing}` : emptyState('No agents yet.', 'Connect an agent and it appears here.')}
   </section>`;
 }
 

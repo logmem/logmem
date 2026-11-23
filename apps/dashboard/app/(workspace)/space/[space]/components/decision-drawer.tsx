@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { X, ShieldAlert, CheckCircle, Clock, Undo2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { CopyId } from '../../../../../components/ui';
 
 export interface DecisionItem {
   trail: string;
@@ -19,101 +20,131 @@ interface DecisionDrawerProps {
   decision: DecisionItem | null;
 }
 
+const FOCUS =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]';
+
 export function DecisionDrawer({ isOpen, onClose, decision }: DecisionDrawerProps) {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [settledVerdict, setSettledVerdict] = useState<'approved' | 'rejected' | 'deferred' | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !decision) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-150 font-sans">
-      <div className="w-full max-w-xl bg-[#FFFFFF] dark:bg-[#121A19] border-l border-[#D3DAD8] dark:border-[#2B3835] h-full flex flex-col shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/40 font-sans"
+      onClick={onClose}
+    >
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="decision-drawer-title"
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-xl flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-3)]"
+      >
         {/* Header */}
-        <div className="p-4 border-b border-[#D3DAD8] dark:border-[#2B3835] flex items-center justify-between bg-[#F4F6F5] dark:bg-[#19231F]">
+        <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-sunken)] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#6B3FA0] dark:bg-[#C6A0F0] inline-block" />
-            <h2 className="font-['Schibsted_Grotesk'] font-bold text-sm text-[#121A19] dark:text-[#E9EEEC]">
+            <span className="lm-orb" data-state="waiting" aria-hidden="true" />
+            <h2
+              id="decision-drawer-title"
+              className="font-heading text-sm font-bold text-[var(--text)]"
+            >
               Review decision
             </h2>
           </div>
           <button
+            ref={closeRef}
+            type="button"
             onClick={onClose}
-            className="p-1 text-[#5C6966] hover:text-[#121A19] dark:hover:text-[#E9EEEC] rounded min-w-[32px] min-h-[32px] flex items-center justify-center"
+            aria-label="Close decision review"
+            className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:text-[var(--text)] ${FOCUS}`}
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+        <div className="flex-1 space-y-6 overflow-y-auto p-6">
           {settledVerdict ? (
-            <div className="p-4 rounded-lg bg-[#E2F1E5] dark:bg-[#0F2618] text-[#1E6B35] dark:text-[#5DC47C] text-sm space-y-2 border border-[#1E6B35]/20">
+            <div
+              role="status"
+              className="space-y-2 rounded-[var(--radius-md)] border border-[var(--success)] bg-[var(--success-subtle)] p-4 text-sm text-[var(--success)]"
+            >
               <p className="font-semibold">Decision saved. Waiting for agent.</p>
-              <p className="text-xs text-[#46534F] dark:text-[#B3BEBA]">
-                Verdict has been recorded on trail <code className="font-['IBM_Plex_Mono'] font-bold">{decision.trail}</code>. The requesting agent will verify this verdict on its next shift.
-              </p>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+                <span>Recorded on trail</span>
+                <CopyId id={decision.trail} />
+                <span>The requesting agent will verify this verdict on its next shift.</span>
+              </div>
             </div>
           ) : (
             <>
-              {/* Question & Summary */}
               <div>
-                <span className="text-[11px] font-['IBM_Plex_Mono'] text-[#6B3FA0] dark:text-[#C6A0F0] font-bold uppercase tracking-wider">
-                  Action requires authorization
-                </span>
-                <h1 className="text-lg font-['Schibsted_Grotesk'] font-bold mt-1 text-[#121A19] dark:text-[#E9EEEC]">
+                <h3 className="font-heading text-lg font-bold text-[var(--text)]">
                   {decision.summary}
-                </h1>
-                <p className="text-xs text-[#5C6966] dark:text-[#97A4A0] mt-1 font-['IBM_Plex_Mono']">
-                  Requested by <b className="text-[#121A19] dark:text-[#E9EEEC]">{decision.requester}</b> · Due {decision.deadline}
+                </h3>
+                <p className="mt-1 font-mono text-xs text-[var(--text-subtle)]">
+                  Requested by <strong className="text-[var(--text)]">{decision.requester}</strong> · Due{' '}
+                  {decision.deadline}
                 </p>
               </div>
 
-              {/* Exact Proposed Action */}
-              <div className="p-4 bg-[#F4F6F5] dark:bg-[#080D0C] border border-[#D3DAD8] dark:border-[#2B3835] rounded-lg space-y-2">
-                <span className="text-[11px] font-['IBM_Plex_Mono'] text-[#5C6966] dark:text-[#97A4A0] uppercase font-semibold">
-                  Proposed Action
-                </span>
-                <p className="text-sm font-['IBM_Plex_Mono'] text-[#121A19] dark:text-[#E9EEEC] font-medium leading-relaxed">
-                  {decision.action}
-                </p>
-                <div className="pt-2 flex items-center gap-2">
+              <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Proposed action</span>
                   <span
-                    className={`px-2 py-0.5 rounded text-[11px] font-['IBM_Plex_Mono'] font-medium ${
+                    className={`rounded-[var(--radius-pill)] px-2 py-0.5 font-mono text-[11px] font-medium ${
                       decision.reversible
-                        ? 'bg-[#E6ECFC] text-[#2453D6] dark:bg-[#121C38] dark:text-[#86A6FF]'
-                        : 'bg-[#FBE6E3] text-[#B42318] dark:bg-[#341411] dark:text-[#F47A66]'
+                        ? 'bg-[var(--info-subtle)] text-[var(--info)]'
+                        : 'bg-[var(--danger-subtle)] text-[var(--danger)]'
                     }`}
                   >
                     {decision.reversible ? 'Reversible' : 'Irreversible'}
                   </span>
                 </div>
+                <p className="font-mono text-sm font-medium leading-relaxed text-[var(--text)]">
+                  {decision.action}
+                </p>
               </div>
 
-              {/* Payload Diff Evidence */}
               {decision.diffPayload && (
                 <div className="space-y-1.5">
-                  <span className="text-[11px] font-['IBM_Plex_Mono'] text-[#5C6966] dark:text-[#97A4A0] uppercase font-semibold">
-                    Evidence & Payload Preview
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">
+                    Evidence and payload preview
                   </span>
-                  <pre className="p-3 bg-[#F4F6F5] dark:bg-[#080D0C] border border-[#D3DAD8] dark:border-[#2B3835] rounded text-xs font-['IBM_Plex_Mono'] text-[#121A19] dark:text-[#E9EEEC] overflow-x-auto whitespace-pre-wrap">
+                  <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] p-3 font-mono text-xs text-[var(--text)]">
                     {decision.diffPayload}
                   </pre>
                 </div>
               )}
 
-              {/* Request Changes Textarea */}
               {showRejectInput && (
-                <div className="space-y-2 pt-2 border-t border-[#D3DAD8] dark:border-[#2B3835]">
-                  <label className="text-xs font-['IBM_Plex_Mono'] text-[#46534F] dark:text-[#B3BEBA]">
-                    Reason for requesting changes (required by protocol)
+                <div className="space-y-2 border-t border-[var(--border)] pt-3">
+                  <label
+                    htmlFor="decision-reject-reason"
+                    className="block text-xs font-medium text-[var(--text-muted)]"
+                  >
+                    Reason for requesting changes (required)
                   </label>
                   <textarea
+                    id="decision-reject-reason"
                     rows={3}
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder="State what the agent must modify before this action can be approved..."
-                    className="w-full bg-[#F4F6F5] dark:bg-[#080D0C] border border-[#D3DAD8] dark:border-[#2B3835] rounded p-2.5 text-sm font-sans focus:border-[#0E6863] dark:focus:border-[#4FC3B8] outline-none"
+                    className={`w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] p-2.5 text-sm text-[var(--text)] placeholder:text-[var(--text-subtle)] focus:border-[var(--brand)] ${FOCUS}`}
                   />
                 </div>
               )}
@@ -121,42 +152,46 @@ export function DecisionDrawer({ isOpen, onClose, decision }: DecisionDrawerProp
           )}
         </div>
 
-        {/* Footer Actions */}
+        {/* Sticky Footer (NP3: secondary exits on left, violet Approve primary) */}
         {!settledVerdict && (
-          <div className="p-4 border-t border-[#D3DAD8] dark:border-[#2B3835] bg-[#F4F6F5] dark:bg-[#19231F] flex items-center justify-between gap-2">
+          <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] bg-[var(--surface-sunken)] p-4">
             <button
+              type="button"
               onClick={() => setSettledVerdict('deferred')}
-              className="px-3 py-2 text-xs font-medium border border-[#D3DAD8] dark:border-[#2B3835] rounded text-[#46534F] dark:text-[#B3BEBA] hover:text-[#121A19] dark:hover:text-[#E9EEEC] bg-white dark:bg-[#121A19]"
+              className={`min-h-[44px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text)] ${FOCUS}`}
             >
               Decide later
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {showRejectInput ? (
                 <button
+                  type="button"
                   disabled={!rejectReason.trim()}
                   onClick={() => setSettledVerdict('rejected')}
-                  className="px-3 py-2 text-xs font-medium bg-[#B42318] dark:bg-[#F47A66] text-white rounded disabled:opacity-50"
+                  className={`min-h-[44px] rounded-[var(--radius-md)] bg-[var(--danger)] px-3 text-xs font-semibold text-[var(--text-inverse)] disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
                 >
                   Confirm changes requested
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setShowRejectInput(true)}
-                  className="px-3 py-2 text-xs font-medium border border-[#B42318]/40 text-[#B42318] dark:text-[#F47A66] rounded hover:bg-[#FBE6E3] dark:hover:bg-[#341411]"
+                  className={`min-h-[44px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-medium text-[var(--danger)] hover:bg-[var(--danger-subtle)] ${FOCUS}`}
                 >
-                  Request changes
+                  Can&apos;t do / request changes
                 </button>
               )}
               <button
+                type="button"
                 onClick={() => setSettledVerdict('approved')}
-                className="px-4 py-2 text-xs font-semibold bg-[#6B3FA0] dark:bg-[#C6A0F0] text-white dark:text-[#121A19] rounded hover:opacity-90 shadow-sm"
+                className={`min-h-[44px] rounded-[var(--radius-md)] bg-[var(--decision)] px-4 text-xs font-semibold text-[var(--text-inverse)] shadow-[var(--shadow-1)] hover:opacity-90 ${FOCUS}`}
               >
                 Approve action
               </button>
             </div>
           </div>
         )}
-      </div>
+      </aside>
     </div>
   );
 }

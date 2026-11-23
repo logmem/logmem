@@ -1,9 +1,50 @@
 @import 'tailwindcss';
 @import '../../../public/ds/tokens/logmem.css';
+@import '../../../public/ds/components/bundle.css';
 
-/* Tokens come from public/ds/tokens/logmem.css. */
-@theme {
-  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-heading: 'Schibsted Grotesk', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+/* Tokens and v0.2 primitives come from public/ds/tokens/logmem.css and bundle.css. */
+@theme inline {
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: 'Schibsted Grotesk', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+  --color-text-inverse: var(--text-inverse);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-on-brand: var(--on-brand);
+  --color-focus: var(--focus);
+  --color-link: var(--link);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-decision: var(--decision);
+  --color-decision-subtle: var(--decision-subtle);
+  --color-demo: var(--demo);
+  --color-demo-subtle: var(--demo-subtle);
+  --color-viz-1: var(--viz-1);
+  --color-viz-2: var(--viz-2);
+  --color-viz-3: var(--viz-3);
+  --color-viz-4: var(--viz-4);
+  --color-viz-5: var(--viz-5);
+  --color-viz-6: var(--viz-6);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
 }

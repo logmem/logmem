@@ -14,10 +14,10 @@ export default async function WorkspaceSpaceLayout({
   const viewer = await requireSpace(space, 'read');
   const spaceName = viewer.space?.name || space;
   return (
-    <div className="flex min-h-screen bg-[#F4F6F5] dark:bg-[#0C1211] text-[#121A19] dark:text-[#E9EEEC] font-sans antialiased">
+    <div className="flex min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
       <NavRail space={space} spaceName={spaceName} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <main className="flex-1 max-w-[1280px] w-full mx-auto p-4 md:p-8 pb-20 md:pb-8">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main className="mx-auto w-full max-w-[var(--content-max)] flex-1 p-4 pb-20 md:p-8 md:pb-8">
           {children}
         </main>
       </div>

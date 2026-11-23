@@ -5,7 +5,7 @@ import { load as loadData } from './data.js';
 import { openDrawer } from './drawer.js';
 
 let host = null, open = false, items = null, q = '', pick = 0;
-const VIEWS = [['Brief', '#/home'], ['Inbox', '#/queue'], ['Activity', '#/activity'], ['Work', '#/work'], ['Plans', '#/plans'], ['Decisions', '#/decisions'], ['Team', '#/agents'], ['Log', '#/log'], ['Settings', '#/settings'], ['Audit', '#/audit'], ['Waitlist', '#/waitlist']];
+const VIEWS = [['Brief', '#/home'], ['Inbox', '#/queue'], ['Activity', '#/activity'], ['Chat', '#/chat'], ['Work', '#/work'], ['Plans', '#/plans'], ['Decisions', '#/decisions'], ['Agents', '#/agents'], ['Log', '#/log'], ['Settings', '#/settings'], ['Audit', '#/audit'], ['Waitlist', '#/waitlist']];
 
 async function load() {
   const [jobs, agents, lanes] = await Promise.all([loadData('jobs'), loadData('agents'), loadData('lanes')]);

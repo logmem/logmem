@@ -5,6 +5,7 @@
 export const SPACE_PAGES = Object.freeze([
   'today',
   'inbox',
+  'chat',
   'schedule',
   'work',
   'agents',
