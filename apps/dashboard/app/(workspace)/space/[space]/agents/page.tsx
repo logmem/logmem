@@ -1,9 +1,8 @@
-import Link from 'next/link';
 import { requireSpace } from '../../../../../lib/server/auth';
 import { getAgentsData } from '../../../../../lib/server/agents';
 import { agentCounts } from '../../../../../lib/agents-model.mjs';
-import { relativeTime } from '../../../../../lib/inbox-model.mjs';
-import { CopyId, PageHeader, StatTile, StatePanel } from '../../../../../components/ui';
+import { PageHeader, StatTile, StatePanel } from '../../../../../components/ui';
+import { AgentsTableView } from '../components/agents-table-view';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,63 +40,7 @@ export default async function AgentsPage({ params }: { params: Promise<{ space: 
         <StatTile label="Quiet" value={counts.quiet} note="no recent write" />
       </section>
 
-      {agents.length === 0 ? (
-        <StatePanel
-          variant="empty"
-          title="No agents have written to this space yet."
-          detail="Connect an agent and call logmem_start to register its shift here."
-        />
-      ) : (
-        <ul className="divide-y divide-[var(--border)] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)]">
-          {agents.map((a) => (
-            <li key={a.id} className="space-y-1.5 px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/space/${encodeURIComponent(space)}/agents/${encodeURIComponent(a.id)}`}
-                    className="text-sm font-semibold text-[var(--text)] hover:text-[var(--link)] hover:underline"
-                  >
-                    {a.name}
-                  </Link>
-                  <span
-                    className={`rounded-[var(--radius-pill)] px-2 py-0.5 font-mono text-[11px] font-medium ${
-                      a.state === 'active'
-                        ? 'bg-[var(--success-subtle)] text-[var(--success)]'
-                        : a.blocked
-                          ? 'bg-[var(--danger-subtle)] text-[var(--danger)]'
-                          : 'bg-[var(--surface-sunken)] text-[var(--text-muted)]'
-                    }`}
-                  >
-                    {a.statusLabel}
-                  </span>
-                  {a.surface ? (
-                    <span className="font-mono text-xs text-[var(--text-subtle)]">via {a.surface}</span>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  {a.lastTs ? (
-                    <span className="font-mono text-xs tabular-nums text-[var(--text-subtle)]">
-                      {relativeTime(a.lastTs, now)}
-                    </span>
-                  ) : null}
-                  <CopyId id={`agent:${a.id}`} label={`Copy agent:${a.id}`} />
-                </div>
-              </div>
-              <p className="text-sm text-[var(--text-muted)]">
-                {a.doing || 'No current task recorded.'}
-              </p>
-              {a.recapSummary ? (
-                <p className="line-clamp-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2.5 py-1.5 text-xs text-[var(--text-muted)]">
-                  <span className="font-semibold text-[var(--text)]">
-                    Last recap{a.recapMode ? ` (${a.recapMode})` : ''}:{' '}
-                  </span>
-                  {a.recapSummary}
-                </p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AgentsTableView space={space} agents={agents} now={now} />
     </div>
   );
 }

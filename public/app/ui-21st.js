@@ -244,36 +244,29 @@ export function chronoBoard(list = [], now = Date.now()) {
   </ol>`;
 }
 
-/** 4. Expandable ActivityTimeline rows (day-grouped, keyboard-accessible). */
-export function activityTimelineGroup(group, { expandedSet, onToggle, now = Date.now() }) {
+/** 4. Open-by-default ActivityTimeline rows (day-grouped, zero hidden details). */
+export function activityTimelineGroup(group, { now = Date.now() } = {}) {
   return html`<section class="lm-actline-day" aria-label=${group.label}>
     <h2 class="lm-actline-head"><span>${group.label}</span><span class="lm-actline-count">${group.entries.length} ${group.entries.length === 1 ? 'update' : 'updates'}</span></h2>
     <ol class="lm-actline-list">
       ${group.entries.map((e) => {
-        const key = e.trail || `${e.ts}-${e.by}-${e.kind}`;
-        const open = expandedSet.has(key);
         const tone = kindTone(e.kind);
         const place = placeLink(e.where);
         return html`<li class="lm-actline-item">
           <span class="lm-actline-dot" data-tone=${tone} aria-hidden="true"></span>
           <div class="lm-actline-body">
-            <button type="button" class="lm-actline-trigger" aria-expanded=${String(open)} @click=${() => onToggle(key)}>
+            <div class="lm-actline-trigger" style="cursor:default">
               <span class="lm-actline-text">
-                <span class="lm-actline-line"><strong>${agentName(e.by) || 'unknown'}</strong> ${e.summary}</span>
-                <span class="lm-actline-sub">${[e.kind, e.where, e.via ? 'via ' + e.via : ''].filter(Boolean).join(' · ')}</span>
+                <span class="lm-actline-line"><strong>${agentName(e.by) || 'unknown'}</strong> ${textWithIds(e.summary)}</span>
+                <span class="lm-actline-detail-row" style="margin-top:4px">
+                  <span class="lmx-kind-chip" data-k=${e.group || 'system'}>${e.kind}</span>
+                  ${place ? html`<a href=${place.href}>${place.label}</a>` : html`<span class="lmx-meta">${e.where || 'No place recorded'}</span>`}
+                  ${e.via ? html`<span class="lmx-meta">via ${e.via}</span>` : nothing}
+                  ${e.trail ? idChip(e.trail, 'trail') : nothing}
+                </span>
               </span>
-              <time class="lm-actline-time" datetime=${new Date(Number(e.ts)).toISOString()} title=${fullTime(e.ts)}>${clock24(e.ts)}</time>
-              <span class="lm-actline-chev" data-open=${String(open)} aria-hidden="true">▾</span>
-            </button>
-            ${open ? html`<div class="lm-actline-detail">
-              <div class="lm-actline-detail-row">
-                <span class="lmx-kind-chip" data-k=${e.group || 'system'}>${e.kind}</span>
-                ${agent(e.by)}
-                ${place ? html`<a href=${place.href}>${place.label}</a>` : html`<span class="lmx-meta">${e.where || 'No place recorded'}</span>`}
-                <span class="lmx-meta">${relTime(e.ts, now)} · ${fullTime(e.ts)}</span>
-              </div>
-              <div class="lm-actline-detail-row">${e.trail ? idChip(e.trail, 'trail') : nothing}</div>
-            </div>` : nothing}
+              <time class="lm-actline-time" datetime=${new Date(Number(e.ts)).toISOString()} title=${fullTime(e.ts)}>${clock24(e.ts)} · ${relTime(e.ts, now)}</time>
+            </div>
           </div>
         </li>`;
       })}
@@ -402,5 +395,89 @@ export function shiftTimelineSection({ agents = [], pf, redraw, now = Date.now()
         })}
       </div>
     `}
+  </section>`;
+}
+
+/** 7. Crisp Agents Roster Table (21st.dev Members Table Block id: 25166) — zero sloppy boxes, zero collapsed drawers. */
+export function agentsRosterTable({ agents = [], modes = [], mode = 'fleet', counts = {}, query = '', onQuery, onMode, space, renderAction, initialsOf, avatarOf, now = Date.now() }) {
+  const q = String(query || '').trim().toLowerCase();
+  const visible = q
+    ? agents.filter((a) => {
+        const hay = [a.id, a.who?.name, a.who?.role, a.now?.doing, a.recap?.summary, a.shift?.surface].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      })
+    : agents;
+
+  return html`<section class="lm-roster" aria-label="Agent roster">
+    <div class="lm-roster-bar">
+      <div class="lm-roster-bar-left" role="group" aria-label="Filter the roster">
+        ${modes.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-kind=${k} aria-pressed=${String(mode === k)} @click=${() => onMode(k)}>${l} (${counts[k] ?? 0})</button>`)}
+      </div>
+      <div class="lm-roster-bar-right">
+        <label class="lmx-chat-sr" for="agents-roster-search">Search agents</label>
+        <input id="agents-roster-search" type="search" class="lm-roster-search" placeholder="Search agents…" .value=${query} @input=${(e) => onQuery(e.currentTarget.value)}>
+      </div>
+    </div>
+
+    ${visible.length ? html`<div class="lm-roster-scroll">
+      <table class="lm-roster-table">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Status</th>
+            <th>Current work</th>
+            <th>Last recap</th>
+            <th>Updated</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${visible.map((a) => {
+            const name = agentName(a.id);
+            const stateKey = a.seen?.state || 'quiet';
+            const statusLabel = a.now?.blocked ? 'Blocked' : (a.seen?.label || 'Offline');
+            const doing = a.now?.doing ? String(a.now.doing).trim() : '';
+            const recapLine = a.recap?.summary ? String(a.recap.summary).split(/\r?\n/).find((l) => l.trim()) || '' : '';
+            const lastTs = a.last?.ts || a.shift?.ts || a.recap?.ended_at || 0;
+            const logo = avatarOf ? avatarOf(a) : null;
+            return html`<tr>
+              <td>
+                <div class="lm-roster-agent">
+                  <span class="lm-roster-avatar" aria-hidden="true">${logo ? html`<img src=${logo} alt="">` : (initialsOf ? initialsOf(a.id) : name.slice(0, 2).toUpperCase())}</span>
+                  <div>
+                    <a class="lm-roster-name" href=${'#/agent/' + encodeURIComponent(a.id)}>${name}</a>
+                    <span class="lm-roster-sub">${a.shift?.surface || a.who?.role || 'agent:' + name}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="lm-roster-status" data-state=${stateKey} data-blocked=${String(!!a.now?.blocked)}>
+                  <span class="lm-roster-sdot" aria-hidden="true"></span>${statusLabel}
+                </span>
+              </td>
+              <td class="lm-roster-work">
+                ${doing ? html`<span>${doing.length > 96 ? doing.slice(0, 93) + '…' : doing}</span>` : html`<span class="lm-roster-work-muted">No active task</span>`}
+                ${a.now?.job ? html`<div><a class="lmx-jobchip" href=${'#/job/' + encodeURIComponent(String(a.now.job).replace(/^job:/, ''))}>${a.now.job}</a></div>` : nothing}
+              </td>
+              <td class="lm-roster-recap">
+                ${recapLine ? (recapLine.length > 88 ? recapLine.slice(0, 85) + '…' : recapLine) : html`<span class="lm-roster-work-muted">No recap yet</span>`}
+              </td>
+              <td class="lm-roster-time" title=${lastTs ? fullTime(lastTs) : ''}>${lastTs ? relTime(lastTs, now) : '—'}</td>
+              <td>
+                <div class="lm-roster-acts">
+                  <a class="lm-btn lm-btn--secondary" href=${'#/agent/' + encodeURIComponent(a.id)}>Open</a>
+                  ${renderAction ? renderAction(a, space) : nothing}
+                </div>
+              </td>
+            </tr>`;
+          })}
+        </tbody>
+      </table>
+    </div>` : html`<div style="padding:24px;text-align:center" class="lmx-meta">No agents match this filter.</div>`}
+
+    <div class="lm-roster-foot">
+      <span>Showing ${visible.length} of ${agents.length} in current view · reporting activity from the log, not runtime reachability.</span>
+      <span>Copy prompt puts a ready prompt on your clipboard without starting a process.</span>
+    </div>
   </section>`;
 }
