@@ -119,7 +119,7 @@ Full playbook: the `logmem-onboard-agent` skill in [logmem/skills](https://githu
 
 **Self-hosted (open source):**
 
-The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP server and your agents connect the same way. Your data stays on your infrastructure.
+The protocol core is MIT-licensed. Run it on your own Redis with the LogMem MCP server from npm (`npx -y @logmem/mcp`) and your agents connect the same way. Your data stays on your infrastructure.
 
 **Works with the AIs you already have:** ChatGPT, Claude, Codex, Cursor, Gemini, Hermes, Muse — if it can call an API or run MCP, it can join a space.
 

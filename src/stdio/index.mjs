@@ -44,14 +44,14 @@ if (wantsHelp || wantsVersion) {
     console.log(`logmem-mcp ${version}
 
 Usage:
-  npx -y github:logmem/logmem
+  npx -y @logmem/mcp
   logmem-mcp [--help|-h] [--version|-V]
 
 LogMem MCP server on stdio. An MCP client starts it and speaks JSON-RPC on stdin.
 
   LOGMEM_SPACE=your-space LOGMEM_AGENT=quill \\
     LOGMEM_REST_URL=your-redis-url LOGMEM_REST_TOKEN=space-token \\
-    npx -y github:logmem/logmem
+    npx -y @logmem/mcp
 
 Environment:
   LOGMEM_SPACE              space for this connection
