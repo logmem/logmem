@@ -481,3 +481,157 @@ export function agentsRosterTable({ agents = [], modes = [], mode = 'fleet', cou
     </div>
   </section>`;
 }
+
+/** 8. Ballmac AgentRoster Cards — crisp selectable grid with status filter pills & selected-agent bar. */
+const AR_ORDER = ['working', 'waiting', 'blocked', 'idle', 'offline'];
+const AR_LABEL = {
+  working: 'Working',
+  waiting: 'Waiting',
+  blocked: 'Blocked',
+  idle: 'Idle',
+  offline: 'Offline',
+};
+
+function agentRosterStatus(a) {
+  if (a.now?.blocked) return 'blocked';
+  const st = a.seen?.state;
+  if (st === 'active') return a.now?.doing ? 'working' : 'waiting';
+  if (st === 'idle') return 'idle';
+  return 'offline';
+}
+
+function arStatusIcon(st) {
+  if (st === 'working') {
+    return html`<svg class="lm-ar-ico lm-ar-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+  }
+  if (st === 'waiting') {
+    return html`<svg class="lm-ar-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>`;
+  }
+  if (st === 'blocked') {
+    return html`<svg class="lm-ar-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>`;
+  }
+  if (st === 'idle') {
+    return html`<svg class="lm-ar-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`;
+  }
+  return html`<svg class="lm-ar-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" x2="19.07" y1="4.93" y2="19.07"/></svg>`;
+}
+
+export function agentRosterCards({
+  agents = [],
+  filter = 'all',
+  onFilter,
+  query = '',
+  onQuery,
+  selected = null,
+  onSelect,
+  viewToggle = nothing,
+  space,
+  renderAction,
+  initialsOf,
+  avatarOf,
+  now = Date.now(),
+}) {
+  const q = String(query || '').trim().toLowerCase();
+  const searched = q
+    ? agents.filter((a) =>
+        [a.id, a.who?.name, a.who?.role, a.now?.doing, a.recap?.summary, a.shift?.surface]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
+      )
+    : agents;
+
+  const counts = { all: searched.length };
+  for (const s of AR_ORDER) counts[s] = 0;
+  for (const a of searched) counts[agentRosterStatus(a)]++;
+
+  const activeFilter = filter === 'all' || counts[filter] > 0 ? filter : 'all';
+  const shown =
+    activeFilter === 'all'
+      ? searched
+      : searched.filter((a) => agentRosterStatus(a) === activeFilter);
+  const selectedAgent = selected ? agents.find((a) => a.id === selected) || null : null;
+
+  return html`<section class="lm-ar" aria-label="Agent roster">
+    <div class="lm-ar-head">
+      <div class="lm-ar-head-left">
+        <h2 class="lm-ar-title">Fleet roster</h2>
+        <div class="lm-ar-pills" role="group" aria-label="Filter by status">
+          ${['all', ...AR_ORDER].map((k) => {
+            const n = counts[k] || 0;
+            if (k !== 'all' && n === 0) return nothing;
+            const pressed = activeFilter === k;
+            return html`<button
+              type="button"
+              class="lm-ar-pill"
+              aria-pressed=${String(pressed)}
+              @click=${() => onFilter(k)}
+            >${k === 'all' ? 'All' : AR_LABEL[k]} <span>${n}</span></button>`;
+          })}
+        </div>
+      </div>
+      <div class="lm-ar-head-right">
+        <label class="lmx-chat-sr" for="agents-roster-search">Search agents</label>
+        <input
+          id="agents-roster-search"
+          type="search"
+          class="lm-roster-search"
+          placeholder="Search agents…"
+          .value=${query}
+          @input=${(e) => onQuery(e.currentTarget.value)}
+        >
+        ${viewToggle}
+      </div>
+    </div>
+
+    ${shown.length ? html`<ul class="lm-ar-grid">
+      ${shown.map((a) => {
+        const st = agentRosterStatus(a);
+        const name = agentName(a.id);
+        const role = a.shift?.surface ? 'via ' + a.shift.surface : a.who?.role || 'agent:' + name;
+        const doing = a.now?.doing ? String(a.now.doing).trim() : '';
+        const recapLine = a.recap?.summary ? String(a.recap.summary).split(/\r?\n/).find((l) => l.trim()) || '' : '';
+        const task = doing || recapLine || '';
+        const lastTs = a.last?.ts || a.shift?.ts || a.recap?.ended_at || 0;
+        const logo = avatarOf ? avatarOf(a) : null;
+        const on = selected === a.id;
+        return html`<li>
+          <button
+            type="button"
+            class="lm-ar-card"
+            data-status=${st}
+            aria-pressed=${String(on)}
+            @click=${() => onSelect(on ? null : a.id)}
+          >
+            <span class="lm-ar-top">
+              <span class="lm-ar-avatar" aria-hidden="true">${logo ? html`<img src=${logo} alt="">` : (initialsOf ? initialsOf(a.id) : name.slice(0, 2).toUpperCase())}</span>
+              <span class="lm-ar-ident">
+                <span class="lm-ar-name">${name}</span>
+                <span class="lm-ar-role">${role}</span>
+              </span>
+              <span class="lm-ar-status" data-status=${st}>${arStatusIcon(st)} ${AR_LABEL[st]}</span>
+            </span>
+            <span class=${task ? 'lm-ar-task' : 'lm-ar-task is-muted'}>${task || 'No active task recorded.'}</span>
+            <span class="lm-ar-foot">
+              ${a.now?.job ? html`<span class="lm-ar-job">${a.now.job}</span>` : nothing}
+              ${lastTs ? html`<span class="lm-ar-time" title=${fullTime(lastTs)}>${relTime(lastTs, now)}</span>` : nothing}
+            </span>
+          </button>
+        </li>`;
+      })}
+    </ul>` : html`<div class="lm-ar-empty lmx-meta">No agents match this filter.</div>`}
+
+    ${selectedAgent ? html`<div class="lm-ar-selected">
+      <div class="lm-ar-selected-copy">
+        <strong>${agentName(selectedAgent.id)}</strong>
+        <span class="lmx-meta">${selectedAgent.shift?.surface ? 'via ' + selectedAgent.shift.surface : selectedAgent.who?.role || selectedAgent.id}</span>
+        <p>${selectedAgent.now?.doing || (selectedAgent.recap?.summary ? String(selectedAgent.recap.summary).split(/\r?\n/)[0] : 'No active task or recap recorded yet.')}</p>
+      </div>
+      <div class="lm-ar-selected-acts">
+        ${renderAction ? renderAction(selectedAgent, space) : nothing}
+        <a class="lm-btn lm-btn--primary" href=${'#/agent/' + encodeURIComponent(selectedAgent.id)}>Inspect agent →</a>
+      </div>
+    </div>` : nothing}
+  </section>`;
+}

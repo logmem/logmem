@@ -36,7 +36,7 @@ import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js'
 import { agentDispatchPrompt } from './dispatch-model.js';
 import { initials } from './dashboard-model.js';
 import { agentIcon, savedAgentIcon } from './agent-icons.js';
-import { activityTimelineGroup, agentsRosterTable, shiftTimelineSection } from './ui-21st.js';
+import { activityTimelineGroup, agentRosterCards, agentsRosterTable, shiftTimelineSection } from './ui-21st.js';
 import {seedCard} from './seed-components.js';
 import {blockerClusters} from './flow-model.js';
 import {ticketPrompt,jobDispatchPrompt,isStaleTicket} from './dispatch-model.js';
@@ -179,14 +179,20 @@ pages.agents = async () => {
   const quietN = allAgents.filter((a) => a.seen?.state !== 'active').length;
   const noNowN = allAgents.filter((a) => !a.now?.doing).length;
   const pf = filt('agents:' + state.space), counts = agentCounts(allAgents);
+  if (pf.selected === undefined && allAgents[0]) pf.selected = allAgents[0].id;
   const draw = () => {
+    const view = pf.view === 'table' ? 'table' : 'cards';
     const mode = AGENT_MODES.some(([k]) => k === pf.mode) ? pf.mode : 'all';
     const shown = allAgents.filter((a) => agentMatch(a, mode));
     const avatarOf = (a) => (savedAgentIcon(state.space, a.id) || agentIcon(state.space, a.id))?.src || null;
+    const viewToggle = html`<div class="lm-ar-view" role="group" aria-label="Roster layout">
+      <button type="button" aria-pressed=${String(view === 'cards')} @click=${() => { pf.view = 'cards'; saveFilt(); draw(); }}>Roster</button>
+      <button type="button" aria-pressed=${String(view === 'table')} @click=${() => { pf.view = 'table'; saveFilt(); draw(); }}>Table</button>
+    </div>`;
     renderView('agents', ['Agents'], html`
       ${head('Agents', 'Reporting activity, current work, and last recaps across this space.')}
       <div class="lmx-stack" style="gap:16px">
-        <div class="lmx-filters"><span class="lmx-meta">${liveN} of ${allAgents.length} wrote in the last 15 minutes. Reporting activity, not runtime reachability.</span><span class="lm-spacer"></span><a href="#/slots" class="lm-btn lm-btn--secondary">Daily slots</a><a href="#/access" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent access</a></div>
+        <div class="lmx-filters"><span class="lmx-meta">${liveN} of ${allAgents.length} wrote in the last 15 minutes. Reporting activity, not runtime reachability.</span><span class="lm-spacer"></span>${view === 'table' ? viewToggle : nothing}<a href="#/slots" class="lm-btn lm-btn--secondary" style="text-decoration:none">Daily slots</a><a href="#/access" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent access</a></div>
         <section class="lm-kpi-strip" aria-label="Agent metrics">
           <div class="lm-kpi-cell"><span class="lm-kpi-lbl">Total agents</span><span class="lm-kpi-val">${allAgents.length}</span><span class="lm-kpi-sub">in this space</span></div>
           <div class="lm-kpi-cell"><span class="lm-kpi-lbl">Active now</span><span class="lm-kpi-val">${liveN}</span><span class="lm-kpi-sub">wrote in last 15 min</span></div>
@@ -194,7 +200,20 @@ pages.agents = async () => {
           <div class="lm-kpi-cell"><span class="lm-kpi-lbl">No Now set</span><span class="lm-kpi-val">${noNowN}</span><span class="lm-kpi-sub">missing current task</span></div>
         </section>
 
-        ${agentsRosterTable({
+        ${view === 'cards' ? agentRosterCards({
+          agents: allAgents,
+          filter: pf.arFilter || 'all',
+          onFilter: (k) => { pf.arFilter = k; saveFilt(); draw(); },
+          query: pf.q || '',
+          onQuery: (v) => { pf.q = v; draw(); },
+          selected: pf.selected || null,
+          onSelect: (id) => { pf.selected = id; draw(); },
+          viewToggle,
+          space: state.space,
+          initialsOf: initials,
+          avatarOf,
+          renderAction: (a, sp) => agentDispatchButton(agentDispatchPrompt(a, sp)),
+        }) : agentsRosterTable({
           agents: shown,
           modes: AGENT_MODES,
           mode,

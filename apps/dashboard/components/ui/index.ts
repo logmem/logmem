@@ -57,3 +57,5 @@ export { GenerationStats, formatGenerationTime } from './generation-stats';
 export type { GenerationStatsProps, GenerationFinishReason } from './generation-stats';
 export { IllosAiChatEmptyState, StreamingTokensArt } from './illos-ai-chat-empty-state';
 export type { IllosAiChatEmptyStateProps } from './illos-ai-chat-empty-state';
+export { AgentRoster } from './agent-roster';
+export type { AgentRosterProps, AgentRosterStatus, RosterAgent } from './agent-roster';
