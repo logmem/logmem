@@ -42,8 +42,8 @@ function navItem(n, route) {
 const needsBtn = () => html`<button type="button" class="lmx-needs" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>Needs you <b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
 export const themePicker = () => themeControl(refreshFrame);
 export const workspaceAssistant = route => assistantWidget(route,refreshFrame);
-// The Brief, Inbox and Activity are lists that need the full width, so they skip the assistant rail.
-export const NO_ASSISTANT = new Set(['home', 'overview', 'queue', 'activity']);
+// Every workspace view uses the full width without a permanent right-hand assistant rail.
+export const NO_ASSISTANT = new Set(['home', 'overview', 'queue', 'activity', 'agents', 'agent', 'slots', 'work', 'job', 'chat', 'knowledge', 'health', 'plans', 'plan', 'decisions', 'blockers', 'log', 'channels', 'recall', 'settings', 'audit', 'waitlist', 'access', 'account', 'discussion', 'more']);
 
 // One line, not a tall banner. The full text sits in the title attribute.
 const STORAGE_DOWN = 'LogMem can’t reach its storage. Nothing saves until it is back.';

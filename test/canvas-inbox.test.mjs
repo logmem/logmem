@@ -48,8 +48,10 @@ test('Brief tiles come from the brief model and link to their pages',()=>{
  assert.deepEqual(tiles.map(t=>t.href),['#/needs','#/queue/overdue','#/agents','#/plans']);
  assert.match(css,/\/\* canvas-inbox \*\//);
 });
-test('Inbox and Activity skip the assistant rail and use the full width',()=>{
+test('Workspace views skip the assistant rail and use the full width',()=>{
  assert.match(shell,/NO_ASSISTANT\.has\(route\)\?nothing:workspaceAssistant\(route\)/);
- assert.match(shell,/NO_ASSISTANT = new Set\(\['home', 'overview', 'queue', 'activity'\]\)/);
- assert.match(css,/\.lmx-workarea\[data-route="queue"\],:root\[data-app-theme\] \.lmx-workarea\[data-route="activity"\]\{grid-template-columns:minmax\(0,1fr\)\}/);
+ for(const r of ['home','overview','queue','activity','agents','agent','work','chat','slots','health']){
+  assert.match(shell,new RegExp(`NO_ASSISTANT = new Set\\(\\[[^\\]]*'${r}'`));
+ }
+ assert.match(css,/\.lmx-workarea\{display:grid;grid-template-columns:minmax\(0,1fr\)/);
 });
