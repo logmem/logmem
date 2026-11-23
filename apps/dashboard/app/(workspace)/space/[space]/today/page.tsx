@@ -7,7 +7,8 @@ import {
   blockedRows, coverageNotice, needsRows, recentRows, todayCounts,
 } from '../../../../../lib/today-model.mjs';
 import {
-  CopyId, KindChip, PageHeader, StatTile, StatePanel, StatusStrip,
+  ChronoBoard, CopyId, KindChip, PageHeader, StatTile, StatePanel, StatusStrip,
+  type ChronoTone,
 } from '../../../../../components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -129,14 +130,21 @@ export default async function TodayPage({ params }: { params: Promise<{ space: s
         )}
       </section>
 
-      <details className={panel} open={blocked.length > 0 && blocked.length <= 4}>
-        <summary className="flex min-h-[44px] cursor-pointer items-center justify-between px-4 text-sm font-semibold text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus)]">
-          <span>Waiting work ({counts.waiting})</span>
-        </summary>
+      <section aria-labelledby="waiting-h" className={panel}>
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+          <h2 id="waiting-h" className="font-heading text-sm font-semibold text-[var(--text)]">
+            Waiting work ({counts.waiting})
+          </h2>
+          {counts.waiting > blocked.length ? (
+            <Link className="text-xs font-medium text-[var(--link)] hover:underline" href={`/space/${space}/work`}>
+              View all in Work →
+            </Link>
+          ) : null}
+        </div>
         {blocked.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-[var(--text-muted)]">No job in this space is blocked.</p>
+          <p className="px-4 py-3 text-sm text-[var(--text-muted)]">No job in this space is blocked.</p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)]">
             {blocked.map((b) => (
               <li key={b.key} className="px-4 py-3 text-sm">
                 <div className="font-medium text-[var(--text)]">{b.title}</div>
@@ -153,42 +161,51 @@ export default async function TodayPage({ params }: { params: Promise<{ space: s
             ))}
           </ul>
         )}
-        {counts.waiting > blocked.length ? (
-          <p className="border-t border-[var(--border)] px-4 py-2.5 text-xs text-[var(--text-muted)]">
-            Showing {blocked.length} of {counts.waiting}.{' '}
-            <Link className="text-[var(--link)] underline" href={`/space/${space}/work`}>
-              Open Work
-            </Link>
-          </p>
-        ) : null}
-      </details>
+      </section>
 
-      <details className={panel}>
-        <summary className="flex min-h-[44px] cursor-pointer items-center justify-between px-4 text-sm font-semibold text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus)]">
-          <span>Recent updates ({recent.length})</span>
-        </summary>
+      <section aria-labelledby="recent-h" className={panel}>
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+          <h2 id="recent-h" className="font-heading text-sm font-semibold text-[var(--text)]">
+            Recent updates ({recent.length})
+          </h2>
+          <Link className="text-xs font-medium text-[var(--link)] hover:underline" href={`/space/${space}/activity`}>
+            View all activity →
+          </Link>
+        </div>
         {recent.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-[var(--text-muted)]">
+          <p className="px-4 py-3 text-sm text-[var(--text-muted)]">
             No job in this space has an update yet.
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
-            {recent.map((e) => (
-              <li
-                key={e.key}
-                className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-sm"
-              >
-                <span className="min-w-0 flex-1 basis-60 text-[var(--text)]">{e.summary}</span>
-                <span className="shrink-0 font-mono text-xs text-[var(--text-subtle)]">
-                  {[e.by ? shortName(e.by) : null, e.where, relativeTime(e.ts, now)]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="p-4">
+            <ChronoBoard
+              label="Recent space updates"
+              cards={recent.map((e, idx) => {
+                const kind = String(e.kind || 'memo').toLowerCase();
+                const tone: ChronoTone =
+                  kind === 'done' || kind === 'accepted'
+                    ? 'success'
+                    : kind === 'stuck' || kind === 'problem' || kind === 'alert'
+                      ? 'danger'
+                      : kind === 'approval' || kind === 'handoff'
+                        ? 'warning'
+                        : kind === 'progress' || kind === 'started'
+                          ? 'brand'
+                          : 'neutral';
+                return {
+                  id: e.key,
+                  title: e.summary,
+                  date: relativeTime(e.ts, now),
+                  status: e.kind || 'update',
+                  tone,
+                  active: idx === 0,
+                  meta: [e.by ? shortName(e.by) : null, e.where].filter(Boolean).join(' · ') || null,
+                };
+              })}
+            />
+          </div>
         )}
-      </details>
+      </section>
     </div>
   );
 }

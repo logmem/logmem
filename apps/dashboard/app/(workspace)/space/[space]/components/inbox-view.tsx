@@ -335,13 +335,19 @@ function Inspector({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Close handoff details"
+        onClick={onClose}
+        className="fixed inset-0 bg-black/40"
+      />
       <aside
         role="dialog"
         aria-modal="true"
         aria-label="Handoff details"
-        onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full max-w-md flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-3)]"
+        className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-3)]"
       >
         <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-sunken)] px-4 py-3">
           <h2 className="font-heading text-sm font-bold text-[var(--text)]">
