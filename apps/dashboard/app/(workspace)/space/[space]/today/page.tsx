@@ -7,7 +7,8 @@ import {
   blockedRows, coverageNotice, needsRows, recentRows, todayCounts,
 } from '../../../../../lib/today-model.mjs';
 import {
-  CopyId, KindChip, PageHeader, StatTile, StatePanel, StatusStrip,
+  ChronoBoard, CopyId, KindChip, PageHeader, StatTile, StatePanel, StatusStrip,
+  type ChronoTone,
 } from '../../../../../components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -172,21 +173,33 @@ export default async function TodayPage({ params }: { params: Promise<{ space: s
             No job in this space has an update yet.
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
-            {recent.map((e) => (
-              <li
-                key={e.key}
-                className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-sm"
-              >
-                <span className="min-w-0 flex-1 basis-60 text-[var(--text)]">{e.summary}</span>
-                <span className="shrink-0 font-mono text-xs text-[var(--text-subtle)]">
-                  {[e.by ? shortName(e.by) : null, e.where, relativeTime(e.ts, now)]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="border-t border-[var(--border)] p-4">
+            <ChronoBoard
+              label="Recent space updates"
+              cards={recent.map((e, idx) => {
+                const kind = String(e.kind || 'memo').toLowerCase();
+                const tone: ChronoTone =
+                  kind === 'done' || kind === 'accepted'
+                    ? 'success'
+                    : kind === 'stuck' || kind === 'problem' || kind === 'alert'
+                      ? 'danger'
+                      : kind === 'approval' || kind === 'handoff'
+                        ? 'warning'
+                        : kind === 'progress' || kind === 'started'
+                          ? 'brand'
+                          : 'neutral';
+                return {
+                  id: e.key,
+                  title: e.summary,
+                  date: relativeTime(e.ts, now),
+                  status: e.kind || 'update',
+                  tone,
+                  active: idx === 0,
+                  meta: [e.by ? shortName(e.by) : null, e.where].filter(Boolean).join(' · ') || null,
+                };
+              })}
+            />
+          </div>
         )}
       </details>
     </div>

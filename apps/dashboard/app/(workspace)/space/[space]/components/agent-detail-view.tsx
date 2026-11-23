@@ -4,14 +4,15 @@ import * as React from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import {
+  ActivityTimeline,
   AgentStatus,
   AgentTrace,
   CopyId,
-  EntryRow,
   KindChip,
   PageHeader,
   StatTile,
   StatePanel,
+  type ActivityTimelineEvent,
   type TraceSpan,
 } from '../../../../../components/ui';
 import { relativeTime } from '../../../../../lib/inbox-model.mjs';
@@ -255,20 +256,39 @@ export function AgentDetailView({ space, agent, now }: AgentDetailViewProps) {
             detail="Switch back to All to see every recorded entry on this agent's log."
           />
         ) : (
-          <ul className="divide-y divide-[var(--border)] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-4">
-            {filteredLog.map((e) => (
-              <EntryRow
-                key={e.id}
-                kind={e.kind}
-                actor={agent.id}
-                summary={e.summary}
-                where={e.where ?? undefined}
-                via={e.via ?? undefined}
-                trail={e.id}
-                timeLabel={e.ts ? relativeTime(e.ts, now) : '—'}
-              />
-            ))}
-          </ul>
+          <ActivityTimeline
+            label={`Recent entries for ${agent.name}`}
+            now={now}
+            timeZone="America/New_York"
+            events={filteredLog.map((e): ActivityTimelineEvent => {
+              const k = e.kind.toLowerCase();
+              const tone: ActivityTimelineEvent['tone'] =
+                k === 'done' || k === 'accepted'
+                  ? 'success'
+                  : k === 'stuck' || k === 'problem' || k === 'alert'
+                    ? 'danger'
+                    : k === 'progress' || k === 'started' || k === 'handoff'
+                      ? 'brand'
+                      : 'neutral';
+              return {
+                id: e.id,
+                at: e.ts || now,
+                actor: agent.id,
+                title: e.summary,
+                meta: [e.kind, e.where, e.via ? `via ${e.via}` : null].filter(Boolean).join(' · ') || undefined,
+                tone,
+                detail: (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <KindChip kind={e.kind} />
+                      {e.where ? <span className="font-mono text-[11px] text-[var(--text)]">{e.where}</span> : null}
+                    </div>
+                    <CopyId id={e.id} label="Copy trail" />
+                  </div>
+                ),
+              };
+            })}
+          />
         )}
       </section>
     </div>

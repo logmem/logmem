@@ -106,15 +106,24 @@ test('buildAgentDetail builds real status tasks from handoffs and owned jobs', (
   assert.equal(detail.trace.spans.length, 2);
 });
 
-test('21st UI primitives contain zero console.log calls and AgentDetailPage enforces requireSpace', () => {
+test('21st UI primitives contain zero console.log calls, zero raw Tailwind palette classes, and AgentDetailPage enforces requireSpace', () => {
   for (const rel of [
     'apps/dashboard/components/ui/timeline.tsx',
     'apps/dashboard/components/ui/slider.tsx',
     'apps/dashboard/components/ui/agent-trace.tsx',
     'apps/dashboard/components/ui/agent-status.tsx',
+    'apps/dashboard/components/ui/chrono-board.tsx',
+    'apps/dashboard/components/ui/activity-timeline.tsx',
+    'apps/dashboard/components/ui/relative-time.tsx',
+    'apps/dashboard/components/ui/daily-timeline-scheduler.tsx',
   ]) {
     const src = readFileSync(join(ROOT, rel), 'utf8');
     assert.doesNotMatch(src, /console\.log\(/, `${rel} must not contain console.log`);
+    assert.doesNotMatch(
+      src,
+      /\b(?:bg|text|border|ring)-(?:slate|blue|green|amber|red|emerald|purple|orange)-\d{2,3}\b/,
+      `${rel} must use LogMem var(--*) tokens instead of raw Tailwind color palettes`,
+    );
   }
 
   const pageSrc = readFileSync(
