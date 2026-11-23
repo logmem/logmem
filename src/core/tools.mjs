@@ -179,9 +179,13 @@ function isCoordinator(ctx, agent) {
  * If the copy lives only on the shared job or channel, the per-recipient
  * Inbox item still points at it. Returns the agent's own log either way,
  * so a settlement written there stays that agent's part.
+ *
+ * The log is read whole, with no limit: a handoff older than any read
+ * window is still owed to this agent, so a windowed read would make it
+ * invisible here and leave it impossible to accept or decline.
  */
 async function resolveHandoffPart(ctx, trail, agent) {
-  const log = await ctx.store.readLog("agent", agent, { reverse: true, limit: 500 });
+  const log = await ctx.store.readLog("agent", agent, { reverse: true });
   const onLog = log.filter((e) => e.kind === "handoff" && e.trail === trail);
   const own = onLog.find((e) => handoffAddresses(e.to, agent));
   if (own) return { ho: own, log };
@@ -192,7 +196,7 @@ async function resolveHandoffPart(ctx, trail, agent) {
     const mine = items.find((it) => (it.type || "handoff") === "handoff" && agentId(it.to) === agentId(agent));
     if (mine?.where) {
       const { ns, id } = parseRef(mine.where);
-      const whereLog = await ctx.store.readLog(ns, id, { reverse: true, limit: 500 });
+      const whereLog = await ctx.store.readLog(ns, id, { reverse: true });
       ho = whereLog.find((e) => e.kind === "handoff" && e.trail === trail && handoffAddresses(e.to, agent)) || null;
     }
     if (!ho && mine) {
@@ -242,10 +246,15 @@ function settleRecipientOf(storedTo, fallback) {
   return raw.replace(/^agent:/, "");
 }
 
+/**
+ * An agent's whole log, newest first. Read without a limit: this feeds the
+ * settlement lookups (a prior close on the same trail), and a settlement
+ * written long ago must still be found.
+ */
 async function readAgentLog(ctx, agent) {
   if (!agent) return [];
   try {
-    return await ctx.store.readLog("agent", agent, { reverse: true, limit: 500 });
+    return await ctx.store.readLog("agent", agent, { reverse: true });
   } catch {
     return [];
   }
