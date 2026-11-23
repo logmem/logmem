@@ -19,7 +19,7 @@ jobs:
       packages: ${{ steps.select.outputs.packages }}
     steps:
       - name: Check out the merged commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
@@ -67,7 +67,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out the merged release commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
 
