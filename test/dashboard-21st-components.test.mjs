@@ -116,6 +116,11 @@ test('21st UI primitives contain zero console.log calls, zero raw Tailwind palet
     'apps/dashboard/components/ui/activity-timeline.tsx',
     'apps/dashboard/components/ui/relative-time.tsx',
     'apps/dashboard/components/ui/daily-timeline-scheduler.tsx',
+    'apps/dashboard/components/ui/ai-actions.tsx',
+    'apps/dashboard/components/ui/suggestions.tsx',
+    'apps/dashboard/components/ui/cited-answer-chat-input.tsx',
+    'apps/dashboard/components/ui/generation-stats.tsx',
+    'apps/dashboard/components/ui/illos-ai-chat-empty-state.tsx',
   ]) {
     const src = readFileSync(join(ROOT, rel), 'utf8');
     assert.doesNotMatch(src, /console\.log\(/, `${rel} must not contain console.log`);

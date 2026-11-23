@@ -47,3 +47,13 @@ export {
 export type { RelativeTimeProps, RelativeTimeZoneProps } from './relative-time';
 export { DailyTimelineScheduler } from './daily-timeline-scheduler';
 export type { DailyTimelineSchedulerProps, DailyTimelineEvent } from './daily-timeline-scheduler';
+export { Actions, Action } from './ai-actions';
+export type { ActionsProps, ActionProps } from './ai-actions';
+export { Suggestions, SuggestionList, Suggestion } from './suggestions';
+export type { SuggestionsProps, SuggestionListProps, SuggestionProps, SuggestionVariant } from './suggestions';
+export { CitedAnswerChatInput, CitedSourcesBar, extractLogmemSources } from './cited-answer-chat-input';
+export type { CitedAnswerChatInputProps, CitedSourcesBarProps, CitedSource, CitedStatus } from './cited-answer-chat-input';
+export { GenerationStats, formatGenerationTime } from './generation-stats';
+export type { GenerationStatsProps, GenerationFinishReason } from './generation-stats';
+export { IllosAiChatEmptyState, StreamingTokensArt } from './illos-ai-chat-empty-state';
+export type { IllosAiChatEmptyStateProps } from './illos-ai-chat-empty-state';
