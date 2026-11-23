@@ -381,7 +381,7 @@ test("logmem_ask on another agent's log still lands on the asker's own log", asy
   assert.equal((await sc(q, "logmem_brief", {})).answered_asks[0].verdict, "reject");
 });
 
-test("Brief windows asks to the last 7 days", async () => {
+test("Brief retains older pending asks for reapproval", async () => {
   const now = clock();
   const { q, store } = await team({ now });
   const old = await sc(q, "logmem_ask", { question: "Old?", action: "x", reversible: true });
@@ -389,6 +389,6 @@ test("Brief windows asks to the last 7 days", async () => {
   const fresh = await sc(q, "logmem_ask", { question: "New?", action: "y", reversible: true });
   await writeDecision(store, fresh.trail, { verdict: "approve", by: "human:mikey", now });
   const b = await sc(q, "logmem_brief", {});
-  assert.deepEqual(b.pending_asks.map((x) => x.trail), [], `old ask ${old.trail} is outside the window`);
+  assert.deepEqual(b.pending_asks.map((x) => x.trail), [old.trail], "old ask remains visible for reapproval");
   assert.deepEqual(b.answered_asks.map((x) => x.trail), [fresh.trail]);
 });
