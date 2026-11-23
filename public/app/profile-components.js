@@ -10,6 +10,7 @@ import { agentDispatchButton } from './dispatch-components.js';
 import { profileNow, recapParts, followGroups, followCounts, FOLLOW_SHOW, shiftRows, profileTelemetry } from './profile-model.js';
 import { agentIcon } from './agent-icons.js';
 import { profileTools } from './profile-tools.js';
+import { agentStatusCard, agentTraceCard, buildVanillaAgentTrace } from './ui-21st.js';
 
 const pill = (label, on, click) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click}>${label}</button>`;
 const SHIFT_FILTERS = [['all', 'All'], ['auto', 'Auto'], ['manual', 'Manual']];
@@ -35,6 +36,12 @@ export function agentProfile({ d, id, pf, redraw, space }) {
   const open = k => pf.open?.[k] === true;
   const drawer = (k, title, count, body) => html`<details class="lmx-prof-drawer" ?open=${open(k)} @toggle=${e => { (pf.open = pf.open || {})[k] = e.currentTarget.open; }}><summary><span>${title}</span>${count == null ? nothing : html`<span class="lmx-tag">${count}</span>`}</summary><div class="lmx-prof-drawerbody">${body}</div></details>`;
   const dispatch = { id, now: d.now, recap: d.recap, seen: d.seen };
+  const statusTasks = [
+    ...(d.handoffs || []).slice(0, 4).map((h, i) => ({ id: 'h-' + (h.trail || i), label: String(h.summary || 'Pending handoff'), status: 'pending', meta: 'handoff' })),
+    ...(now.job ? [{ id: 'job-' + now.job, label: now.doing || now.job, status: now.blocked ? 'pending' : 'running', meta: now.blocked ? 'blocked' : 'active' }] : []),
+    ...(recap?.next || []).slice(0, 3).map((n, i) => ({ id: 'next-' + i, label: String(n), status: 'pending', meta: 'next' })),
+  ];
+  const trace = buildVanillaAgentTrace(id, d.shifts, d.log);
   return html`<section class="lmx-prof" aria-label=${'Agent profile for ' + id}>
     <header class="lmx-card lmx-prof-head" data-state=${tel.state}>
       <div class="lmx-prof-id"><span class="lmx-avatar lmx-prof-avatar" aria-hidden="true">${logo ? html`<img src=${logo.src} alt="">` : initials(id)}</span><h2>${id}</h2>${tel.role ? html`<span class="lmx-tag">${tel.role}</span>` : nothing}</div>
@@ -47,6 +54,11 @@ export function agentProfile({ d, id, pf, redraw, space }) {
     </header>
 
     ${profileTools({ d, id, space, redraw })}
+
+    <div class="lm-prof-21st">
+      ${agentStatusCard({ title: now.doing || 'No active task recorded', detail: now.next ? 'Next: ' + now.next : now.job ? 'Active job: ' + now.job : 'Waiting for next shift or assignment.', badge: now.blocked ? 'Blocked' : (d.seen?.label || 'status'), tasks: statusTasks })}
+      ${agentTraceCard({ trace, pf, redraw })}
+    </div>
 
     <div class="lmx-prof-grid">
       <section class="lmx-card lmx-prof-tile lmx-prof-now" aria-label="Now">

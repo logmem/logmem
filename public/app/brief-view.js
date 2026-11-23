@@ -5,6 +5,7 @@ import { agent, textWithIds, emptyState } from './ui.js';
 import { splitHeadline } from './dashboard-model.js';
 import { needsParts, topNeed, briefTiles, presence, updatedLabel, relTime, fullTime, clock24, dueChip, placeLink } from './brief-model.js';
 import { attentionKind } from './dashboard-model.js';
+import { chronoBoard } from './ui-21st.js';
 
 const ACTION = { decision: 'Review decision', task: 'Review task', review: 'Review evidence' };
 
@@ -44,11 +45,11 @@ export function handoffCard(item, now = Date.now()) {
     <a class="lmx-flight" href="#/queue"><span class="lmx-flight-who">${agent(item.from)}<span aria-hidden="true">→</span>${agent(item.to)}</span><strong>${head}</strong><span class="lmx-flight-meta"><span class="lmx-due-chip" data-tone=${due.tone || nothing}>${due.text}</span><span class="lmx-meta" title=${fullTime(item.created_at)}>opened ${relTime(item.created_at, now)}</span></span></a></section>`;
 }
 
-/** Recent entries, newest first, with a coloured rule by kind. */
+/** Recent entries, newest first, rendered as connected ChronoBoard timeline cards. */
 export function recentFeed(entries = [], limit = 6) {
   const list = entries.slice(0, limit);
   return html`<section class="lmx-brief-panel" aria-labelledby="brief-recent"><div class="lmx-brief-panel-head"><h2 id="brief-recent">Recent <span class="lmx-live-dot" aria-hidden="true"></span><span class="lmx-meta">live</span></h2></div>
-    ${list.length ? html`<ol class="lmx-feed">${list.map((e) => feedRow(e))}</ol>` : html`<p class="lmx-meta">No recent job updates.</p>`}
+    ${list.length ? chronoBoard(list) : html`<p class="lmx-meta">No recent job updates.</p>`}
     <a class="lmx-text-link" href="#/activity">View all activity →</a></section>`;
 }
 

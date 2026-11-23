@@ -33,6 +33,7 @@ import { agentProfile } from './profile-components.js';
 import { blockerKind } from './flow-model.js';
 
 import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js';
+import { activityTimelineGroup, shiftTimelineSection } from './ui-21st.js';
 import {seedCard} from './seed-components.js';
 import {blockerClusters} from './flow-model.js';
 import {ticketPrompt,jobDispatchPrompt,isStaleTicket} from './dispatch-model.js';
@@ -220,6 +221,7 @@ function drawLog() {
 // ─── Activity: the full feed, newest first, grouped by day ─────────
 // The raw log with the inspector and Recall stays at #/log.
 const ACTIVITY_PAGE = 50;
+const activityExpanded = new Set();
 function drawActivity() {
   const all = live.log || [], f = filt('activity:' + state.space), now = Date.now();
   const agents = uniq(all.map((e) => agentName(e.by)).filter(Boolean)).sort();
@@ -227,14 +229,16 @@ function drawActivity() {
   const list = filterActivity(all, { agent: f.agent || '', kind: f.kind || '' }, agentName);
   const kinds = Object.fromEntries(KIND_GROUPS.map(([k]) => [k, all.filter((e) => (e.group || 'system') === k && (!f.agent || agentName(e.by) === f.agent)).length]));
   const shown = list.slice(0, Math.max(ACTIVITY_PAGE, Number(f.shown) || ACTIVITY_PAGE));
+  const mode = f.view === 'compact' ? 'compact' : 'timeline';
   const set = (key, value) => () => { f[key] = value; f.shown = ACTIVITY_PAGE; saveFilt(); drawActivity(); };
+  const toggleRow = (key) => { if (activityExpanded.has(key)) activityExpanded.delete(key); else activityExpanded.add(key); drawActivity(); };
   const row = (e) => html`<li class="lmx-activity-row" data-k=${e.group || 'system'}><time datetime=${new Date(Number(e.ts)).toISOString()} title=${fullTime(e.ts)}>${clock24(e.ts)}</time>
     <span class="lmx-kind-chip" data-k=${e.group || 'system'}>${e.kind}</span>${agent(e.by)}
     <div class="lmx-activity-main"><p>${textWithIds(e.summary)}</p><span class="lmx-feed-meta">${placeLink(e.where) ? html`<a href=${placeLink(e.where).href}>${placeLink(e.where).label}</a>` : html`<span>${e.where || 'No place recorded'}</span>`}${e.trail ? idChip(e.trail, 'trail') : nothing}<span title=${fullTime(e.ts)}>${relTime(e.ts, now)}</span></span></div></li>`;
-  renderView('activity', ['Activity'], html`<header class="lmx-pageheader"><div><span class="lm-eyebrow">Every entry · newest first</span><h1>Activity</h1></div><div class="lmx-pageheader-links"><a href="#/log">Log and Recall</a></div></header>
+  renderView('activity', ['Activity'], html`<header class="lmx-pageheader"><div><span class="lm-eyebrow">Every entry · newest first</span><h1>Activity</h1></div><div class="lmx-pageheader-links"><div class="lmx-filter" role="group" aria-label="Activity display mode"><button type="button" class="lmx-typepill" aria-pressed=${String(mode === 'timeline')} @click=${() => { f.view = 'timeline'; saveFilt(); drawActivity(); }}>Timeline</button><button type="button" class="lmx-typepill" aria-pressed=${String(mode === 'compact')} @click=${() => { f.view = 'compact'; saveFilt(); drawActivity(); }}>Compact</button></div><a href="#/log">Log and Recall</a></div></header>
     <div class="lmx-activity-filters"><label class="lmx-f"><span>Agent</span><select class="lm-select" aria-label="Filter by agent" @change=${(e) => set('agent', e.target.value)()}><option value="">All agents</option>${agents.map((n) => html`<option ?selected=${n === f.agent}>${n}</option>`)}</select></label>
       <div class="lmx-filter" role="group" aria-label="Filter by kind"><button type="button" class="lmx-typepill" aria-pressed=${String(!f.kind)} @click=${set('kind', '')}>All ${f.agent ? all.filter((e) => agentName(e.by) === f.agent).length : all.length}</button>${KIND_GROUPS.map(([k, l]) => html`<button type="button" class="lmx-typepill" data-k=${k} aria-pressed=${String(f.kind === k)} ?disabled=${!kinds[k] && f.kind !== k} @click=${set('kind', f.kind === k ? '' : k)}>${l} ${kinds[k]}</button>`)}</div></div>
-    ${shown.length ? dayGroups(shown, now).map((g) => html`<section class="lmx-activity-day" aria-label=${g.label}><h2 class="lmx-activity-dayhead">${g.label} <span class="lmx-meta">${g.entries.length}</span></h2><ol class="lmx-activity-list">${repeat(g.entries, entryKey, row)}</ol></section>`) : emptyState(all.length ? 'No entries match these filters.' : 'No activity yet.', all.length ? 'Pick All agents or All kinds.' : 'Entries appear here as agents write.')}
+    ${shown.length ? dayGroups(shown, now).map((g) => mode === 'timeline' ? activityTimelineGroup(g, { expandedSet: activityExpanded, onToggle: toggleRow, now }) : html`<section class="lmx-activity-day" aria-label=${g.label}><h2 class="lmx-activity-dayhead">${g.label} <span class="lmx-meta">${g.entries.length}</span></h2><ol class="lmx-activity-list">${repeat(g.entries, entryKey, row)}</ol></section>`) : emptyState(all.length ? 'No entries match these filters.' : 'No activity yet.', all.length ? 'Pick All agents or All kinds.' : 'Entries appear here as agents write.')}
     <div class="lmx-activity-foot">${list.length > shown.length ? html`<button type="button" class="lm-btn lm-btn--secondary" @click=${() => { f.shown = shown.length + ACTIVITY_PAGE; saveFilt(); drawActivity(); }}>Load ${Math.min(ACTIVITY_PAGE, list.length - shown.length)} more</button>` : nothing}${list.length <= shown.length && live.logNext ? html`<button type="button" class="lm-btn lm-btn--secondary" ?disabled=${!!live.logBusy} @click=${showOlder}>${live.logBusy ? 'Loading older entries' : 'Show older'}</button>` : nothing}<span class="lmx-meta" role="status">${shown.length} of ${list.length} shown.${live.logErr ? ' ' + live.logErr : live.logNext ? ' Older entries are available.' : live.logIndexed ? ' This is the oldest indexed entry. Use ' : ' This screen reads the latest ' + all.length + ' entries. Use '}${live.logNext && !live.logErr ? nothing : html`<a href="#/log">Recall</a> for older ones.`}</span></div>`);
 }
 async function showOlder() {
@@ -334,13 +338,16 @@ const slotCell = (cell) => {
   return html`<td>${decision(ic, label)}${n ? html` <span class="muted mono" style="font-size:12px">${n} ${n === 1 ? 'run' : 'runs'}</span>` : nothing}</td>`;
 };
 pages.slots = async (date) => {
-  const d = await load('slots', date ? { date } : {});
+  const [d, ag] = await Promise.all([load('slots', date ? { date } : {}), load('agents')]);
   if (!ok(d)) return;
+  const pf = filt('slots:' + state.space);
   const rows = (d.agents || []).map((a) => html`<tr><td><a href=${'#/agent/' + encodeURIComponent(a.agent)}>${agentName(a.agent)}</a></td>${SLOT_ORDER.map((s) => slotCell(a.slots && a.slots[s]))}</tr>`);
-  renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Review coordination receipts by day. An empty slot past its window reads Missed.')}
+  const draw = () => renderView('slots', ['Agents', 'Daily slots'], html`${head('Daily slots', 'Review shift timelines and coordination receipts by day. An empty slot past its window reads Missed.')}
     <div class="lmx-filters"><label>Run date <input type="date" class="lm-input" .value=${d.date || ''} @change=${(e) => { if (e.target.value && e.target.validity.valid) location.hash = '#/slots/' + encodeURIComponent(e.target.value); }}></label><span class="lmx-meta">${(d.agents || []).length} agents · America/New_York</span><span class="lm-spacer"></span><a href="#/audit" class="lm-btn lm-btn--secondary">Coordination audit</a><a href="#/agents" class="lm-btn lm-btn--secondary">Agents</a></div>
+    ${shiftTimelineSection({ agents: ag?.agents || [], pf, redraw: () => { saveFilt(); draw(); } })}
     <p class="muted">Receipts do not prove an active runner or a configured schedule.</p>
     ${rows.length ? table(['Agent', 'Morning', 'Midday', 'Closeout'], rows) : emptyState('No agents yet.', 'Slots appear once agents are in this space.')}`);
+  draw();
 };
 async function auditPage(route = 'audit') {
   const d = await load('audit');
