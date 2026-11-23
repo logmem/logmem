@@ -1,7 +1,14 @@
+import Link from 'next/link';
 import { requireSpace } from '../../../../../lib/server/auth';
 import { getScheduleData } from '../../../../../lib/server/schedule';
+import { buildShiftTimeline } from '../../../../../lib/schedule-model.mjs';
 import { relativeTime } from '../../../../../lib/inbox-model.mjs';
 import { CopyId, KindChip, PageHeader, StatePanel } from '../../../../../components/ui';
+import {
+  ScheduleTimelineView,
+  type ShiftTimelineRow,
+  type ShiftTimelineSlot,
+} from '../components/schedule-timeline-view';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,12 +30,35 @@ export default async function SchedulePage({ params }: { params: Promise<{ space
     );
   }
 
+  const timeline = buildShiftTimeline(shifts, now);
+
   return (
     <div className="space-y-6 font-sans">
       <PageHeader
         title="Schedule"
         subtitle={`Recorded shifts and dated milestones in space:${space}.`}
       />
+
+      <section aria-labelledby="sched-timeline-h" className="space-y-2">
+        <h2 id="sched-timeline-h" className="font-heading text-lg font-semibold text-[var(--text)]">
+          Shift timeline ({shifts.length})
+        </h2>
+        {shifts.length === 0 ? (
+          <StatePanel
+            variant="empty"
+            title="No recorded shifts yet."
+            detail="When an agent calls logmem_start, its active and recent shifts appear on this timeline."
+          />
+        ) : (
+          <ScheduleTimelineView
+            space={space}
+            rows={timeline.rows as ShiftTimelineRow[]}
+            slots={timeline.slots as ShiftTimelineSlot[]}
+            config={timeline.config}
+            now={now}
+          />
+        )}
+      </section>
 
       <section aria-labelledby="sched-due-h" className="space-y-2">
         <h2 id="sched-due-h" className="font-heading text-lg font-semibold text-[var(--text)]">
@@ -67,23 +97,22 @@ export default async function SchedulePage({ params }: { params: Promise<{ space
         )}
       </section>
 
-      <section aria-labelledby="sched-shifts-h" className="space-y-2">
-        <h2 id="sched-shifts-h" className="font-heading text-lg font-semibold text-[var(--text)]">
-          Recent agent shifts ({shifts.length})
-        </h2>
-        {shifts.length === 0 ? (
-          <StatePanel
-            variant="empty"
-            title="No recorded shifts yet."
-            detail="When an agent calls logmem_start, its active and recent shifts appear here."
-          />
-        ) : (
+      {shifts.length > 0 ? (
+        <section aria-labelledby="sched-shifts-h" className="space-y-2">
+          <h2 id="sched-shifts-h" className="font-heading text-lg font-semibold text-[var(--text)]">
+            Recent agent shifts ({shifts.length})
+          </h2>
           <ul className="divide-y divide-[var(--border)] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)]">
             {shifts.map((s) => (
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-[var(--text)]">{s.agent}</span>
+                    <Link
+                      href={`/space/${encodeURIComponent(space)}/agents/${encodeURIComponent(s.agent)}`}
+                      className="font-semibold text-[var(--text)] hover:text-[var(--link)] hover:underline"
+                    >
+                      {s.agent}
+                    </Link>
                     <span className="font-mono text-xs text-[var(--text-subtle)]">via {s.surface}</span>
                     <span className="rounded-[var(--radius-pill)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[11px] text-[var(--text-muted)]">
                       {s.statusLabel}
@@ -97,8 +126,8 @@ export default async function SchedulePage({ params }: { params: Promise<{ space
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }

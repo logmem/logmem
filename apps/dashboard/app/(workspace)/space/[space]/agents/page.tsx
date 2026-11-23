@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { requireSpace } from '../../../../../lib/server/auth';
 import { getAgentsData } from '../../../../../lib/server/agents';
 import { agentCounts } from '../../../../../lib/agents-model.mjs';
@@ -52,7 +53,12 @@ export default async function AgentsPage({ params }: { params: Promise<{ space: 
             <li key={a.id} className="space-y-1.5 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-[var(--text)]">{a.name}</span>
+                  <Link
+                    href={`/space/${encodeURIComponent(space)}/agents/${encodeURIComponent(a.id)}`}
+                    className="text-sm font-semibold text-[var(--text)] hover:text-[var(--link)] hover:underline"
+                  >
+                    {a.name}
+                  </Link>
                   <span
                     className={`rounded-[var(--radius-pill)] px-2 py-0.5 font-mono text-[11px] font-medium ${
                       a.state === 'active'

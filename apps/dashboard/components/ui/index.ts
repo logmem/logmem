@@ -11,3 +11,25 @@ export { ReadOnlyFlag } from './readonly-flag';
 export { ChatStateOrb } from './chat-state-orb';
 export type { OrbState } from './chat-state-orb';
 export { StatePanel, PageSkeleton } from './state-panel';
+export { Slider } from './slider';
+export type { SliderProps } from './slider';
+export {
+  TimelineProvider,
+  Timeline,
+  TimelineGrid,
+  TimelineHeader,
+  TimelineRow,
+  TimelineSlot,
+  TimelineSlotLabel,
+  TimelineSlotContent,
+  TimelineCurrentTime,
+  TimelineMouseIndicator,
+  useTimeline,
+  timeToMinutes,
+  minutesToTime,
+} from './timeline';
+export type { TimelineConfig, TimelineRowData, TimelineSlotData } from './timeline';
+export { AgentTrace, TraceSpanRow } from './agent-trace';
+export type { AgentTraceProps, TraceSpan, SpanKind, SpanStatus } from './agent-trace';
+export { AgentStatus } from './agent-status';
+export type { AgentStatusProps, AgentStatusTask } from './agent-status';

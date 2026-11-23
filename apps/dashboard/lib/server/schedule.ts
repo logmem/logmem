@@ -8,6 +8,7 @@ export interface ScheduleShift {
   agent: string;
   surface: string;
   startedAt: number;
+  lastAt: number;
   state: string;
   statusLabel: string;
   doing: string | null;
