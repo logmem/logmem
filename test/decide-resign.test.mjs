@@ -131,8 +131,78 @@ test("decide-resign: refuses bad keys and a missing cutoff, and the summary carr
   await assert.rejects(resignDecisions(t.store, { oldSecret: "short", newSecret: NEW, cutoff: 1 }), ResignError);
   await assert.rejects(resignDecisions(t.store, { oldSecret: OLD, newSecret: OLD, cutoff: 1 }), ResignError);
   await assert.rejects(resignDecisions(t.store, { oldSecret: OLD, newSecret: NEW }), ResignError);
+  await assert.rejects(
+    resignDecisions(t.store, {
+      oldSecret: OLD,
+      newSecret: NEW,
+      verifyUrl: "https://example.test/api/verify-decisions",
+      cutoff: 1,
+    }),
+    ResignError,
+  );
   await askAndDecide(t);
   const s = JSON.stringify(summarizeResign(await resignDecisions(t.store, { oldSecret: OLD, newSecret: NEW, cutoff: t.now() + 1 })));
   assert.ok(!s.includes(OLD) && !s.includes(NEW));
   assert.doesNotMatch(s, /[0-9a-f]{64}/, "no signatures");
+});
+
+test("decide-resign: --verify-url oracle re-signs without the old key", async (t0) => {
+  const t = await team();
+  const trails = [await askAndDecide(t, { n: 1 }), await askAndDecide(t, { n: 2, verdict: "reject" })];
+  process.env.LOGMEM_DECIDE_SECRET = NEW;
+  t0.after(() => delete process.env.LOGMEM_DECIDE_SECRET);
+  assert.equal(await pending(t), 2);
+
+  // Oracle answers with the old-key truth: every posted decision verifies.
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { valid: body.decisions.map((_, i) => i) };
+      },
+    };
+  };
+
+  const dry = await resignDecisions(t.store, {
+    newSecret: NEW,
+    verifyUrl: "https://pre-swap.test/api/verify-decisions",
+    fetchImpl,
+    cutoff: t.now() + 1,
+  });
+  assert.equal(dry.verifier, "verify-url");
+  assert.equal(summarizeResign(dry).resigned, 2);
+  assert.equal(await pending(t), 2, "dry run writes nothing");
+
+  const run = await resignDecisions(t.store, {
+    newSecret: NEW,
+    verifyUrl: "https://pre-swap.test/api/verify-decisions",
+    fetchImpl,
+    cutoff: t.now() + 1,
+    apply: true,
+  });
+  assert.deepEqual(run.resigned.sort(), [...trails].sort());
+  assert.equal(await pending(t), 0);
+});
+
+test("decide-resign: oracle that verifies nothing leaves decisions unverifiable", async () => {
+  const t = await team();
+  const trail = await askAndDecide(t);
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { valid: [] };
+    },
+  });
+  const r = await resignDecisions(t.store, {
+    newSecret: NEW,
+    verifyUrl: "https://pre-swap.test/api/verify-decisions",
+    fetchImpl,
+    cutoff: t.now() + 1,
+    apply: true,
+  });
+  assert.deepEqual(r.unverifiable, [trail]);
+  assert.equal(r.resigned.length, 0);
 });
