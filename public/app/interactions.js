@@ -95,6 +95,7 @@ export async function queuePage(arg){
  let selectedReviews=new Set(),pendingAckJobs=new Set(),localArchive=[],undoToast=null;
  let archiveQuery='',archiveAgent='',archiveWindow='all';
  let expandedTexts=new Set(),kbIndex=-1,activeTab='decisions',slashAt=0;
+ let noteOpenTrails=new Map(),actionExpandedTrails=new Set(),unfoldedDecisions=new Set();
  const MAIL_PAGE=10,UNDO_MS=4500;
  const active=()=>space===state.space&&version===generation&&location.hash===route;
  const reducedMotion=()=>typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -334,34 +335,105 @@ export async function queuePage(arg){
    </li>`;
   };
 
-  const renderDecisionCard=a=>{
+  const copyActionText=(text)=>{
+   if(!text)return;
+   navigator.clipboard.writeText(text).then(()=>toast('Proposed action copied'),()=>toast('Could not copy action.',true));
+  };
+
+  const renderDecisionCard=(a,idx)=>{
    const p=a.payload||{},irr=p.reversible!==true;
    const problem=decisionProblem(a,'approve')||(!a.ask_digest?'Reload to verify the action version.':null);
    const expandKey='dec:'+a.trail;
    const summary=String(a.summary||'Untitled decision');
    const isLong=summary.length>150,isOpen=expandedTexts.has(expandKey);
-   return html`<article class="lm-approval lmx-cockpit-dec lmx-cockpit-item" data-irreversible=${String(irr)} data-key=${'decision:'+a.trail}>
-    <div class="lmx-cockpit-dechead">
-     <div class="lmx-cockpit-decq">
-      <span class="lmx-cockpit-question">${isLong&&!isOpen?summary.slice(0,150).trimEnd()+'…':summary}${isLong?html` <button type="button" class="lmx-inline-more" aria-expanded=${String(isOpen)} @click=${()=>toggleExpand(expandKey)}>${isOpen?'Show less':'Show more'}</button>`:nothing}</span>
-      <div class="lmx-inbox-meta">
+   const folded=idx>=2&&!unfoldedDecisions.has(a.trail);
+   const noteMode=noteOpenTrails.get(a.trail)||'';
+   const actionExpanded=actionExpandedTrails.has(a.trail);
+   const actionStr=String(p.action||'').trim();
+   const actionFirstLine=actionStr.split(/\r?\n/)[0]||'';
+   const actionLong=actionStr.includes('\n')||actionStr.length>88;
+
+   const openComposer=(mode)=>{
+    noteOpenTrails.set(a.trail,mode);
+    unfoldedDecisions.add(a.trail);
+    draw();
+    requestAnimationFrame(()=>{
+     const el=document.querySelector(`[data-note-for="${CSS.escape('ask:'+a.trail)}"]`);
+     if(el)el.focus();
+    });
+   };
+
+   const onRequestChanges=(e)=>{
+    const el=document.querySelector(`[data-note-for="${CSS.escape('ask:'+a.trail)}"]`);
+    if(el&&el.value.trim()){
+     decide(e,a,'reject');
+     return;
+    }
+    openComposer('changes');
+   };
+
+   return html`<article class="lm-approval lmx-di-row lmx-cockpit-item" data-irreversible=${String(irr)} data-folded=${String(folded)} data-key=${'decision:'+a.trail}>
+    <div class="lmx-di-shell">
+     <span class="lmx-di-icon" data-tone=${irr?'danger':'decision'} aria-hidden="true">${irr
+      ?html`<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.2 13.8 12.6a1 1 0 0 1-.87 1.5H3.07a1 1 0 0 1-.87-1.5L8 2.2Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.2v3.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.4" r=".8" fill="currentColor"/></svg>`
+      :html`<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/><path d="M6.4 6.3a1.7 1.7 0 0 1 3.2.7c0 1-1.1 1.4-1.6 1.8v.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".8" fill="currentColor"/></svg>`}</span>
+     <div class="lmx-di-content">
+      <div class="lmx-di-top">
+       ${folded
+        ?html`<button type="button" class="lmx-di-title lmx-di-title--folded" @click=${()=>{unfoldedDecisions.add(a.trail);draw();}}>${summary}</button>`
+        :html`<p class="lmx-di-title">${isLong&&!isOpen?summary.slice(0,150).trimEnd()+'…':summary}${isLong?html` <button type="button" class="lmx-inline-more" aria-expanded=${String(isOpen)} @click=${()=>toggleExpand(expandKey)}>${isOpen?'Show less':'Show more'}</button>`:nothing}</p>`}
+       <div class="lmx-di-pills">
+        <span class="lmx-cockpit-badge" data-tone=${irr?'danger':'neutral'}>${irr?'Irreversible':'Reversible'}</span>
+        ${a.deferred?decision('deferred'):nothing}
+       </div>
+      </div>
+
+      <div class="lmx-di-meta">
        <span class="lmx-cockpit-agent">${avatar(a.by)}</span>
        ${a.ts?html`<time class="lmx-meta" title=${fullTime(a.ts)}>${ago(a.ts)}</time>`:nothing}
-       ${irr?html`<span class="lmx-cockpit-badge" data-tone="danger">Irreversible</span>`:html`<span class="lmx-cockpit-badge" data-tone="neutral">Reversible</span>`}
-       ${a.deferred?decision('deferred'):nothing}
        ${a.where?html`<span class="lmx-cockpit-chip" title=${a.where}>${a.where.replace(/^job:/,'')}</span>`:nothing}
+       ${folded?html`<button type="button" class="lmx-inline-more lmx-di-unfold" @click=${()=>{unfoldedDecisions.add(a.trail);draw();}}>Review</button>`:nothing}
       </div>
-     </div>
-    </div>
-    ${p.action?html`<details class="lmx-dec-action"><summary>Exact proposed action</summary><pre class="lm-action">${p.action}</pre></details>`:nothing}
-    ${problem?html`<p class="lmx-meta" role="status">${problem}</p>`:nothing}
-    <div class="lmx-cockpit-foot">
-     <input class="lm-input lmx-cockpit-note" data-note-for=${'ask:'+a.trail} maxlength="1000" autocomplete="off" placeholder="Note (required when requesting changes)" aria-label="Note for decision">
-     <div class="lmx-cockpit-acts">
-      <button type="button" class="lm-btn lmx-btn--decision" data-kb-primary ?disabled=${!!problem} @click=${e=>decide(e,a,'approve')}>Approve</button>
-      <button type="button" class="lm-btn lm-btn--danger" @click=${e=>decide(e,a,'reject')}>Request changes</button>
-      ${!a.deferred?html`<button type="button" class="lm-btn lmx-btn--sunken" @click=${e=>decide(e,a,'defer')}>Decide later</button>`:nothing}
-      <a class="lm-btn lm-btn--ghost" data-kb-comment href=${link({type:'decision',id:a.trail})}>Comment</a>
+
+      <div class="lmx-di-body" data-open=${String(!folded)}>
+       <div class="lmx-di-body-inner">
+        ${actionStr?html`<div class="lmx-di-actionbox" data-expanded=${String(actionExpanded)}>
+         <div class="lmx-di-actionbar">
+          <span class="lmx-di-actionlabel">Action</span>
+          <code class="lmx-di-actionpreview" title=${actionStr}>${actionFirstLine}</code>
+          <div class="lmx-di-actionbtns">
+           ${actionLong?html`<button type="button" class="lmx-di-microbtn" aria-expanded=${String(actionExpanded)} @click=${()=>{if(actionExpanded)actionExpandedTrails.delete(a.trail);else actionExpandedTrails.add(a.trail);draw();}}>${actionExpanded?'Hide':'Details'}</button>`:nothing}
+           <button type="button" class="lmx-di-microbtn" @click=${()=>copyActionText(actionStr)}>Copy</button>
+          </div>
+         </div>
+         ${actionExpanded?html`<pre class="lmx-di-pre">${actionStr}</pre>`:nothing}
+        </div>`:nothing}
+
+        ${problem?html`<p class="lmx-meta lmx-di-problem" role="status">${problem}</p>`:nothing}
+
+        <div class="lmx-di-acts">
+         <button type="button" class="lmx-di-btn lmx-di-btn--approve" data-kb-primary ?disabled=${!!problem} @click=${e=>decide(e,a,'approve')}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3.5 8.3 3 3 6-6.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Approve
+         </button>
+         <button type="button" class="lmx-di-btn lmx-di-btn--changes" aria-expanded=${String(noteMode==='changes')} @click=${onRequestChanges}>Request changes</button>
+         ${!a.deferred?html`<button type="button" class="lmx-di-btn lmx-di-btn--sunken" @click=${e=>decide(e,a,'defer')}>Decide later</button>`:nothing}
+         <span class="lmx-di-spacer"></span>
+         <button type="button" class="lmx-di-linkbtn" aria-expanded=${String(!!noteMode)} @click=${()=>{if(noteMode){noteOpenTrails.delete(a.trail);draw();}else openComposer('note');}}>${noteMode?'Hide note':'+ Note'}</button>
+         <a class="lmx-di-linkbtn" data-kb-comment href=${link({type:'decision',id:a.trail})}>Comment</a>
+        </div>
+
+        <div class="lmx-di-composer" data-open=${String(!!noteMode)}>
+         <div class="lmx-di-composer-inner">
+          <div class="lmx-di-composer-row">
+           <input class="lm-input lmx-di-noteinput" data-note-for=${'ask:'+a.trail} maxlength="1000" autocomplete="off" placeholder=${noteMode==='changes'?'Explain what should change (required)…':'Add an optional note for the agent…'} aria-label="Note for decision" @keydown=${e=>{if(e.key==='Enter'&&noteMode==='changes'){e.preventDefault();decide(e,a,'reject');}else if(e.key==='Escape'){noteOpenTrails.delete(a.trail);draw();}}}>
+           ${noteMode==='changes'?html`<button type="button" class="lmx-di-btn lmx-di-btn--danger-solid" @click=${e=>decide(e,a,'reject')}>Send changes</button>`:nothing}
+           <button type="button" class="lmx-di-btn lmx-di-btn--sunken" @click=${()=>{noteOpenTrails.delete(a.trail);draw();}}>Cancel</button>
+          </div>
+         </div>
+        </div>
+       </div>
+      </div>
      </div>
     </div>
    </article>`;
@@ -497,17 +569,24 @@ export async function queuePage(arg){
    </section>
 
    <section id="cockpit-decisions" class="lmx-cockpit-sec" aria-labelledby="sec-decisions-h">
-    <div class="lmx-cockpit-sechead">
-     <h2 id="sec-decisions-h">Decisions <span class="lmx-sec-count" data-tone=${sortedDecisions.length?'decision':'neutral'}>${sortedDecisions.length}</span></h2>
-     <div class="lmx-sec-meta">
-      ${sortedDecisions.length>3?html`<button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{showAllDecisions=!showAllDecisions;draw();}}>${showAllDecisions?'Show top 3':`See all ${sortedDecisions.length}`}</button>`:nothing}
-      <a class="lm-btn lm-btn--ghost" href="#/decisions">Open board</a>
-     </div>
-    </div>
-    ${decLoading?html`<div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span><span class="lm-skeleton"></span></div>`
-     :decError?html`<p class="lmx-cockpit-err" role="alert">${decError} <button type="button" class="lm-btn lm-btn--ghost" @click=${loadCockpitSideData}>Retry</button></p>`
-     :visibleDecisions.length?html`<div class="lmx-stack">${visibleDecisions.map(renderDecisionCard)}</div>`
-     :html`<p class="lmx-allclear">All clear — no decisions waiting on you.</p>`}
+    ${decLoading?html`<div class="lmx-cockpit-sechead"><h2 id="sec-decisions-h">Decisions</h2></div><div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span><span class="lm-skeleton"></span></div>`
+     :decError?html`<div class="lmx-cockpit-sechead"><h2 id="sec-decisions-h">Decisions</h2></div><p class="lmx-cockpit-err" role="alert">${decError} <button type="button" class="lm-btn lm-btn--ghost" @click=${loadCockpitSideData}>Retry</button></p>`
+     :visibleDecisions.length?html`<div class="lmx-di-tray" data-has-irreversible=${String(sortedDecisions.some(d=>(d.payload||{}).reversible!==true))}>
+      <header class="lmx-di-trayhead">
+       <div class="lmx-di-traytitle">
+        <span class="lmx-di-orb" aria-hidden="true"></span>
+        <h2 id="sec-decisions-h">Decisions</h2>
+        <span class="lmx-sec-count" data-tone="decision">${sortedDecisions.length}</span>
+        <span class="lmx-di-sub">${sortedDecisions.length===1?'1 needs your input':`${sortedDecisions.length} need your input`}${sortedDecisions.some(d=>(d.payload||{}).reversible!==true)?' · irreversible first':''}</span>
+       </div>
+       <div class="lmx-sec-meta">
+        ${sortedDecisions.length>3?html`<button type="button" class="lmx-di-linkbtn" @click=${()=>{showAllDecisions=!showAllDecisions;draw();}}>${showAllDecisions?'Show top 3':`See all ${sortedDecisions.length}`}</button>`:nothing}
+        <a class="lmx-di-linkbtn" href="#/decisions">Open board</a>
+       </div>
+      </header>
+      <div class="lmx-di-card">${visibleDecisions.map((a,idx)=>renderDecisionCard(a,idx))}</div>
+     </div>`
+     :html`<div class="lmx-cockpit-sechead"><h2 id="sec-decisions-h">Decisions <span class="lmx-sec-count" data-tone="neutral">0</span></h2><a class="lmx-di-linkbtn" href="#/decisions">Open board</a></div><p class="lmx-allclear">All clear — no decisions waiting on you.</p>`}
    </section>
 
    <section id="cockpit-handoffs" class="lmx-cockpit-sec" aria-labelledby="sec-handoffs-h">

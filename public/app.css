@@ -1799,11 +1799,71 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-cockpit-skel{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
 .lmx-cockpit-skel .lm-skeleton{display:block;height:14px;border-radius:var(--radius-sm,4px)}
 
-/* Decision cards: readable question (not fully bold), crisp semantic buttons */
-.lmx-cockpit-dec{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
-.lmx-cockpit-dec[data-irreversible="true"]{border-color:var(--danger)}
-.lmx-cockpit-decq{display:grid;gap:6px;min-width:0}
-.lmx-cockpit-question{font:500 15px/1.45 var(--font-sans);color:var(--text);overflow-wrap:anywhere}
+/* Decision Inbox Tray & Approval Cards (21st.dev 43819 + 36498 + 23792, LogMem tokens only) */
+.lmx-di-tray{padding:6px;border:1px solid var(--border);border-radius:16px;background:var(--surface-sunken);display:grid;gap:6px}
+.lmx-di-trayhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:6px 12px 4px}
+.lmx-di-traytitle{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.lmx-di-traytitle h2{margin:0;font:600 15px/1.3 var(--font-display,var(--font-sans));color:var(--text)}
+.lmx-di-orb{width:8px;height:8px;border-radius:50%;background:var(--decision);flex:none}
+.lmx-di-tray[data-has-irreversible="true"] .lmx-di-orb{background:var(--danger)}
+.lmx-di-sub{font:500 12px/1.3 var(--font-sans);color:var(--text-muted)}
+.lmx-di-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-1);overflow:hidden}
+.lmx-di-row{padding:16px 18px;transition:background var(--duration-fast,.15s) ease}
+.lmx-di-row+.lmx-di-row{border-top:1px solid var(--border)}
+.lmx-di-row[data-folded="true"]{padding:12px 18px}
+.lmx-di-shell{display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;align-items:start}
+.lmx-di-icon{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--decision-subtle);color:var(--decision)}
+.lmx-di-icon[data-tone="danger"]{background:var(--danger-subtle);color:var(--danger)}
+.lmx-di-content{display:grid;gap:8px;min-width:0}
+.lmx-di-top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 12px}
+.lmx-di-title{margin:0;font:500 15px/1.42 var(--font-sans);letter-spacing:-.01em;color:var(--text);overflow-wrap:anywhere;flex:1 1 240px;min-width:0}
+.lmx-di-title--folded{padding:0;border:0;background:none;text-align:left;color:var(--text-muted);cursor:pointer}
+.lmx-di-title--folded:hover{color:var(--text)}
+.lmx-di-pills{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:none}
+.lmx-di-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;color:var(--text-muted)}
+.lmx-di-unfold{margin-left:auto}
+.lmx-di-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .28s cubic-bezier(.22,1,.36,1)}
+.lmx-di-body[data-open="true"]{grid-template-rows:1fr}
+.lmx-di-body-inner{min-height:0;overflow:hidden;display:grid;gap:10px;padding:2px 0 0}
+
+/* Compact inline Proposed Action bar + expandable pre */
+.lmx-di-actionbox{border:1px solid var(--border);border-radius:10px;background:var(--surface-sunken);overflow:hidden}
+.lmx-di-actionbar{display:flex;align-items:center;gap:8px;padding:7px 10px;min-width:0}
+.lmx-di-actionlabel{flex:none;padding:2px 7px;border-radius:6px;background:var(--surface);border:1px solid var(--border);color:var(--text-muted);font:600 11px/1.2 var(--font-mono);text-transform:uppercase;letter-spacing:.03em}
+.lmx-di-actionpreview{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 12px/1.4 var(--font-mono);color:var(--text);background:transparent}
+.lmx-di-actionbtns{display:flex;align-items:center;gap:4px;flex:none}
+.lmx-di-microbtn{min-height:26px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text-muted);font:500 11px/1 var(--font-sans);cursor:pointer;transition:border-color var(--duration-fast,.15s) ease,color var(--duration-fast,.15s) ease}
+.lmx-di-microbtn:hover{border-color:var(--border-strong);color:var(--text)}
+.lmx-di-microbtn:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.lmx-di-pre{margin:0;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface);color:var(--text);font:400 12px/1.55 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow-y:auto}
+.lmx-di-problem{margin:0;color:var(--warning)}
+
+/* Action bar (21st.dev 36498 + 43819 tactile buttons) */
+.lmx-di-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-top:2px}
+.lmx-di-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 13px;border:1px solid transparent;border-radius:9px;font:500 13px/1 var(--font-sans);cursor:pointer;transition:opacity var(--duration-fast,.15s) ease,background var(--duration-fast,.15s) ease,border-color var(--duration-fast,.15s) ease,transform .1s ease}
+.lmx-di-btn:active:not(:disabled){transform:translateY(1px)}
+.lmx-di-btn:disabled{opacity:.45;cursor:not-allowed}
+.lmx-di-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-di-btn--approve{background:var(--decision);border-color:var(--decision);color:var(--text-inverse);font-weight:600;box-shadow:var(--shadow-1)}
+.lmx-di-btn--approve:hover:not(:disabled){opacity:.92}
+.lmx-di-btn--changes{background:var(--danger-subtle);border-color:var(--danger-subtle);color:var(--danger);font-weight:500}
+.lmx-di-btn--changes:hover:not(:disabled){border-color:var(--danger)}
+.lmx-di-btn--danger-solid{background:var(--danger);border-color:var(--danger);color:var(--text-inverse);font-weight:600}
+.lmx-di-btn--danger-solid:hover:not(:disabled){opacity:.92}
+.lmx-di-btn--sunken{background:var(--surface);border-color:var(--border);color:var(--text-muted)}
+.lmx-di-btn--sunken:hover:not(:disabled){border-color:var(--border-strong);color:var(--text);background:var(--surface-sunken)}
+.lmx-di-spacer{flex:1 1 auto}
+.lmx-di-linkbtn{display:inline-flex;align-items:center;min-height:32px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:var(--text-muted);font:500 12px/1 var(--font-sans);text-decoration:none;cursor:pointer}
+.lmx-di-linkbtn:hover{background:var(--surface-sunken);color:var(--text)}
+.lmx-di-linkbtn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* Smooth fold-open inline Note composer */
+.lmx-di-composer{display:grid;grid-template-rows:0fr;transition:grid-template-rows .24s cubic-bezier(.22,1,.36,1)}
+.lmx-di-composer[data-open="true"]{grid-template-rows:1fr}
+.lmx-di-composer-inner{min-height:0;overflow:hidden}
+.lmx-di-composer-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-top:8px;border-top:1px dashed var(--border)}
+.lmx-di-noteinput{flex:1 1 220px;min-width:0;min-height:36px}
+
 .lmx-cockpit-qhead{font:500 14px/1.4 var(--font-sans);color:var(--text);overflow-wrap:anywhere}
 .lmx-cockpit-link{color:var(--text);text-decoration:none}
 .lmx-cockpit-link:hover{color:var(--link);text-decoration:underline}
@@ -1880,6 +1940,12 @@ dialog.lmx-queue-map .lmx-map-canvas{padding:16px 18px}
  .lmx-cockpit-tab{padding:6px 7px;gap:4px;font-size:12px}
  .lmx-tab-badge{min-width:18px;height:18px;padding:0 5px;font-size:10px}
  .lmx-cockpit-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .lmx-di-row{padding:14px 12px}
+ .lmx-di-shell{grid-template-columns:30px minmax(0,1fr);gap:10px}
+ .lmx-di-icon{width:30px;height:30px;border-radius:8px}
+ .lmx-di-actionbar{flex-wrap:wrap}
+ .lmx-di-btn{min-height:42px}
+ .lmx-di-spacer{display:none}
  .lmx-kbd-hint{display:none}
  .lmx-combobox{min-width:0;flex:1 1 160px}
  .lmx-cockpit-controls{width:100%}
@@ -1890,5 +1956,5 @@ dialog.lmx-queue-map .lmx-map-canvas{padding:16px 18px}
  .lmx-undo-toast{left:16px;right:16px;bottom:76px}
 }
 @media (prefers-reduced-motion:reduce){
- .lmx-cockpit-tab,.lmx-cockpit-stat,.lmx-fleet-chip{transition:none}
+ .lmx-cockpit-tab,.lmx-cockpit-stat,.lmx-fleet-chip,.lmx-di-body,.lmx-di-composer,.lmx-di-btn,.lmx-di-row{transition:none}
 }

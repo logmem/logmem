@@ -67,3 +67,5 @@ export { InboxUndoToast } from './inbox-undo-toast';
 export type { InboxUndoToastProps } from './inbox-undo-toast';
 export { AgentCombobox } from './agent-combobox';
 export type { AgentComboboxProps } from './agent-combobox';
+export { DecisionApprovalTray } from './decision-approval-card';
+export type { DecisionApprovalTrayProps, DecisionTrayItem } from './decision-approval-card';

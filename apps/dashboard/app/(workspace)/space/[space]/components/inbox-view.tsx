@@ -13,7 +13,6 @@ import {
   CheckCheck,
   Search,
   AlertTriangle,
-  MessageSquare,
 } from 'lucide-react';
 import {
   buildFleetChips,
@@ -41,6 +40,7 @@ import {
   AgeBucketChips,
   AgentCombobox,
   CopyId,
+  DecisionApprovalTray,
   InboxSectionTabs,
   InboxUndoToast,
   StatePanel,
@@ -118,8 +118,6 @@ export function InboxView({
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const [expandedText, setExpandedText] = useState<Set<string>>(new Set());
-  const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({});
-  const [decisionFeedback, setDecisionFeedback] = useState<Record<string, string>>({});
 
   // Optimistic review acknowledgement + Undo toast state
   const [selectedReviews, setSelectedReviews] = useState<Set<string>>(new Set());
@@ -712,176 +710,56 @@ export function InboxView({
         </div>
       </section>
 
-      {/* Section 2: Decisions */}
+      {/* Section 2: Decisions (21st.dev 43819 + 36498 + 23792 Tray) */}
       <section id="inbox-decisions" aria-labelledby="inbox-decisions-h" className="scroll-mt-16 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="inbox-decisions-h" className="flex items-center gap-2 font-heading text-base font-semibold">
-            <span>Decisions</span>
-            <span
-              className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-2 font-mono text-xs font-semibold tabular-nums ${
-                sortedDecisions.length > 0
-                  ? 'bg-[var(--decision-subtle)] text-[var(--decision)]'
-                  : 'bg-[var(--surface-sunken)] text-[var(--text-muted)]'
-              }`}
-            >
-              {sortedDecisions.length}
-            </span>
-          </h2>
-          <div className="flex items-center gap-2">
-            {sortedDecisions.length > 3 && (
-              <button
-                type="button"
-                onClick={() => setShowAllDecisions((v) => !v)}
-                className={`rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium text-[var(--link)] hover:bg-[var(--surface-sunken)] ${FOCUS}`}
-              >
-                {showAllDecisions ? 'Show top 3' : `See all ${sortedDecisions.length}`}
-              </button>
-            )}
-            <Link
-              href={`/space/${space}/today`}
-              className={`rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] ${FOCUS}`}
-            >
-              Brief view
-            </Link>
-          </div>
-        </div>
-
         {sectionErrors.decisions ? (
-          <p role="alert" className="rounded-[var(--radius-md)] border border-[var(--danger)] bg-[var(--danger-subtle)] px-3.5 py-2.5 text-sm text-[var(--danger)]">
-            {sectionErrors.decisions}
-          </p>
+          <>
+            <h2 id="inbox-decisions-h" className="font-heading text-base font-semibold">
+              Decisions
+            </h2>
+            <p role="alert" className="rounded-[var(--radius-md)] border border-[var(--danger)] bg-[var(--danger-subtle)] px-3.5 py-2.5 text-sm text-[var(--danger)]">
+              {sectionErrors.decisions}
+            </p>
+          </>
         ) : visibleDecisions.length === 0 ? (
-          <p className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--text-muted)]">
-            All clear — no decisions waiting on you.
-          </p>
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="inbox-decisions-h" className="flex items-center gap-2 font-heading text-base font-semibold">
+                <span>Decisions</span>
+                <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-[var(--surface-sunken)] px-2 font-mono text-xs font-semibold tabular-nums text-[var(--text-muted)]">
+                  0
+                </span>
+              </h2>
+              <Link
+                href={`/space/${space}/today`}
+                className={`rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] ${FOCUS}`}
+              >
+                Brief view
+              </Link>
+            </div>
+            <p className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-sm text-[var(--text-muted)]">
+              All clear — no decisions waiting on you.
+            </p>
+          </>
         ) : (
-          <div className="space-y-2.5">
-            {visibleDecisions.map((d) => {
-              const irr = d.payload?.reversible !== true;
-              const note = decisionNotes[d.trail] || '';
-              return (
-                <article
-                  key={d.trail}
-                  data-cockpit-item="true"
-                  className={`space-y-2.5 rounded-[var(--radius-md)] border bg-[var(--surface)] p-3.5 data-[kb-active=true]:bg-[var(--brand-subtle)] data-[kb-active=true]:outline data-[kb-active=true]:outline-2 data-[kb-active=true]:outline-[var(--focus)] ${
-                    irr ? 'border-[var(--danger)]' : 'border-[var(--border)]'
-                  }`}
-                >
-                  <div className="space-y-1.5">
-                    <p className="text-[15px] font-medium leading-snug text-[var(--text)] break-words">
-                      {d.summary}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-                      <span className="font-medium text-[var(--text)]">{shortName(d.by)}</span>
-                      <span>·</span>
-                      <span className="font-mono tabular-nums">{relativeTime(d.ts, now)}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          irr
-                            ? 'bg-[var(--danger-subtle)] text-[var(--danger)]'
-                            : 'bg-[var(--surface-sunken)] text-[var(--text-muted)]'
-                        }`}
-                      >
-                        {irr ? 'Irreversible' : 'Reversible'}
-                      </span>
-                      {d.where && (
-                        <span
-                          title={d.where}
-                          className="rounded-full border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[11px] text-[var(--text-muted)] break-all"
-                        >
-                          {d.where.replace(/^job:/, '')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {d.payload?.action && (
-                    <details className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-sunken)] px-3 py-2 text-xs">
-                      <summary className="cursor-pointer font-medium text-[var(--text)]">
-                        Exact proposed action
-                      </summary>
-                      <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs text-[var(--text)]">
-                        {d.payload.action}
-                      </pre>
-                    </details>
-                  )}
-
-                  {decisionFeedback[d.trail] && (
-                    <p role="status" className="text-xs font-medium text-[var(--decision)]">
-                      {decisionFeedback[d.trail]}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={note}
-                      onChange={(e) =>
-                        setDecisionNotes((prev) => ({ ...prev, [d.trail]: e.target.value }))
-                      }
-                      placeholder="Note (required when requesting changes)"
-                      aria-label="Note for decision"
-                      className={`min-h-[36px] min-w-[200px] flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] px-3 text-sm text-[var(--text)] placeholder:text-[var(--text-subtle)] ${FOCUS}`}
-                    />
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        data-kb-primary="true"
-                        onClick={() =>
-                          setDecisionFeedback((prev) => ({
-                            ...prev,
-                            [d.trail]: 'Review recorded in viewer mode — use LogMem live workspace or CLI to sign the decision.',
-                          }))
-                        }
-                        className={`inline-flex min-h-[36px] items-center rounded-[var(--radius-md)] bg-[var(--decision)] px-3 text-xs font-semibold text-[var(--text-inverse)] hover:opacity-90 ${FOCUS}`}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!note.trim()) {
-                            setDecisionFeedback((prev) => ({
-                              ...prev,
-                              [d.trail]: 'Add a note explaining what should change before requesting changes.',
-                            }));
-                            return;
-                          }
-                          setDecisionFeedback((prev) => ({
-                            ...prev,
-                            [d.trail]: `Change request noted: "${note.trim()}".`,
-                          }));
-                        }}
-                        className={`inline-flex min-h-[36px] items-center rounded-[var(--radius-md)] bg-[var(--danger)] px-3 text-xs font-semibold text-[var(--text-inverse)] hover:opacity-90 ${FOCUS}`}
-                      >
-                        Request changes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDecisionFeedback((prev) => ({
-                            ...prev,
-                            [d.trail]: 'Marked for later review in this session.',
-                          }))
-                        }
-                        className={`inline-flex min-h-[36px] items-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-3 text-xs font-medium text-[var(--text)] hover:border-[var(--border-strong)] ${FOCUS}`}
-                      >
-                        Decide later
-                      </button>
-                      <Link
-                        data-kb-comment="true"
-                        href={`/space/${space}/activity`}
-                        className={`inline-flex min-h-[36px] items-center gap-1 rounded-[var(--radius-md)] px-2.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] ${FOCUS}`}
-                      >
-                        <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-                        Comment
-                      </Link>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+          <DecisionApprovalTray
+            items={visibleDecisions.map((d) => ({
+              trail: d.trail,
+              summary: d.summary,
+              byLabel: shortName(d.by),
+              ageLabel: relativeTime(d.ts, now),
+              whereLabel: d.where ? d.where.replace(/^job:/, '') : undefined,
+              action: d.payload?.action,
+              irreversible: d.payload?.reversible !== true,
+              deferred: Boolean(d.deferred),
+            }))}
+            totalCount={sortedDecisions.length}
+            showAll={showAllDecisions}
+            onToggleShowAll={() => setShowAllDecisions((v) => !v)}
+            boardHref={`/space/${space}/today`}
+            commentHref={`/space/${space}/activity`}
+            onCopyAction={(act) => copy(act, 'Proposed action copied')}
+          />
         )}
       </section>
 
