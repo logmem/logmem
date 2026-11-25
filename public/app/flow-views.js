@@ -4,9 +4,81 @@
 import { html, nothing, svg } from '/vendor/lit-html-3.2.1/lit-html.js';
 import {agentDispatchButton} from './dispatch-components.js';
 import {clusterPrompt} from './dispatch-model.js';
-import { hhmm } from './core.js';
+import { hhmm, state } from './core.js';
+import { agentIcon } from './agent-icons.js';
+import { LOBEHUB_ICONS } from './lobehub-icons.js';
 import { autoScrollOn } from './marquee.js';
 import { arcAgents, ringPoints, arcPath, replayEntries, replayBounds, replayAt, replayDensity, atFraction, pulseLanes, pulseAxis, blockerClusters, bubbleLayout, unblockPrompt, involves, waitingOn, handoffMatrix, laneCounts, laneView, kindCounts, KIND_LABEL } from './flow-model.js';
+
+const lobeBySlug = new Map(LOBEHUB_ICONS.map(i => [i.slug, i]));
+const LOBE_FALLBACK_ALIASES = {
+  hermes: 'hermesagent',
+  'grok-local': 'grok',
+  atlas: 'atlascloud',
+  relay: 'relace',
+  quill: 'lobehub',
+  tally: 'tavily',
+  polar: 'pollinations',
+  mikey: 'openhuman',
+  admin: 'openhuman',
+};
+const LOBE_POOL = ['anthropic', 'openai', 'gemini', 'grok', 'deepseek', 'mistral', 'perplexity', 'cohere', 'cursor', 'vercel'];
+function lobeIconFor(name) {
+  const bare = String(name || '').replace(/^(agent|human|person):/i, '').toLowerCase().trim();
+  const direct = agentIcon(state.space, bare);
+  if (direct) return direct;
+  const alias = LOBE_FALLBACK_ALIASES[bare];
+  if (alias && lobeBySlug.has(alias)) return lobeBySlug.get(alias);
+  let h = 0;
+  for (let i = 0; i < bare.length; i++) h = (h * 31 + bare.charCodeAt(i)) >>> 0;
+  return lobeBySlug.get(LOBE_POOL[h % LOBE_POOL.length]) || null;
+}
+
+// Persistent lightweight pan/zoom/drag state per active handoff map session
+const graphUI = { zoom: 1, offsets: new Map(), filter: 'all' };
+
+function directedEdgeGeometry(p1, p2, cx, cy, hasReverse, pad = 29) {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const sx = p1.x + ux * pad;
+  const sy = p1.y + uy * pad;
+  const ex = p2.x - ux * pad;
+  const ey = p2.y - uy * pad;
+  const mx = (sx + ex) / 2;
+  const my = (sy + ey) / 2;
+  let qx, qy;
+  if (hasReverse) {
+    // Left-hand normal separates A->B and B->A symmetrically onto opposite arcs
+    const bend = Math.min(46, Math.max(26, dist * 0.22));
+    qx = mx - uy * bend;
+    qy = my + ux * bend;
+  } else {
+    qx = mx + (cx - mx) * 0.24;
+    qy = my + (cy - my) * 0.24;
+  }
+  return {
+    d: `M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${qx.toFixed(1)} ${qy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`,
+    lx: Math.round((sx + 2 * qx + ex) / 4),
+    ly: Math.round((sy + 2 * qy + ey) / 4),
+  };
+}
+
+function exportSvgElement(btn) {
+  const svgEl = btn?.closest?.('.lmx-kg-wrap')?.querySelector('svg.lmx-kg-svg');
+  if (!svgEl) return;
+  const clone = svgEl.cloneNode(true);
+  const data = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'logmem-handoff-network.svg';
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const pill = (label, on, click, enter, leave) => html`<button type="button" class="lmx-typepill" aria-pressed=${String(on)} @click=${click} @mouseenter=${enter} @mouseleave=${leave} @focus=${enter} @blur=${leave}>${label}</button>`;
 const bandWord = { fresh: 'Under 1 day', slow: '1 to 7 days', stale: 'Over 7 days' };
@@ -31,44 +103,252 @@ function waitingStrip({ arcs, pair, pickPair }) {
         <div popover id=${id} class="lmx-wpop"><b class="mono">${a.from} → ${a.to}</b> <span class="lmx-flowage" data-band=${a.band}>${a.label}</span><p>${a.summary || 'No summary'}</p><p class="lmx-meta mono">${a.trail}</p></div></li>`; })}</ul></div>`;
 }
 
-/** Handoff map: each open handoff is an arc from sender to receiver. Colour shows how long it has waited.
- *  Hover or focus an agent to isolate its arcs. Click to keep that choice. The matrix view shows the same data as a grid. */
+/** Handoff map: Network Map (Knowledge Graph with LobeHub icons, zoom, drag, SVG export)
+ *  and Matrix Grid (Heat Map XL with LobeHub headers, sequential legend, stats & metrics). */
 export function handoffMap({ arcs, sel = '', hover = '', pair = null, view = 'map', setView, pick, peek, pickPair }) {
   if (!arcs.length) return nothing;
   const names = arcAgents(arcs), waits = waitingOn(arcs), focus = hover || sel;
   const enter = n => () => peek && peek(n), leave = () => peek && peek('');
   const grid = view === 'matrix' && !!pickPair;
-  const head = html`<div class="lmx-flowhead"><div><h2>Handoff map</h2><span class="lmx-meta">${arcs.length} open ${arcs.length === 1 ? 'handoff' : 'handoffs'} from the queue. Each arc runs from sender to receiver.</span></div>
+  const head = html`<div class="lmx-flowhead"><div><h2>Handoff map</h2><span class="lmx-meta">${arcs.length} open ${arcs.length === 1 ? 'handoff' : 'handoffs'} across ${names.length} agents. Click any node or cell to filter.</span></div>
     ${setView ? html`<div class="lmx-filter" role="group" aria-label="Handoff view">${pill('Network map', !grid, () => setView('map'))}${pill('Matrix grid', grid, () => setView('matrix'))}</div>` : nothing}</div>`;
   const key = html`<ul class="lmx-flowkey">${Object.entries(bandWord).map(([b, w]) => html`<li><i data-band=${b}></i>${w}</li>`)}</ul>`;
   const strip = waitingStrip({ arcs: arcs.filter(a => involves(a, sel)), pair, pickPair });
+
+  // ── Matrix Grid (21st.dev Heat Map XL + LobeHub UI icons) ──
   if (grid) {
-    const { cells } = handoffMatrix(arcs);
-    return html`<section class="lmx-flow lmx-card" aria-label="Handoff map">${head}${strip}
-      <div class="lmx-matrixwrap"><table class="lmx-matrix"><caption class="lmx-meta">Rows send, columns receive. Each number is open handoffs. Pick a cell to filter the list below.</caption>
-        <thead><tr><td></td>${names.map(n => html`<th scope="col"><span>${n}</span></th>`)}</tr></thead>
-        <tbody>${names.map(r => html`<tr><th scope="row">${r}</th>${names.map(c => { const x = cells.get(r + '>' + c); const on = !!pair && pair.from === r && pair.to === c;
-          return x ? html`<td><button type="button" class="lmx-cell" data-band=${x.band} aria-pressed=${String(on)} aria-label=${`${r} to ${c}: ${x.count} open, oldest ${x.label}`} @click=${() => pickPair(on ? null : { from: r, to: c })}>${x.count}</button></td>` : html`<td class="lmx-cellempty"></td>`; })}</tr>`)}</tbody></table></div>${key}</section>`;
+    const filteredArcs = graphUI.filter === 'late' ? arcs.filter(a => a.band !== 'fresh') : arcs;
+    const { cells } = handoffMatrix(filteredArcs);
+    const maxCount = Math.max(1, ...[...cells.values()].map(c => c.count));
+    const lateCount = arcs.filter(a => a.band !== 'fresh').length;
+    const latePct = arcs.length ? Math.round((lateCount / arcs.length) * 100) : 0;
+    const busiest = [...cells.values()].sort((a, b) => b.count - a.count || b.age - a.age)[0] || null;
+    const oldest = arcs[0] || null;
+
+    const heatLevel = (c) => {
+      if (!c) return 0;
+      if (c.band === 'stale') return 3;
+      if (c.band === 'slow') return 2;
+      return Math.min(3, Math.max(1, Math.ceil((c.count / maxCount) * 2)));
+    };
+
+    return html`<section class="lmx-flow lmx-hm-card" aria-label="Handoff map">${head}${strip}
+      <div class="lmx-hm-shell">
+        <div class="lmx-hm-head">
+          <div>
+            <h3>Handoff Matrix</h3>
+            <p class="lmx-meta">Rows send, columns receive. Select a cell to filter the queue.</p>
+          </div>
+          <select class="lm-select lmx-hm-select" aria-label="Filter matrix urgency" .value=${graphUI.filter} @change=${e => { graphUI.filter = e.target.value; setView('matrix'); }}>
+            <option value="all">All open (${arcs.length})</option>
+            <option value="late">Over 24h (${lateCount})</option>
+          </select>
+        </div>
+
+        <div class="lmx-hm-body">
+          <div class="lmx-hm-gridwrap">
+            <table class="lmx-hm-table">
+              <caption class="sr-only">Open handoffs by sender and receiver</caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="lmx-hm-corner">From \ To</th>
+                  ${names.map(n => {
+                    const ic = lobeIconFor(n);
+                    return html`<th scope="col" class="lmx-hm-colhead" title=${n}>
+                      <span class="lmx-hm-agent">${ic ? html`<img src=${ic.src} alt="" class="lmx-lobe-sm">` : nothing}<span>${n}</span></span>
+                    </th>`;
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                ${names.map(r => {
+                  const ric = lobeIconFor(r);
+                  return html`<tr>
+                    <th scope="row" class="lmx-hm-rowhead" title=${r}>
+                      <span class="lmx-hm-agent">${ric ? html`<img src=${ric.src} alt="" class="lmx-lobe-sm">` : nothing}<span>${r}</span></span>
+                    </th>
+                    ${names.map(c => {
+                      const x = cells.get(r + '>' + c);
+                      const on = !!pair && pair.from === r && pair.to === c;
+                      const lvl = heatLevel(x);
+                      return x
+                        ? html`<td><button type="button" class="lmx-hm-cell" data-level=${lvl} data-band=${x.band} aria-pressed=${String(on)} title=${`${r} → ${c}: ${x.count} open · oldest ${x.label}`} aria-label=${`${r} to ${c}: ${x.count} open, oldest ${x.label}`} @click=${() => pickPair(on ? null : { from: r, to: c })}><strong>${x.count}</strong><span>${x.label}</span></button></td>`
+                        : html`<td><span class="lmx-hm-empty" aria-hidden="true">${r === c ? '·' : ''}</span></td>`;
+                    })}
+                  </tr>`;
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <aside class="lmx-hm-legend" aria-label="Heat intensity scale">
+            <span class="lmx-hm-legval">${maxCount}</span>
+            <span class="lmx-hm-legbar" aria-hidden="true"></span>
+            <span class="lmx-hm-legval">0</span>
+          </aside>
+        </div>
+
+        <div class="lmx-hm-stats">
+          <div class="lmx-hm-stat">
+            <span class="lmx-hm-statlabel">Delayed Handoffs</span>
+            <div class="lmx-hm-statrow">
+              <strong class="lmx-hm-statnum">${lateCount}</strong>
+              <span class="lmx-hm-trend" data-tone=${lateCount > 0 ? 'danger' : 'success'}>
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">${lateCount > 0
+                  ? svg`<path d="M5.5 9.1 10 4.7l4.5 4.4M10 4.7v11.6" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>`
+                  : svg`<path d="M14.5 11.9 10 16.3l-4.5-4.4M10 16.3V4.7" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>`}</svg>
+                ${latePct}%
+              </span>
+            </div>
+            <span class="lmx-meta">Open longer than 24 hours</span>
+          </div>
+          <div class="lmx-hm-stat">
+            <span class="lmx-hm-statlabel">Total Open Handoffs</span>
+            <div class="lmx-hm-statrow">
+              <strong class="lmx-hm-statnum">${arcs.length}</strong>
+              <span class="lmx-hm-trend" data-tone="brand">${names.length} agents</span>
+            </div>
+            <span class="lmx-meta">Active across ${cells.size} sender→receiver pairs</span>
+          </div>
+        </div>
+
+        <div class="lmx-hm-metrics">
+          <div class="lmx-hm-metric">
+            <span class="lmx-hm-mlabel"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4.3l2.6 1.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Oldest Unanswered Wait</span>
+            <span class="lmx-hm-mval"><strong>${oldest ? oldest.label : '0 h'}</strong><span class="lmx-hm-mdot" data-tone=${oldest && oldest.band !== 'fresh' ? 'danger' : 'brand'}></span></span>
+          </div>
+          <div class="lmx-hm-metric">
+            <span class="lmx-hm-mlabel"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Busiest Route</span>
+            <span class="lmx-hm-mval"><strong>${busiest ? `${busiest.from} → ${busiest.to}` : 'None'}</strong>${busiest ? html`<span class="lmx-cockpit-badge" data-tone=${busiest.band === 'fresh' ? 'brand' : 'danger'}>${busiest.count}</span>` : nothing}</span>
+          </div>
+          <div class="lmx-hm-metric">
+            <span class="lmx-hm-mlabel"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3 17.5 16H2.5L10 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8v3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="13.8" r=".8" fill="currentColor"/></svg>Active Agent Pairs</span>
+            <span class="lmx-hm-mval"><strong>${cells.size}</strong><span class="lmx-hm-mdot" data-tone="brand"></span></span>
+          </div>
+        </div>
+      </div>
+    </section>`;
   }
-  const W = 600, H = 460, cx = 300, cy = 230, pts = ringPoints(names.length, cx, cy, 170), at = new Map(names.map((n, i) => [n, pts[i]]));
+
+  // ── Network Map (21st.dev Knowledge Graph + LobeHub UI icons) ──
+  const W = 640, H = 430, cx = 320, cy = 215, R = 152;
+  const pts = ringPoints(names.length, cx, cy, R);
+  const at = new Map(names.map((n, i) => {
+    const off = graphUI.offsets.get(n) || { dx: 0, dy: 0 };
+    return [n, { x: pts[i].x + off.dx, y: pts[i].y + off.dy }];
+  }));
+  const { cells: pairMap } = handoffMatrix(arcs);
+  const groupedEdges = [...pairMap.values()];
   const on = a => involves(a, focus);
   const near = n => !focus || n === focus || arcs.some(a => (a.from === focus && a.to === n) || (a.to === focus && a.from === n));
+  const hoveredWait = hover ? waits.get(hover) : null;
+  const hoveredPos = hover ? at.get(hover) : null;
+
+  const startDrag = (name) => (ev) => {
+    if (ev.button !== 0) return;
+    const svgEl = ev.currentTarget.closest('svg');
+    if (!svgEl) return;
+    const rect = svgEl.getBoundingClientRect();
+    const startX = ev.clientX, startY = ev.clientY;
+    const orig = graphUI.offsets.get(name) || { dx: 0, dy: 0 };
+    let moved = false;
+    const onMove = (m) => {
+      const scaleX = W / Math.max(rect.width, 1) / graphUI.zoom;
+      const scaleY = H / Math.max(rect.height, 1) / graphUI.zoom;
+      const dx = (m.clientX - startX) * scaleX;
+      const dy = (m.clientY - startY) * scaleY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      if (moved) {
+        graphUI.offsets.set(name, { dx: orig.dx + dx, dy: orig.dy + dy });
+        setView && setView('map');
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   return html`<section class="lmx-flow lmx-card" aria-label="Handoff map">${head}${strip}
-    <div class="lmx-flowsplit">
-      <svg class="lmx-flowsvg" viewBox="0 0 ${W} ${H}" role="group" aria-label=${`${arcs.length} open handoffs between ${names.length} agents. The oldest has waited ${arcs[0].label}.`}>
-        <defs>${['fresh', 'slow', 'stale'].map(b => svg`<marker id=${'lmx-ar-' + b} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="lmx-ar" data-band=${b} d="M0 0 L10 5 L0 10 z"></path></marker>`)}</defs>
-        <circle class="lmx-ring" cx=${cx} cy=${cy} r="170"></circle>
-        ${arcs.map(a => svg`<path class="lmx-arc" data-band=${a.band} d=${arcPath(at.get(a.from), at.get(a.to), cx, cy, 0.35, 28)} marker-end=${`url(#lmx-ar-${a.band})`} opacity=${on(a) ? 1 : 0.2}></path>`)}
-        ${names.map(n => { const p = at.get(n), w = waits.get(n);
-          return svg`<g class="lmx-node" role="button" tabindex="0" data-on=${String(sel === n)} data-dim=${String(!near(n))} aria-pressed=${String(sel === n)} aria-label=${`${n}: ${w ? w.count : 0} waiting on this agent${w && w.late ? `, ${w.late} over a day` : ''}`}
-            @click=${() => pick(sel === n ? '' : n)} @keydown=${e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(sel === n ? '' : n); } }} @mouseenter=${enter(n)} @mouseleave=${leave} @focus=${enter(n)} @blur=${leave}>
-            <circle cx=${p.x} cy=${p.y} r="24"></circle><text x=${p.x} y=${p.y + 5} class="lmx-nodeinit">${n.slice(0, 2)}</text><text x=${p.x} y=${p.y + 42} class="lmx-nodename">${n}</text>
-            ${w ? svg`<g class="lmx-badge" data-late=${String(w.late > 0)}><circle cx=${p.x + 19} cy=${p.y - 19} r="10"></circle><text x=${p.x + 19} y=${p.y - 15} class="lmx-badgen">${w.count}</text></g>` : nothing}</g>`; })}
-      </svg>
-      <div class="lmx-flowside">
-        <div class="lm-eyebrow">Follow an agent</div>
-        <div class="lmx-filter" role="group" aria-label="Follow an agent">${names.map(n => pill(html`${n} <b class="lmx-pillcount">${(waits.get(n) || { count: 0 }).count}</b>`, sel === n, () => pick(sel === n ? '' : n), enter(n), leave))}</div>
-        ${key}
+    <div class="lmx-kg-wrap">
+      <div class="lmx-kg-toolbar" role="toolbar" aria-label="Network graph controls">
+        <button type="button" class="lmx-di-microbtn" aria-label="Zoom in" @click=${() => { graphUI.zoom = Math.min(2, +(graphUI.zoom + 0.2).toFixed(2)); setView && setView('map'); }}>+</button>
+        <button type="button" class="lmx-di-microbtn" aria-label="Zoom out" @click=${() => { graphUI.zoom = Math.max(0.6, +(graphUI.zoom - 0.2).toFixed(2)); setView && setView('map'); }}>−</button>
+        <button type="button" class="lmx-di-microbtn" @click=${() => { graphUI.zoom = 1; graphUI.offsets.clear(); setView && setView('map'); }}>Reset</button>
+        <button type="button" class="lmx-di-microbtn" @click=${e => exportSvgElement(e.currentTarget)}>Export SVG</button>
+      </div>
+
+      <div class="lmx-kg-canvas">
+        <svg class="lmx-kg-svg" viewBox="0 0 ${W} ${H}" role="group" aria-label=${`${arcs.length} open handoffs between ${names.length} agents. The oldest has waited ${arcs[0].label}.`}>
+          <defs>
+            ${['fresh', 'slow', 'stale'].map(b => svg`<marker id=${'lmx-ar-' + b} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path class="lmx-ar" data-band=${b} d="M0 0 L10 5 L0 10 z"></path></marker>`)}
+            ${names.map((n, i) => {
+              const p = at.get(n);
+              return svg`<clipPath id=${'lmx-kg-clip-' + i}><circle cx=${p.x} cy=${p.y} r="17"></circle></clipPath>`;
+            })}
+          </defs>
+
+          <g transform=${`translate(${cx} ${cy}) scale(${graphUI.zoom}) translate(${-cx} ${-cy})`}>
+            <circle class="lmx-kg-orbit" cx=${cx} cy=${cy} r=${R}></circle>
+
+            ${groupedEdges.map(edge => {
+              const p1 = at.get(edge.from), p2 = at.get(edge.to);
+              if (!p1 || !p2) return nothing;
+              const hasReverse = pairMap.has(edge.to + '>' + edge.from);
+              const { d, lx, ly } = directedEdgeGeometry(p1, p2, cx, cy, hasReverse, 30);
+              const lit = on(edge);
+              return svg`<g class="lmx-kg-edge" opacity=${lit ? 1 : 0.18}>
+                <path class="lmx-arc lmx-kg-link" data-band=${edge.band} d=${d} marker-end=${`url(#lmx-ar-${edge.band})`} stroke-width=${Math.min(4, 1.8 + edge.count * 0.5)}></path>
+                <g class="lmx-kg-edgelabel" transform=${`translate(${lx} ${ly})`}>
+                  <rect x="-24" y="-9" width="48" height="18" rx="9"></rect>
+                  <text text-anchor="middle" dy=".34em">${edge.count} · ${edge.label}</text>
+                </g>
+              </g>`;
+            })}
+
+            ${names.map((n, i) => {
+              const p = at.get(n), w = waits.get(n), ic = lobeIconFor(n);
+              const tone = w && w.late > 0 ? 'danger' : w && w.count > 0 ? 'brand' : 'neutral';
+              const labelY = p.y < cy - 30 ? p.y - 33 : p.y + 40;
+              return svg`<g class="lmx-node lmx-kg-node" role="button" tabindex="0" data-tone=${tone} data-on=${String(sel === n)} data-dim=${String(!near(n))} aria-pressed=${String(sel === n)} aria-label=${`${n}: ${w ? w.count : 0} waiting on this agent${w && w.late ? `, ${w.late} over a day` : ''}`}
+                @pointerdown=${startDrag(n)}
+                @click=${() => pick(sel === n ? '' : n)}
+                @keydown=${e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(sel === n ? '' : n); } }}
+                @mouseenter=${enter(n)} @mouseleave=${leave} @focus=${enter(n)} @blur=${leave}>
+                <circle class="lmx-kg-ring" cx=${p.x} cy=${p.y} r="25"></circle>
+                <circle class="lmx-kg-core" cx=${p.x} cy=${p.y} r="20"></circle>
+                ${ic
+                  ? svg`<image href=${ic.src} x=${p.x - 13} y=${p.y - 13} width="26" height="26" clip-path=${`url(#lmx-kg-clip-${i})`} preserveAspectRatio="xMidYMid meet"></image>`
+                  : svg`<text x=${p.x} y=${p.y + 4} class="lmx-nodeinit">${n.slice(0, 2)}</text>`}
+                <text x=${p.x} y=${labelY} class="lmx-kg-nodelabel">${n}</text>
+                ${w ? svg`<g class="lmx-badge" data-late=${String(w.late > 0)}><circle cx=${p.x + 19} cy=${p.y - 19} r="10"></circle><text x=${p.x + 19} y=${p.y - 15} class="lmx-badgen">${w.count}</text></g>` : nothing}
+              </g>`;
+            })}
+          </g>
+        </svg>
+
+        ${hover && hoveredPos ? html`<div class="lmx-kg-tooltip" role="status">
+          <strong>${hover}</strong> · ${hoveredWait ? `${hoveredWait.count} waiting${hoveredWait.late ? ` (${hoveredWait.late} delayed)` : ''}` : 'sender only'} · click to filter
+        </div>` : nothing}
+
+        <aside class="lmx-kg-legend" aria-label="Network legend">
+          <div class="lmx-kg-legtitle">Wait age</div>
+          ${Object.entries(bandWord).map(([b, w]) => html`<div class="lmx-kg-legitem"><i data-band=${b}></i><span>${w}</span></div>`)}
+        </aside>
+      </div>
+
+      <div class="lmx-kg-agents" role="group" aria-label="Follow an agent">
+        ${names.map(n => {
+          const ic = lobeIconFor(n);
+          const count = (waits.get(n) || { count: 0 }).count;
+          return html`<button type="button" class="lmx-typepill lmx-kg-agentpill" aria-pressed=${String(sel === n)} @click=${() => pick(sel === n ? '' : n)} @mouseenter=${enter(n)} @mouseleave=${leave}>
+            ${ic ? html`<img src=${ic.src} alt="" class="lmx-lobe-sm">` : nothing}
+            <span>${n}</span>
+            <b class="lmx-pillcount">${count}</b>
+          </button>`;
+        })}
       </div>
     </div></section>`;
 }

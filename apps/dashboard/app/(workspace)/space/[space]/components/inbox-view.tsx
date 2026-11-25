@@ -41,11 +41,14 @@ import {
   AgentCombobox,
   CopyId,
   DecisionApprovalTray,
+  HeatMapXL,
   InboxSectionTabs,
   InboxUndoToast,
+  KnowledgeGraph,
   StatePanel,
   StatusStrip,
 } from '../../../../../components/ui';
+import type { HeatMapCell, KnowledgeGraphLink, KnowledgeGraphNode } from '../../../../../components/ui';
 
 type BucketTab = 'all' | 'overdue' | 'awaiting';
 type ArchiveWindow = 'all' | '1' | '7' | '30';
@@ -111,6 +114,7 @@ export function InboxView({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<InboxItem | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [mapMode, setMapMode] = useState<'network' | 'matrix'>('network');
   const [copied, setCopied] = useState('');
 
   const [showAllDecisions, setShowAllDecisions] = useState(false);
@@ -173,6 +177,74 @@ export function InboxView({
   const shownAgentQueue = useMemo(() => filterItems(agentQueueAll, tab, now), [agentQueueAll, tab, now]);
   const pg = useMemo(() => paginate(shownAgentQueue, page, PAGE_SIZE), [shownAgentQueue, page]);
   const map = useMemo(() => handoffMap(items), [items]);
+  const requestMapData = useMemo(() => {
+    const DAY_MS = 86_400_000;
+    const H_MS = 3_600_000;
+    const ageBandOf = (ms: number): 'fresh' | 'slow' | 'stale' =>
+      ms > 7 * DAY_MS ? 'stale' : ms > DAY_MS ? 'slow' : 'fresh';
+    const ageLabelOf = (ms: number): string =>
+      ms >= DAY_MS ? `${Math.round(ms / DAY_MS)} d` : `${Math.max(1, Math.round(ms / H_MS))} h`;
+
+    const agentSet = new Set<string>();
+    const waitMap = new Map<string, { waiting: number; late: number }>();
+    const cells: Record<string, HeatMapCell & { maxAge: number }> = {};
+    let delayedCount = 0;
+    let oldestAge = 0;
+
+    for (const item of items) {
+      const from = shortName(item.from);
+      const to = shortName(item.to);
+      if (!from || !to || from === to) continue;
+      agentSet.add(from);
+      agentSet.add(to);
+      const age = Math.max(0, now - Number(item.created_at || now));
+      const band = ageBandOf(age);
+      if (band !== 'fresh') delayedCount += 1;
+      if (age > oldestAge) oldestAge = age;
+
+      const w = waitMap.get(to) || { waiting: 0, late: 0 };
+      w.waiting += 1;
+      if (band !== 'fresh') w.late += 1;
+      waitMap.set(to, w);
+
+      const key = `${from}>${to}`;
+      const existing = cells[key];
+      if (!existing) {
+        cells[key] = { from, to, count: 1, band, label: ageLabelOf(age), maxAge: age };
+      } else {
+        existing.count += 1;
+        if (age >= existing.maxAge) {
+          existing.maxAge = age;
+          existing.band = band;
+          existing.label = ageLabelOf(age);
+        }
+      }
+    }
+
+    const agentsList = [...agentSet].sort((a, b) => a.localeCompare(b));
+    const nodes: KnowledgeGraphNode[] = agentsList.map((id) => ({
+      id,
+      label: id,
+      waiting: waitMap.get(id)?.waiting ?? 0,
+      late: waitMap.get(id)?.late ?? 0,
+    }));
+    const links: KnowledgeGraphLink[] = Object.values(cells).map((c) => ({
+      source: c.from,
+      target: c.to,
+      count: c.count,
+      label: c.label,
+      band: c.band,
+    }));
+
+    return {
+      agents: agentsList,
+      cells,
+      nodes,
+      links,
+      delayedCount,
+      oldestLabel: oldestAge > 0 ? ageLabelOf(oldestAge) : '0 h',
+    };
+  }, [items, now]);
 
   const sortedDecisions = useMemo(() => sortDecisionsUrgency(decisions) as InboxDecision[], [decisions]);
   const visibleDecisions = showAllDecisions ? sortedDecisions : sortedDecisions.slice(0, 3);
@@ -1371,7 +1443,7 @@ export function InboxView({
         onDismiss={handleDismissUndo}
       />
 
-      {/* Request Map Modal Dialog */}
+      {/* Request Map Modal Dialog (Knowledge Graph + Heat Map XL with LobeHub icons) */}
       {mapOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -1382,74 +1454,85 @@ export function InboxView({
             aria-modal="true"
             aria-label="Request map"
             onClick={(e) => e.stopPropagation()}
-            className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-3)]"
+            className="max-h-[88vh] w-full max-w-4xl overflow-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-3)]"
           >
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3">
               <div>
                 <h2 className="font-heading text-base font-semibold text-[var(--text)]">
                   Request map
                 </h2>
                 <p className="text-xs text-[var(--text-muted)]">
-                  Who sends requests to whom ({items.length} open)
+                  Who sends requests to whom ({items.length} open across {requestMapData.agents.length} agents)
                 </p>
               </div>
-              <button
-                type="button"
-                aria-label="Close request map"
-                onClick={() => setMapOpen(false)}
-                className={`flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:text-[var(--text)] ${FOCUS}`}
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] p-0.5" role="group" aria-label="Request map view">
+                  <button
+                    type="button"
+                    aria-pressed={mapMode === 'network'}
+                    onClick={() => setMapMode('network')}
+                    className={`rounded-[6px] px-2.5 py-1 text-xs font-medium ${FOCUS} ${
+                      mapMode === 'network'
+                        ? 'bg-[var(--surface)] font-semibold text-[var(--text)] shadow-[var(--shadow-1)]'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    Network map
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={mapMode === 'matrix'}
+                    onClick={() => setMapMode('matrix')}
+                    className={`rounded-[6px] px-2.5 py-1 text-xs font-medium ${FOCUS} ${
+                      mapMode === 'matrix'
+                        ? 'bg-[var(--surface)] font-semibold text-[var(--text)] shadow-[var(--shadow-1)]'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                    }`}
+                  >
+                    Matrix grid
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close request map"
+                  onClick={() => setMapOpen(false)}
+                  className={`flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:text-[var(--text)] ${FOCUS}`}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <div className="overflow-x-auto p-4">
+            <div className="p-4">
               {map.senders.length === 0 ? (
                 <p className="text-sm text-[var(--text-subtle)]">No open handoffs to map.</p>
+              ) : mapMode === 'network' ? (
+                <KnowledgeGraph
+                  nodes={requestMapData.nodes}
+                  links={requestMapData.links}
+                  selectedNodeId={agentFilter}
+                  onNodeClick={(nodeId) => {
+                    setAgentFilter(nodeId);
+                    setAgentSectionOpen(true);
+                    setPage(1);
+                    setMapOpen(false);
+                  }}
+                />
               ) : (
-                <table className="font-mono text-xs">
-                  <caption className="sr-only">Open handoffs by sender and receiver</caption>
-                  <thead>
-                    <tr>
-                      <th className="px-2 py-1 text-left font-normal text-[var(--text-subtle)]">
-                        from \ to
-                      </th>
-                      {map.receivers.map((r: string) => (
-                        <th key={r} scope="col" className="px-2 py-1 font-semibold">
-                          {r}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {map.senders.map((s: string) => (
-                      <tr key={s}>
-                        <th scope="row" className="px-2 py-1 text-left font-semibold">
-                          {s}
-                        </th>
-                        {map.receivers.map((r: string) => {
-                          const n = map.cells[`${s}>${r}`] || 0;
-                          return (
-                            <td
-                              key={r}
-                              className="px-2 py-1 text-center tabular-nums"
-                              style={
-                                n
-                                  ? {
-                                      backgroundColor: 'var(--brand-subtle)',
-                                      color: 'var(--brand)',
-                                      fontWeight: 600,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              {n || ''}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <HeatMapXL
+                  agents={requestMapData.agents}
+                  cells={requestMapData.cells}
+                  totalOpen={items.length}
+                  delayedCount={requestMapData.delayedCount}
+                  oldestLabel={requestMapData.oldestLabel}
+                  onSelectPair={(pair) => {
+                    if (pair) {
+                      setAgentFilter(pair.to);
+                      setAgentSectionOpen(true);
+                      setPage(1);
+                      setMapOpen(false);
+                    }
+                  }}
+                />
               )}
             </div>
           </div>

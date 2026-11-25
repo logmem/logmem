@@ -69,3 +69,7 @@ export { AgentCombobox } from './agent-combobox';
 export type { AgentComboboxProps } from './agent-combobox';
 export { DecisionApprovalTray } from './decision-approval-card';
 export type { DecisionApprovalTrayProps, DecisionTrayItem } from './decision-approval-card';
+export { HeatMapXL, resolveLobeIconSrc } from './heat-map-xl';
+export type { HeatMapXLProps, HeatMapCell } from './heat-map-xl';
+export { KnowledgeGraph } from './knowledge-graph';
+export type { KnowledgeGraphProps, KnowledgeGraphNode, KnowledgeGraphLink } from './knowledge-graph';
