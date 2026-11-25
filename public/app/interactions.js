@@ -1,6 +1,7 @@
-// One record discussion and the canonical coordination queue.
+// One record discussion and the canonical Inbox triage cockpit.
 import {html,nothing} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {getJSON,postJSON,state,onContextReset,ago,agentName,toast} from './core.js';
+import {load as loadView} from './data.js';
 import {renderView} from './shell.js';
 import {handoffMap} from './flow-views.js';
 import {handoffArcs,matchHandoff} from './flow-model.js';
@@ -8,10 +9,26 @@ import {agentDispatchButton} from './dispatch-components.js';
 import {observeTelemetry} from './telemetry-state.js';
 import {ticketStatus,summaryPreview,ticketPrompt,ticketAgeBadge,mailRange} from './dispatch-model.js';
 import {BUCKETS,inBucket,bucketCounts,sortOldestFirst,queueSummary,dueChip,relTime,fullTime} from './brief-model.js';
-import {splitHeadline} from './dashboard-model.js';
-import {agent as avatar,idChip} from './ui.js';
-const drafts=new Map(),queueRequests=new Map();let generation=0;
-export function clearInteractions(){drafts.clear();queueRequests.clear();generation++;}
+import {splitHeadline,decisionProblem} from './dashboard-model.js';
+import {agent as avatar,idChip,decision,textWithIds,joinDot} from './ui.js';
+import {decide,doStep,doTask,doWork,setChangedHook} from './actions.js';
+import {
+  cleanAgent,
+  sortDecisionsUrgency,
+  splitQueueHandoffs,
+  splitNeedsItems,
+  extractFleetChips,
+  extractArchiveEntries,
+  filterArchive,
+  computeCockpitStats,
+  buildAgentComboboxOptions,
+  isEditableTarget,
+} from './inbox-cockpit-model.js';
+const drafts=new Map(),queueRequests=new Map();let generation=0;let activeKeyHandler=null;
+export function clearInteractions(){
+  drafts.clear();queueRequests.clear();generation++;
+  if(activeKeyHandler){window.removeEventListener('keydown',activeKeyHandler,true);activeKeyHandler=null;}
+}
 onContextReset(clearInteractions);
 const endpoint=(target,extra={})=>'/api/interactions?'+new URLSearchParams({space:state.space||'',...(target?{type:target.type,id:target.id}:{}),...extra});
 const stamp=v=>{const n=Number(v);return n>0&&Number.isFinite(n)?new Date(n).toLocaleString():'Timestamp unavailable';};
@@ -65,48 +82,527 @@ export async function drawDiscussion(want,shell,current){
  model.render=draw;model.reload=load;draw();await load();
 }
 export async function queuePage(arg){
- const space=state.space,version=generation,route=location.hash,pending=new Map();let recipient='',error='',data=null,busy=false,requestSeq=0,flowSel='',flowHover='',flowPair=null,flowView='map',bucket=BUCKETS.some(([k])=>k===arg)?arg:'all',mapOpen=false,openId='',selected=new Set(),mp=0;const MAIL_PAGE=10;
+ const space=state.space,version=generation,route=location.hash,pending=new Map();
+ let recipient='',recipientDraft='',comboOpen=false,comboIndex=-1;
+ let error='',data=null,busy=false,requestSeq=0;
+ let homeData=null,homeLoading=true,homeError='';
+ let decData=null,decLoading=true,decError='';
+ let logData=null,logLoading=true,logError='';
+ let flowSel='',flowHover='',flowPair=null,flowView='map';
+ let bucket=BUCKETS.some(([k])=>k===arg)?arg:'all';
+ let mapOpen=false,openId='',selected=new Set(),mp=0;
+ let showAllDecisions=false,agentOpen=bucket==='overdue',archiveOpen=false;
+ let selectedReviews=new Set(),pendingAckJobs=new Set(),localArchive=[],undoToast=null;
+ let archiveQuery='',archiveAgent='',archiveWindow='all';
+ let expandedTexts=new Set(),kbIndex=-1,activeTab='decisions',slashAt=0;
+ const MAIL_PAGE=10,UNDO_MS=4500;
  const active=()=>space===state.space&&version===generation&&location.hash===route;
- const jumpToList=()=>requestAnimationFrame(()=>{const el=document.getElementById('lmx-queue-list');if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});});
+ const reducedMotion=()=>typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const scrollToId=(id)=>{
+  requestAnimationFrame(()=>{
+   const el=document.getElementById(id);
+   if(el&&el.scrollIntoView)el.scrollIntoView({block:'start',behavior:reducedMotion()?'auto':'smooth'});
+  });
+ };
+ const jumpToList=()=>scrollToId('lmx-queue-list');
+ const toggleExpand=(key)=>{if(expandedTexts.has(key))expandedTexts.delete(key);else expandedTexts.add(key);draw();};
+ const renderExpandable=(key,text,limit=150)=>{
+  const str=String(text||'').trim();
+  if(!str)return nothing;
+  const open=expandedTexts.has(key);
+  if(str.length<=limit)return html`<p class="lmx-cockpit-body">${textWithIds(str)}</p>`;
+  return html`<p class="lmx-cockpit-body">${textWithIds(open?str:str.slice(0,limit).trimEnd()+'…')} <button type="button" class="lmx-inline-more" aria-expanded=${String(open)} @click=${(e)=>{e.stopPropagation();toggleExpand(key);}}>${open?'Show less':'Show more'}</button></p>`;
+ };
+
+ // Optimistic review acknowledge with Undo countdown toast (21st.dev Undo Feedback pattern)
+ const commitAck=async(items)=>{
+  const failed=[];
+  for(const item of items){
+   try{await postJSON('/api/confirm-done','work',{job:item.job});}
+   catch{failed.push(item);}
+  }
+  if(!active())return;
+  if(failed.length){
+   const failedIds=new Set(failed.map(f=>f.job));
+   for(const j of failedIds)pendingAckJobs.delete(j);
+   localArchive=localArchive.filter(a=>!failedIds.has(a.job));
+   toast(`Could not acknowledge ${failed.length} review${failed.length===1?'':'s'}. Restored to Reviews.`,true);
+   draw();
+  }else{
+   await loadCockpitSideData();
+  }
+ };
+ const flushUndoNow=()=>{
+  if(!undoToast)return;
+  const current=undoToast;
+  clearTimeout(current.timer);
+  undoToast=null;
+  draw();
+  commitAck(current.items);
+ };
+ const undoPendingAck=()=>{
+  if(!undoToast)return;
+  const current=undoToast;
+  clearTimeout(current.timer);
+  undoToast=null;
+  const jobs=new Set(current.items.map(i=>i.job));
+  for(const j of jobs)pendingAckJobs.delete(j);
+  localArchive=localArchive.filter(a=>!jobs.has(a.job));
+  toast(`Restored ${current.items.length} review${current.items.length===1?'':'s'}.`);
+  draw();
+ };
+ const startAck=(items)=>{
+  const valid=items.filter(i=>i&&i.job&&!pendingAckJobs.has(i.job));
+  if(!valid.length)return;
+  if(undoToast)flushUndoNow();
+  const nowTs=Date.now();
+  for(const item of valid){
+   pendingAckJobs.add(item.job);
+   selectedReviews.delete(item.job);
+   localArchive=[{id:'ack:'+item.job+':'+nowTs,job:item.job,kind:'done',by:'you',ts:nowTs,summary:`Acknowledged review: ${item.summary||item.job}`,where:`job:${item.job}`,origin:''},...localArchive];
+  }
+  const timer=setTimeout(()=>{
+   const current=undoToast;
+   undoToast=null;
+   draw();
+   if(current)commitAck(current.items);
+  },UNDO_MS);
+  undoToast={items:valid,timer,startedAt:nowTs};
+  draw();
+ };
+
+ const loadCockpitSideData=async()=>{
+  const reqVersion=generation;
+  const [hRes,dRes,lRes]=await Promise.all([
+   loadView('home').catch(e=>({ok:false,error:e?.message||'Could not load fleet status.'})),
+   loadView('decisions').catch(e=>({ok:false,error:e?.message||'Could not load decisions.'})),
+   loadView('log').catch(e=>({ok:false,error:e?.message||'Could not load archive.'})),
+  ]);
+  if(!active()||reqVersion!==generation)return;
+  homeLoading=false;decLoading=false;logLoading=false;
+  if(hRes&&hRes.ok===false){homeError=hRes.error||'Could not load fleet status.';}
+  else{homeData=hRes||{};homeError='';}
+  if(dRes&&dRes.ok===false){decError=dRes.error||'Could not load decisions.';}
+  else{decData=dRes||{};decError='';}
+  if(lRes&&lRes.ok===false){logError=lRes.error||'Could not load archive.';}
+  else{logData=lRes||{};logError='';}
+  draw();
+ };
+
+ const registerKeys=()=>{
+  if(activeKeyHandler){window.removeEventListener('keydown',activeKeyHandler,true);activeKeyHandler=null;}
+  const onKey=(e)=>{
+   if(!active())return;
+   if(e.metaKey||e.ctrlKey||e.altKey)return;
+   if(e.key==='Escape'){
+    const input=document.getElementById('lmx-cockpit-agent-input');
+    const inCombo=document.activeElement===input||e.target===input;
+    if(inCombo||comboOpen){
+     e.preventDefault();
+     e.stopPropagation();
+     comboOpen=false;
+     if(input)input.blur();
+     draw();
+     return;
+    }
+    if(mapOpen){e.preventDefault();mapOpen=false;draw();}
+    return;
+   }
+   if(isEditableTarget(e.target))return;
+   if(e.key==='/'){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const input=document.getElementById('lmx-cockpit-agent-input');
+    if(input){
+     slashAt=Date.now();
+     comboOpen=true;
+     draw();
+     setTimeout(()=>{input.focus();if(input.value==='/'&&recipientDraft===''){input.value='';}input.select();},20);
+    }
+    return;
+   }
+   const nodes=[...document.querySelectorAll('.lmx-cockpit-item')];
+   if(!nodes.length)return;
+   if(e.key==='j'||e.key==='k'){
+    e.preventDefault();
+    if(e.key==='j')kbIndex=kbIndex<nodes.length-1?kbIndex+1:0;
+    else kbIndex=kbIndex>0?kbIndex-1:nodes.length-1;
+    nodes.forEach((n,idx)=>{if(idx===kbIndex)n.setAttribute('data-kb-active','true');else n.removeAttribute('data-kb-active');});
+    const cur=nodes[kbIndex];
+    if(cur&&cur.scrollIntoView)cur.scrollIntoView({block:'nearest',behavior:reducedMotion()?'auto':'smooth'});
+    return;
+   }
+   const cur=kbIndex>=0&&kbIndex<nodes.length?nodes[kbIndex]:nodes[0];
+   if(!cur)return;
+   if(e.key==='a'){
+    const act=cur.querySelector('[data-kb-primary]');
+    if(act&&!act.disabled){e.preventDefault();act.click();}
+   }else if(e.key==='c'){
+    const cLink=cur.querySelector('[data-kb-comment]');
+    if(cLink){e.preventDefault();cLink.click();}
+   }
+  };
+  activeKeyHandler=onKey;
+  window.addEventListener('keydown',onKey,true);
+ };
+ registerKeys();
+
  const draw=()=>{
   if(!active())return;
   const now=Date.now();
-  // The server returns stable oldest-first pages. Keep loaded pages together so local paging never shifts backward.
   const loaded=data?sortOldestFirst(data.items):[];
   const counts=bucketCounts(loaded,now);
-  const shownItems=loaded.filter(i=>inBucket(i,bucket,now)&&matchHandoff(i,flowSel,flowPair));
-  const mpMax=Math.max(0,Math.ceil(shownItems.length/MAIL_PAGE)-1);if(mp>mpMax)mp=mpMax;
-  const pageItems=shownItems.slice(mp*MAIL_PAGE,mp*MAIL_PAGE+MAIL_PAGE);
+  const {human:humanQueueAll,agentToAgent:agentQueueAll}=splitQueueHandoffs(loaded);
+  const shownHumanQueue=humanQueueAll.filter(i=>inBucket(i,bucket,now)&&matchHandoff(i,flowSel,flowPair));
+  const shownAgentQueue=agentQueueAll.filter(i=>inBucket(i,bucket,now)&&matchHandoff(i,flowSel,flowPair));
+  const mpMax=Math.max(0,Math.ceil(shownAgentQueue.length/MAIL_PAGE)-1);if(mp>mpMax)mp=mpMax;
+  const pageItems=shownAgentQueue.slice(mp*MAIL_PAGE,mp*MAIL_PAGE+MAIL_PAGE);
+
+  const rawNeeds=Array.isArray(homeData?.needs_items)?homeData.needs_items:[];
+  const {tasks:humanTasks,reviews:allReviews}=splitNeedsItems(rawNeeds);
+  const reviews=allReviews.filter(r=>r&&r.job&&!pendingAckJobs.has(r.job));
+  const rawWaiting=Array.isArray(decData?.waiting)?decData.waiting:[];
+  const sortedDecisions=sortDecisionsUrgency(rawWaiting);
+  const visibleDecisions=showAllDecisions?sortedDecisions:sortedDecisions.slice(0,3);
+
+  const agents=Array.isArray(homeData?.agents)?homeData.agents:[];
+  const fleet=extractFleetChips(agents,now,10);
+
+  const rawLogEntries=Array.isArray(logData?.entries)?logData.entries:[];
+  const archiveAll=extractArchiveEntries(rawLogEntries,localArchive);
+  const filteredArchive=filterArchive(archiveAll,{query:archiveQuery,agent:archiveAgent,windowDays:archiveWindow},now);
+
+  const stats=computeCockpitStats({
+   decisions:sortedDecisions,
+   humanHandoffs:humanQueueAll,
+   humanTasks,
+   reviews,
+   agentHandoffs:agentQueueAll,
+   agents,
+   now,
+  });
+
+  const agentOptions=buildAgentComboboxOptions(loaded,agents,archiveAll);
+  const filteredOptions=agentOptions.filter(opt=>!recipientDraft.trim()||opt.toLowerCase().includes(recipientDraft.trim().toLowerCase()));
+
   const nudgeState=item=>{const next=Number(item.last_nudge_at||0)+300000,invalid=Number(item.created_at)>Date.now()||!Number.isFinite(Number(item.deadline))||Number(item.deadline)<Number(item.created_at)||!Number.isFinite(Number(item.created_at))||Number(item.created_at)<=0;return {next,invalid,disabled:state.customer&&!state.permissions?.write||next>Date.now()||invalid||pending.has(item.id)};};
   const closeDrawer=()=>{openId='';draw();};
-  // One row per request: who to whom, a human title, one line of detail, the due chip, and the actions that exist.
-  const renderRow=item=>{const st=ticketStatus(item,now),due=dueChip(item,now),{head,body}=splitHeadline(summaryPreview(item.summary)),{disabled}=nudgeState(item);
-   return html`<li class="lmx-inbox-row" data-status=${st}><label class="lmx-mail-check"><input type="checkbox" aria-label=${'Select request from '+agentName(item.from)} .checked=${selected.has(item.id)} @change=${e=>{if(e.target.checked)selected.add(item.id);else selected.delete(item.id);draw();}}></label>
+
+  const renderQueueRow=item=>{
+   const st=ticketStatus(item,now),due=dueChip(item,now),{head,body}=splitHeadline(summaryPreview(item.summary)),{disabled}=nudgeState(item);
+   const expandKey='q:'+item.id;
+   return html`<li class="lmx-inbox-row lmx-cockpit-item" data-status=${st}>
+    <label class="lmx-mail-check"><input type="checkbox" aria-label=${'Select request from '+agentName(item.from)} .checked=${selected.has(item.id)} @change=${e=>{if(e.target.checked)selected.add(item.id);else selected.delete(item.id);draw();}}></label>
     <span class="lmx-inbox-who" aria-hidden="true">${avatar(item.from)}<span>→</span>${avatar(item.to)}</span>
-    <div class="lmx-inbox-main"><button type="button" class="lmx-inbox-open" aria-label=${'Open request from '+agentName(item.from)+' to '+agentName(item.to)+': '+head} @click=${()=>{openId=item.id;draw();}}><span class="lmx-inbox-route">${agentName(item.from)} → ${agentName(item.to)}</span><strong class="lmx-inbox-title">${head}</strong>${body?html`<span class="lmx-inbox-desc">${body}</span>`:nothing}</button>
-     <span class="lmx-inbox-meta"><span class="lmx-due-chip" data-tone=${due.tone||nothing}>${due.text}</span><time class="lmx-meta" title=${fullTime(item.created_at)}>opened ${relTime(item.created_at,now)}</time></span></div>
-    <div class="lmx-inbox-acts"><button type="button" class="lm-btn lm-btn--secondary" ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>${agentDispatchButton(ticketPrompt(item,space))}<a class="lm-btn lm-btn--ghost" href=${link({type:'coord',id:item.id})}>Comment</a></div></li>`;
+    <div class="lmx-inbox-main">
+     <button type="button" class="lmx-inbox-open" aria-label=${'Open request from '+agentName(item.from)+' to '+agentName(item.to)+': '+head} @click=${()=>{openId=item.id;draw();}}>
+      <span class="lmx-inbox-route">${agentName(item.from)} → ${agentName(item.to)}</span>
+      <span class="lmx-inbox-title lmx-cockpit-qhead">${head}</span>
+     </button>
+     ${body?renderExpandable(expandKey,body,140):nothing}
+     <span class="lmx-inbox-meta"><span class="lmx-due-chip" data-tone=${due.tone||nothing}>${due.text}</span><time class="lmx-meta" title=${fullTime(item.created_at)}>opened ${relTime(item.created_at,now)}</time>${item.where?html`<span class="lmx-cockpit-chip" title=${item.where}>${item.where.replace(/^job:/,'')}</span>`:nothing}</span>
+    </div>
+    <div class="lmx-inbox-acts">
+     ${agentDispatchButton(ticketPrompt(item,space))}
+     <button type="button" class="lm-btn lm-btn--secondary" data-kb-primary ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>
+     <a class="lm-btn lm-btn--ghost" data-kb-comment href=${link({type:'coord',id:item.id})}>Comment</a>
+    </div>
+   </li>`;
   };
-  const renderDrawer=()=>{const item=data&&openId?data.items.find(i=>i.id===openId):null;if(!item)return nothing;const {next,invalid,disabled}=nudgeState(item);const st=ticketStatus(item,now);
+
+  const renderHumanTask=item=>{
+   const b=item.task||{},w=b.walkthrough||{},steps=Array.isArray(w.steps)?w.steps:[],done=Array.isArray(b.steps_done)?b.steps_done:[];
+   const dueTone=w.due&&Date.parse(w.due)<now?'danger':w.due?'warning':'';
+   return html`<li class="lmx-cockpit-card lmx-cockpit-item" data-kind="task">
+    <div class="lmx-cockpit-rowhead">
+     <span class="lmx-cockpit-badge" data-tone="brand">Task</span>
+     <span class="lmx-cockpit-qhead">${b.summary||'Human task'}</span>
+     ${w.due?html`<span class="lmx-due-chip" data-tone=${dueTone||nothing}>due ${w.due}</span>`:nothing}
+    </div>
+    <div class="lmx-inbox-meta">
+     <span>${joinDot([b.by?'from '+agentName(b.by):'',item.plan,item.job,steps.length?`${done.length} of ${steps.length} steps`:''])}</span>
+    </div>
+    ${steps.length?html`<ol class="lmx-steps lmx-cockpit-steps">${steps.map((st,k)=>html`<li><input type="checkbox" .checked=${done.indexOf(k)>=0} @change=${e=>doStep(e,b.trail,k,b.rev||0)} aria-label=${`Step ${k+1} done`}><div style="min-width:0"><span class="lmx-step-title">${st.title}</span>${st.detail?renderExpandable(`task:${b.trail}:${k}`,st.detail,120):nothing}</div></li>`)}</ol>`:nothing}
+    <div class="lmx-cockpit-foot">
+     <input class="lm-input lmx-cockpit-note" data-note-for=${'task:'+b.trail} maxlength="300" placeholder="Note, or why you can’t do it" aria-label="Note for task">
+     <div class="lmx-cockpit-acts">
+      <button type="button" class="lm-btn lm-btn--primary" data-kb-primary @click=${e=>doTask(e,'done',b.trail)}>Done</button>
+      <button type="button" class="lm-btn lm-btn--danger" @click=${e=>doTask(e,'cant_do',b.trail)}>Can’t do</button>
+      <a class="lm-btn lm-btn--ghost" data-kb-comment href=${link({type:'task',id:b.trail})}>Comment</a>
+     </div>
+    </div>
+   </li>`;
+  };
+
+  const renderDecisionCard=a=>{
+   const p=a.payload||{},irr=p.reversible!==true;
+   const problem=decisionProblem(a,'approve')||(!a.ask_digest?'Reload to verify the action version.':null);
+   const expandKey='dec:'+a.trail;
+   const summary=String(a.summary||'Untitled decision');
+   const isLong=summary.length>150,isOpen=expandedTexts.has(expandKey);
+   return html`<article class="lm-approval lmx-cockpit-dec lmx-cockpit-item" data-irreversible=${String(irr)} data-key=${'decision:'+a.trail}>
+    <div class="lmx-cockpit-dechead">
+     <div class="lmx-cockpit-decq">
+      <span class="lmx-cockpit-question">${isLong&&!isOpen?summary.slice(0,150).trimEnd()+'…':summary}${isLong?html` <button type="button" class="lmx-inline-more" aria-expanded=${String(isOpen)} @click=${()=>toggleExpand(expandKey)}>${isOpen?'Show less':'Show more'}</button>`:nothing}</span>
+      <div class="lmx-inbox-meta">
+       <span class="lmx-cockpit-agent">${avatar(a.by)}</span>
+       ${a.ts?html`<time class="lmx-meta" title=${fullTime(a.ts)}>${ago(a.ts)}</time>`:nothing}
+       ${irr?html`<span class="lmx-cockpit-badge" data-tone="danger">Irreversible</span>`:html`<span class="lmx-cockpit-badge" data-tone="neutral">Reversible</span>`}
+       ${a.deferred?decision('deferred'):nothing}
+       ${a.where?html`<span class="lmx-cockpit-chip" title=${a.where}>${a.where.replace(/^job:/,'')}</span>`:nothing}
+      </div>
+     </div>
+    </div>
+    ${p.action?html`<details class="lmx-dec-action"><summary>Exact proposed action</summary><pre class="lm-action">${p.action}</pre></details>`:nothing}
+    ${problem?html`<p class="lmx-meta" role="status">${problem}</p>`:nothing}
+    <div class="lmx-cockpit-foot">
+     <input class="lm-input lmx-cockpit-note" data-note-for=${'ask:'+a.trail} maxlength="1000" autocomplete="off" placeholder="Note (required when requesting changes)" aria-label="Note for decision">
+     <div class="lmx-cockpit-acts">
+      <button type="button" class="lm-btn lmx-btn--decision" data-kb-primary ?disabled=${!!problem} @click=${e=>decide(e,a,'approve')}>Approve</button>
+      <button type="button" class="lm-btn lm-btn--danger" @click=${e=>decide(e,a,'reject')}>Request changes</button>
+      ${!a.deferred?html`<button type="button" class="lm-btn lmx-btn--sunken" @click=${e=>decide(e,a,'defer')}>Decide later</button>`:nothing}
+      <a class="lm-btn lm-btn--ghost" data-kb-comment href=${link({type:'decision',id:a.trail})}>Comment</a>
+     </div>
+    </div>
+   </article>`;
+  };
+
+  const renderReviewRow=item=>{
+   const checked=selectedReviews.has(item.job);
+   return html`<li class="lmx-cockpit-review lmx-cockpit-item">
+    <label class="lmx-mail-check"><input type="checkbox" aria-label=${'Select review for '+(item.summary||item.job)} .checked=${checked} @change=${e=>{if(e.target.checked)selectedReviews.add(item.job);else selectedReviews.delete(item.job);draw();}}></label>
+    <div class="lmx-inbox-main">
+     <div class="lmx-cockpit-rowhead">
+      <a class="lmx-cockpit-qhead lmx-cockpit-link" href=${'#/job/'+encodeURIComponent(item.job)}>${item.summary||item.job}</a>
+      <span class="lmx-cockpit-badge" data-tone="warning">Needs review</span>
+     </div>
+     ${item.evidence?renderExpandable('rev:'+item.job,item.evidence,150):nothing}
+     <div class="lmx-inbox-meta">
+      ${item.owner?html`<span class="lmx-cockpit-agent">${avatar(item.owner)}</span>`:nothing}
+      ${item.plan?html`<span class="lmx-cockpit-chip" title=${item.plan}>${item.plan}</span>`:nothing}
+      ${item.created_at?html`<time class="lmx-meta">checked ${ago(item.created_at)}</time>`:nothing}
+     </div>
+    </div>
+    <div class="lmx-inbox-acts">
+     <button type="button" class="lm-btn lm-btn--primary" data-kb-primary @click=${()=>startAck([item])}>Acknowledge</button>
+     <button type="button" class="lm-btn lm-btn--ghost" @click=${e=>doWork(e,'keep-open',item.job)}>Still open</button>
+     <a class="lm-btn lm-btn--ghost" data-kb-comment href=${'#/job/'+encodeURIComponent(item.job)}>Open</a>
+    </div>
+   </li>`;
+  };
+
+  const renderDrawer=()=>{
+   const item=data&&openId?data.items.find(i=>i.id===openId):null;
+   if(!item)return nothing;
+   const {next,invalid,disabled}=nudgeState(item),st=ticketStatus(item,now);
    return html`<dialog class="lmx-drawer lm-inbox-sheet" data-status=${st} aria-label="Request details" @cancel=${e=>{e.preventDefault();closeDrawer();}} @click=${e=>{if(e.target===e.currentTarget)closeDrawer();}}>
     <header class="lmx-drawer-head lm-sheet-head"><div class="lm-sheet-titles"><span class="lm-sheet-eyebrow">Coordination request</span><h2 class="lm-sheet-route">${avatar(item.from)}<span class="lm-sheet-arrow" aria-hidden="true">→</span>${avatar(item.to)}</h2></div><button type="button" class="lm-btn lm-btn--ghost lmx-drawer-close" aria-label="Close details" @click=${closeDrawer}>Close</button></header>
     <div class="lmx-drawer-body lm-sheet-body"><div class="lm-sheet-status-row"><span class="lmx-drawer-status lm-sheet-pill" data-status=${st}>${ticketAgeBadge(item)}</span><span class="lm-sheet-type">${item.type}</span></div><section class="lm-sheet-summary"><p class="lmx-drawer-summary">${item.summary}</p></section><dl class="lm-sheet-kv"><dt>Created</dt><dd>${stamp(item.created_at)}</dd><dt>Deadline</dt><dd>${stamp(item.deadline)}</dd><dt>Last nudge</dt><dd>${item.last_nudge_at?stamp(item.last_nudge_at):'None recorded'}</dd><dt>Source</dt><dd>${item.where||'Not recorded'}</dd><dt>Type</dt><dd>${item.type}</dd><dt>ID</dt><dd>${idChip(item.id)}</dd></dl>${invalid?html`<p class="lm-sheet-warn" role="alert">Check the source timestamps before nudging.</p>`:nothing}${next>Date.now()?html`<p class="lmx-meta">Next nudge available ${stamp(next)}.</p>`:nothing}</div>
     <footer class="lmx-drawer-foot lm-sheet-foot"><div class="lm-sheet-foot-primary">${agentDispatchButton(ticketPrompt(item,space))}<button type="button" class="lm-btn lm-btn--primary" ?disabled=${disabled} @click=${()=>nudge(item)}>Nudge ${agentName(item.to)}</button>${queueRequests.has(space+':'+item.id)?html`<button type="button" class="lm-btn lm-btn--secondary" ?disabled=${pending.has(item.id)} @click=${()=>nudge(item)}>Retry nudge delivery</button>`:nothing}</div><div class="lm-sheet-foot-links"><a class="lm-btn lm-btn--secondary" href=${link({type:'coord',id:item.id})}>Comments and actions</a>${item.where?.startsWith('job:')?html`<a class="lm-btn lm-btn--ghost" href=${'#/job/'+encodeURIComponent(item.where.slice(4))}>Open work →</a>`:nothing}</div></footer>
-   </dialog>`;};
+   </dialog>`;
+  };
+
   const selectedItems=data?data.items.filter(i=>selected.has(i.id)):[];
   const batchBar=selectedItems.length?html`<div class="lmx-mail-batch" role="status"><span>${selectedItems.length} selected</span>${agentDispatchButton(selectedItems.map(i=>ticketPrompt(i,space)).join('\n\n---\n\n'),'Copy prompts')}<button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{selected.clear();draw();}}>Clear</button></div>`:nothing;
-  const empty=!loaded.length?(data?.coverage?.complete?'No open requests. Nothing is waiting on a reply.':'No indexed requests are open. Older requests may still sit in source logs.'):(flowSel||flowPair)?'No requests match this map filter. Pick the same agent or cell again to clear it.':'No requests in this bucket yet.';
-  renderView('queue',['Inbox'],html`<section class="lmx-queue"><header class="lmx-pageheader"><div><span class="lm-eyebrow">Requests · oldest first</span><h1>Inbox</h1></div><div class="lmx-pageheader-links"><a href="#/work">Work</a><a href="#/decisions">Decisions</a></div></header>
-   ${error?html`<p role="alert">${error}</p>`:nothing}
-   ${data?html`<div class="lmx-inbox-bar"><p class="lmx-inbox-summary" aria-live="polite"><strong>${queueSummary(pageItems,now)}</strong> <span class="lmx-meta">${data.indexedCount} indexed</span>${data.nextAfter!=null?html` <span class="lmx-meta">more requests available</span>`:nothing}</p>
-    <div class="lmx-bucket-chips" role="group" aria-label="Age buckets">${BUCKETS.map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String(bucket===value)} ?disabled=${busy} @click=${()=>{if(bucket!==value){bucket=value;load({reset:true});}}}>${label} ${counts[value]}</button>`)}</div></div>
-    <div class="lmx-stack" id="lmx-queue-list">${batchBar}${pageItems.length?html`<ul class="lmx-inbox" aria-label="Requests">${pageItems.map(renderRow)}</ul>`:html`<p class="lmx-meta">${empty}</p>`}</div>
-    <div class="lmx-mail-foot"><span aria-live="polite">${mailRange(mp*MAIL_PAGE,pageItems.length,mp>=mpMax&&data.nextAfter!=null)}</span><button type="button" class="lm-btn lm-btn--ghost" aria-label="Previous page" ?disabled=${busy||mp<=0} @click=${()=>{if(mp>0){mp--;draw();}}}>‹</button><button type="button" class="lm-btn lm-btn--ghost" aria-label="Next page" ?disabled=${busy||mp>=mpMax&&data.nextAfter==null} @click=${nextPage}>›</button></div>
-    <form class="lmx-filters lmx-inbox-filter" @submit=${e=>{e.preventDefault();recipient=e.target.recipient.value.trim();load({reset:true});}}><label class="lm-field"><span>Recipient agent</span><input class="lm-input" name="recipient" aria-label="Recipient agent" maxlength="64" placeholder="All agents" .value=${recipient} ?disabled=${busy}></label><button class="lm-btn" ?disabled=${busy}>Filter</button></form>
-    <details class="lmx-queue-map" ?open=${mapOpen} @toggle=${e=>{mapOpen=e.currentTarget.open;}}><summary><strong>Request map</strong><span class="lmx-meta">Who sends requests to whom</span></summary><div class="lmx-map-canvas">${data.items.length?handoffMap({arcs:handoffArcs(data.items),sel:flowSel,hover:flowHover,pair:flowPair,view:flowView,setView:v=>{flowView=v;flowPair=null;draw();},pick:s=>{flowSel=s;flowPair=null;load({reset:true});if(s)jumpToList();},peek:h=>{if(h!==flowHover){flowHover=h;draw();}},pickPair:x=>{flowPair=x;flowSel='';load({reset:true});if(x)jumpToList();}}):html`<p class="lmx-meta">The map appears when this page has requests.</p>`}</div></details>
-    <details class="lmx-coverage lmx-coverage--quiet"><summary>About this list</summary><p>Age counts cover requests loaded so far. Use Next to load more. Copy prompt puts a prompt on your clipboard and starts no agent. Reassign and resolve live under Comment, for people with that permission.</p>${!data.coverage?.complete?html`<p>History indexing is pending. Older requests remain in their source logs until verified indexing completes.</p>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p>${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}</details>`:html`<p>Loading requests…</p>`}${renderDrawer()}</section>`);
-  requestAnimationFrame(()=>{const d=document.querySelector('dialog.lmx-drawer');if(d&&!d.open){try{d.showModal();const c=d.querySelector('.lmx-drawer-close');if(c)c.focus();}catch{}}});
+  const emptyAgent=!loaded.length?(data?.coverage?.complete?'All clear — no open agent-to-agent handoffs.':'No indexed requests are open. Older requests may still sit in source logs.'):(flowSel||flowPair)?'No requests match this map filter. Clear the filter to view all.':'No agent-to-agent handoffs in this bucket.';
+
+  const humanTotal=shownHumanQueue.length+humanTasks.length;
+  const totalHandoffs=humanTotal+agentQueueAll.length;
+  const allReviewsChecked=reviews.length>0&&reviews.every(r=>selectedReviews.has(r.job));
+  const selectedReviewList=reviews.filter(r=>selectedReviews.has(r.job));
+
+  const tabs=[
+   {id:'decisions',label:'Decisions',count:sortedDecisions.length,target:'cockpit-decisions'},
+   {id:'handoffs',label:'Handoffs',count:totalHandoffs,target:humanTotal>0?'cockpit-handoffs':'cockpit-agent-handoffs'},
+   {id:'reviews',label:'Reviews',count:reviews.length,target:'cockpit-reviews'},
+   {id:'archive',label:'Archive',count:archiveAll.length,target:'cockpit-archive'},
+  ];
+
+  const onStatClick=(st)=>{
+   if(st.action==='filter-overdue'){
+    bucket=bucket==='overdue'?'all':'overdue';
+    if(bucket==='overdue')agentOpen=true;
+    load({reset:true});
+    scrollToId(humanQueueAll.some(i=>ticketStatus(i,now)==='overdue')?'cockpit-handoffs':'cockpit-agent-handoffs');
+   }else if(st.target){
+    if(st.target==='cockpit-agent-handoffs')agentOpen=true;
+    draw();
+    scrollToId(st.target);
+   }
+  };
+
+  renderView('queue',['Inbox'],html`<section class="lmx-queue lmx-cockpit">
+   <header class="lmx-cockpit-head">
+    <div class="lmx-cockpit-titleblock">
+     <h1>Inbox</h1>
+     <span class="lmx-kbd-hint" aria-label="Keyboard shortcuts"><kbd>j</kbd><kbd>k</kbd> move · <kbd>a</kbd> act · <kbd>c</kbd> comment · <kbd>/</kbd> filter</span>
+    </div>
+    <div class="lmx-cockpit-controls">
+     <form class="lmx-filters lmx-inbox-filter lmx-combobox-form" @submit=${e=>{e.preventDefault();comboOpen=false;recipientDraft=e.target.recipient.value.trim();recipient=e.target.recipient.value.trim();load({reset:true});}}>
+      <div class="lmx-combobox">
+       <input id="lmx-cockpit-agent-input" class="lm-input lmx-combobox-input" name="recipient" role="combobox" aria-label="Filter by recipient agent" aria-expanded=${String(comboOpen)} aria-controls="lmx-agent-listbox" aria-autocomplete="list" autocomplete="off" maxlength="64" placeholder="Filter by agent…" .value=${recipientDraft} ?disabled=${busy}
+        @focus=${()=>{comboOpen=true;comboIndex=-1;draw();}}
+        @blur=${()=>setTimeout(()=>{comboOpen=false;draw();},150)}
+        @input=${e=>{if(Date.now()-slashAt<150&&e.target.value==='/'&&recipientDraft===''){e.target.value='';return;}recipientDraft=e.target.value;comboOpen=true;comboIndex=-1;draw();}}
+        @keydown=${e=>{
+         if(e.key==='ArrowDown'){e.preventDefault();comboOpen=true;comboIndex=Math.min(filteredOptions.length-1,comboIndex+1);draw();}
+         else if(e.key==='ArrowUp'){e.preventDefault();comboIndex=Math.max(-1,comboIndex-1);draw();}
+         else if(e.key==='Enter'&&comboOpen&&comboIndex>=0&&filteredOptions[comboIndex]){e.preventDefault();recipient=filteredOptions[comboIndex];recipientDraft=recipient;comboOpen=false;load({reset:true});}
+        }}>
+       ${recipient?html`<button type="button" class="lmx-combobox-clear" aria-label="Clear agent filter" @click=${()=>{recipient='';recipientDraft='';comboOpen=false;load({reset:true});}}>×</button>`:nothing}
+       ${comboOpen&&filteredOptions.length?html`<ul id="lmx-agent-listbox" class="lmx-combobox-list" role="listbox">${filteredOptions.slice(0,10).map((opt,idx)=>html`<li role="option" aria-selected=${String(opt===recipient)} data-active=${String(idx===comboIndex)} @mousedown=${e=>{e.preventDefault();recipient=opt;recipientDraft=opt;comboOpen=false;load({reset:true});}}>${opt}</li>`)}</ul>`:nothing}
+      </div>
+      <button class="lm-btn lm-btn--secondary" ?disabled=${busy}>Filter</button>
+     </form>
+     <button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{mapOpen=true;draw();}}>Request map${flowSel||flowPair?' · active':''}</button>
+     ${flowSel||flowPair?html`<button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{flowSel='';flowPair=null;load({reset:true});}}>Clear map filter</button>`:nothing}
+    </div>
+   </header>
+
+   ${error?html`<p class="lmx-cockpit-err" role="alert">${error} <button type="button" class="lm-btn lm-btn--ghost" @click=${()=>load({reset:true})}>Retry</button></p>`:nothing}
+
+   <nav class="lmx-cockpit-tabs" aria-label="Inbox sections">
+    ${tabs.map(t=>html`<button type="button" class="lmx-cockpit-tab" aria-current=${activeTab===t.id?'true':nothing} @click=${()=>{
+     activeTab=t.id;
+     if(t.id==='archive')archiveOpen=true;
+     if(t.target==='cockpit-agent-handoffs')agentOpen=true;
+     draw();
+     scrollToId(t.target);
+    }}><span>${t.label}</span><span class="lmx-tab-badge" data-zero=${t.count===0?'true':nothing}>${t.count}</span></button>`)}
+   </nav>
+
+   <section class="lmx-cockpit-glance" aria-label="At a glance">
+    <div class="lmx-cockpit-stats">
+     ${stats.map(st=>st.href
+      ?html`<a class="lmx-stat-tile lmx-cockpit-stat" href=${st.href} data-tone=${st.tone} ?data-zero=${st.value===0}><span class="lmx-stat-label">${st.label}</span><strong>${st.value}</strong><span class="lmx-stat-sub">${st.sub}</span></a>`
+      :html`<button type="button" class="lmx-stat-tile lmx-cockpit-stat" data-tone=${st.tone} ?data-zero=${st.value===0} ?data-active=${st.action==='filter-overdue'&&bucket==='overdue'} @click=${()=>onStatClick(st)}><span class="lmx-stat-label">${st.label}</span><strong>${st.value}</strong><span class="lmx-stat-sub">${st.sub}</span></button>`)}
+    </div>
+
+    <div class="lmx-fleet-bar" aria-label="Fleet right now">
+     <div class="lmx-fleet-head">
+      <span class="lmx-fleet-title">Fleet right now</span>
+      <span class="lmx-meta">${fleet.activeCount} active${fleet.blockedCount?` · ${fleet.blockedCount} blocked`:''}</span>
+      <a class="lmx-fleet-all" href="#/agents">View all ${fleet.total}</a>
+     </div>
+     ${homeLoading?html`<div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span><span class="lm-skeleton"></span><span class="lm-skeleton"></span></div>`
+      :homeError?html`<p class="lmx-cockpit-err" role="alert">${homeError} <button type="button" class="lm-btn lm-btn--ghost" @click=${loadCockpitSideData}>Retry</button></p>`
+      :fleet.chips.length?html`<ul class="lmx-fleet-chips">${fleet.chips.map(c=>html`<li><a class="lmx-fleet-chip" href=${'#/agent/'+encodeURIComponent(c.id)} data-status=${c.status} title=${`${c.name} (${c.statusLabel}) — ${c.currentJob} · ${c.lastWrite}`}>
+       <span class="lmx-fleet-dot" data-status=${c.status} aria-hidden="true"></span>
+       <span class="lmx-fleet-name">${c.name}</span>
+       <span class="lmx-fleet-job">${c.currentJob}</span>
+       <span class="lmx-fleet-time">${c.lastWrite}</span>
+      </a></li>`)}</ul>`
+      :html`<p class="lmx-allclear">No agents connected yet.</p>`}
+    </div>
+   </section>
+
+   <section id="cockpit-decisions" class="lmx-cockpit-sec" aria-labelledby="sec-decisions-h">
+    <div class="lmx-cockpit-sechead">
+     <h2 id="sec-decisions-h">Decisions <span class="lmx-sec-count" data-tone=${sortedDecisions.length?'decision':'neutral'}>${sortedDecisions.length}</span></h2>
+     <div class="lmx-sec-meta">
+      ${sortedDecisions.length>3?html`<button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{showAllDecisions=!showAllDecisions;draw();}}>${showAllDecisions?'Show top 3':`See all ${sortedDecisions.length}`}</button>`:nothing}
+      <a class="lm-btn lm-btn--ghost" href="#/decisions">Open board</a>
+     </div>
+    </div>
+    ${decLoading?html`<div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span><span class="lm-skeleton"></span></div>`
+     :decError?html`<p class="lmx-cockpit-err" role="alert">${decError} <button type="button" class="lm-btn lm-btn--ghost" @click=${loadCockpitSideData}>Retry</button></p>`
+     :visibleDecisions.length?html`<div class="lmx-stack">${visibleDecisions.map(renderDecisionCard)}</div>`
+     :html`<p class="lmx-allclear">All clear — no decisions waiting on you.</p>`}
+   </section>
+
+   <section id="cockpit-handoffs" class="lmx-cockpit-sec" aria-labelledby="sec-handoffs-h">
+    <div class="lmx-cockpit-sechead">
+     <h2 id="sec-handoffs-h">Human handoffs &amp; tasks <span class="lmx-sec-count" data-tone=${humanTotal?'brand':'neutral'}>${humanTotal}</span></h2>
+     ${bucket==='overdue'?html`<button type="button" class="lm-btn lm-btn--ghost" @click=${()=>{bucket='all';load({reset:true});}}>Showing overdue · Clear</button>`:nothing}
+    </div>
+    ${!data&&busy?html`<div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span></div>`
+     :humanTotal?html`<ul class="lmx-inbox" aria-label="Human handoffs and tasks">${shownHumanQueue.map(renderQueueRow)}${humanTasks.map(renderHumanTask)}</ul>`
+     :html`<p class="lmx-allclear">All clear — no handoffs or tasks addressed directly to you.</p>`}
+   </section>
+
+   <section id="cockpit-reviews" class="lmx-cockpit-sec" aria-labelledby="sec-reviews-h">
+    <div class="lmx-cockpit-sechead">
+     <h2 id="sec-reviews-h">Reviews to acknowledge <span class="lmx-sec-count" data-tone=${reviews.length?'warning':'neutral'}>${reviews.length}</span></h2>
+     ${reviews.length?html`<div class="lmx-sec-meta">
+      <label class="lmx-check-inline"><input type="checkbox" .checked=${allReviewsChecked} @change=${e=>{if(e.target.checked)reviews.forEach(r=>selectedReviews.add(r.job));else selectedReviews.clear();draw();}}> Select all</label>
+      <button type="button" class="lm-btn lm-btn--primary" @click=${()=>startAck(selectedReviewList.length?selectedReviewList:reviews)}>${selectedReviewList.length?`Acknowledge selected (${selectedReviewList.length})`:`Acknowledge all (${reviews.length})`}</button>
+     </div>`:nothing}
+    </div>
+    ${homeLoading?html`<div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span></div>`
+     :reviews.length?html`<ul class="lmx-inbox" aria-label="Reviews to acknowledge">${reviews.map(renderReviewRow)}</ul>`
+     :html`<p class="lmx-allclear">All clear — no reviews waiting to acknowledge.</p>`}
+   </section>
+
+   <details id="cockpit-agent-handoffs" class="lmx-cockpit-collapse" ?open=${agentOpen} @toggle=${e=>{agentOpen=e.currentTarget.open;draw();}}>
+    <summary class="lmx-cockpit-collapse-head">
+     <span class="lmx-collapse-title">Agent-to-agent handoffs</span>
+     <span class="lmx-sec-count" data-tone=${agentQueueAll.length?'neutral':'neutral'}>${agentQueueAll.length}</span>
+     ${counts.overdue?html`<span class="lmx-cockpit-badge" data-tone="danger">${counts.overdue} overdue</span>`:nothing}
+     <span class="lmx-collapse-hint">${agentOpen?'Hide':'Expand'}</span>
+    </summary>
+    <div class="lmx-cockpit-collapse-body">
+     ${data?html`<div class="lmx-inbox-bar"><p class="lmx-inbox-summary" aria-live="polite"><strong>${queueSummary(pageItems,now)}</strong> <span class="lmx-meta">${data.indexedCount} indexed</span>${data.nextAfter!=null?html` <span class="lmx-meta">more requests available</span>`:nothing}</p>
+      <div class="lmx-bucket-chips" role="group" aria-label="Age buckets">${BUCKETS.map(([value,label])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String(bucket===value)} ?disabled=${busy} @click=${()=>{if(bucket!==value){bucket=value;load({reset:true});}}}>${label} ${counts[value]}</button>`)}</div></div>
+      <div class="lmx-stack" id="lmx-queue-list">${batchBar}${pageItems.length?html`<ul class="lmx-inbox" aria-label="Agent-to-agent handoffs">${pageItems.map(renderQueueRow)}</ul>`:html`<p class="lmx-allclear">${emptyAgent}</p>`}</div>
+      <div class="lmx-mail-foot"><span aria-live="polite">${mailRange(mp*MAIL_PAGE,pageItems.length,mp>=mpMax&&data.nextAfter!=null)}</span><button type="button" class="lm-btn lm-btn--ghost" aria-label="Previous page" ?disabled=${busy||mp<=0} @click=${()=>{if(mp>0){mp--;draw();}}}>‹</button><button type="button" class="lm-btn lm-btn--ghost" aria-label="Next page" ?disabled=${busy||mp>=mpMax&&data.nextAfter==null} @click=${nextPage}>›</button></div>`
+     :html`<div class="lmx-cockpit-skel" id="lmx-queue-list" aria-busy="true"><span class="lm-skeleton"></span></div>`}
+    </div>
+   </details>
+
+   <details id="cockpit-archive" class="lmx-cockpit-collapse" ?open=${archiveOpen} @toggle=${e=>{archiveOpen=e.currentTarget.open;draw();}}>
+    <summary class="lmx-cockpit-collapse-head">
+     <span class="lmx-collapse-title">Accepted handoffs archive</span>
+     <span class="lmx-sec-count" data-tone="success">${archiveAll.length}</span>
+     <span class="lmx-collapse-hint">${archiveOpen?'Hide':'Expand'}</span>
+    </summary>
+    <div class="lmx-cockpit-collapse-body">
+     <div class="lmx-archive-filters">
+      <input class="lm-input" type="search" placeholder="Search accepted handoffs &amp; decisions…" aria-label="Search archive" .value=${archiveQuery} @input=${e=>{archiveQuery=e.target.value;draw();}}>
+      <select class="lm-select" aria-label="Filter archive by agent" .value=${archiveAgent} @change=${e=>{archiveAgent=e.target.value;draw();}}>
+       <option value="">All agents</option>
+       ${agentOptions.map(opt=>html`<option value=${opt}>${opt}</option>`)}
+      </select>
+      <div class="lmx-bucket-chips" role="group" aria-label="Archive date window">
+       ${[['all','All'],['1','Today'],['7','7d'],['30','30d']].map(([val,lbl])=>html`<button type="button" class="lmx-typepill" aria-pressed=${String(archiveWindow===val)} @click=${()=>{archiveWindow=val;draw();}}>${lbl}</button>`)}
+      </div>
+     </div>
+     ${logLoading?html`<div class="lmx-cockpit-skel" aria-busy="true"><span class="lm-skeleton"></span></div>`
+      :logError?html`<p class="lmx-cockpit-err" role="alert">${logError} <button type="button" class="lm-btn lm-btn--ghost" @click=${loadCockpitSideData}>Retry</button></p>`
+      :filteredArchive.length?html`<ul class="lmx-archive-list">${filteredArchive.slice(0,40).map(e=>html`<li class="lmx-archive-row">
+       <span class="lmx-cockpit-badge" data-tone=${e.kind==='done'?'success':e.kind==='decided'?'decision':'brand'}>${e.kind}</span>
+       <div class="lmx-archive-main">
+        ${renderExpandable('arc:'+e.id,e.summary,160)}
+        <div class="lmx-inbox-meta"><span>by <strong>${e.by}</strong></span>${e.ts?html`<time class="lmx-meta" title=${fullTime(e.ts)}>${relTime(e.ts,now)}</time>`:nothing}${e.where?html`<span class="lmx-cockpit-chip" title=${e.where}>${e.where.replace(/^job:/,'')}</span>`:nothing}</div>
+       </div>
+      </li>`)}</ul>`
+      :html`<p class="lmx-allclear">No archive entries match these filters.</p>`}
+    </div>
+   </details>
+
+   ${data?html`<details class="lmx-coverage lmx-coverage--quiet"><summary>About this list</summary><p>Age counts cover requests loaded so far. Use Next to load more. Copy prompt puts a prompt on your clipboard and starts no agent. Reassign and resolve live under Comment, for people with that permission.</p>${!data.coverage?.complete?html`<p>History indexing is pending. Older requests remain in their source logs until verified indexing completes.</p>`:nothing}${(data.coverage?.notes||[]).map(n=>html`<p>${n}</p>`)}${(data.coverage?.errors||[]).map(n=>html`<p role="alert">${n}</p>`)}</details>`:nothing}
+
+   ${undoToast?html`<div class="lmx-undo-toast" role="status" aria-live="polite">
+    <span class="lmx-undo-dot" aria-hidden="true"></span>
+    <span>Acknowledged ${undoToast.items.length} review${undoToast.items.length===1?'':'s'}</span>
+    <button type="button" class="lm-btn lm-btn--secondary lmx-undo-btn" @click=${undoPendingAck}>Undo</button>
+    <button type="button" class="lm-btn lm-btn--ghost lmx-undo-dismiss" aria-label="Dismiss" @click=${flushUndoNow}>×</button>
+   </div>`:nothing}
+
+   ${renderDrawer()}
+   ${mapOpen?html`<dialog class="lmx-queue-map" data-dialog="map" aria-label="Request map" @cancel=${e=>{e.preventDefault();mapOpen=false;draw();}} @click=${e=>{if(e.target===e.currentTarget){mapOpen=false;draw();}}}>
+    <header class="lmx-map-head"><div><h2>Request map</h2><p class="lmx-meta">Who sends requests to whom. Click an agent or cell to filter.</p></div><button type="button" class="lm-btn lm-btn--ghost lmx-map-close" @click=${()=>{mapOpen=false;draw();}}>Close</button></header>
+    <div class="lmx-map-canvas">${data&&data.items.length?handoffMap({arcs:handoffArcs(data.items),sel:flowSel,hover:flowHover,pair:flowPair,view:flowView,setView:v=>{flowView=v;flowPair=null;draw();},pick:s=>{flowSel=s;flowPair=null;mapOpen=false;agentOpen=true;load({reset:true});if(s)jumpToList();},peek:h=>{if(h!==flowHover){flowHover=h;draw();}},pickPair:x=>{flowPair=x;flowSel='';mapOpen=false;agentOpen=true;load({reset:true});if(x)jumpToList();}}):html`<p class="lmx-meta">No open requests to map yet.</p>`}</div>
+   </dialog>`:nothing}
+  </section>`);
+
+  requestAnimationFrame(()=>{
+   const d=document.querySelector('dialog.lmx-drawer');
+   if(d&&!d.open){try{d.showModal();const c=d.querySelector('.lmx-drawer-close');if(c)c.focus();}catch{}}
+   const m=document.querySelector('dialog.lmx-queue-map');
+   if(m&&!m.open){try{m.showModal();const c=m.querySelector('.lmx-map-close');if(c)c.focus();}catch{}}
+  });
  };
+
  const nudge=async item=>{
   if(pending.has(item.id))return;
   const key=space+':'+item.id,requestId=queueRequests.get(key)||crypto.randomUUID();queueRequests.set(key,requestId);pending.set(item.id,true);draw();
@@ -130,14 +626,15 @@ export async function queuePage(arg){
  };
  const nextPage=async()=>{
   if(busy||!data)return;
-  const current=sortOldestFirst(data.items).filter(i=>inBucket(i,bucket,Date.now())&&matchHandoff(i,flowSel,flowPair));
+  const current=splitQueueHandoffs(sortOldestFirst(data.items)).agentToAgent.filter(i=>inBucket(i,bucket,Date.now())&&matchHandoff(i,flowSel,flowPair));
   if(mp<Math.ceil(current.length/MAIL_PAGE)-1){mp++;draw();return;}
   const hadRows=current.length>mp*MAIL_PAGE,needed=hadRows?(mp+1)*MAIL_PAGE:mp*MAIL_PAGE;
   while(data?.nextAfter!=null&&active()){
    const loaded=await load();if(!loaded)return;
-   const matches=sortOldestFirst(data.items).filter(i=>inBucket(i,bucket,Date.now())&&matchHandoff(i,flowSel,flowPair));
+   const matches=splitQueueHandoffs(sortOldestFirst(data.items)).agentToAgent.filter(i=>inBucket(i,bucket,Date.now())&&matchHandoff(i,flowSel,flowPair));
    if(matches.length>needed){if(hadRows)mp++;draw();return;}
   }
  };
- await load({reset:true});
+ setChangedHook(()=>{if(active()){loadCockpitSideData();load({reset:true});}});
+ await Promise.all([load({reset:true}),loadCockpitSideData()]);
 }

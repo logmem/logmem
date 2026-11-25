@@ -9,6 +9,7 @@ import { isSampleSpace, receiptForSpace } from './dashboard-model.js';
 import {assistantWidget} from './assistant-widget.js';
 import { themeControl } from './theme-controls.js';
 import { mapViewToggle } from './map-preference.js';
+import { formatNeedsBadge } from './inbox-cockpit-model.js';
 import { ADMIN, PRIMARY_NAV } from './nav-model.js';
 
 export const NAV = PRIMARY_NAV;
@@ -44,7 +45,12 @@ function navItem(n, route) {
   const cur = n[0] === (route === 'discussion' ? 'queue' : ROUTE_NAV[route] || route);
   return html`<a href=${n[3] || '#/' + n[0]} class="lm-nav-item" aria-current=${cur ? 'page' : nothing} style=${cur ? 'background:var(--brand-subtle);color:var(--brand)' : ''} title=${n[1]}>${icon(n[2])}<span>${n[1]}</span></a>`;
 }
-const needsBtn = () => html`<button type="button" class="lmx-needs lm-needs-icon" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} title=${live.needs == null ? 'Needs you' : `Needs you (${num(live.needs)})`} aria-label=${live.needs == null ? 'Needs you: count unavailable' : `Needs you: ${num(live.needs)} items`}>${icon('handoff')}<b>${live.needs == null ? '—' : num(live.needs)}</b></button>`;
+const needsBtn = () => {
+  const b = formatNeedsBadge(live.needs);
+  const count = live.needs == null || !Number.isFinite(Number(live.needs)) ? '—' : Math.max(0, Math.floor(Number(live.needs)));
+  const word = count === 1 ? 'needs you' : count === 0 ? 'clear' : 'need you';
+  return html`<button type="button" class="lmx-needs lm-needs-icon lmx-needs--explained" data-n=${live.needs == null ? 'unknown' : num(live.needs)} @click=${() => openDrawer('needs', 'all')} title=${b.aria} aria-label=${b.aria}>${icon('handoff')}<b>${count}</b><span class="lmx-needs-label">${word}</span></button>`;
+};
 export const themePicker = () => themeControl(refreshFrame);
 export const workspaceAssistant = route => assistantWidget(route,refreshFrame);
 // Every workspace view uses the full width without a permanent right-hand assistant rail.

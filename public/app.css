@@ -1720,3 +1720,175 @@ html[data-map-mode="table"] .lmx-work-map-top{display:none}
 .lmx-chat-form .lm-btn{min-height:44px}
 @media (min-width:768px){.lmx-chat-form textarea.lm-input{font-size:14px}}
 .lmx-chat-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ─── Inbox Triage Cockpit (#/queue) ─── */
+.lm-head-right .lmx-searchbtn{flex:0 0 auto;white-space:nowrap;gap:6px}
+.lm-head-right .lmx-needs.lmx-needs--explained{width:auto;white-space:nowrap;flex-shrink:0;padding:0 10px !important;gap:6px}
+.lm-head-right .lmx-needs.lmx-needs--explained b{white-space:nowrap;flex-shrink:0;padding:0 6px;background:var(--decision);color:var(--text-inverse)}
+.lm-head-right .lmx-needs.lmx-needs--explained[data-n="0"] b,.lm-head-right .lmx-needs.lmx-needs--explained[data-n="unknown"] b{background:var(--surface-sunken);color:var(--text-subtle)}
+.lmx-needs-label{white-space:nowrap;font:600 12px/1 var(--font-sans);color:var(--decision)}
+.lmx-needs[data-n="0"] .lmx-needs-label,.lmx-needs[data-n="unknown"] .lmx-needs-label{color:var(--text-muted)}
+.lmx-cockpit{display:grid;gap:16px;min-width:0}
+.lmx-cockpit-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px}
+.lmx-cockpit-titleblock{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;min-width:0}
+.lmx-cockpit-titleblock h1{margin:0;font:700 26px/1.2 var(--font-display,var(--font-sans));color:var(--text)}
+.lmx-kbd-hint{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;font:500 12px/1.4 var(--font-mono);color:var(--text-subtle)}
+.lmx-kbd-hint kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px;padding:1px 5px;border:1px solid var(--border);border-radius:var(--radius-sm,4px);background:var(--surface);color:var(--text-muted);font:500 11px/1.3 var(--font-mono)}
+.lmx-cockpit-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.lmx-combobox-form{display:flex;align-items:center;gap:6px;margin:0}
+.lmx-combobox{position:relative;min-width:200px;max-width:100%}
+.lmx-combobox-input{width:100%;min-height:36px;padding-right:28px}
+.lmx-combobox-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:0;border-radius:var(--radius-sm,4px);background:transparent;color:var(--text-muted);font-size:16px;line-height:1;cursor:pointer}
+.lmx-combobox-clear:hover{background:var(--surface-sunken);color:var(--text)}
+.lmx-combobox-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;list-style:none;margin:0;padding:4px;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface-raised,var(--surface));box-shadow:var(--shadow-2)}
+.lmx-combobox-list li{padding:8px 10px;border-radius:var(--radius-sm,4px);font-size:13px;color:var(--text);cursor:pointer}
+.lmx-combobox-list li:hover,.lmx-combobox-list li[data-active="true"]{background:var(--surface-sunken)}
+.lmx-combobox-list li[aria-selected="true"]{color:var(--brand);font-weight:600}
+
+/* Sticky section tabs (21st.dev Tabs with Count Badge) */
+.lmx-cockpit-tabs{position:sticky;top:0;z-index:12;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:4px;padding:6px 0;background:var(--bg);border-bottom:1px solid var(--border)}
+.lmx-cockpit-tab{display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:6px 12px;border:0;border-bottom:2px solid transparent;border-radius:var(--radius-sm,4px) var(--radius-sm,4px) 0 0;background:transparent;color:var(--text-muted);font:500 13px/1.2 var(--font-sans);white-space:nowrap;cursor:pointer;transition:color var(--duration-fast,.15s) var(--ease-standard,ease),background var(--duration-fast,.15s) var(--ease-standard,ease)}
+.lmx-cockpit-tab:hover{color:var(--text);background:var(--surface-sunken)}
+.lmx-cockpit-tab[aria-current="true"]{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.lmx-cockpit-tab:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font:600 11px/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.lmx-tab-badge[data-zero="true"]{color:var(--text-subtle);background:var(--surface-sunken)}
+
+/* Section 1: At a glance + Fleet right now */
+.lmx-cockpit-glance{display:grid;gap:12px}
+.lmx-cockpit-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.lmx-cockpit-stat{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface);text-align:left;color:var(--text);text-decoration:none;cursor:pointer;font:inherit;transition:border-color var(--duration-fast,.15s) ease,background var(--duration-fast,.15s) ease}
+.lmx-cockpit-stat[data-tone="decision"] strong{color:var(--decision)}
+.lmx-cockpit-stat[data-tone="brand"] strong{color:var(--brand)}
+.lmx-cockpit-stat[data-tone="warning"] strong{color:var(--warning)}
+.lmx-cockpit-stat[data-tone="danger"] strong{color:var(--danger)}
+.lmx-cockpit-stat[data-active]{border-color:var(--danger);background:var(--danger-subtle)}
+
+.lmx-fleet-bar{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
+.lmx-fleet-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.lmx-fleet-title{font:600 13px/1.3 var(--font-sans);color:var(--text)}
+.lmx-fleet-all{margin-left:auto;font:500 13px/1.3 var(--font-sans);color:var(--link);text-decoration:none}
+.lmx-fleet-all:hover{text-decoration:underline}
+.lmx-fleet-chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.lmx-fleet-chip{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface-sunken);color:var(--text);text-decoration:none;font-size:12px;line-height:1.35;max-width:100%;transition:border-color var(--duration-fast,.15s) ease}
+.lmx-fleet-chip:hover{border-color:var(--border-strong);background:var(--surface)}
+.lmx-fleet-chip:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-fleet-chip[data-status="blocked"]{border-color:var(--danger);background:var(--danger-subtle)}
+.lmx-fleet-chip[data-status="silent"]{border-color:var(--warning);background:var(--warning-subtle)}
+.lmx-fleet-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--text-subtle)}
+.lmx-fleet-dot[data-status="active"]{background:var(--success)}
+.lmx-fleet-dot[data-status="blocked"]{background:var(--danger)}
+.lmx-fleet-dot[data-status="silent"]{background:var(--warning)}
+.lmx-fleet-name{font-weight:600;color:var(--text)}
+.lmx-fleet-job{color:var(--text-muted);overflow-wrap:anywhere}
+.lmx-fleet-time{font:500 11px/1.2 var(--font-mono);color:var(--text-subtle)}
+
+/* Cockpit Sections & Cards */
+.lmx-cockpit-sec{display:grid;gap:10px;scroll-margin-top:56px}
+.lmx-cockpit-sechead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+.lmx-cockpit-sechead h2{display:inline-flex;align-items:center;gap:8px;margin:0;font:600 16px/1.3 var(--font-display,var(--font-sans));color:var(--text)}
+.lmx-sec-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lmx-sec-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 7px;border-radius:999px;background:var(--surface-sunken);color:var(--text-muted);font:600 12px/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.lmx-sec-count[data-tone="decision"]{background:var(--decision-subtle);color:var(--decision)}
+.lmx-sec-count[data-tone="brand"]{background:var(--brand-subtle);color:var(--brand)}
+.lmx-sec-count[data-tone="warning"]{background:var(--warning-subtle);color:var(--warning)}
+.lmx-sec-count[data-tone="success"]{background:var(--success-subtle);color:var(--success)}
+
+.lmx-allclear{margin:0;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface);color:var(--text-muted);font-size:13px}
+.lmx-cockpit-err{margin:0;padding:10px 14px;border:1px solid var(--danger);border-radius:var(--radius-md,8px);background:var(--danger-subtle);color:var(--danger);font-size:13px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lmx-cockpit-skel{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
+.lmx-cockpit-skel .lm-skeleton{display:block;height:14px;border-radius:var(--radius-sm,4px)}
+
+/* Decision cards: readable question (not fully bold), crisp semantic buttons */
+.lmx-cockpit-dec{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
+.lmx-cockpit-dec[data-irreversible="true"]{border-color:var(--danger)}
+.lmx-cockpit-decq{display:grid;gap:6px;min-width:0}
+.lmx-cockpit-question{font:500 15px/1.45 var(--font-sans);color:var(--text);overflow-wrap:anywhere}
+.lmx-cockpit-qhead{font:500 14px/1.4 var(--font-sans);color:var(--text);overflow-wrap:anywhere}
+.lmx-cockpit-link{color:var(--text);text-decoration:none}
+.lmx-cockpit-link:hover{color:var(--link);text-decoration:underline}
+.lmx-cockpit-body{margin:0;font-size:13px;line-height:1.5;color:var(--text-muted);overflow-wrap:anywhere}
+.lmx-inline-more{border:0;padding:0 2px;background:none;color:var(--link);font:500 12px/1.3 var(--font-sans);cursor:pointer;text-decoration:underline}
+.lmx-inline-more:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-cockpit-agent{display:inline-flex;align-items:center}
+.lmx-cockpit-badge{display:inline-flex;align-items:center;min-height:22px;padding:2px 8px;border-radius:999px;font:500 11px/1.2 var(--font-sans);white-space:normal}
+.lmx-cockpit-badge[data-tone="danger"]{background:var(--danger-subtle);color:var(--danger)}
+.lmx-cockpit-badge[data-tone="warning"]{background:var(--warning-subtle);color:var(--warning)}
+.lmx-cockpit-badge[data-tone="success"]{background:var(--success-subtle);color:var(--success)}
+.lmx-cockpit-badge[data-tone="decision"]{background:var(--decision-subtle);color:var(--decision)}
+.lmx-cockpit-badge[data-tone="brand"]{background:var(--brand-subtle);color:var(--brand)}
+.lmx-cockpit-badge[data-tone="neutral"]{background:var(--surface-sunken);color:var(--text-muted)}
+.lmx-cockpit-chip{display:inline-flex;align-items:center;padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:var(--surface-sunken);color:var(--text-muted);font:500 11px/1.3 var(--font-mono);white-space:normal;overflow-wrap:anywhere;max-width:100%}
+.lmx-cockpit-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lmx-cockpit-note{flex:1 1 220px;min-width:0;min-height:36px}
+.lmx-cockpit-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.lmx-btn--decision{background:var(--decision);border-color:var(--decision);color:var(--text-inverse)}
+.lmx-btn--decision:hover:not(:disabled){opacity:.9}
+.lmx-btn--sunken{background:var(--surface-sunken);border-color:var(--border);color:var(--text)}
+.lmx-btn--sunken:hover:not(:disabled){border-color:var(--border-strong)}
+
+/* Human task & Review rows */
+.lmx-cockpit-card{display:grid;gap:8px;padding:12px 14px;border-top:1px solid var(--border)}
+.lmx-cockpit-card:first-child{border-top:0}
+.lmx-cockpit-rowhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lmx-cockpit-steps{margin:4px 0;padding-left:0;list-style:none;display:grid;gap:6px}
+.lmx-cockpit-steps li{display:flex;align-items:flex-start;gap:8px}
+.lmx-step-title{font:500 13px/1.4 var(--font-sans);color:var(--text)}
+.lmx-cockpit-review{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:start;gap:10px 12px;padding:12px 14px}
+.lmx-cockpit-review+.lmx-cockpit-review{border-top:1px solid var(--border)}
+.lmx-check-inline{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer;min-height:36px}
+
+/* Keyboard navigation focus highlight */
+.lmx-cockpit-item[data-kb-active="true"]{outline:2px solid var(--focus);outline-offset:-2px;background:var(--brand-subtle)}
+
+/* Collapsible Agent-to-agent & Archive sections */
+.lmx-cockpit-collapse{border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface);scroll-margin-top:56px}
+.lmx-cockpit-collapse-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-height:46px;padding:10px 14px;cursor:pointer;list-style:none}
+.lmx-cockpit-collapse-head::-webkit-details-marker{display:none}
+.lmx-cockpit-collapse-head:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lmx-collapse-title{font:600 15px/1.3 var(--font-display,var(--font-sans));color:var(--text)}
+.lmx-collapse-hint{margin-left:auto;font:500 12px/1.3 var(--font-sans);color:var(--link)}
+.lmx-cockpit-collapse-body{display:grid;gap:12px;padding:0 14px 14px;border-top:1px solid var(--border);padding-top:12px}
+
+/* Archive search & list */
+.lmx-archive-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lmx-archive-filters .lm-input{flex:1 1 220px;min-width:0;min-height:36px}
+.lmx-archive-filters .lm-select{min-height:36px}
+.lmx-archive-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:var(--radius-md,8px);background:var(--surface)}
+.lmx-archive-row{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:10px 12px;padding:10px 14px}
+.lmx-archive-row+.lmx-archive-row{border-top:1px solid var(--border)}
+.lmx-archive-main{display:grid;gap:4px;min-width:0}
+
+/* Request Map modal dialog */
+dialog.lmx-queue-map{width:min(760px,calc(100vw - 24px));max-height:85vh;margin:auto;padding:0;border:1px solid var(--border);border-radius:var(--radius-lg,12px);background:var(--surface);color:var(--text);box-shadow:var(--shadow-3);overflow:auto}
+dialog.lmx-queue-map::backdrop{background:color-mix(in srgb,var(--text) 35%,transparent)}
+.lmx-map-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border)}
+.lmx-map-head h2{margin:0;font:600 17px/1.3 var(--font-display,var(--font-sans))}
+dialog.lmx-queue-map .lmx-map-canvas{padding:16px 18px}
+
+/* Optimistic Undo Toast (21st.dev Undo Feedback pattern) */
+.lmx-undo-toast{position:fixed;right:20px;bottom:20px;z-index:120;display:flex;align-items:center;gap:10px;max-width:min(420px,calc(100vw - 32px));padding:10px 12px 10px 14px;border:1px solid var(--border-strong);border-radius:var(--radius-md,8px);background:var(--surface-raised,var(--surface));color:var(--text);box-shadow:var(--shadow-3);font:500 13px/1.4 var(--font-sans)}
+.lmx-undo-dot{width:8px;height:8px;border-radius:50%;background:var(--success);flex:none}
+.lmx-undo-btn{min-height:32px;padding:0 12px}
+.lmx-undo-dismiss{min-height:32px;min-width:32px;padding:0}
+
+@media (max-width: 1023px){
+ .lmx-cockpit-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width: 639px){
+ .lmx-cockpit-tabs{gap:2px}
+ .lmx-cockpit-tab{padding:6px 7px;gap:4px;font-size:12px}
+ .lmx-tab-badge{min-width:18px;height:18px;padding:0 5px;font-size:10px}
+ .lmx-cockpit-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .lmx-kbd-hint{display:none}
+ .lmx-combobox{min-width:0;flex:1 1 160px}
+ .lmx-cockpit-controls{width:100%}
+ .lmx-combobox-form{flex:1 1 100%}
+ .lmx-cockpit-review{grid-template-columns:28px minmax(0,1fr)}
+ .lmx-cockpit-review .lmx-inbox-acts{grid-column:1/-1;justify-content:flex-start}
+ .lmx-cockpit-acts .lm-btn{min-height:44px}
+ .lmx-undo-toast{left:16px;right:16px;bottom:76px}
+}
+@media (prefers-reduced-motion:reduce){
+ .lmx-cockpit-tab,.lmx-cockpit-stat,.lmx-fleet-chip{transition:none}
+}
