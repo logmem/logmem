@@ -1,6 +1,6 @@
 {
   "name": "@logmem/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "LogMem MCP server: shared memory for agent teams. Implements ACMI (compat mode via LOGMEM_ACMI_COMPAT=1).",
   "type": "module",
   "license": "MIT",
