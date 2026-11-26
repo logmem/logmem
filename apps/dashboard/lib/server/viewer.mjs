@@ -34,7 +34,11 @@ const VALID_ACTIONS = new Set([
   'approve',
   'manage-members',
   'manage-connections',
-  'create-space'
+  'create-space',
+  'export-space',
+  'import-space',
+  'share-snapshot',
+  'transfer-space'
 ]);
 
 const scripts = new Map();
@@ -170,7 +174,11 @@ export async function resolveDashboardViewer(options = {}, deps = {}) {
     canManage: Boolean(context.permissions.manage),
     canManageMembers: Boolean(context.permissions.manage),
     canManageConnections: Boolean(context.permissions.manage),
-    canCreateSpace: context.membership?.role !== 'viewer'
+    canCreateSpace: context.membership?.role !== 'viewer' && context.membership?.role !== 'contributor',
+    canExport: Boolean(context.permissions.exportSpace),
+    canImport: Boolean(context.permissions.importSpace),
+    canShareSnapshot: Boolean(context.permissions.shareSnapshot),
+    canTransfer: Boolean(context.permissions.transferSpace)
   };
 
   return {

@@ -20,6 +20,7 @@ export interface AgentRow {
 
 export interface AgentsData {
   agents: AgentRow[];
+  importReceipt: Record<string, unknown> | null;
   unavailable: boolean;
   now: number;
 }
@@ -29,8 +30,13 @@ export async function getAgentsData(space: string): Promise<AgentsData> {
   const now = Date.now();
   try {
     const view: any = await buildView(viewer.redis, viewer.namespace, 'agents', {}, now);
-    return { agents: normalizeAgents(view?.agents), unavailable: false, now };
+    return {
+      agents: normalizeAgents(view?.agents),
+      importReceipt: view?.import_receipt || null,
+      unavailable: false,
+      now,
+    };
   } catch {
-    return { agents: [], unavailable: true, now };
+    return { agents: [], importReceipt: null, unavailable: true, now };
   }
 }

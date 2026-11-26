@@ -288,18 +288,57 @@ export async function listSpaces({userId,workspaceId},deps) {
 }
 
 export function accessPolicy(w,userId,spaceId,action) {
- const m=membership(w,userId), manager=['owner','admin'].includes(m.role);
+ const m=membership(w,userId), manager=['owner','admin'].includes(m.role), isOwner=m.role==='owner';
  const s=w.spaces?.[spaceId];
  if(!s || (!manager&&!m.spaces?.[spaceId])) failWorkspace('not_found',404);
  if(s.status==='archived') {
   if(action!=='read') failWorkspace('space_archived',403);
-  return {workspace:summary(w),space:s,membership:m,person:`human:${userId}`,permissions:{read:true,write:false,approve:false,manage:manager},version:w.version};
+  return {workspace:summary(w),space:s,membership:m,person:`human:${userId}`,permissions:{read:true,write:false,approve:false,manage:manager,exportSpace:false,importSpace:false,shareSnapshot:false,transferSpace:false},version:w.version};
  }
  if(s.status!=='active') failWorkspace('not_found',404);
  const g=m.spaces?.[spaceId], editor=m.role!=='viewer'&&(manager||g?.role==='editor');
- const allowed={read:true,write:editor,approve:m.role!=='viewer'&&g?.canApprove===true,'manage-members':manager,'manage-connections':manager,'create-space':m.role!=='viewer'&&m.role!=='contributor'};
+ const allowed={
+  read:true,
+  write:editor,
+  approve:m.role!=='viewer'&&g?.canApprove===true,
+  'manage-members':manager,
+  'manage-connections':manager,
+  'create-space':m.role!=='viewer'&&m.role!=='contributor',
+  'export-space':manager,
+  'import-space':manager,
+  'share-snapshot':manager,
+  'transfer-space':isOwner
+ };
  if(!allowed[action]) failWorkspace('forbidden',403);
- return {workspace:summary(w),space:s,membership:m,person:`human:${userId}`,permissions:{read:true,write:editor,approve:allowed.approve,manage:manager},version:w.version};
+ return {workspace:summary(w),space:s,membership:m,person:`human:${userId}`,permissions:{read:true,write:editor,approve:allowed.approve,manage:manager,exportSpace:manager,importSpace:manager,shareSnapshot:manager,transferSpace:isOwner},version:w.version};
+}
+export async function recordWorkspaceAudit(redis, workspaceId, event, maxEntries = 5000) {
+ if (!validWorkspace(workspaceId)) return;
+ const key = `lm:workspace:audit:${workspaceId}`;
+ const entry = { ...event, at: event?.at || Date.now() };
+ await redis('RPUSH', key, JSON.stringify(entry));
+ await redis('LTRIM', key, String(-Math.abs(maxEntries)), '-1');
+}
+/**
+ * @param {any} redis
+ * @param {string} workspaceId
+ * @param {{ kinds?: string[] | null, spaceId?: string | null, limit?: number }} [opts]
+ */
+export async function listWorkspaceAudit(redis, workspaceId, { kinds, spaceId, limit = 25 } = {}) {
+ if (!validWorkspace(workspaceId)) return [];
+ const raw = await redis('LRANGE', `lm:workspace:audit:${workspaceId}`, String(-Math.max(limit * 4, 100)), '-1');
+ if (!Array.isArray(raw)) return [];
+ const kindSet = Array.isArray(kinds) ? new Set(kinds) : null;
+ const out = [];
+ for (let i = raw.length - 1; i >= 0 && out.length < limit; i--) {
+  try {
+   const row = JSON.parse(raw[i]);
+   if (kindSet && !kindSet.has(row.kind)) continue;
+   if (spaceId && row.spaceId && row.spaceId !== spaceId) continue;
+   out.push(row);
+  } catch { /* ignore malformed row */ }
+ }
+ return out;
 }
 export async function authorizeSpace({userId,workspaceId,spaceId,action},deps) {
  checkUser(userId); const {w}=await readWorkspace(deps.redis,workspaceId); return accessPolicy(w,userId,spaceId,action);

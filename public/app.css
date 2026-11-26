@@ -2041,3 +2041,266 @@ dialog.lmx-queue-map .lmx-flow,dialog.lmx-queue-map .lmx-marquee-wrap{min-width:
 @media (prefers-reduced-motion:reduce){
  .lmx-cockpit-tab,.lmx-cockpit-stat,.lmx-fleet-chip,.lmx-di-body,.lmx-di-composer,.lmx-di-btn,.lmx-di-row{transition:none}
 }
+
+
+/* ─── Space Portability, Settings Tabs & Post-Import Onboarding ─── */
+.lmx-settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  margin: 12px 0 18px;
+}
+.lmx-settings-tabs [role="tab"] {
+  min-height: 38px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lmx-settings-tabs [role="tab"]:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.lmx-settings-tabs [role="tab"][aria-selected="true"] {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--brand);
+}
+.lmx-port-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lmx-port-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+.lmx-port-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lmx-port-head h2 {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+.lmx-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.lmx-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.lmx-mode-card:hover {
+  border-color: var(--border-strong);
+}
+.lmx-mode-card.is-selected {
+  border-color: var(--brand);
+  background: var(--brand-subtle);
+}
+.lmx-mode-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lmx-mode-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.lmx-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  gap: 10px;
+}
+.lmx-stat-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.lmx-stat-pill b {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--text);
+}
+.lmx-stat-pill span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.lmx-guarantees {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.lmx-guarantees .lmx-check {
+  color: var(--success);
+  font-weight: 700;
+  margin-right: 4px;
+}
+.lmx-receipt-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--success);
+  border-radius: var(--radius-md);
+  background: var(--success-subtle);
+  font-size: 13px;
+}
+.lmx-receipt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.lmx-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  min-height: 112px;
+  padding: 18px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  cursor: pointer;
+}
+.lmx-dropzone:hover {
+  border-color: var(--brand);
+}
+.lmx-dropzone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.lmx-dest-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.lmx-radio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-size: 13px;
+  cursor: pointer;
+}
+.lmx-diff-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.lmx-peek {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  background: var(--surface-sunken);
+  margin-top: 8px;
+}
+.lmx-peek summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.lmx-peek-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.lmx-peek-grid h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lmx-peek-grid ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+}
+.lmx-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.lmx-import-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+  background: var(--brand-subtle);
+  font-size: 13px;
+  color: var(--text);
+}
+.lmx-import-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 639px) {
+  .lmx-mode-grid,
+  .lmx-peek-grid {
+    grid-template-columns: 1fr;
+  }
+  .lmx-settings-tabs [role="tab"] {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+}

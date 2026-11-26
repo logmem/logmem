@@ -1,45 +1,40 @@
-// Lists only the spaces this person belongs to. One space goes straight to Today.
+// Lists only the spaces this person belongs to. One space goes straight to Today unless creating/importing.
 import { redirect } from 'next/navigation';
 import { listMySpaces, spacePath, validSpaceId } from '../../../lib/server/auth';
+import { SelectSpaceClient, type SelectableSpace, type SelectableWorkspace } from './select-space-client';
 
 export const dynamic = 'force-dynamic';
 
-export default async function SelectSpacePage() {
+export default async function SelectSpacePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ create?: string; import?: string }>;
+}) {
+  const sp = (await searchParams) || {};
+  const initialMode = sp.import === '1' ? 'import' : sp.create === '1' ? 'create' : null;
   const workspaces = await listMySpaces('/select-space');
-  const spaces = workspaces.flatMap((w) =>
+  const wsList: SelectableWorkspace[] = workspaces.map((w: any) => ({
+    id: w.id,
+    name: w.name,
+    role: w.role || 'member',
+  }));
+  const spaces: SelectableSpace[] = workspaces.flatMap((w: any) =>
     w.spaces
-      .filter((s) => validSpaceId(s.id))
-      .map((s) => ({ ...s, workspaceName: w.name })),
+      .filter((s: any) => validSpaceId(s.id))
+      .map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        workspaceId: w.id,
+        workspaceName: w.name,
+        role: w.role || (s.permissions?.write ? 'editor' : 'viewer'),
+        canApprove: Boolean(s.permissions?.approve),
+      })),
   );
-  if (spaces.length === 1) redirect(spacePath(spaces[0].id, 'today'));
+  if (spaces.length === 1 && !initialMode) redirect(spacePath(spaces[0].id, 'today'));
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-fg)] p-4">
-      <div className="w-full max-w-lg p-8 border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)] shadow-sm">
-        <h1 className="text-xl font-serif font-bold text-[var(--color-brand)] mb-2">Select a space</h1>
-        {spaces.length === 0 ? (
-          <p className="text-sm text-[var(--color-muted)]">
-            You are not in a space yet. Ask a workspace admin for an invitation.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm text-[var(--color-muted)] mb-6">Choose a space to enter.</p>
-            <ul className="space-y-3">
-              {spaces.map((s) => (
-                <li key={s.id}>
-                  <a
-                    href={spacePath(s.id, 'today')}
-                    className="flex min-h-[44px] flex-col justify-center p-4 border border-[var(--color-border-subtle)] rounded bg-[var(--color-surface-elevated)] text-sm hover:border-[var(--color-brand)]"
-                  >
-                    <span className="font-medium">{s.name}</span>
-                    <span className="text-xs text-[var(--color-muted)]">{s.workspaceName}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
+    <main className="flex min-h-screen items-center justify-center bg-[var(--bg)] p-4 text-[var(--text)] font-sans antialiased">
+      <SelectSpaceClient workspaces={wsList} spaces={spaces} initialMode={initialMode} />
     </main>
   );
 }

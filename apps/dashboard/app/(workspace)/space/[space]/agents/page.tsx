@@ -3,13 +3,14 @@ import { getAgentsData } from '../../../../../lib/server/agents';
 import { agentCounts } from '../../../../../lib/agents-model.mjs';
 import { PageHeader, StatTile, StatePanel } from '../../../../../components/ui';
 import { AgentsTableView } from '../components/agents-table-view';
+import { ImportBanner } from '../components/import-banner';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AgentsPage({ params }: { params: Promise<{ space: string }> }) {
   const { space } = await params;
   await requireSpace(space, 'read');
-  const { agents, unavailable, now } = await getAgentsData(space);
+  const { agents, importReceipt, unavailable, now } = await getAgentsData(space);
 
   if (unavailable) {
     return (
@@ -32,6 +33,8 @@ export default async function AgentsPage({ params }: { params: Promise<{ space: 
         title="Agents"
         subtitle={`Reporting status in space:${space} · reporting activity, not runtime reachability.`}
       />
+
+      <ImportBanner space={space} receipt={importReceipt as any} />
 
       <section aria-label="Agent counts" className="lm-stat-grid">
         <StatTile label="Total" value={counts.total} note="in this space" />

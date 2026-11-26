@@ -33,6 +33,7 @@ import { agentProfile } from './profile-components.js';
 import { blockerKind } from './flow-model.js';
 
 import {agentDispatchButton,clusterBlockerGroup} from './dispatch-components.js';
+import {exportTabPanel,importTabPanel,importBannerStrip,rbacCheatsheetDetails} from './portability-view.js';
 import { agentDispatchPrompt } from './dispatch-model.js';
 import { initials } from './dashboard-model.js';
 import { agentIcon, savedAgentIcon } from './agent-icons.js';
@@ -74,6 +75,7 @@ pages.home = async () => {
   const errors = d.coverage?.errors || [];
   renderView('home', ['Brief'], html`
     ${pageHeader('Space ' + spaceLabel, 'Brief')}
+    ${importBannerStrip({ space: state.space, receipt: d.import_receipt, accessHref: '#/access', onDismiss: () => pages.home() })}
     ${promiseStrip({ needs, review })}
     ${statTiles({ needs, queue: q, agents: d.agents, plans: d.plans }, () => openDrawer('needs', 'all'))}
     ${setupStrip({data:d,space:state.space,refresh:()=>pages.home()})}
@@ -193,6 +195,7 @@ pages.agents = async () => {
     </div>`;
     renderView('agents', ['Agents'], html`
       ${head('Agents', 'Reporting activity, current work, and last recaps across this space.')}
+      ${importBannerStrip({ space: state.space, receipt: d.import_receipt, accessHref: '#/access', onDismiss: draw })}
       <div class="lmx-stack" style="gap:16px">
         <div class="lmx-filters"><span class="lmx-meta">${liveN} of ${allAgents.length} wrote in the last 15 minutes. Reporting activity, not runtime reachability.</span><span class="lm-spacer"></span>${view === 'table' ? viewToggle : nothing}<a href="#/slots" class="lm-btn lm-btn--secondary" style="text-decoration:none">Daily slots</a><a href="#/access" class="lm-btn lm-btn--secondary" style="text-decoration:none">Agent access</a></div>
         <section class="lm-kpi-strip" aria-label="Agent metrics">
@@ -502,20 +505,40 @@ pages.knowledge = async () => {
 };
 
 // ─── Admin pages ─────────────────────────────────────────────────────
-pages.settings = async () => {
+pages.settings = async (initialTab) => {
   const d = await load('settings');
   if (!ok(d)) return;
+  let tab = ['overview', 'export', 'import'].includes(initialTab) ? initialTab : 'overview';
   const pingOk = Number.isFinite(Number(d.ping_ms)), spaces = Array.isArray(d.mirror_spaces) ? d.mirror_spaces : [];
   // Read-only chip, not a switch: this page cannot change these settings.
   const sw = (label, on, text) => html`<div class="lmx-control-row"><span>${label}</span><span class="lmx-rochip" data-on=${String(on)}>${text}</span><span class="lm-badge lm-badge--info">Planned</span></div>`;
   const control = (title, status, body) => html`<section class="lmx-control"><header><h2>${title}</h2>${status || nothing}</header><div class="lmx-control-body">${body}</div></section>`;
-  renderView('settings', ['Settings'], html`${head('Settings', 'Connections and administration for this space.')}${viewOnlyNote(SETTINGS_NOTE)}
+  const portCtx = {
+    customer: false,
+    space: state.space || d.space,
+    spaceName: state.space || d.space,
+    onImportDone: async () => { live.rev = null; },
+  };
+  const setTab = (next) => {
+    tab = next;
+    history.replaceState(null, '', next === 'overview' ? '#/settings' : '#/settings/' + next);
+    draw();
+  };
+  const draw = () => renderView('settings', ['Settings'], html`${head('Settings', 'Connections, RBAC overview, and space portability.')}
     <nav class="lmx-adminbar" aria-label="Administration">${ADMIN.filter(n=>n[0]!=='settings').map(n=>html`<a href=${n[3] || '#/'+n[0]}>${n[1]}</a>`)}<button type="button" @click=${signOut}>Sign out</button></nav>
-    <div class="lmx-controls">
-    ${control('Space', html`<span class="lm-badge lm-badge--brand mono">${d.space}</span>`, html`<div class="lmx-control-row"><span>Agent keys</span><b class="mono">${typeof d.keys === 'object' ? JSON.stringify(d.keys) : d.keys}</b></div>`)}
-    ${control('Storage', pingOk ? html`<span class="lmx-live" data-s="ok"><i class="lmx-pulse" aria-hidden="true"></i>Connected</span>` : html`<span class="lmx-live" data-s="down">Unavailable</span>`, html`<div class="lmx-control-row"><span>Latency</span><b class="mono">${pingOk ? 'PING ' + d.ping_ms + ' ms' : 'No reply'}</b></div><p class="lmx-meta">Your Redis, over the deploy’s bridge connection.</p>`)}
-    ${control('ACMI compatibility', nothing, html`${sw('Compatibility mode', !!d.compat, d.compat ? 'On' : 'Off')}${sw('Mirror to ACMI', !!d.mirror, d.mirror ? 'On for ' + (spaces.join(', ') || 'this space') : 'Off')}<p class="lmx-meta">These show the deploy’s current settings. They cannot be changed from this page.</p>`)}
-    </div>`);
+    <div class="lmx-settings-tabs" role="tablist" aria-label="Space settings sections">
+      <button type="button" role="tab" aria-selected=${String(tab === 'overview')} @click=${() => setTab('overview')}>Overview &amp; RBAC</button>
+      <button type="button" role="tab" aria-selected=${String(tab === 'export')} @click=${() => setTab('export')}>Export &amp; Handoff</button>
+      <button type="button" role="tab" aria-selected=${String(tab === 'import')} @click=${() => setTab('import')}>Import</button>
+    </div>
+    ${tab === 'overview' ? html`${viewOnlyNote(SETTINGS_NOTE)}
+      <div class="lmx-controls">
+      ${control('Space', html`<span class="lm-badge lm-badge--brand mono">${d.space}</span>`, html`<div class="lmx-control-row"><span>Agent keys</span><b class="mono">${typeof d.keys === 'object' ? JSON.stringify(d.keys) : d.keys}</b></div>`)}
+      ${control('Storage', pingOk ? html`<span class="lmx-live" data-s="ok"><i class="lmx-pulse" aria-hidden="true"></i>Connected</span>` : html`<span class="lmx-live" data-s="down">Unavailable</span>`, html`<div class="lmx-control-row"><span>Latency</span><b class="mono">${pingOk ? 'PING ' + d.ping_ms + ' ms' : 'No reply'}</b></div><p class="lmx-meta">Your Redis, over the deploy’s bridge connection.</p>`)}
+      ${control('ACMI compatibility', nothing, html`${sw('Compatibility mode', !!d.compat, d.compat ? 'On' : 'Off')}${sw('Mirror to ACMI', !!d.mirror, d.mirror ? 'On for ' + (spaces.join(', ') || 'this space') : 'Off')}<p class="lmx-meta">These show the deploy’s current settings. They cannot be changed from this page.</p>`)}
+      </div>
+      ${rbacCheatsheetDetails()}` : tab === 'export' ? exportTabPanel(portCtx, draw) : importTabPanel(portCtx, draw)}`);
+  draw();
 };
 // ─── Daily slots: who ran their scheduled shifts, by day ───
 const SLOT_STATE = { pass: ['completed', 'Pass'], partial: ['in-progress', 'Partial'], failed: ['failed', 'Failed'], missed: ['blocked', 'Missed'], pending: ['pending', 'Pending'], disabled: ['deferred', 'Disabled'] };

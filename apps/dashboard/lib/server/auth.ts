@@ -77,7 +77,19 @@ export async function listMySpaces(returnTo = SELECT_SPACE_PATH) {
  * Signed out -> sign-in. Not a member, unknown space, or a role that cannot
  * take the action -> access denied. Storage and configuration failures throw.
  */
-export const requireSpace = cache(async (space: string, action: 'read' | 'write' | 'approve' = 'read') => {
+export type SpaceAction =
+  | 'read'
+  | 'write'
+  | 'approve'
+  | 'manage-members'
+  | 'manage-connections'
+  | 'create-space'
+  | 'export-space'
+  | 'import-space'
+  | 'share-snapshot'
+  | 'transfer-space';
+
+export const requireSpace = cache(async (space: string, action: SpaceAction = 'read') => {
   const returnTo = spacePath(space, 'today');
   const { req, session } = await requireSession(returnTo);
   if (!validSpaceId(space)) redirect(ACCESS_DENIED_PATH);
