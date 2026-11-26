@@ -92,7 +92,7 @@ export function bearerOf(req) {
 
 export async function resolveAuth(req, cfg = {}, env = process.env, opts = {}) {
   const defaultSpace = h(req, "x-logmem-space") || cfg.space || cfg.LOGMEM_SPACE || cfg.acmiDefaultTenant || env.LOGMEM_SPACE || "madez";
-  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null, tenant: extra.tenant || null, ...(extra.workspaceId ? { workspaceId:extra.workspaceId, spaceId:extra.spaceId, issuedBy:extra.issuedBy, connectionId:extra.connectionId } : {}), ...(extra.scopes ? { scopes: extra.scopes } : {}) });
+  const out = (backend, source, extra = {}) => ({ backend, source, space: extra.space || defaultSpace, sub: extra.sub || null, pinned: !!extra.space, agent: extra.agent || null, keyId: extra.keyId || null, tenant: extra.tenant || null, ...(extra.workspaceId ? { workspaceId:extra.workspaceId, spaceId:extra.spaceId, issuedBy:extra.issuedBy } : {}), ...(extra.connectionId ? { connectionId:extra.connectionId } : {}), ...(extra.label ? { label:extra.label } : {}), ...(extra.scopes ? { scopes: extra.scopes } : {}) });
 
   // Raw Redis creds in headers or ?config= turn a public deploy into an open
   // relay to any host. Production accepts only OAuth (and break-glass).
@@ -121,7 +121,7 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
         const k = await (opts.lookupWorkspaceAgentKey || lookupWorkspaceAgentKey)(bearer);
         if (!k) return out(null, 'none');
         const uri = customerRedisUri(env);
-        return out({ kind:'redis', uri }, 'managed', { ...k, keyId:k.id, connectionId:k.id, sub:`agent:${k.agent}` });
+        return out({ kind:'redis', uri }, 'managed', { ...k, keyId:k.id, connectionId:k.id, label:k.label, sub:`agent:${k.agent}` });
       } catch { return out(null, 'none'); }
     }
     try {
@@ -146,7 +146,7 @@ async function bearerAuth(req, env, out, defaultSpace, opts = {}) {
             const context = await authorizeSpace({ userId:g.issuedBy, workspaceId:g.workspaceId, spaceId:g.spaceId, action:'manage-connections' }, { redis: opts.workspaceRedis || workspaceRedis(env) });
             if (context.space.namespace !== tok.space || context.workspace.tenantId !== g.tenant) return out(null, 'none');
           }
-          return out({ kind: "redis", uri }, "managed", { ...tok.backend, space: tok.space, sub: tok.sub, agent: tok.backend.agent, tenant: tok.backend.tenant, keyId: `mf_${tok.fid || "x"}`, scopes });
+          return out({ kind: "redis", uri }, "managed", { ...tok.backend, space: tok.space, sub: tok.sub, agent: tok.backend.agent, tenant: tok.backend.tenant, keyId: `mf_${tok.fid || "x"}`, connectionId: tok.backend.connectionId || `mf_${tok.fid || "x"}`, scopes });
         }
         // Fleet sign-in (an admin picked a deploy space on the consent page): the
         // deploy's own backend, pinned to the token's space and locked to its

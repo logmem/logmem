@@ -18,7 +18,7 @@ function errText(err) {
 }
 
 /** Build the log record (exported for tests). Undefined fields are dropped. */
-export function requestRecord({ route, method, tool, ms, ok, status, err, ref } = {}, now = () => new Date()) {
+export function requestRecord({ route, method, tool, ms, ok, status, err, ref, space_guard } = {}, now = () => new Date()) {
   const rec = {
     ts: now().toISOString(),
     level: ok === false || (Number(status) >= 500) ? "error" : "info",
@@ -30,8 +30,27 @@ export function requestRecord({ route, method, tool, ms, ok, status, err, ref } 
     status,
     err: errText(err),
     ref,
+    space_guard: space_guard && typeof space_guard === "object" ? {
+      mode: space_guard.mode,
+      outcome: space_guard.outcome,
+      tool: space_guard.tool,
+      requested_space: space_guard.requested_space,
+      bound_space: space_guard.bound_space,
+      connection_id: space_guard.connection_id,
+      reason: space_guard.reason,
+    } : undefined,
   };
-  for (const k of Object.keys(rec)) if (rec[k] === undefined) delete rec[k];
+  for (const k of Object.keys(rec)) {
+    if (rec[k] === undefined) delete rec[k];
+    else if (k === "space_guard") {
+      for (const field of Object.keys(rec[k])) {
+        if (rec[k][field] === undefined) delete rec[k][field];
+        else if (field === "requested_space" || field === "bound_space" || field === "connection_id" || field === "reason") {
+          rec[k][field] = String(rec[k][field]).slice(0, 160);
+        }
+      }
+    }
+  }
   return rec;
 }
 

@@ -26,8 +26,8 @@ export async function lookupWorkspaceAgentKey(key,deps={}) {
   const {workspaceId,id}=JSON.parse(raw),{w}=await readWorkspace(redis,workspaceId),c=w.connections?.[id];
   if(!c||c.hash!==hash||c.revoked)return null;
  if(c.issuedBy && await isSuspendedSafe(c.issuedBy,redis))return null;
-  accessPolicy(w,c.issuedBy,c.spaceId,'manage-connections');
-  return {id,workspaceId,spaceId:c.spaceId,tenant:w.tenantId,space:c.namespace,agent:c.agent,issuedBy:c.issuedBy};
+  accessPolicy(w,c.issuedBy,c.spaceId,'read');
+  return {id,workspaceId,spaceId:c.spaceId,tenant:w.tenantId,space:c.namespace,agent:c.agent,issuedBy:c.issuedBy,label:c.label||''};
  }catch(e){if(e instanceof WorkspaceError)return null;throw e;}
 }
 export async function revokeWorkspaceAgentKey({userId,workspaceId,spaceId,id,requestId},deps) {

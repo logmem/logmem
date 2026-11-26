@@ -26,7 +26,15 @@ export function params(spec = {}) {
   const shape = {};
   const properties = {};
   const required = [];
-  for (const [name, p] of Object.entries(spec)) {
+  const fields = Object.hasOwn(spec, "targetSpace") ? spec : {
+    ...spec,
+    targetSpace: {
+      type: "string",
+      desc: "Optional assertion. It must match this connection's bound space and cannot select another space.",
+      optional: true,
+    },
+  };
+  for (const [name, p] of Object.entries(fields)) {
     let { zod, json } = p.enum
       ? { zod: z.enum(p.enum), json: { type: "string", enum: p.enum } }
       : T[p.type]();
