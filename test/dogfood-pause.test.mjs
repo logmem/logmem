@@ -60,7 +60,7 @@ test("pause: readPause ignores junk and a missing key", async () => {
 });
 
 // Review fixes (codex on review-pr54, plus claude-code), Oct 18.
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { runCheck, updateScorecard, isCalendarDate, MAX_ROWS } from "../scripts/dogfood-check.mjs";
 import { buildScorecard } from "../api/scorecard.mjs";
 

@@ -29,6 +29,10 @@
               "solo"
             ],
             "description": "What to load at start. quiet: the Brief only. fleet: the Brief plus recent channel activity. operator: fleet plus what needs a human. solo: one job, minimum context. Omit to start quiet and offer the choice."
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false
@@ -61,6 +65,10 @@
           "agent": {
             "type": "string",
             "description": "Agent to brief (default: you)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false
@@ -104,6 +112,10 @@
           "end": {
             "type": "boolean",
             "description": "End the shift after recapping (default true)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -163,6 +175,10 @@
           "claim_only": {
             "type": "boolean",
             "description": "Acquire run claim without completing (crash test)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false
@@ -234,6 +250,10 @@
           "action_id": {
             "type": "string",
             "description": "Action ID to deduplicate reply writes (hash of run, item, disposition)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -306,6 +326,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "Person handoffs only: { steps: [{ title (what to do), go? (where to go), detail?, cmd?, see? (what they should see) }], time?, place?, done_when?, reply?, due? }"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -350,6 +374,10 @@
           "reason": {
             "type": "string",
             "description": "Why, in one line (shown to the sender; recommended for a decline)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -389,6 +417,10 @@
           "reason": {
             "type": "string",
             "description": "Why, in one line (shown to the recipient), e.g. 'stale: done in PR 299'"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -436,6 +468,10 @@
           "to": {
             "type": "string",
             "description": "Whose part to close, e.g. 'avery'. Default: you, when the item was passed to you. A coordinator names the recipient when closing someone else's part"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -490,6 +526,10 @@
           "to": {
             "type": "string",
             "description": "The person who must answer, as 'human:<id>' (default: any signed-in person). Only they can settle it; never an agent, never you"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -531,6 +571,10 @@
           "agent": {
             "type": "string",
             "description": "Must be you if given (default: you)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -575,6 +619,10 @@
           "replace": {
             "type": "boolean",
             "description": "Overwrite instead of merge"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -614,6 +662,10 @@
           "limit": {
             "type": "number",
             "description": "How many recent entries (default 10)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -654,6 +706,10 @@
               "job"
             ],
             "description": "What to list (default agent)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false
@@ -697,6 +753,10 @@
           "limit": {
             "type": "number",
             "description": "Max entries (default 50)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -749,6 +809,10 @@
           "agent": {
             "type": "string",
             "description": "Agent whose follows to list (default: you). Follow/unfollow only changes your own"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -801,6 +865,10 @@
           "reopen": {
             "type": "boolean",
             "description": "Reset a job that already exists (default false: refuse)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -875,6 +943,10 @@
           "owner": {
             "type": "string",
             "description": "For lane: the agent who drives it"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false
@@ -923,6 +995,10 @@
           "origin": {
             "type": "string",
             "description": "Trail id this follows from"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -978,6 +1054,10 @@
             "type": "object",
             "additionalProperties": true,
             "description": "For blocked: { type: 'decision'|'task'|'agent'|'external', ref?: trail or agent id, note: what is needed, parked?: true when it waits on purpose, until?: when it can move }"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -1018,6 +1098,10 @@
           "limit": {
             "type": "number",
             "description": "How many entries (default 50)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -1063,6 +1147,10 @@
           "include_done": {
             "type": "boolean",
             "description": "Also list done jobs (default false)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false
@@ -1099,6 +1187,10 @@
           "limit": {
             "type": "number",
             "description": "Max results (default 5)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -1138,6 +1230,10 @@
           "confirm": {
             "type": "boolean",
             "description": "true to actually remove (default false = preview)"
+          },
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
           }
         },
         "additionalProperties": false,
@@ -1169,7 +1265,12 @@
       "description": "List the spaces this connection can use and which one is active. Each space is walled off from the others. Read only.",
       "inputSchema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
+          }
+        },
         "additionalProperties": false
       },
       "outputSchema": {
@@ -1193,10 +1294,15 @@
     {
       "name": "logmem_connection",
       "title": "Connection",
-      "description": "Check the link to LogMem is up: backend, space, compatibility mode and the current shift. Read only.",
+      "description": "Check the link to LogMem is up. Report backend, bound space, connection identity, tenant and workspace context, server identity and current shift. Read only.",
       "inputSchema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "targetSpace": {
+            "type": "string",
+            "description": "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space."
+          }
+        },
         "additionalProperties": false
       },
       "outputSchema": {

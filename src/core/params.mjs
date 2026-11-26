@@ -30,7 +30,7 @@ export function params(spec = {}) {
     ...spec,
     targetSpace: {
       type: "string",
-      desc: "Optional assertion. It must match this connection's bound space and cannot select another space.",
+      desc: "Connection space assertion. Required for writes and optional for reads. It must match this connection's bound space.",
       optional: true,
     },
   };

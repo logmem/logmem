@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { buildInstance, dispatch } from "../api/mcp.mjs";
 
 const WRITES = new Set(["SET", "DEL", "HSET", "HDEL", "HINCRBY", "ZADD", "ZREM", "ZREMRANGEBYSCORE", "ZREMRANGEBYRANK", "SADD", "SREM", "EXPIRE", "PEXPIRE", "LPUSH", "RPUSH", "LPOP", "RPOP", "LTRIM", "INCR", "INCRBY", "GETDEL", "RENAME", "EVAL", "EVALSHA", "XADD", "MULTI", "EXEC"]);

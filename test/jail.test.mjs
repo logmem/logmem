@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
 import { createJail, tenantSpace, customerRedisUri, JailError, CustomerRedisConfigError } from "../src/http/jail.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 
 const T = "uabcdefghij";
 const P = `lm:t-${T}:`;

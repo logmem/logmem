@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseRef } from "../src/core/keys.mjs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 
 const sc = async (lm, n, a) => (await lm.callTool(n, a)).structuredContent;
 

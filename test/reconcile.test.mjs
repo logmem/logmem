@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { writeDecision } from "../src/core/tools.mjs";
 import { planCloses, jobsInBody, evidencePRs, RECONCILER } from "../src/core/reconcile.mjs";
 import { runReconcile } from "../scripts/reconcile.mjs";

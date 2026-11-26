@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { usageReport } from "../scripts/usage-report.mjs";
 
 test("usage report: counts entries, writers and a month estimate, read only", async () => {

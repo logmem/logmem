@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { createStore, revKey } from "../src/core/store.mjs";
 import { writeDecision } from "../src/core/tools.mjs";
 import { homeView, needsView } from "../src/http/view.mjs";
