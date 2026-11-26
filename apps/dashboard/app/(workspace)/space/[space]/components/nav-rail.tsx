@@ -57,8 +57,9 @@ export function NavRail({ space, spaceName }: NavRailProps) {
 
   const mobileTabs = [
     { href: `/space/${space}/today`, label: 'Brief', icon: Inbox },
-    { href: `/space/${space}/inbox`, label: 'Inbox', icon: Mail },
     { href: `/space/${space}/chat`, label: 'Chat', icon: MessageSquare },
+    // Inbox sits in the centre slot on phones (UX ruling, Nov 6).
+    { href: `/space/${space}/inbox`, label: 'Inbox', icon: Mail },
     { href: `/space/${space}/work`, label: 'Work', icon: Briefcase },
   ];
 
@@ -156,7 +157,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
         </div>
       </aside>
 
-      {/* Mobile 5-tab bar: Brief · Inbox · Chat · Work · More */}
+      {/* Mobile 5-tab bar: Brief · Chat · Inbox · Work · More */}
       <nav
         aria-label="Space menu"
         className="fixed bottom-0 left-0 right-0 z-40 grid h-14 grid-cols-5 border-t border-[var(--border)] bg-[var(--surface)] px-1 font-sans md:hidden"
