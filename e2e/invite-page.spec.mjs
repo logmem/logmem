@@ -23,8 +23,8 @@ test('signed-in invitee accepts, then gets the short prompt',async({page})=>{
  await expect(page.getByText('invitee@example.test')).toBeVisible();
  await page.getByRole('button',{name:'Accept invitation'}).click();
  await expect(page.getByRole('heading',{name:'You joined Acme Co.'})).toBeVisible();
- await expect(page.locator('.lmx-invite-prompt')).toContainText('https://logmem.si/agents');
- await expect(page.getByRole('link',{name:'Open the agent setup page'})).toHaveAttribute('href','https://logmem.si/agents');
+ await expect(page.locator('.lmx-invite-prompt')).toContainText('https://logmem.si/connect');
+ await expect(page.getByRole('link',{name:'Open the connect page'})).toHaveAttribute('href','https://logmem.si/connect');
 });
 
 test('wrong account gets a clear explanation and a way out',async({page})=>{
