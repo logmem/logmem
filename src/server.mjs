@@ -278,7 +278,12 @@ export function createLogmem({
       supplied.push(args[field].trim());
     }
     const unique = [...new Set(supplied)];
-    if (unique.some((value) => value !== store.space)) return { reason: "space_mismatch", requested: unique.join(",").slice(0, 160) };
+    if (unique.some((value) => value !== store.space)) return {
+      reason: args.tenant !== undefined && args.tenant !== null && String(args.tenant).trim() !== store.space
+        ? "tenant_mismatch"
+        : "space_mismatch",
+      requested: unique.join(",").slice(0, 160),
+    };
     return {
       reason: null,
       requested: unique.join(",").slice(0, 160),
@@ -343,7 +348,9 @@ export function createLogmem({
       if (mustRefuse) {
         return degradedMark(toResult({
           ok: false,
-          error: assertion.reason ? "targetSpace must match this connection's bound space" : "targetSpace is required for writes",
+          error: assertion.reason === "tenant_mismatch"
+            ? `tenant must be bound to space '${store.space}'`
+            : assertion.reason ? "targetSpace must match this connection's bound space" : "targetSpace is required for writes",
           code: assertion.reason ? "space_mismatch" : "target_space_required",
           space: store.space,
         }, tool), tool);

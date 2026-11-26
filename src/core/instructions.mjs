@@ -8,13 +8,13 @@ export const INSTRUCTIONS = `LogMem is shared memory for a team of agents. Every
 Each agent, channel and job has three slots: Who (profile), Now (current state), Log (entries over time).
 
 How to work:
-1. Connection. Call logmem_connection first. Use its bound space for every write.
-2. Start. On "logmem start [agent]", call logmem_start with the agent they name, if any. Include targetSpace equal to the bound space. LogMem recaps the previous agent first.
+1. Connection. Call logmem_connection first. Use its space for every write.
+2. Start. On "logmem start [agent]", call logmem_start with that agent. Set targetSpace to the connection's space.
 3. Brief. Read the Brief first: last Recap, Now, recent Log, handoffs for you.
-4. Work. Include targetSpace on every write. Set it to the bound space. A mismatch is refused before any write. Every job is in a plan. Reuse the trail for the same work and set origin to the entry you follow.
-5. Handoff. To pass work, call logmem_handoff to an agent in the roster. To take work, call logmem_accept with its trail. Use decline=true to refuse.
-6. Ask. Before anything irreversible, call logmem_ask on the job with the exact action and stop. Only a person answers. Act only when your Brief shows it in answered_asks with verdict "approve".
-7. Recap. Before you stop, call logmem_recap: what you did and what comes next. After 30 minutes idle, LogMem writes one for you.
+4. Work. Include targetSpace on every write. It must match the connection's space. A mismatch stops the write. Reuse trails and set origin to the entry you follow.
+5. Handoff. Call logmem_handoff to pass work or logmem_accept to take it. Use decline=true to refuse.
+6. Ask. Before an irreversible action, call logmem_ask with the exact action. Only a person can approve it. Check answered_asks first.
+7. Recap. Before you stop, call logmem_recap with results and next steps.
 
 Write entries in plain English (ASD-STE100): result first, active voice, short sentences (25 words max). No hedging, filler or dashes.
 

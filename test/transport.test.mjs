@@ -24,11 +24,11 @@ test("stdio clean room: a fresh MCP client runs logmem start quill, notes, hands
     assert.equal(names.length, 26);
     assert.ok(names.every((n) => n.startsWith("logmem_")));
 
-    const sc = async (name, args) => (await client.callTool({ name, arguments: args })).structuredContent;
+    const sc = async (name, args) => (await client.callTool({ name, arguments: { ...args, targetSpace: "cleanroom" } })).structuredContent;
     const start = await sc("logmem_start", { agent: "quill" });
     assert.equal(start.started.agent, "quill");
     // Agents can't write decided: only a person answers an ask (writeDecision / /api/decide).
-    const forged = await client.callTool({ name: "logmem_note", arguments: { where: "channel:field-notes", summary: "outline approved", kind: "decided" } });
+    const forged = await client.callTool({ name: "logmem_note", arguments: { where: "channel:field-notes", summary: "outline approved", kind: "decided", targetSpace: "cleanroom" } });
     assert.equal(forged.isError, true);
     assert.match(forged.structuredContent.error, /written by a person/);
     const note = await sc("logmem_note", { where: "channel:field-notes", summary: "outline ready for review", kind: "memo" });
@@ -83,10 +83,10 @@ test("http dispatch: surface rides in the session id across stateless calls", as
   const auth = { space: "acme", source: "header", pinned: false };
   const sid = "perplexity.abc";
   const lmFactory = async () => buildInstance({ redis, kind: "memory", auth, sessionId: sid, env: {} });
-  const r1 = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_start", arguments: { agent: "quill" } } }, { lmFactory, toolDefs: () => [] });
+  const r1 = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_start", arguments: { agent: "quill", targetSpace: "acme" } } }, { lmFactory, toolDefs: () => [] });
   assert.equal(r1.result.structuredContent.started.surface, "perplexity");
   // new instance (next serverless invocation), same session id -> same shift, no auto-start
-  const r2 = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { where: "ops", summary: "x" } } }, { lmFactory, toolDefs: () => [] });
+  const r2 = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { where: "ops", summary: "x", targetSpace: "acme" } } }, { lmFactory, toolDefs: () => [] });
   assert.equal(r2.result.structuredContent.shift_events, undefined);
   assert.equal(r2.result.structuredContent.entry.byline, "quill (via perplexity)");
 });

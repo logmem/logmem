@@ -45,7 +45,7 @@ if (argv.includes("--seed") && !argv.includes("--business-demos")) {
   // Live app demo (dev only): a plan with milestones, a blocked job of each kind, and a task and a decision for the person.
   const { createLogmem } = await import("../src/server.mjs");
   const lm = createLogmem({ redis, space: "fieldnotes", sessionId: "dev-seed", surface: "dev", defaultAgent: "quill" });
-  const call = (n, a) => lm.callTool(n, a);
+  const call = (n, a) => lm.callTool(n, { ...a, targetSpace: "fieldnotes" });
   await call("logmem_plan", { action: "create", plan: "issue-15", title: "Field Notes issue 15", desc: "Ships Tue Oct 27." });
   await call("logmem_assign", { job: "i15-draft-done", title: "Draft locked", details: { plan: "issue-15", milestone: true, date: "2026-10-23", criteria: "Every section drafted and fact-checked." } });
   await call("logmem_assign", { job: "i15-send", title: "Issue 15 sent", details: { plan: "issue-15", milestone: true, date: "2026-10-27", criteria: "Sent to the full list, no bounces over 1%." } });
@@ -75,7 +75,7 @@ if (argv.includes("--seed") && !argv.includes("--business-demos")) {
   await call("logmem_ask", { question: "Use the green logo variant for issue 15?", action: "Set the issue-15 header logo to logo-green.svg.", where: "job:i15-photos", reversible: true });
   await call("logmem_note", { where: "channel:field-notes", kind: "huddle", trail: "huddleIssue15Plan-1", summary: "[huddle @atlas @relay] quill: issue 15 ships Tue. Can we lock the draft by Fri? Reply with yes or the risk." });
   const atlas = createLogmem({ redis, space: "fieldnotes", sessionId: "dev-seed-atlas", surface: "dev", defaultAgent: "atlas" });
-  await atlas.callTool("logmem_note", { where: "channel:field-notes", kind: "memo", origin: "huddleIssue15Plan-1", summary: "atlas: yes, photos land Thu." });
+  await atlas.callTool("logmem_note", { where: "channel:field-notes", kind: "memo", origin: "huddleIssue15Plan-1", summary: "atlas: yes, photos land Thu.", targetSpace: "fieldnotes" });
   // Inbox demo (dev only): open agent handoffs of different ages, so the age buckets have something to split.
   const { createCoordItem } = await import("../src/core/coord.mjs");
   const coordStore = { space: "fieldnotes", redis };

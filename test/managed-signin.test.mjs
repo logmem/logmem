@@ -155,13 +155,13 @@ test("managed: the token resolves to the jailed customer Redis, locked to its ag
       assert.equal(auth.backend.uri, ENV.LOGMEM_CUSTOMER_REDIS_URI);
 
       const lm = await buildManaged({ redis: customer, auth, sessionId: "muse.s1" });
-      const note = (await lm.callTool("logmem_note", { where: "channel:ideas", summary: "first managed note" })).structuredContent;
+      const note = (await lm.callTool("logmem_note", { where: "channel:ideas", summary: "first managed note", targetSpace: rec.space })).structuredContent;
       assert.equal(note.ok, true);
       assert.equal(note.entry.by, "agent:muse");
       const keys = [...customer.data.keys()].filter((k) => k.startsWith("lm:") && !k.startsWith("lm:oauth:") && !k.startsWith("lm:invite:") && !k.startsWith("lm:account:"));
       for (const k of keys) assert.ok(k.startsWith(`lm:${rec.space}:`), `outside the space: ${k}`);
       assert.ok([...customer.data.keys()].some((k) => k.startsWith(`acmi:cloud:meter:${rec.backend.tenant}:`)), "adds are metered");
-      assert.equal((await lm.callTool("logmem_start", { agent: "atlas" })).isError, true, "other agents are refused");
+      assert.equal((await lm.callTool("logmem_start", { agent: "atlas", targetSpace: rec.space })).isError, true, "other agents are refused");
 
       const { setStatus } = await import("../cloud/tenants/index.mjs");
       await setStatus(customer, rec.backend.tenant, "suspended");
