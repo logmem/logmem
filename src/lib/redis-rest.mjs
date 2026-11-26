@@ -66,7 +66,7 @@ function causeCode(e) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = () => 200 + Math.floor(Math.random() * 201);
 
-class RedisRestError extends Error {
+export class RedisRestError extends Error {
   constructor(message, { transient = false } = {}) {
     super(message);
     this.name = "RedisRestError";
@@ -105,9 +105,20 @@ async function restAttempt(endpoint, token, cmd, name, timeoutMs) {
     data = await res.json();
   } catch (e) {
     const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError";
+    // undici aborts the response body mid-read when the connection is cut
+    // under load. That surfaces as a TypeError ("terminated"), not a
+    // TimeoutError, so it used to be reported as a permanent
+    // "bad response body" with transient:false and no retry ever ran.
+    // The bridge answers the same command on the next attempt, so treat an
+    // aborted body as transient and let the retry path handle it.
+    const abortedBody = e?.name === "TypeError" || /terminated|aborted|socket hang up/i.test(String(e?.message ?? ""));
     throw new RedisRestError(
-      timedOut ? `Redis REST ${name}: timed out after ${timeoutMs}ms` : `Redis REST ${name}: bad response body`,
-      { transient: timedOut },
+      timedOut
+        ? `Redis REST ${name}: timed out after ${timeoutMs}ms`
+        : abortedBody
+          ? `Redis REST ${name}: response body aborted`
+          : `Redis REST ${name}: bad response body`,
+      { transient: timedOut || abortedBody },
     );
   }
   // data.error is upstream text and may echo the endpoint or the token.
