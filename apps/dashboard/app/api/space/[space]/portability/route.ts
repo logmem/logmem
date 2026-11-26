@@ -67,6 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ space: 
         version: 2,
         mode,
         redact: body.redact !== false,
+        clientSafe: body.clientSafe === true,
         spaceName: viewer.space.name,
         requireApproval: !dryRun,
         approved: body.approved === true,

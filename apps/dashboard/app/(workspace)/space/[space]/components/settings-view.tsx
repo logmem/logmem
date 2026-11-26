@@ -91,6 +91,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
 
   // Export state
   const [exportMode, setExportMode] = useState<'blueprint' | 'full'>('full');
+  const [clientSafe, setClientSafe] = useState(false);
   const [preflight, setPreflight] = useState<any>(null);
   const [loadingPreflight, setLoadingPreflight] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -100,8 +101,19 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
     checksum: string;
     sizeBytes: number;
     secretsRedacted?: number;
+    internalFiltered?: number;
   } | null>(null);
   const [copiedHash, setCopiedHash] = useState(false);
+
+  // Claim Link state (owner-only transfer-space)
+  const [claims, setClaims] = useState(initial.claims || []);
+  const [claimEmail, setClaimEmail] = useState('');
+  const [claimTtl, setClaimTtl] = useState(7);
+  const [claimClientSafe, setClaimClientSafe] = useState(true);
+  const [creatingClaim, setCreatingClaim] = useState(false);
+  const [freshClaim, setFreshClaim] = useState<{ url: string; checksum: string; expiresAt: number } | null>(null);
+  const [claimError, setClaimError] = useState('');
+  const [copiedClaim, setCopiedClaim] = useState(false);
 
   // Import state
   const [fileName, setFileName] = useState('');
@@ -124,7 +136,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
     window.history.replaceState(null, '', url);
   }
 
-  async function loadPreflight(mode: 'blueprint' | 'full') {
+  async function loadPreflight(mode: 'blueprint' | 'full', safe = clientSafe) {
     if (!canManage) return;
     setLoadingPreflight(true);
     setExportError('');
@@ -133,7 +145,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         fetch(`/api/space/${initial.spaceId}/portability`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'export-space', mode, dryRun: true }),
+          body: JSON.stringify({ action: 'export-space', mode, clientSafe: safe, dryRun: true }),
         }),
         fetch(`/api/space/${initial.spaceId}/portability`, {
           method: 'POST',
@@ -157,10 +169,10 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
 
   useEffect(() => {
     if (tab === 'export' && canManage) {
-      loadPreflight(exportMode);
+      loadPreflight(exportMode, clientSafe);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, exportMode]);
+  }, [tab, exportMode, clientSafe]);
 
   async function handleExport() {
     if (exporting) return;
@@ -173,6 +185,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         body: JSON.stringify({
           action: 'export-space',
           mode: exportMode,
+          clientSafe,
           gzip: true,
           dryRun: false,
           approved: true,
@@ -191,12 +204,73 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         checksum: data.checksum,
         sizeBytes: data.sizeBytes,
         secretsRedacted: data.redaction?.secretsRedacted,
+        internalFiltered: data.redaction?.internalFilteredCount,
       });
-      await loadPreflight(exportMode);
+      await loadPreflight(exportMode, clientSafe);
     } catch (e: any) {
       setExportError(e?.message || 'Export failed.');
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function handleCreateClaim(e: React.FormEvent) {
+    e.preventDefault();
+    if (creatingClaim) return;
+    setCreatingClaim(true);
+    setClaimError('');
+    setFreshClaim(null);
+    try {
+      const res = await fetch(`/api/space/${initial.spaceId}/claims`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          mode: exportMode,
+          clientSafe: claimClientSafe,
+          recipientEmail: claimEmail.trim(),
+          ttlDays: claimTtl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || 'Could not create claim link');
+      setFreshClaim({ url: data.claimUrl, checksum: data.checksum, expiresAt: data.expiresAt });
+      setClaimEmail('');
+      setClaims((prev) => [
+        {
+          id: data.id,
+          spaceId: initial.spaceId,
+          spaceName: initial.spaceName,
+          mode: data.mode,
+          clientSafe: data.clientSafe,
+          checksum: data.checksum,
+          sizeBytes: data.sizeBytes,
+          recipientEmailMask: data.recipientEmailMask,
+          createdAt: Date.now(),
+          expiresAt: data.expiresAt,
+          status: 'pending',
+        },
+        ...prev,
+      ]);
+    } catch (err: any) {
+      setClaimError(err?.message || 'Could not create claim link.');
+    } finally {
+      setCreatingClaim(false);
+    }
+  }
+
+  async function handleRevokeClaim(claimId: string) {
+    try {
+      const res = await fetch(`/api/space/${initial.spaceId}/claims`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'revoke', claimId }),
+      });
+      if (res.ok) {
+        setClaims((prev) => prev.map((c) => (c.id === claimId ? { ...c, status: 'revoked' } : c)));
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -812,6 +886,18 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
               </div>
             ) : null}
 
+            <label className="flex min-h-[40px] cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-3.5 py-2 text-xs text-[var(--text)]">
+              <input
+                type="checkbox"
+                checked={clientSafe}
+                onChange={(e) => setClientSafe(e.target.checked)}
+              />
+              <span>
+                <strong>Client-safe filter:</strong> exclude internal channels (<code>internal-*</code>,{' '}
+                <code>ops-*</code>, <code>agency-*</code>) and records marked <code>visibility: internal</code>
+              </span>
+            </label>
+
             <ul
               aria-label="Security guarantees"
               className="space-y-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] p-3.5 text-xs text-[var(--text-muted)]"
@@ -875,6 +961,141 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
               </div>
             ) : null}
           </section>
+
+          {initial.permissions.canTransfer ? (
+            <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-5 space-y-4">
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">
+                  CLIENT DELIVERY · OWNER ONLY
+                </p>
+                <h2 className="font-heading text-base font-semibold text-[var(--text)]">
+                  1-Click Client Claim Link
+                </h2>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Generate a single-use signed link so a client can import this {exportMode === 'blueprint' ? 'Blueprint' : 'Full + Traces'} space directly into their own LogMem workspace with zero file downloads.
+                </p>
+              </div>
+              <form onSubmit={handleCreateClaim} className="grid gap-3 md:grid-cols-12">
+                <label className="space-y-1 md:col-span-6">
+                  <span className="block text-xs font-medium text-[var(--text-muted)]">
+                    Lock to recipient email (optional)
+                  </span>
+                  <input
+                    type="email"
+                    value={claimEmail}
+                    onChange={(e) => setClaimEmail(e.target.value)}
+                    placeholder="client@company.com"
+                    className={`min-h-[40px] w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-3 text-xs text-[var(--text)] ${FOCUS}`}
+                  />
+                </label>
+                <label className="space-y-1 md:col-span-3">
+                  <span className="block text-xs font-medium text-[var(--text-muted)]">Expires in</span>
+                  <select
+                    value={claimTtl}
+                    onChange={(e) => setClaimTtl(Number(e.target.value))}
+                    className={`min-h-[40px] w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-3 text-xs text-[var(--text)] ${FOCUS}`}
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={14}>14 days</option>
+                    <option value={30}>30 days</option>
+                  </select>
+                </label>
+                <div className="flex items-end md:col-span-3">
+                  <button
+                    type="submit"
+                    disabled={creatingClaim}
+                    className={`min-h-[40px] w-full rounded-[var(--radius-md)] bg-[var(--brand)] px-3 text-xs font-semibold text-[var(--surface)] hover:opacity-90 disabled:opacity-50 ${FOCUS}`}
+                  >
+                    {creatingClaim ? 'Creating…' : 'Create claim link'}
+                  </button>
+                </div>
+              </form>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[var(--text-muted)]">
+                <input
+                  type="checkbox"
+                  checked={claimClientSafe}
+                  onChange={(e) => setClaimClientSafe(e.target.checked)}
+                />
+                <span>Apply client-safe filter (strip internal channels &amp; notes)</span>
+              </label>
+              {claimError ? (
+                <p role="alert" className="rounded-[var(--radius-md)] border border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-xs text-[var(--danger)]">
+                  {claimError}
+                </p>
+              ) : null}
+              {freshClaim ? (
+                <div role="status" className="space-y-2 rounded-[var(--radius-md)] border border-[var(--success)] bg-[var(--success-subtle)] p-3 text-xs">
+                  <p className="font-semibold text-[var(--text)]">
+                    Claim link created (single-use · SHA-256 <code className="font-mono">{shortHash(freshClaim.checksum, 12)}</code>). Copy now — the raw token is shown once.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      readOnly
+                      value={freshClaim.url}
+                      aria-label="Client claim link"
+                      className="min-h-[36px] flex-1 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-2.5 font-mono text-xs text-[var(--text)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(freshClaim.url);
+                          setCopiedClaim(true);
+                          window.setTimeout(() => setCopiedClaim(false), 1800);
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 font-semibold text-[var(--text)] ${FOCUS}`}
+                    >
+                      {copiedClaim ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5" />}
+                      <span>{copiedClaim ? 'Copied' : 'Copy link'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {claims.length > 0 ? (
+                <div className="overflow-x-auto border-t border-[var(--border)] pt-3">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-[var(--border)] text-[var(--text-subtle)]">
+                      <tr>
+                        <th className="py-1.5 pr-3">Status</th>
+                        <th className="py-1.5 pr-3">Mode</th>
+                        <th className="py-1.5 pr-3">Lock</th>
+                        <th className="py-1.5 pr-3">Checksum</th>
+                        <th className="py-1.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {claims.map((c) => (
+                        <tr key={c.id}>
+                          <td className="py-2 pr-3 font-mono text-[var(--text)]">{c.status}</td>
+                          <td className="py-2 pr-3 text-[var(--text-muted)]">
+                            {c.mode}{c.clientSafe ? ' · client-safe' : ''}
+                          </td>
+                          <td className="py-2 pr-3 text-[var(--text-muted)]">{c.recipientEmailMask || 'Any email'}</td>
+                          <td className="py-2 pr-3 font-mono text-[var(--text-subtle)]">{shortHash(c.checksum, 10)}</td>
+                          <td className="py-2 text-right">
+                            {c.status === 'pending' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRevokeClaim(c.id)}
+                                className={`min-h-[30px] rounded-[var(--radius-sm)] border border-[var(--border)] px-2.5 text-[11px] text-[var(--text-muted)] hover:border-[var(--danger)] hover:text-[var(--danger)] ${FOCUS}`}
+                              >
+                                Revoke
+                              </button>
+                            ) : (
+                              <span className="text-[var(--text-subtle)]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-5 space-y-3">
             <h2 className="font-heading text-base font-semibold text-[var(--text)]">
