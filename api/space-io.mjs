@@ -108,6 +108,7 @@ export function createHandler(deps = {}) {
             version: useV2 ? 2 : 1,
             mode: b.mode,
             redact: b.redact !== false,
+            clientSafe: b.clientSafe === true,
             spaceName: targetSpace,
             requireApproval: !dryRun,
             approved: b.approved === true,
@@ -166,13 +167,14 @@ export function createHandler(deps = {}) {
         if (!b.spaceId) throw err("invalid_request", 400);
         const ctx = await authorizeManagerSpace({ userId, workspaceId: b.workspaceId, spaceId: b.spaceId, action: "export-space" }, d);
         const dryRun = b.dryRun !== false; // default: dry run
-        const useV2 = b.version === 2 || Boolean(b.mode);
+        const useV2 = b.version === 2 || Boolean(b.mode) || b.clientSafe === true;
         const resExport = await exportSpace(redis, ctx.space.namespace, {
           dryRun,
           gzip: b.gzip === true,
           version: useV2 ? 2 : 1,
           mode: b.mode,
           redact: b.redact !== false,
+          clientSafe: b.clientSafe === true,
           spaceName: ctx.space.name,
           requireApproval: !dryRun,
           approved: b.approved === true,

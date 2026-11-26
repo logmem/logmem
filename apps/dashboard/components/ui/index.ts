@@ -73,3 +73,7 @@ export { HeatMapXL, resolveLobeIconSrc } from './heat-map-xl';
 export type { HeatMapXLProps, HeatMapCell } from './heat-map-xl';
 export { KnowledgeGraph } from './knowledge-graph';
 export type { KnowledgeGraphProps, KnowledgeGraphNode, KnowledgeGraphLink } from './knowledge-graph';
+export { Button } from './button';
+export type { ButtonProps, ButtonVariant, ButtonSize } from './button';
+export { CookieConsent } from './cookie-consent-01';
+export type { CookieConsentProps, CookieConsentPreferences } from './cookie-consent-01';

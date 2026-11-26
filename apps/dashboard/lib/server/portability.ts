@@ -7,7 +7,22 @@ import {
 } from '../../../../src/http/workspaces.mjs';
 import { customerRedis } from '../../../../src/http/jail.mjs';
 import { listWorkspaceAgentKeys } from '../../../../src/http/workspace-agent-keys.mjs';
+import { listSpaceClaims } from '../../../../src/http/space-claims.mjs';
 import { requireSpace } from './auth';
+
+export interface SpaceClaimSummary {
+  id: string;
+  spaceId: string;
+  spaceName: string;
+  mode: string;
+  clientSafe: boolean;
+  checksum: string;
+  sizeBytes: number;
+  recipientEmailMask: string | null;
+  createdAt: number;
+  expiresAt: number;
+  status: string;
+}
 
 export interface SpaceMemberItem {
   userId: string;
@@ -64,6 +79,7 @@ export interface SpaceSettingsData {
   members: SpaceMemberItem[];
   invitations: PendingInviteItem[];
   auditHistory: PortabilityAuditRow[];
+  claims: SpaceClaimSummary[];
   importReceipt: Record<string, unknown> | null;
   activeKeyCount: number;
 }
@@ -80,6 +96,7 @@ export async function getSpaceSettingsData(space: string): Promise<SpaceSettings
   let members: SpaceMemberItem[] = [];
   let invitations: PendingInviteItem[] = [];
   let auditHistory: PortabilityAuditRow[] = [];
+  let claims: SpaceClaimSummary[] = [];
   let activeKeyCount = 0;
 
   if (canManage) {
@@ -105,10 +122,20 @@ export async function getSpaceSettingsData(space: string): Promise<SpaceSettings
         canApprove: Boolean(i.spaces?.[space]?.canApprove),
       }));
     auditHistory = (await listWorkspaceAudit(redis, viewer.workspaceId, {
-      kinds: ['space-exported', 'space-imported'],
+      kinds: ['space-exported', 'space-imported', 'space-claim-created', 'space-claim-accepted'],
       spaceId: space,
       limit: 20,
     })) as PortabilityAuditRow[];
+    if (viewer.permissions.canTransfer) {
+      try {
+        claims = (await listSpaceClaims(
+          { actorId: viewer.userId, workspaceId: viewer.workspaceId, spaceId: space },
+          { redis },
+        )) as SpaceClaimSummary[];
+      } catch {
+        claims = [];
+      }
+    }
     try {
       const keys = await listWorkspaceAgentKeys(
         { userId: viewer.userId, workspaceId: viewer.workspaceId, spaceId: space },
@@ -165,6 +192,7 @@ export async function getSpaceSettingsData(space: string): Promise<SpaceSettings
     members,
     invitations,
     auditHistory,
+    claims,
     importReceipt,
     activeKeyCount,
   };

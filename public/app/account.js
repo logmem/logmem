@@ -39,6 +39,8 @@ export async function bootstrapAccount() {
  state.user=data.user;state.workspaces=data.workspaces;state.spaceRecords=data.spaces;live.signedOut=false;state.clerkDev=isDevInstance(data.clerk);startKeepAlive(data.clerk);
  const invite=new URLSearchParams(location.search).get('invite');
  if(invite){await showInvitation(invite);return true;}
+ const claim=new URLSearchParams(location.search).get('claim');
+ if(claim){await showClaimFlow(claim);return true;}
  const entry=new URL(location.href);
  if(entry.searchParams.get('setup')==='managed'){
   entry.searchParams.delete('setup');
@@ -88,6 +90,7 @@ export function showAccount(tab) {
  const setTab=(next)=>{accountTab=next;history.replaceState(null,'',next==='members'?'#/account':'#/account/'+next);drawAccount();};
  const portCtx={
   customer:true,
+  isOwner,
   workspaceId:state.workspaceId,
   spaceId:state.spaceId,
   spaceName:curSpace?.name||state.space,
@@ -166,6 +169,15 @@ async function showInvitation(token) {
  try{const res=await fetch('/api/memberships?token='+encodeURIComponent(token),{credentials:'same-origin'});r=await res.json().catch(()=>({}));if(!res.ok){inviteProblem(state.user?.email||'your account');return;}}
  catch{renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>Could not check the invitation.</h1><p role="alert">Check your connection and try again. Your invitation is not used up.</p><button class="lm-btn lm-btn--primary" @click=${()=>location.reload()}>Try again</button></section>`);return;}
  renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>Join ${r.workspaceName}</h1>${inviteSteps(2)}<p>Your role: <strong>${r.role}</strong>.</p><p>Spaces: ${r.spaces.map(x=>x.name).join(', ')}</p><p class="lmx-invite-note">Signed in as ${state.user?.email}. <button class="lmx-linkbtn" @click=${signOutCustomer}>Not you? Sign out</button></p><button class="lm-btn lm-btn--primary" @click=${async e=>{const b=e.currentTarget;b.disabled=true;try{const accepted=await postJSON('/api/memberships','memberships',{action:'accept',token});history.replaceState(null,'','/app');inviteAccepted(r.workspaceName,accepted.selected);}catch(err){b.disabled=false;toast(err.message,true);}}}>Accept invitation</button><a class="lm-btn" href="/app">Not now</a></section>`);
+}
+async function showClaimFlow(token) {
+ let r;
+ try{const res=await fetch('/api/space-claims?token='+encodeURIComponent(token),{credentials:'same-origin'});r=await res.json().catch(()=>({}));if(!res.ok){renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>Claim link unavailable</h1><p role="alert">${r.message||r.error||'This claim link is invalid, expired, or already used.'}</p><a class="lm-btn lm-btn--primary" href="/app">Open my workspace</a></section>`);return;}}
+ catch{renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>Could not check claim link</h1><p role="alert">Check your connection and try again.</p><button class="lm-btn lm-btn--primary" @click=${()=>location.reload()}>Try again</button></section>`);return;}
+ const manageable=state.workspaces.filter(w=>['owner','admin'].includes(w.role));
+ let targetWs=manageable[0]?.id||'', spaceName=String(r.sourceSpaceName||'Claimed space').slice(0,80), busyClaim=false, err='';
+ const draw=()=>renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>${r.sourceWorkspaceName} prepared a space for you</h1><p><strong>${r.sourceSpaceName}</strong> · ${r.manifest?.agents||0} agents · ${r.manifest?.plans||0} plans · ${r.manifest?.jobs||0} jobs · ${r.manifest?.traces||0} traces</p>${manageable.length?html`<form class="lm-panel lmx-account-form" @submit=${async e=>{e.preventDefault();if(busyClaim)return;busyClaim=true;err='';draw();try{const out=await postJSON('/api/space-claims','space-claims',{action:'accept',token,targetWorkspaceId:targetWs,spaceName,requestId:crypto.randomUUID()});history.replaceState(null,'','/app');await reloadContext({workspaceId:out.spaceRecord.workspaceId,spaceId:out.spaceRecord.id});toast('Space claimed into your workspace.');}catch(ex){busyClaim=false;err=ex.message||'Could not claim space.';draw();}}}>${manageable.length>1?html`<label class="lm-field"><span class="lm-label">Target workspace</span><select class="lm-select" .value=${targetWs} @change=${e=>{targetWs=e.currentTarget.value;}}>${manageable.map(w=>html`<option value=${w.id}>${w.name} (${w.role})</option>`)}</select></label>`:nothing}<label class="lm-field"><span class="lm-label">Space name</span><input class="lm-input" required maxlength="80" .value=${spaceName} @input=${e=>{spaceName=e.currentTarget.value;}}></label>${err?html`<p role="alert" class="lm-alert lm-alert--danger">${err}</p>`:nothing}<button class="lm-btn lm-btn--primary" ?disabled=${busyClaim}>${busyClaim?'Claiming space…':'Claim into my workspace'}</button><a class="lm-btn lm-btn--ghost" href="/app">Not now</a></form>`:html`<p role="alert">You need to be an owner or admin of a workspace to claim this space.</p><a class="lm-btn" href="/app">Open workspace</a>`}</section>`);
+ draw();
 }
 export function showNewTask() {
  let error='';const draw=()=>renderView('home',['Brief','Add a task'],html`<form class="lm-panel lmx-account-form" @submit=${async e=>{e.preventDefault();try{await postJSON('/api/work?op=create_job','work',{job:'task-'+crypto.randomUUID(),title:e.currentTarget.elements.title.value});location.hash='#/work';ready();}catch(err){if(err.stale)return;error=err.message;draw();}}}><h1>Add a task</h1><label class="lm-field"><span class="lm-label">What needs to happen?</span><input class="lm-input" name="title" maxlength="120" required></label>${error?html`<p role="alert">${error}</p>`:nothing}<button class="lm-btn lm-btn--primary">Add task</button></form>`);draw();

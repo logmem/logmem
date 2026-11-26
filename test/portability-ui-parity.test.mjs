@@ -39,6 +39,10 @@ test("portability UI guardrails: zero raw #hex and zero /app link leaks in new d
     "apps/dashboard/app/(workspace)/select-space/select-space-client.tsx",
     "apps/dashboard/app/(workspace)/select-space/page.tsx",
     "apps/dashboard/app/(workspace)/space/[space]/settings/page.tsx",
+    "apps/dashboard/app/(workspace)/claim/[token]/page.tsx",
+    "apps/dashboard/app/(workspace)/claim/[token]/claim-client.tsx",
+    "apps/dashboard/components/ui/button.tsx",
+    "apps/dashboard/components/ui/cookie-consent-01.tsx",
   ];
   for (const rel of files) {
     const src = readFileSync(rel, "utf8");

@@ -44,11 +44,19 @@ function triggerDownload(blob, filename) {
 const expState = {
   spaceKey: '',
   mode: 'full',
+  clientSafe: false,
   preflight: null,
   loadingPreflight: false,
   exporting: false,
   lastExport: null,
   history: [],
+  claims: [],
+  claimEmail: '',
+  claimTtl: 7,
+  claimClientSafe: true,
+  creatingClaim: false,
+  freshClaim: null,
+  claimError: '',
   error: '',
 };
 
@@ -74,27 +82,37 @@ function baseBody(ctx) {
 }
 
 export async function refreshExportPreflight(ctx, redraw) {
-  const key = `${ctx.customer ? ctx.workspaceId + ':' + ctx.spaceId : ctx.space}:${expState.mode}`;
+  const key = `${ctx.customer ? ctx.workspaceId + ':' + ctx.spaceId : ctx.space}:${expState.mode}:${expState.clientSafe ? 'cs' : 'all'}`;
   expState.spaceKey = key;
   expState.loadingPreflight = true;
   expState.error = '';
   redraw();
   try {
-    const [pre, hist] = await Promise.all([
+    const reqs = [
       postJSON('/api/space-io', 'space-io', {
         ...baseBody(ctx),
         action: 'export-space',
         version: 2,
         mode: expState.mode,
+        clientSafe: expState.clientSafe,
         dryRun: true,
       }),
       postJSON('/api/space-io', 'space-io', {
         ...baseBody(ctx),
         action: 'audit-history',
       }).catch(() => ({ history: [] })),
-    ]);
+    ];
+    if (ctx.customer && ctx.isOwner) {
+      reqs.push(
+        fetch(`/api/space-claims?workspaceId=${encodeURIComponent(ctx.workspaceId)}&spaceId=${encodeURIComponent(ctx.spaceId)}`, { credentials: 'same-origin' })
+          .then((r) => (r.ok ? r.json() : { claims: [] }))
+          .catch(() => ({ claims: [] })),
+      );
+    }
+    const [pre, hist, clm] = await Promise.all(reqs);
     expState.preflight = pre;
     expState.history = Array.isArray(hist?.history) ? hist.history : [];
+    if (clm && Array.isArray(clm.claims)) expState.claims = clm.claims;
   } catch (e) {
     if (!e.stale) expState.error = e.message || 'Could not compute export preflight.';
   } finally {
@@ -114,6 +132,7 @@ async function runExport(ctx, redraw) {
       action: 'export-space',
       version: 2,
       mode: expState.mode,
+      clientSafe: expState.clientSafe,
       gzip: true,
       dryRun: false,
       approved: true,
@@ -145,8 +164,55 @@ async function runExport(ctx, redraw) {
   }
 }
 
+async function runCreateClaim(ev, ctx, redraw) {
+  ev.preventDefault();
+  if (expState.creatingClaim) return;
+  expState.creatingClaim = true;
+  expState.claimError = '';
+  expState.freshClaim = null;
+  redraw();
+  try {
+    const r = await postJSON('/api/space-claims', 'space-claims', {
+      action: 'create',
+      workspaceId: ctx.workspaceId,
+      spaceId: ctx.spaceId,
+      mode: expState.mode,
+      clientSafe: expState.claimClientSafe,
+      recipientEmail: expState.claimEmail.trim(),
+      ttlDays: expState.claimTtl,
+    });
+    expState.freshClaim = { url: r.claimUrl, checksum: r.checksum, expiresAt: r.expiresAt };
+    expState.claimEmail = '';
+    toast('Claim link created.');
+    await refreshExportPreflight(ctx, redraw);
+  } catch (e) {
+    if (!e.stale) {
+      expState.claimError = e.message || 'Could not create claim link.';
+      toast(expState.claimError, true);
+    }
+  } finally {
+    expState.creatingClaim = false;
+    redraw();
+  }
+}
+
+async function runRevokeClaim(claimId, ctx, redraw) {
+  try {
+    await postJSON('/api/space-claims', 'space-claims', {
+      action: 'revoke',
+      workspaceId: ctx.workspaceId,
+      spaceId: ctx.spaceId,
+      claimId,
+    });
+    toast('Claim link revoked.');
+    await refreshExportPreflight(ctx, redraw);
+  } catch (e) {
+    if (!e.stale) toast(e.message || 'Could not revoke claim link.', true);
+  }
+}
+
 export function exportTabPanel(ctx, redraw) {
-  const expectedKey = `${ctx.customer ? ctx.workspaceId + ':' + ctx.spaceId : ctx.space}:${expState.mode}`;
+  const expectedKey = `${ctx.customer ? ctx.workspaceId + ':' + ctx.spaceId : ctx.space}:${expState.mode}:${expState.clientSafe ? 'cs' : 'all'}`;
   if (expState.spaceKey !== expectedKey && !expState.loadingPreflight) {
     queueMicrotask(() => refreshExportPreflight(ctx, redraw));
   }
@@ -193,6 +259,11 @@ export function exportTabPanel(ctx, redraw) {
           <div class="lmx-stat-pill"><b>${m.traces}</b><span>Log streams</span></div>
           <div class="lmx-stat-pill"><b>${formatBytes(expState.preflight?.estimatedBytes)}</b><span>Est. raw</span></div>
         </div>` : nothing}
+      <label class="lmx-radio-pill" style="width:100%">
+        <input type="checkbox" .checked=${expState.clientSafe}
+          @change=${(e) => { expState.clientSafe = e.currentTarget.checked; refreshExportPreflight(ctx, redraw); }}>
+        <span><strong>Client-safe filter:</strong> exclude internal channels (<code>internal-*</code>, <code>ops-*</code>, <code>agency-*</code>) and internal-tagged records</span>
+      </label>
       <ul class="lmx-guarantees" aria-label="Security guarantees">
         ${SECURITY_GUARANTEES.map((g) => html`<li><span class="lmx-check" aria-hidden="true">✓</span> ${g}</li>`)}
       </ul>
@@ -217,6 +288,48 @@ export function exportTabPanel(ctx, redraw) {
           </div>
         </div>` : nothing}
     </section>
+
+    ${ctx.customer && ctx.isOwner ? html`
+      <section class="lm-panel lmx-port-card">
+        <div class="lmx-port-head">
+          <div>
+            <span class="lm-eyebrow">CLIENT DELIVERY · OWNER ONLY</span>
+            <h2>1-Click Client Claim Link</h2>
+          </div>
+        </div>
+        <p class="lmx-meta">Generate a single-use signed link so a client can import this ${expState.mode === 'blueprint' ? 'Blueprint' : 'Full + Traces'} space directly into their own LogMem workspace.</p>
+        <form class="lmx-account-form" @submit=${(ev) => runCreateClaim(ev, ctx, redraw)}>
+          <div class="lmx-dest-row">
+            <label class="lm-field" style="flex:1 1 220px"><span class="lm-label">Lock to recipient email (optional)</span><input class="lm-input" type="email" placeholder="client@company.com" .value=${expState.claimEmail} @input=${(e) => { expState.claimEmail = e.currentTarget.value; }}></label>
+            <label class="lm-field" style="flex:0 0 130px"><span class="lm-label">Expires in</span><select class="lm-select" .value=${String(expState.claimTtl)} @change=${(e) => { expState.claimTtl = Number(e.currentTarget.value); }}><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></label>
+          </div>
+          <label class="lmx-radio-pill"><input type="checkbox" .checked=${expState.claimClientSafe} @change=${(e) => { expState.claimClientSafe = e.currentTarget.checked; }}><span>Apply client-safe filter (strip internal channels &amp; notes)</span></label>
+          ${expState.claimError ? html`<div class="lm-alert lm-alert--danger" role="alert"><div>${expState.claimError}</div></div>` : nothing}
+          <button class="lm-btn lm-btn--primary" ?disabled=${expState.creatingClaim}>${expState.creatingClaim ? 'Creating…' : 'Create claim link'}</button>
+        </form>
+        ${expState.freshClaim ? html`
+          <div class="lmx-receipt-box" role="status">
+            <strong>Single-use claim link ready (SHA-256 <code>${shortHash(expState.freshClaim.checksum, 12)}</code>). Shown once.</strong>
+            <div class="lmx-receipt-meta">
+              <input class="lm-input mono" readonly .value=${expState.freshClaim.url} aria-label="Client claim link" style="flex:1;min-width:200px">
+              <button type="button" class="lm-btn lm-btn--ghost" @click=${async () => {
+                try { await navigator.clipboard.writeText(expState.freshClaim.url); toast('Claim link copied.'); }
+                catch { toast('Copy failed.', true); }
+              }}>Copy link</button>
+            </div>
+          </div>` : nothing}
+        ${expState.claims.length ? html`
+          <div class="lmx-table-wrap"><table class="lm-table">
+            <thead><tr><th>Status</th><th>Mode</th><th>Lock</th><th>Checksum</th><th>Action</th></tr></thead>
+            <tbody>${expState.claims.map((c) => html`<tr>
+              <td class="mono">${c.status}</td>
+              <td>${c.mode}${c.clientSafe ? ' · client-safe' : ''}</td>
+              <td>${c.recipientEmailMask || 'Any email'}</td>
+              <td class="mono">${shortHash(c.checksum, 10)}</td>
+              <td>${c.status === 'pending' ? html`<button type="button" class="lm-btn lm-btn--ghost" @click=${() => runRevokeClaim(c.id, ctx, redraw)}>Revoke</button>` : '—'}</td>
+            </tr>`)}</tbody>
+          </table></div>` : nothing}
+      </section>` : nothing}
 
     <section class="lm-panel lmx-port-card">
       <div class="lmx-port-head">

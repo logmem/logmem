@@ -58,10 +58,150 @@ function isBlueprintKey(sub) {
   return false;
 }
 
-export function shouldIncludeKeyV2(sub, mode = "full") {
+export function shouldIncludeKeyV2(sub, mode = "full", { clientSafe = false } = {}) {
   if (V2_EXCLUDED_PATTERNS.some((re) => re.test(sub))) return false;
+  if (clientSafe && isInternalSubKey(sub)) return false;
   if (mode === "blueprint") return isBlueprintKey(sub);
   return true;
+}
+
+const INTERNAL_CHANNEL_RE = /^(?:internal|ops|agency|private)(?:$|[-_.:/])/i;
+
+export function isInternalChannelId(id) {
+  return typeof id === "string" && INTERNAL_CHANNEL_RE.test(id.trim());
+}
+
+export function isInternalSubKey(sub) {
+  if (typeof sub !== "string") return false;
+  const ch = sub.match(/^channel:([^:]+):/);
+  if (ch && isInternalChannelId(ch[1])) return true;
+  if (/^internal(?::|$)/i.test(sub)) return true;
+  return false;
+}
+
+function hasInternalFlag(doc) {
+  if (!doc) return false;
+  if (typeof doc === "string") {
+    const parsed = tryParseJson(doc);
+    return parsed && typeof parsed === "object" ? hasInternalFlag(parsed) : false;
+  }
+  if (typeof doc !== "object") return false;
+  const obj = doc.__type === "hash" && doc.fields ? doc.fields : doc;
+  return obj.visibility === "internal" || obj.internal === true || obj.visibility === "private";
+}
+
+function filterClientSafeData(data) {
+  let internalFiltered = 0;
+  const internalEntities = {
+    agent: new Set(),
+    job: new Set(),
+    channel: new Set(),
+    plan: new Set(),
+    blocker: new Set(),
+  };
+
+  // Pass 1: identify entities tagged visibility:'internal' or internal channels
+  for (const [sub, val] of Object.entries(data.other || {})) {
+    const ch = sub.match(/^channel:([^:]+):/);
+    if (ch && (isInternalChannelId(ch[1]) || hasInternalFlag(val))) {
+      internalEntities.channel.add(ch[1]);
+    }
+    const ent = sub.match(/^(agent|job):([^:]+):(who|now)$/);
+    if (ent && hasInternalFlag(val)) {
+      internalEntities[ent[1]].add(ent[2]);
+    }
+    const plan = sub.match(/^plan:([^:]+)$/);
+    if (plan && plan[1] !== "list" && hasInternalFlag(val)) {
+      internalEntities.plan.add(plan[1]);
+    }
+    const blk = sub.match(/^blocker:([^:]+)$/);
+    if (blk && blk[1] !== "open" && hasInternalFlag(val)) {
+      internalEntities.blocker.add(blk[1]);
+    }
+  }
+
+  // Pass 2: drop internal entity keys and scrub SET index lists & log entries
+  const nextOther = {};
+  for (const [sub, val] of Object.entries(data.other || {})) {
+    const ch = sub.match(/^channel:([^:]+):/);
+    if (ch && internalEntities.channel.has(ch[1])) { internalFiltered += 1; continue; }
+    const ent = sub.match(/^(agent|job):([^:]+):/);
+    if (ent && internalEntities[ent[1]].has(ent[2])) { internalFiltered += 1; continue; }
+    const plan = sub.match(/^plan:([^:]+)$/);
+    if (plan && plan[1] !== "list" && internalEntities.plan.has(plan[1])) { internalFiltered += 1; continue; }
+    const blk = sub.match(/^blocker:([^:]+)$/);
+    if (blk && blk[1] !== "open" && internalEntities.blocker.has(blk[1])) { internalFiltered += 1; continue; }
+
+    // Scrub SET indexes
+    if (val?.__type === "set" && Array.isArray(val.members)) {
+      if (sub === "channel:list") {
+        const kept = val.members.filter((id) => !isInternalChannelId(id) && !internalEntities.channel.has(id));
+        internalFiltered += val.members.length - kept.length;
+        nextOther[sub] = { __type: "set", members: kept };
+        continue;
+      }
+      if (sub === "agent:list" || sub === "job:list" || sub === "plan:list") {
+        const kind = sub.split(":")[0];
+        const kept = val.members.filter((id) => !internalEntities[kind].has(id));
+        internalFiltered += val.members.length - kept.length;
+        nextOther[sub] = { __type: "set", members: kept };
+        continue;
+      }
+      if (sub === "blocker:open") {
+        const kept = val.members.filter((id) => !internalEntities.blocker.has(id));
+        internalFiltered += val.members.length - kept.length;
+        nextOther[sub] = { __type: "set", members: kept };
+        continue;
+      }
+    }
+
+    // Scrub internal log/activity entries
+    if (val?.__type === "zset" && Array.isArray(val.entries) && (/:log$/.test(sub) || sub === "activity")) {
+      const kept = val.entries.filter((e) => {
+        const parsed = tryParseJson(e.member);
+        if (parsed && typeof parsed === "object") {
+          if (parsed.visibility === "internal" || parsed.visibility === "private" || parsed.internal === true) return false;
+          if (typeof parsed.where === "string" && parsed.where.startsWith("channel:")) {
+            const cid = parsed.where.slice("channel:".length);
+            if (isInternalChannelId(cid) || internalEntities.channel.has(cid)) return false;
+          }
+          if (typeof parsed.where === "string" && parsed.where.startsWith("job:")) {
+            const jid = parsed.where.slice("job:".length);
+            if (internalEntities.job.has(jid)) return false;
+          }
+        }
+        return true;
+      });
+      internalFiltered += val.entries.length - kept.length;
+      nextOther[sub] = { __type: "zset", entries: kept };
+      continue;
+    }
+
+    nextOther[sub] = val;
+  }
+
+  const nextTimelines = {};
+  for (const [sub, val] of Object.entries(data.timelines || {})) {
+    if (Array.isArray(val)) {
+      const kept = val.filter((e) => {
+        const raw = typeof e === "object" && e !== null && "member" in e ? e.member : e;
+        const parsed = tryParseJson(raw);
+        if (parsed && typeof parsed === "object" && (parsed.visibility === "internal" || parsed.internal === true)) {
+          return false;
+        }
+        return true;
+      });
+      internalFiltered += val.length - kept.length;
+      nextTimelines[sub] = kept;
+    } else {
+      nextTimelines[sub] = val;
+    }
+  }
+
+  return {
+    data: { ...data, other: nextOther, timelines: nextTimelines },
+    internalFiltered,
+  };
 }
 
 /** Targeted secret patterns redacted in v2 exports without mangling ordinary URLs or IDs. */
@@ -267,7 +407,7 @@ function buildDryRunManifestFromKeys(subs, categorized) {
  * Perform a space backup/export.
  * @param {any} redis
  * @param {string} space
- * @param {{ dryRun?: boolean, gzip?: boolean, requireApproval?: boolean, approved?: boolean, version?: number, mode?: string, redact?: boolean, spaceName?: string | null, now?: number }} [opts]
+ * @param {{ dryRun?: boolean, gzip?: boolean, requireApproval?: boolean, approved?: boolean, version?: number, mode?: string, redact?: boolean, clientSafe?: boolean, spaceName?: string | null, now?: number }} [opts]
  */
 export async function exportSpace(redis, space, {
   dryRun = false,
@@ -277,12 +417,13 @@ export async function exportSpace(redis, space, {
   version,
   mode,
   redact = true,
+  clientSafe = false,
   spaceName,
   now = Date.now(),
 } = {}) {
   validateSpaceName(space);
 
-  const resolvedVersion = version ?? (mode ? 2 : 1);
+  const resolvedVersion = version ?? (mode || clientSafe ? 2 : 1);
   if (resolvedVersion !== 1 && resolvedVersion !== 2) {
     throw new SpaceExportError("invalid_version", `Unsupported export version: ${resolvedVersion}`);
   }
@@ -299,10 +440,15 @@ export async function exportSpace(redis, space, {
   const scannedKeys = await scanKeys(redis, `${prefix}*`);
 
   let excludedKeys = 0;
+  let internalKeyExcluded = 0;
   const allKeys = resolvedVersion === 2
     ? scannedKeys.filter((k) => {
-        const keep = shouldIncludeKeyV2(k.slice(prefix.length), resolvedMode);
-        if (!keep) excludedKeys += 1;
+        const sub = k.slice(prefix.length);
+        const keep = shouldIncludeKeyV2(sub, resolvedMode, { clientSafe });
+        if (!keep) {
+          excludedKeys += 1;
+          if (clientSafe && isInternalSubKey(sub)) internalKeyExcluded += 1;
+        }
         return keep;
       })
     : scannedKeys;
@@ -331,7 +477,7 @@ export async function exportSpace(redis, space, {
     return {
       ok: true,
       space,
-      ...(resolvedVersion === 2 ? { version: 2, mode: resolvedMode, excludedKeys, manifest } : {}),
+      ...(resolvedVersion === 2 ? { version: 2, mode: resolvedMode, clientSafe: Boolean(clientSafe), excludedKeys, internalKeyExcluded, manifest } : {}),
       dryRun: true,
       totalKeys: allKeys.length,
       counts: {
@@ -438,8 +584,11 @@ export async function exportSpace(redis, space, {
   });
   for (const [short, val] of otherRows) data.other[short] = val;
 
+  const filtered = resolvedVersion === 2 && clientSafe
+    ? filterClientSafeData(data)
+    : { data, internalFiltered: 0 };
   const redactionCounter = { count: 0 };
-  const finalData = resolvedVersion === 2 && redact ? redactValue(data, redactionCounter) : data;
+  const finalData = resolvedVersion === 2 && redact ? redactValue(filtered.data, redactionCounter) : filtered.data;
   const manifest = resolvedVersion === 2 ? buildManifestFromData(finalData) : undefined;
 
   const exportPayload = resolvedVersion === 2
@@ -448,11 +597,14 @@ export async function exportSpace(redis, space, {
         space,
         ...(spaceName ? { spaceName: String(spaceName).slice(0, 80) } : {}),
         mode: resolvedMode,
+        clientSafe: Boolean(clientSafe),
         exported_at: new Date(now).toISOString(),
         redaction: {
           keysExcluded: true,
           excludedKeyCount: excludedKeys,
           secretsRedacted: redactionCounter.count,
+          clientSafe: Boolean(clientSafe),
+          internalFilteredCount: internalKeyExcluded + filtered.internalFiltered,
         },
         manifest,
         counts: {
