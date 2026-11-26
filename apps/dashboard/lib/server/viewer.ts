@@ -12,7 +12,11 @@ export type DashboardAction =
   | 'approve'
   | 'manage-members'
   | 'manage-connections'
-  | 'create-space';
+  | 'create-space'
+  | 'export-space'
+  | 'import-space'
+  | 'share-snapshot'
+  | 'transfer-space';
 
 export interface DashboardViewerOptions {
   workspaceId: string;
@@ -27,6 +31,10 @@ export interface DashboardViewerPermissions {
   canManageMembers: boolean;
   canManageConnections: boolean;
   canCreateSpace: boolean;
+  canExport: boolean;
+  canImport: boolean;
+  canShareSnapshot: boolean;
+  canTransfer: boolean;
 }
 
 export interface DashboardWorkspaceSummary {

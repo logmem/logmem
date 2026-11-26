@@ -1,12 +1,17 @@
 // src/http/space-export.mjs — Space export and backup path with dry-run support.
 //
-// Spec: Layer 0 safety floor (Nov 6 2026).
-// Exports all space entities (timelines, profiles, signals, decisions, coord)
-// into a verifiable backup bundle with SHA-256 integrity checksum.
-// Supports dry-run analysis and operator approval gating.
+// Supports:
+//   - v1 (`logmem-space-backup-v1`, default when version/mode omitted for backward compat)
+//   - v2 (`logmem-space-backup-v2`): Blueprint vs Full+Traces modes, Redis SET restoration
+//     (agent:list, job:list, channel:list, plan:list, blocker:open), hard credential exclusion,
+//     secret redaction pass, and a semantic manifest for dry-run UI previews.
 
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
+
+export const BUNDLE_FORMAT_V1 = "logmem-space-backup-v1";
+export const BUNDLE_FORMAT_V2 = "logmem-space-backup-v2";
+export const VALID_MODES = new Set(["blueprint", "full"]);
 
 export class SpaceExportError extends Error {
   constructor(code, message) {
@@ -23,9 +28,113 @@ export function validateSpaceName(space) {
 }
 
 /**
+ * Keys inside lm:{space}:* that are NEVER exported in v2 bundles:
+ * credentials, ephemeral sessions, billing meters, mirror queues, and prior import receipts.
+ */
+const V2_EXCLUDED_PATTERNS = [
+  /^session:/,
+  /^mirror:/,
+  /^sync:/,
+  /^usage:/,
+  /^reconcile:/,
+  /^registry:/,
+  /^oauth:/,
+  /^meta:import$/,
+  /(?:^|:)(?:agent[-_]?keys?|tokens?|secrets?|credentials?)(?::|$)/i,
+];
+
+/**
+ * Keys included in v2 `blueprint` mode (starter pack):
+ * Agent Who/Follows, Plans & Milestones, Channels Who, Jobs Who/Now, and Walkthroughs/Blockers.
+ */
+function isBlueprintKey(sub) {
+  if (sub === "agent:list" || sub === "job:list" || sub === "channel:list" || sub === "plan:list" || sub === "blocker:open") return true;
+  if (/^agent:[^:]+:(?:who|follows)$/.test(sub)) return true;
+  if (/^channel:[^:]+:who$/.test(sub)) return true;
+  if (/^job:[^:]+:(?:who|now)$/.test(sub)) return true;
+  if (/^plan:[^:]+$/.test(sub)) return true;
+  if (/^blocker:[^:]+$/.test(sub)) return true;
+  if (/^profile:/.test(sub)) return true;
+  return false;
+}
+
+export function shouldIncludeKeyV2(sub, mode = "full") {
+  if (V2_EXCLUDED_PATTERNS.some((re) => re.test(sub))) return false;
+  if (mode === "blueprint") return isBlueprintKey(sub);
+  return true;
+}
+
+/** Targeted secret patterns redacted in v2 exports without mangling ordinary URLs or IDs. */
+const SECRET_PATTERNS = [
+  /\blmk_[A-Za-z0-9_-]{12,}\b/g,
+  /\blmi_[A-Za-z0-9_-]{12,}\b/g,
+  /\bsk-(?:live|test|proj|ant-api\d+)?[A-Za-z0-9_-]{16,}\b/g,
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\b(?:rediss?|postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^@\s"'<>]+@[^\s"'<>]+/gi,
+  /\bBearer\s+[A-Za-z0-9._+/=-]{16,}\b/gi,
+  /(\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|private[_-]?key|client[_-]?secret)\b\s*[:=]\s*["']?)([^\s"',}\]]{8,})/gi,
+];
+
+export function redactString(input, counter = { count: 0 }) {
+  if (typeof input !== "string" || !input) return input;
+  let out = input;
+  for (let i = 0; i < SECRET_PATTERNS.length; i++) {
+    const re = SECRET_PATTERNS[i];
+    re.lastIndex = 0;
+    if (i === SECRET_PATTERNS.length - 1) {
+      out = out.replace(re, (_m, prefix) => {
+        counter.count += 1;
+        return `${prefix}[redacted]`;
+      });
+    } else {
+      out = out.replace(re, () => {
+        counter.count += 1;
+        return "[redacted]";
+      });
+    }
+  }
+  return out;
+}
+
+export function redactValue(value, counter = { count: 0 }) {
+  if (typeof value === "string") return redactString(value, counter);
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, counter));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (/(?:^|_)(?:password|secret|api_?key|access_?token|refresh_?token|private_?key|agent_?key)$/i.test(k) && typeof v === "string" && v.length > 0) {
+        counter.count += 1;
+        out[k] = "[redacted]";
+      } else {
+        out[k] = redactValue(v, counter);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+async function mapConcurrent(items, limit, fn) {
+  if (!items.length) return [];
+  const results = new Array(items.length);
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= items.length) break;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
  * Scan all Redis keys matching a pattern.
  */
-export async function scanKeys(redis, pattern, batchSize = 100) {
+export async function scanKeys(redis, pattern, batchSize = 200) {
   const matching = [];
   let cursor = "0";
   do {
@@ -38,29 +147,165 @@ export async function scanKeys(redis, pattern, batchSize = 100) {
   return matching;
 }
 
+function tryParseJson(v) {
+  if (typeof v !== "string") return v;
+  try { return JSON.parse(v); } catch { return v; }
+}
+
+/** Build a human-readable semantic manifest from collected v2 data or dry-run keys. */
+export function buildManifestFromData(data) {
+  const agents = new Map();
+  const plans = new Map();
+  const jobs = new Set();
+  const channels = new Set();
+  let milestones = 0;
+  let decisions = Object.keys(data.decisions || {}).length;
+  let traces = 0;
+
+  for (const entries of Object.values(data.timelines || {})) {
+    if (Array.isArray(entries)) traces += entries.length;
+  }
+
+  for (const [sub, val] of Object.entries(data.other || {})) {
+    const agentWho = sub.match(/^agent:([^:]+):who$/);
+    if (agentWho) {
+      const id = agentWho[1];
+      const doc = val && typeof val === "object" && val.__type === "hash" ? val.fields : tryParseJson(val);
+      const name = (doc && typeof doc === "object" && (doc.name || doc.title || doc.display_name)) || id;
+      const role = (doc && typeof doc === "object" && (doc.role || doc.bio || doc.summary)) || "";
+      agents.set(id, { id, name: String(name).slice(0, 64), role: String(role).slice(0, 100) });
+    }
+    if (sub === "agent:list" && val?.__type === "set" && Array.isArray(val.members)) {
+      for (const id of val.members) {
+        if (!agents.has(id)) agents.set(id, { id, name: id, role: "" });
+      }
+    }
+    const planMatch = sub.match(/^plan:([^:]+)$/);
+    if (planMatch && planMatch[1] !== "list") {
+      const id = planMatch[1];
+      const doc = val && typeof val === "object" && val.__type === "hash" ? val.fields : tryParseJson(val);
+      const title = (doc && typeof doc === "object" && (doc.title || doc.name)) || id;
+      plans.set(id, { id, title: String(title).slice(0, 80) });
+      if (doc && typeof doc === "object" && Array.isArray(doc.milestones)) {
+        milestones += doc.milestones.length;
+      }
+    }
+    if (sub === "plan:list" && val?.__type === "set" && Array.isArray(val.members)) {
+      for (const id of val.members) {
+        if (!plans.has(id)) plans.set(id, { id, title: id });
+      }
+    }
+    const jobMatch = sub.match(/^job:([^:]+):/);
+    if (jobMatch) jobs.add(jobMatch[1]);
+    if (sub === "job:list" && val?.__type === "set" && Array.isArray(val.members)) {
+      for (const id of val.members) jobs.add(id);
+    }
+    const chanMatch = sub.match(/^channel:([^:]+):/);
+    if (chanMatch) channels.add(chanMatch[1]);
+    if (sub === "channel:list" && val?.__type === "set" && Array.isArray(val.members)) {
+      for (const id of val.members) channels.add(id);
+    }
+    if (/:log$/.test(sub) && val?.__type === "zset" && Array.isArray(val.entries)) {
+      traces += val.entries.length;
+    }
+    if (sub === "activity" && val?.__type === "zset" && Array.isArray(val.entries) && traces === 0) {
+      traces += val.entries.length;
+    }
+  }
+
+  for (const sub of Object.keys(data.profiles || {})) {
+    const id = sub.replace(/^profile:/, "");
+    if (id && !agents.has(id)) agents.set(id, { id, name: id, role: "" });
+  }
+
+  return {
+    agents: agents.size,
+    plans: plans.size,
+    milestones,
+    jobs: jobs.size,
+    channels: channels.size,
+    decisions,
+    traces,
+    sampleAgents: Array.from(agents.values()).slice(0, 8),
+    samplePlans: Array.from(plans.values()).slice(0, 6),
+  };
+}
+
+function buildDryRunManifestFromKeys(subs, categorized) {
+  const agents = new Set();
+  const plans = new Set();
+  const jobs = new Set();
+  const channels = new Set();
+  let logKeys = categorized.timelines.length;
+
+  for (const sub of subs) {
+    const a = sub.match(/^agent:([^:]+):/);
+    if (a && a[1] !== "list") agents.add(a[1]);
+    const p = sub.match(/^plan:([^:]+)$/);
+    if (p && p[1] !== "list") plans.add(p[1]);
+    const j = sub.match(/^job:([^:]+):/);
+    if (j && j[1] !== "list") jobs.add(j[1]);
+    const c = sub.match(/^channel:([^:]+):/);
+    if (c && c[1] !== "list") channels.add(c[1]);
+    if (/:log$/.test(sub)) logKeys += 1;
+  }
+
+  return {
+    agents: agents.size || categorized.profiles.length,
+    plans: plans.size,
+    milestones: 0,
+    jobs: jobs.size,
+    channels: channels.size,
+    decisions: categorized.decisions.length,
+    traces: logKeys,
+    sampleAgents: Array.from(agents).slice(0, 8).map((id) => ({ id, name: id, role: "" })),
+    samplePlans: Array.from(plans).slice(0, 6).map((id) => ({ id, title: id })),
+  };
+}
+
 /**
  * Perform a space backup/export.
- * Options:
- *   - dryRun: boolean (if true, inspects entity counts and estimated size without exporting payloads)
- *   - gzip: boolean (if true, compresses output payload)
- *   - requireApproval: boolean (if true, checks for approved: true before exporting)
- *   - approved: boolean
+ * @param {any} redis
+ * @param {string} space
+ * @param {{ dryRun?: boolean, gzip?: boolean, requireApproval?: boolean, approved?: boolean, version?: number, mode?: string, redact?: boolean, spaceName?: string | null, now?: number }} [opts]
  */
 export async function exportSpace(redis, space, {
   dryRun = false,
   gzip = false,
   requireApproval = false,
   approved = false,
+  version,
+  mode,
+  redact = true,
+  spaceName,
   now = Date.now(),
 } = {}) {
   validateSpaceName(space);
+
+  const resolvedVersion = version ?? (mode ? 2 : 1);
+  if (resolvedVersion !== 1 && resolvedVersion !== 2) {
+    throw new SpaceExportError("invalid_version", `Unsupported export version: ${resolvedVersion}`);
+  }
+  const resolvedMode = mode || "full";
+  if (!VALID_MODES.has(resolvedMode)) {
+    throw new SpaceExportError("invalid_mode", `Invalid export mode: ${resolvedMode} (use blueprint or full)`);
+  }
 
   if (requireApproval && !dryRun && !approved) {
     throw new SpaceExportError("approval_required", "Space export requires explicit operator approval flag (approved: true)");
   }
 
   const prefix = `lm:${space}:`;
-  const allKeys = await scanKeys(redis, `${prefix}*`);
+  const scannedKeys = await scanKeys(redis, `${prefix}*`);
+
+  let excludedKeys = 0;
+  const allKeys = resolvedVersion === 2
+    ? scannedKeys.filter((k) => {
+        const keep = shouldIncludeKeyV2(k.slice(prefix.length), resolvedMode);
+        if (!keep) excludedKeys += 1;
+        return keep;
+      })
+    : scannedKeys;
 
   const categorized = {
     profiles: [],
@@ -76,14 +321,17 @@ export async function exportSpace(redis, space, {
     else if (sub.startsWith("signals:")) categorized.signals.push(k);
     else if (sub.startsWith("timeline:") || sub.startsWith("t:")) categorized.timelines.push(k);
     else if (sub.startsWith("decision:") || sub.startsWith("ask:")) categorized.decisions.push(k);
-    // Who/Now hashes and Log zsets (lm:{space}:{kind}:{id}:who|now|log) land in other.
+    // Who/Now hashes, Log zsets, and entity SET indexes (lm:{space}:{kind}:{id}:who|now|log|list) land in other.
     else categorized.other.push(k);
   }
 
   if (dryRun) {
+    const subs = allKeys.map((k) => k.slice(prefix.length));
+    const manifest = resolvedVersion === 2 ? buildDryRunManifestFromKeys(subs, categorized) : undefined;
     return {
       ok: true,
       space,
+      ...(resolvedVersion === 2 ? { version: 2, mode: resolvedMode, excludedKeys, manifest } : {}),
       dryRun: true,
       totalKeys: allKeys.length,
       counts: {
@@ -98,7 +346,7 @@ export async function exportSpace(redis, space, {
     };
   }
 
-  // Collect data
+  // Collect data with bounded concurrency (fast over REST & TLS, deterministic key order)
   const data = {
     profiles: {},
     signals: {},
@@ -107,113 +355,130 @@ export async function exportSpace(redis, space, {
     other: {},
   };
 
-  for (const k of categorized.profiles) {
+  const CONCURRENCY = 24;
+
+  const profileRows = await mapConcurrent(categorized.profiles, CONCURRENCY, async (k) => {
     const type = String(await redis("TYPE", k)).toLowerCase();
+    const short = k.slice(prefix.length);
     if (type === "hash") {
       const entries = await redis("HGETALL", k);
       const parsed = {};
       if (Array.isArray(entries)) {
-        for (let i = 0; i < entries.length; i += 2) {
-          try { parsed[entries[i]] = JSON.parse(entries[i + 1]); }
-          catch { parsed[entries[i]] = entries[i + 1]; }
-        }
+        for (let i = 0; i < entries.length; i += 2) parsed[entries[i]] = tryParseJson(entries[i + 1]);
       }
-      data.profiles[k.slice(prefix.length)] = parsed;
-    } else {
-      const val = await redis("GET", k);
-      try { data.profiles[k.slice(prefix.length)] = JSON.parse(val); }
-      catch { data.profiles[k.slice(prefix.length)] = val; }
+      return [short, parsed];
     }
-  }
+    return [short, tryParseJson(await redis("GET", k))];
+  });
+  for (const [short, val] of profileRows) data.profiles[short] = val;
 
-  for (const k of categorized.signals) {
+  const signalRows = await mapConcurrent(categorized.signals, CONCURRENCY, async (k) => {
     const type = String(await redis("TYPE", k)).toLowerCase();
+    const short = k.slice(prefix.length);
     if (type === "hash") {
       const entries = await redis("HGETALL", k);
       const parsed = {};
       if (Array.isArray(entries)) {
-        for (let i = 0; i < entries.length; i += 2) {
-          try { parsed[entries[i]] = JSON.parse(entries[i + 1]); }
-          catch { parsed[entries[i]] = entries[i + 1]; }
-        }
+        for (let i = 0; i < entries.length; i += 2) parsed[entries[i]] = tryParseJson(entries[i + 1]);
       }
-      data.signals[k.slice(prefix.length)] = parsed;
-    } else {
-      const val = await redis("GET", k);
-      try { data.signals[k.slice(prefix.length)] = JSON.parse(val); }
-      catch { data.signals[k.slice(prefix.length)] = val; }
+      return [short, parsed];
     }
-  }
+    return [short, tryParseJson(await redis("GET", k))];
+  });
+  for (const [short, val] of signalRows) data.signals[short] = val;
 
-  for (const k of categorized.timelines) {
+  const timelineRows = await mapConcurrent(categorized.timelines, CONCURRENCY, async (k) => {
     const type = String(await redis("TYPE", k)).toLowerCase();
+    const short = k.slice(prefix.length);
     if (type === "zset") {
       const entries = await redis("ZRANGE", k, "0", "-1", "WITHSCORES");
       const list = [];
       if (Array.isArray(entries)) {
-        for (let i = 0; i < entries.length; i += 2) {
-          list.push({ member: entries[i], score: Number(entries[i + 1]) });
-        }
+        for (let i = 0; i < entries.length; i += 2) list.push({ member: entries[i], score: Number(entries[i + 1]) });
       }
-      data.timelines[k.slice(prefix.length)] = list;
-    } else if (type === "list") {
-      data.timelines[k.slice(prefix.length)] = await redis("LRANGE", k, "0", "-1");
-    } else {
-      data.timelines[k.slice(prefix.length)] = await redis("GET", k);
+      return [short, list];
     }
-  }
+    if (type === "list") return [short, await redis("LRANGE", k, "0", "-1")];
+    return [short, await redis("GET", k)];
+  });
+  for (const [short, val] of timelineRows) data.timelines[short] = val;
 
-  for (const k of categorized.decisions) {
-    data.decisions[k.slice(prefix.length)] = await redis("GET", k);
-  }
+  const decisionRows = await mapConcurrent(categorized.decisions, CONCURRENCY, async (k) => [
+    k.slice(prefix.length),
+    await redis("GET", k),
+  ]);
+  for (const [short, val] of decisionRows) data.decisions[short] = val;
 
-  for (const k of categorized.other) {
+  const otherRows = await mapConcurrent(categorized.other, CONCURRENCY, async (k) => {
     const type = String(await redis("TYPE", k)).toLowerCase();
     const short = k.slice(prefix.length);
-    if (type === "string") {
-      data.other[short] = await redis("GET", k);
-    } else if (type === "hash") {
-      // Who and Now slots are hashes. Export field map so restore can HSET.
+    if (type === "string") return [short, await redis("GET", k)];
+    if (type === "hash") {
       const entries = await redis("HGETALL", k);
       const parsed = {};
       if (Array.isArray(entries)) {
-        for (let i = 0; i < entries.length; i += 2) {
-          try { parsed[entries[i]] = JSON.parse(entries[i + 1]); }
-          catch { parsed[entries[i]] = entries[i + 1]; }
-        }
+        for (let i = 0; i < entries.length; i += 2) parsed[entries[i]] = tryParseJson(entries[i + 1]);
       }
-      data.other[short] = { __type: "hash", fields: parsed };
-    } else if (type === "zset") {
-      // Log slots are zsets. Export members with scores.
+      return [short, { __type: "hash", fields: parsed }];
+    }
+    if (type === "zset") {
       const entries = await redis("ZRANGE", k, "0", "-1", "WITHSCORES");
       const list = [];
       if (Array.isArray(entries)) {
-        for (let i = 0; i < entries.length; i += 2) {
-          list.push({ member: entries[i], score: Number(entries[i + 1]) });
-        }
+        for (let i = 0; i < entries.length; i += 2) list.push({ member: entries[i], score: Number(entries[i + 1]) });
       }
-      data.other[short] = { __type: "zset", entries: list };
-    } else if (type === "list") {
-      data.other[short] = { __type: "list", entries: await redis("LRANGE", k, "0", "-1") };
-    } else {
-      data.other[short] = { __type: type || "unknown", skipped: true };
+      return [short, { __type: "zset", entries: list }];
     }
-  }
+    if (type === "list") return [short, { __type: "list", entries: await redis("LRANGE", k, "0", "-1") }];
+    if (type === "set" && resolvedVersion === 2) {
+      const members = await redis("SMEMBERS", k);
+      return [short, { __type: "set", members: Array.isArray(members) ? [...members].map(String).sort() : [] }];
+    }
+    return [short, { __type: type || "unknown", skipped: true }];
+  });
+  for (const [short, val] of otherRows) data.other[short] = val;
 
-  const exportPayload = {
-    format: "logmem-space-backup-v1",
-    space,
-    exported_at: new Date(now).toISOString(),
-    counts: {
-      keys: allKeys.length,
-      profiles: categorized.profiles.length,
-      signals: categorized.signals.length,
-      timelines: categorized.timelines.length,
-      decisions: categorized.decisions.length,
-      other: categorized.other.length,
-    },
-    data,
-  };
+  const redactionCounter = { count: 0 };
+  const finalData = resolvedVersion === 2 && redact ? redactValue(data, redactionCounter) : data;
+  const manifest = resolvedVersion === 2 ? buildManifestFromData(finalData) : undefined;
+
+  const exportPayload = resolvedVersion === 2
+    ? {
+        format: BUNDLE_FORMAT_V2,
+        space,
+        ...(spaceName ? { spaceName: String(spaceName).slice(0, 80) } : {}),
+        mode: resolvedMode,
+        exported_at: new Date(now).toISOString(),
+        redaction: {
+          keysExcluded: true,
+          excludedKeyCount: excludedKeys,
+          secretsRedacted: redactionCounter.count,
+        },
+        manifest,
+        counts: {
+          keys: allKeys.length,
+          profiles: categorized.profiles.length,
+          signals: categorized.signals.length,
+          timelines: categorized.timelines.length,
+          decisions: categorized.decisions.length,
+          other: categorized.other.length,
+        },
+        data: finalData,
+      }
+    : {
+        format: BUNDLE_FORMAT_V1,
+        space,
+        exported_at: new Date(now).toISOString(),
+        counts: {
+          keys: allKeys.length,
+          profiles: categorized.profiles.length,
+          signals: categorized.signals.length,
+          timelines: categorized.timelines.length,
+          decisions: categorized.decisions.length,
+          other: categorized.other.length,
+        },
+        data: finalData,
+      };
 
   const checksum = createHash("sha256").update(JSON.stringify(exportPayload), "utf8").digest("hex");
   exportPayload.checksum = checksum;
@@ -224,6 +489,7 @@ export async function exportSpace(redis, space, {
     return {
       ok: true,
       space,
+      ...(resolvedVersion === 2 ? { version: 2, mode: resolvedMode, manifest, redaction: exportPayload.redaction } : {}),
       dryRun: false,
       checksum,
       compressed: true,
@@ -236,6 +502,7 @@ export async function exportSpace(redis, space, {
   return {
     ok: true,
     space,
+    ...(resolvedVersion === 2 ? { version: 2, mode: resolvedMode, manifest, redaction: exportPayload.redaction } : {}),
     dryRun: false,
     checksum,
     compressed: false,

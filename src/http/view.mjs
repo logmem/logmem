@@ -257,9 +257,15 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
     }
     return true;
   }).sort((a, b) => b.ts - a.ts).slice(0, 12);
+  let import_receipt = null;
+  try {
+    const rawReceipt = await r("GET", `lm:${space}:meta:import`);
+    if (rawReceipt) import_receipt = JSON.parse(rawReceipt);
+  } catch { /* optional metadata */ }
   return {
     plans, blocked, parked_count: jobs.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length,
     agents, needs_count: needs.count, needs_items: needs.items, recent,
+    import_receipt,
     coverage: {
       complete: false, errors,
       notes: ["The full coordination backlog is not indexed in this view yet.", "Recent updates cover up to 100 job logs, with three entries per job."],
@@ -612,7 +618,14 @@ export async function buildView(redis, space, what, params = {}, now = Date.now(
       }
     }
     agents.sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0));
-    if (what === "agents") return { agents };
+    if (what === "agents") {
+      let import_receipt = null;
+      try {
+        const rawReceipt = await r("GET", `lm:${space}:meta:import`);
+        if (rawReceipt) import_receipt = JSON.parse(rawReceipt);
+      } catch { /* optional metadata */ }
+      return { agents, import_receipt };
+    }
     const jobs = await jobsView(store);
     const entries = await allEntries(store, r, space, { limit: 300 });
     const decisions = await withState(entries);

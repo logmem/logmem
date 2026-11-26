@@ -10,6 +10,7 @@ import {
   ChronoBoard, CopyId, KindChip, PageHeader, StatTile, StatePanel, StatusStrip,
   type ChronoTone,
 } from '../../../../../components/ui';
+import { ImportBanner } from '../components/import-banner';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,8 @@ export default async function TodayPage({ params }: { params: Promise<{ space: s
           </Link>
         }
       />
+
+      <ImportBanner space={space} receipt={(view as any)?.import_receipt} />
 
       {notice ? (
         <StatusStrip

@@ -9,27 +9,51 @@ import {
   Bot,
   Briefcase,
   CalendarDays,
+  Check,
   ChevronDown,
   Inbox,
   KeyRound,
   Mail,
   MessageSquare,
   MoreHorizontal,
+  Plus,
+  Search,
+  Settings,
+  Upload,
   X,
 } from 'lucide-react';
+
+export interface SwitcherSpace {
+  id: string;
+  name: string;
+  workspaceName: string;
+  role: string;
+}
 
 interface NavRailProps {
   space: string;
   spaceName: string;
+  spaces?: SwitcherSpace[];
+  canCreateSpace?: boolean;
+  canImport?: boolean;
 }
 
 const FOCUS =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]';
 
-export function NavRail({ space, spaceName }: NavRailProps) {
+export function NavRail({
+  space,
+  spaceName,
+  spaces = [],
+  canCreateSpace = false,
+  canImport = false,
+}: NavRailProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherQuery, setSwitcherQuery] = useState('');
   const closeRef = useRef<HTMLButtonElement>(null);
+  const switcherRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -40,6 +64,24 @@ export function NavRail({ space, spaceName }: NavRailProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [moreOpen]);
+
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSwitcherOpen(false);
+    };
+    const onClick = (e: MouseEvent) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setSwitcherOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, [switcherOpen]);
 
   const primaryLinks = [
     { href: `/space/${space}/today`, label: 'Brief', icon: Inbox },
@@ -53,6 +95,7 @@ export function NavRail({ space, spaceName }: NavRailProps) {
   const secondaryLinks = [
     { href: `/space/${space}/schedule`, label: 'Schedule', icon: CalendarDays },
     { href: `/space/${space}/access`, label: 'Agent access', icon: KeyRound },
+    { href: `/space/${space}/settings`, label: 'Space settings', icon: Settings },
   ];
 
   const mobileTabs = [
@@ -67,7 +110,18 @@ export function NavRail({ space, spaceName }: NavRailProps) {
     { href: `/space/${space}/agents`, label: 'Agents', icon: Bot },
     { href: `/space/${space}/schedule`, label: 'Schedule', icon: CalendarDays },
     { href: `/space/${space}/access`, label: 'Agent access', icon: KeyRound },
+    { href: `/space/${space}/settings`, label: 'Space settings', icon: Settings },
   ];
+
+  const q = switcherQuery.trim().toLowerCase();
+  const filteredSpaces = q
+    ? spaces.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.workspaceName.toLowerCase().includes(q) ||
+          s.id.toLowerCase().includes(q),
+      )
+    : spaces;
 
   const isActive = (href: string) => pathname === href || pathname?.startsWith(`${href}/`);
   const inMore = moreLinks.some((l) => isActive(l.href));
@@ -86,14 +140,97 @@ export function NavRail({ space, spaceName }: NavRailProps) {
           </Link>
         </div>
 
-        <div className="border-b border-[var(--border)] p-3">
-          <Link
-            href="/select-space"
-            className={`flex min-h-[36px] items-center justify-between rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-xs transition-colors hover:border-[var(--border-strong)] ${FOCUS}`}
+        <div ref={switcherRef} className="relative border-b border-[var(--border)] p-3">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={switcherOpen}
+            onClick={() => setSwitcherOpen((o) => !o)}
+            className={`flex min-h-[36px] w-full items-center justify-between rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-xs transition-colors hover:border-[var(--border-strong)] ${FOCUS}`}
           >
             <span className="truncate font-semibold text-[var(--text)]">{spaceName}</span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[var(--text-subtle)]" aria-hidden="true" />
-          </Link>
+          </button>
+
+          {switcherOpen ? (
+            <div
+              role="menu"
+              aria-label="Switch space"
+              className="absolute left-3 right-3 top-14 z-50 rounded-[var(--radius-md)] border border-[var(--border-strong)] bg-[var(--surface)] p-2 shadow-lg space-y-2"
+            >
+              {spaces.length > 1 ? (
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[var(--text-subtle)]" aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={switcherQuery}
+                    onChange={(e) => setSwitcherQuery(e.target.value)}
+                    placeholder="Filter spaces…"
+                    aria-label="Filter spaces"
+                    className={`min-h-[34px] w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-sunken)] pl-8 pr-2 text-xs text-[var(--text)] ${FOCUS}`}
+                  />
+                </div>
+              ) : null}
+
+              <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                {filteredSpaces.length > 0 ? (
+                  filteredSpaces.map((s) => {
+                    const current = s.id === space;
+                    return (
+                      <Link
+                        key={s.id}
+                        href={`/space/${s.id}/today`}
+                        onClick={() => setSwitcherOpen(false)}
+                        className={`flex min-h-[36px] items-center justify-between gap-2 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-xs transition-colors ${FOCUS} ${
+                          current
+                            ? 'bg-[var(--brand-subtle)] font-semibold text-[var(--brand)]'
+                            : 'text-[var(--text)] hover:bg-[var(--surface-sunken)]'
+                        }`}
+                      >
+                        <span className="truncate">{s.name}</span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          <span className="font-mono text-[10px] text-[var(--text-subtle)]">{s.role}</span>
+                          {current ? <Check className="h-3.5 w-3.5 text-[var(--brand)]" aria-hidden="true" /> : null}
+                        </span>
+                      </Link>
+                    );
+                  })
+                ) : (
+                  <p className="px-2 py-2 text-xs text-[var(--text-muted)]">No matching spaces.</p>
+                )}
+              </div>
+
+              <div className="space-y-1 border-t border-[var(--border)] pt-2">
+                {canCreateSpace ? (
+                  <Link
+                    href="/select-space?create=1"
+                    onClick={() => setSwitcherOpen(false)}
+                    className={`flex min-h-[34px] items-center gap-2 rounded-[var(--radius-sm)] px-2.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-sunken)] ${FOCUS}`}
+                  >
+                    <Plus className="h-3.5 w-3.5 text-[var(--brand)]" aria-hidden="true" />
+                    <span>New space</span>
+                  </Link>
+                ) : null}
+                {canImport ? (
+                  <Link
+                    href={`/space/${space}/settings?tab=import`}
+                    onClick={() => setSwitcherOpen(false)}
+                    className={`flex min-h-[34px] items-center gap-2 rounded-[var(--radius-sm)] px-2.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-sunken)] ${FOCUS}`}
+                  >
+                    <Upload className="h-3.5 w-3.5 text-[var(--brand)]" aria-hidden="true" />
+                    <span>Import space</span>
+                  </Link>
+                ) : null}
+                <Link
+                  href="/select-space"
+                  onClick={() => setSwitcherOpen(false)}
+                  className={`flex min-h-[34px] items-center rounded-[var(--radius-sm)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] ${FOCUS}`}
+                >
+                  All spaces
+                </Link>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3" aria-label="Workspace">

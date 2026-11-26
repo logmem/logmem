@@ -73,7 +73,9 @@ setCustomerAccessChangedHook(async(msg)=>{
 });
 setShellHooks({
   space: (s) => { clearInteractions();if(state.customer)return chooseSpace(s); if (drawerOpen()) closeDrawer(); state.space = s; live.decisionReceipt = null; live.home = null; live.jobs = null; live.needs = null; try { localStorage.setItem('lm-space', s); } catch (e) { /* storage blocked */ } live.rev = null; route(); refreshNeeds(); },
-  createSpace: showCreateSpace, account:()=>{location.hash='#/account';showAccount();},
+  createSpace: showCreateSpace,
+  importSpace: () => { location.hash = '#/account/import'; showAccount('import'); },
+  account: () => { location.hash = '#/account'; showAccount('members'); },
   signOut: () => state.customer?signOutCustomer():fetch('/api/logout', { method: 'POST' }).then(() => location.reload()),
 });
 
@@ -88,7 +90,7 @@ function route() {
   cancelWalkLoads();
   invalidateLoads();
   if(state.customer&&!state.spaceId)return;
-  if(state.customer&&location.hash==='#/account')return showAccount();
+  if(state.customer&&location.hash.startsWith('#/account')){const tab=location.hash.split('/')[2];return showAccount(tab||'members');}
   if(state.customer&&location.hash==='#/new-task')return showNewTask();
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
