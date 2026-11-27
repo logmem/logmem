@@ -2,6 +2,7 @@
 import {html,nothing,render} from '/vendor/lit-html-3.2.1/lit-html.js';
 import {spaceRows,memberRows,inviteRows,roleLabel} from './account-model.js';
 import {spacesTable,membersTable,invitesTable} from './account-tables.js';
+import {billingPanel} from './billing-view.js';
 import {state,live,postJSON,getJSON,switchContext,clearCustomerContext,toast} from './core.js';
 import {renderBare,renderView} from './shell.js';
 import {humanPrompt} from './go-prompt.js';
@@ -85,8 +86,8 @@ export async function signOutCustomer() {
 export function showAccount(tab) {
  const w=state.workspaces.find(w=>w.id===state.workspaceId),manager=['owner','admin'].includes(w?.role),isOwner=w?.role==='owner';
  const curSpace=state.spaceRecords.find(s=>s.id===state.spaceId);
- if(tab&&['members','export','import'].includes(tab))accountTab=tab;
- if(!manager&&accountTab!=='members')accountTab='members';
+ if(tab&&['members','billing','export','import'].includes(tab))accountTab=tab;
+ if(!manager&&!['members','billing'].includes(accountTab))accountTab='members';
  const setTab=(next)=>{accountTab=next;history.replaceState(null,'',next==='members'?'#/account':'#/account/'+next);drawAccount();};
  const portCtx={
   customer:true,
@@ -104,8 +105,10 @@ export function showAccount(tab) {
   renderView('account',['Settings'],html`<a class="lm-btn lm-btn--secondary" href="#/home">Return to Brief</a><section class="lmx-account-settings"><h1 class="lm-title-1">Settings</h1>
    <div class="lmx-settings-tabs" role="tablist" aria-label="Space settings sections">
     <button type="button" role="tab" aria-selected=${String(accountTab==='members')} @click=${()=>setTab('members')}>Members &amp; RBAC</button>
+    <button type="button" role="tab" aria-selected=${String(accountTab==='billing')} @click=${()=>setTab('billing')}>Plan &amp; Billing</button>
     ${manager?html`<button type="button" role="tab" aria-selected=${String(accountTab==='export')} @click=${()=>setTab('export')}>Export &amp; Handoff</button><button type="button" role="tab" aria-selected=${String(accountTab==='import')} @click=${()=>setTab('import')}>Import</button>`:nothing}
    </div>
+   ${accountTab==='billing'?billingPanel({workspaceId:state.workspaceId,redraw:drawAccount}):nothing}
    ${accountTab==='members'?html`
     <section class="lm-panel lmx-profile-card"><div class="lmx-profile-mark" aria-hidden="true">${String(state.user?.email||'L').slice(0,1).toUpperCase()}</div><div class="lmx-profile-copy"><span class="lm-eyebrow">LOGMEM ACCOUNT</span><h2>Your profile</h2><p>Signed in as <strong>${state.user?.email}</strong></p><p>Manage your name, profile details, sign-in methods and security with Clerk.</p></div><a class="lm-btn lm-btn--primary" href="/api/session?profile=1">Manage profile and security <span aria-hidden="true">↗</span></a></section>
     <section class="lm-panel lmx-account-form"><h2>${w?.name||'Workspace'} settings</h2><p>Manage spaces, people and agent access for this workspace.</p><div class="lmx-account-actions"><button class="lm-btn" @click=${showCreateWorkspace}>Create another workspace</button>${w?.role!=='viewer'?html`<button class="lm-btn" @click=${showCreateSpace}>Create space</button>`:nothing}${manager?html`<button class="lm-btn lm-btn--secondary" @click=${()=>setTab('import')}>Import space</button>`:nothing}<button class="lm-btn lm-btn--ghost" @click=${signOutCustomer}>Sign out</button></div>

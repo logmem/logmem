@@ -3,6 +3,7 @@
 import {clearInteractions} from './interactions.js';
 import { NOTICE } from './session-states.js';
 import { bootstrapAccount, configureAccount, chooseSpace, showCustomerLogin, showCreateSpace, showAccount, signOutCustomer, showNewTask } from './account.js';
+import { showAdminBilling } from './billing-view.js';
 import { html } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { state, live, getJSON, api, invalidateLoads, setSignedOutHook, setCustomerAccessChangedHook, setSessionRefresher, toast } from './core.js';
 import { refreshSession } from './session-keepalive.js';
@@ -91,6 +92,7 @@ function route() {
   invalidateLoads();
   if(state.customer&&!state.spaceId)return;
   if(state.customer&&location.hash.startsWith('#/account')){const tab=location.hash.split('/')[2];return showAccount(tab||'members');}
+  if(state.customer&&location.hash==='#/admin-billing')return showAdminBilling();
   if(state.customer&&location.hash==='#/new-task')return showNewTask();
   const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
   const page = pages[parts[0]] || pages.home;
