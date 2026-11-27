@@ -126,10 +126,12 @@ table.compare td.hl { font-weight: 600; }
 .link-box{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:16px 18px;border:2px solid var(--fun-teal);border-radius:14px 9px 16px 8px / 9px 15px 8px 14px;background:var(--surface)}
 .link-box code{font-family:'IBM Plex Mono',monospace;font-size:20px;color:var(--text);overflow-wrap:anywhere}
 .hint{margin:10px 0 0;font-size:14px;color:var(--text-subtle)}
-.client-panel{margin-top:16px;padding:20px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}
+.client-panel{margin-top:16px;padding:20px;border:1px solid var(--border);border-radius:16px;background:var(--surface);min-width:0}
 .client-panel h3{margin:0 0 10px;font-size:18px;color:var(--text)}
 .client-panel h3.after{margin-top:22px}
 .click-steps{margin:0;padding-left:22px;display:grid;gap:8px;font-size:16px;line-height:1.55;color:var(--text)}
+.config-snip{margin:8px 0 4px;padding:12px 14px;border-radius:12px;background:var(--surface-sunken);font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.55;color:var(--text);overflow-x:auto;white-space:pre;max-width:100%}
+.client-panel code{font-family:'IBM Plex Mono',monospace;font-size:.92em}
 html.js .client-panel[hidden]{display:none}
 .agent-prompt{margin-top:18px}
 .agent-prompt summary{cursor:pointer;color:var(--text-muted)}

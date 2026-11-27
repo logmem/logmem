@@ -165,7 +165,7 @@ function inviteProblem(email) {
 }
 function inviteAccepted(workspaceName,selected) {
  const prompt=humanPrompt('this AI');
- renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>You joined ${workspaceName}.</h1>${inviteSteps(3)}<p>Paste this into your AI. It goes to logmem.si/agents, gets the skills and connects.</p><pre class="lmx-invite-prompt" tabindex="0">${prompt}</pre><button class="lm-btn lm-btn--primary" @click=${async e=>{const b=e.currentTarget;try{await navigator.clipboard.writeText(prompt);b.textContent='Copied';}catch{b.textContent='Select the text and copy it';}}}>Copy the prompt</button><a class="lm-btn" href="https://logmem.si/agents">Open the agent setup page</a><button class="lm-btn lm-btn--ghost" @click=${()=>reloadContext(selected)}>Open the workspace</button></section>`);
+ renderBare(html`<section class="lmx-account-start lmx-invite">${logo()}<h1>You joined ${workspaceName}.</h1>${inviteSteps(3)}<p>Paste this into your AI. It reads the skills, connects at logmem.si/connect, and verifies logmem_connection.</p><pre class="lmx-invite-prompt" tabindex="0">${prompt}</pre><button class="lm-btn lm-btn--primary" @click=${async e=>{const b=e.currentTarget;try{await navigator.clipboard.writeText(prompt);b.textContent='Copied';}catch{b.textContent='Select the text and copy it';}}}>Copy the prompt</button><a class="lm-btn" href="https://logmem.si/connect">Open the connect page</a><button class="lm-btn lm-btn--ghost" @click=${()=>reloadContext(selected)}>Open the workspace</button></section>`);
 }
 async function showInvitation(token) {
  let r;
