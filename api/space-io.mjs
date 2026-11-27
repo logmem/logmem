@@ -26,6 +26,7 @@ import {
 } from "../src/http/workspaces.mjs";
 import { exportSpace, validateSpaceName } from "../src/http/space-export.mjs";
 import { importSpace, parseBundle } from "../src/http/space-import.mjs";
+import { FLEET_WORKSPACE_ID, resolveFleetAdminAccess } from "../src/http/fleet-admin.mjs";
 
 export const config = { runtime: "nodejs", maxDuration: 60 };
 
@@ -61,6 +62,9 @@ function decodeBundleInput(bundle, encoding) {
 }
 
 async function authorizeManagerSpace({ userId, workspaceId, spaceId, action }, deps) {
+  if (workspaceId === FLEET_WORKSPACE_ID) {
+    return resolveFleetAdminAccess({ userId, spaceId, action }, deps);
+  }
   const ctx = await authorizeSpace({ userId, workspaceId, spaceId, action }, deps);
   return ctx;
 }
@@ -149,12 +153,14 @@ export function createHandler(deps = {}) {
       const { session, redis } = await customerIdentity(req, deps);
       if (!b.workspaceId) throw err("invalid_request", 400);
       const userId = session?.userId;
-      const d = { ...deps, redis };
+      const d = { ...deps, redis, env };
+      const isFleet = b.workspaceId === FLEET_WORKSPACE_ID;
 
       let out;
       if (b.action === "audit-history") {
         if (!b.spaceId) throw err("invalid_request", 400);
         await authorizeManagerSpace({ userId, workspaceId: b.workspaceId, spaceId: b.spaceId, action: "export-space" }, d);
+        if (isFleet) return res.status(200).json({ ok: true, history: [] });
         const history = await listWorkspaceAudit(redis, b.workspaceId, {
           kinds: ["space-exported", "space-imported"],
           spaceId: b.spaceId,
@@ -168,7 +174,8 @@ export function createHandler(deps = {}) {
         const ctx = await authorizeManagerSpace({ userId, workspaceId: b.workspaceId, spaceId: b.spaceId, action: "export-space" }, d);
         const dryRun = b.dryRun !== false; // default: dry run
         const useV2 = b.version === 2 || Boolean(b.mode) || b.clientSafe === true;
-        const resExport = await exportSpace(redis, ctx.space.namespace, {
+        const targetRedis = ctx.fleetRedis || redis;
+        const resExport = await exportSpace(targetRedis, ctx.space.namespace, {
           dryRun,
           gzip: b.gzip === true,
           version: useV2 ? 2 : 1,
@@ -179,7 +186,7 @@ export function createHandler(deps = {}) {
           requireApproval: !dryRun,
           approved: b.approved === true,
         });
-        if (!dryRun && resExport.ok) {
+        if (!dryRun && resExport.ok && !isFleet) {
           await recordWorkspaceAudit(redis, b.workspaceId, {
             kind: "space-exported",
             spaceId: ctx.space.id,
@@ -201,7 +208,8 @@ export function createHandler(deps = {}) {
         const input = decodeBundleInput(b.bundle, b.bundleEncoding);
         if (b.spaceId) {
           const ctx = await authorizeManagerSpace({ userId, workspaceId: b.workspaceId, spaceId: b.spaceId, action: "import-space" }, d);
-          out = await importSpace(redis, ctx.space.namespace, input, {
+          const targetRedis = ctx.fleetRedis || redis;
+          out = await importSpace(targetRedis, ctx.space.namespace, input, {
             dryRun: true,
             requireApproval: true,
             approved: false,
@@ -226,7 +234,8 @@ export function createHandler(deps = {}) {
         if (!b.spaceId) throw err("invalid_request", 400);
         const ctx = await authorizeManagerSpace({ userId, workspaceId: b.workspaceId, spaceId: b.spaceId, action: "import-space" }, d);
         const input = decodeBundleInput(b.bundle, b.bundleEncoding);
-        out = await importSpace(redis, ctx.space.namespace, input, {
+        const targetRedis = ctx.fleetRedis || redis;
+        out = await importSpace(targetRedis, ctx.space.namespace, input, {
           dryRun: false,
           requireApproval: true,
           approved: b.approved === true,
@@ -235,7 +244,7 @@ export function createHandler(deps = {}) {
           recordReceipt: b.recordReceipt === true,
           importedBy: `human:${userId}`,
         });
-        if (out.ok) {
+        if (out.ok && !isFleet) {
           await recordWorkspaceAudit(redis, b.workspaceId, {
             kind: "space-imported",
             spaceId: ctx.space.id,

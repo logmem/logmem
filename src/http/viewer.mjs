@@ -4,6 +4,7 @@ import {customerRedis,createSpaceJail} from './jail.mjs';
 import {readOnly} from '../lib/read-only.mjs';
 import {evalScriptFor,registerEvalScript} from '../lib/lua-scripts.mjs';
 import {authorizeSpace,workspaceVersionKey,WorkspaceError} from './workspaces.mjs';
+import {FLEET_WORKSPACE_ID,resolveFleetAdminAccess} from './fleet-admin.mjs';
 import {timed} from './phase-timer.mjs';
 const scripts=new Map();
 function guardedScript(original) {
@@ -32,6 +33,11 @@ export async function resolveViewer(req,{workspaceId,spaceId,action='read'},deps
  const session=await timed('viewer.session',()=>(deps.session||customerSession)(req,{env,url:new URL('/api/session',origin).toString()}),{env});
  if(session.status!=='signed-in')throw new WorkspaceError('sign_in_required',401);
  const redis=deps.redis||customerRedis(env),userId=session.userId;
+ if(workspaceId===FLEET_WORKSPACE_ID){
+  const fleetCtx=await resolveFleetAdminAccess({userId,spaceId,action},{redis,env,fleetRedis:deps.fleetRedis});
+  const {fleetRedis,...pub}=fleetCtx;
+  return {...pub,redis:action==='read'?readOnly(fleetRedis):fleetRedis};
+ }
  const options={userId,workspaceId,spaceId,action};
  const context=await timed('viewer.authorizeSpace',()=>authorizeSpace(options,{redis}),{env});
  const revalidate=async()=>{const fresh=await authorizeSpace(options,{redis});if(fresh.version!==context.version)throw new WorkspaceError('not_found',404);return fresh;};

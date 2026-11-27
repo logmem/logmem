@@ -70,10 +70,16 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canManage = initial.permissions.canManageMembers;
+  const canExport = initial.permissions.canExport || canManage;
+  const canImport = initial.permissions.canImport || canManage;
   const isOwner = initial.viewerRole === 'owner';
   const paramTab = searchParams?.get('tab');
   const defaultTab =
-    canManage && (paramTab === 'export' || paramTab === 'import') ? paramTab : 'members';
+    paramTab === 'export' && canExport
+      ? 'export'
+      : paramTab === 'import' && canImport
+        ? 'import'
+        : 'members';
 
   const [tab, setTab] = useState<'members' | 'export' | 'import'>(defaultTab);
   const [members, setMembers] = useState(initial.members);
@@ -130,14 +136,15 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
   const [importDone, setImportDone] = useState<any>(null);
 
   function selectTab(next: 'members' | 'export' | 'import') {
-    if (!canManage && next !== 'members') return;
+    if (next === 'export' && !canExport) return;
+    if (next === 'import' && !canImport) return;
     setTab(next);
     const url = next === 'members' ? `/space/${initial.spaceId}/settings` : `/space/${initial.spaceId}/settings?tab=${next}`;
     window.history.replaceState(null, '', url);
   }
 
   async function loadPreflight(mode: 'blueprint' | 'full', safe = clientSafe) {
-    if (!canManage) return;
+    if (!canExport) return;
     setLoadingPreflight(true);
     setExportError('');
     try {
@@ -168,7 +175,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
   }
 
   useEffect(() => {
-    if (tab === 'export' && canManage) {
+    if (tab === 'export' && canExport) {
       loadPreflight(exportMode, clientSafe);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -506,35 +513,35 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         >
           Members &amp; RBAC
         </button>
-        {canManage ? (
-          <>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'export'}
-              onClick={() => selectTab('export')}
-              className={`min-h-[40px] rounded-[var(--radius-sm)] border px-3.5 text-xs font-semibold transition-colors ${FOCUS} ${
-                tab === 'export'
-                  ? 'border-[var(--border-strong)] bg-[var(--surface)] text-[var(--brand)]'
-                  : 'border-transparent text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
-              }`}
-            >
-              Export &amp; Handoff
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'import'}
-              onClick={() => selectTab('import')}
-              className={`min-h-[40px] rounded-[var(--radius-sm)] border px-3.5 text-xs font-semibold transition-colors ${FOCUS} ${
-                tab === 'import'
-                  ? 'border-[var(--border-strong)] bg-[var(--surface)] text-[var(--brand)]'
-                  : 'border-transparent text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
-              }`}
-            >
-              Import
-            </button>
-          </>
+        {canExport ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'export'}
+            onClick={() => selectTab('export')}
+            className={`min-h-[40px] rounded-[var(--radius-sm)] border px-3.5 text-xs font-semibold transition-colors ${FOCUS} ${
+              tab === 'export'
+                ? 'border-[var(--border-strong)] bg-[var(--surface)] text-[var(--brand)]'
+                : 'border-transparent text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
+            }`}
+          >
+            Export &amp; Handoff
+          </button>
+        ) : null}
+        {canImport ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'import'}
+            onClick={() => selectTab('import')}
+            className={`min-h-[40px] rounded-[var(--radius-sm)] border px-3.5 text-xs font-semibold transition-colors ${FOCUS} ${
+              tab === 'import'
+                ? 'border-[var(--border-strong)] bg-[var(--surface)] text-[var(--brand)]'
+                : 'border-transparent text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
+            }`}
+          >
+            Import
+          </button>
         ) : null}
       </div>
 
@@ -558,7 +565,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
                   <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Agent access ({initial.activeKeyCount} keys)</span>
                 </Link>
-                {canManage ? (
+                {canExport ? (
                   <button
                     type="button"
                     onClick={() => selectTab('export')}
@@ -794,7 +801,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         </div>
       ) : null}
 
-      {tab === 'export' && canManage ? (
+      {tab === 'export' && canExport ? (
         <div className="space-y-4">
           <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1141,7 +1148,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         </div>
       ) : null}
 
-      {tab === 'import' && canManage ? (
+      {tab === 'import' && canImport ? (
         <div className="space-y-4">
           <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">

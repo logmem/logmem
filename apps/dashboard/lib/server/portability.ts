@@ -86,6 +86,33 @@ export interface SpaceSettingsData {
 
 export async function getSpaceSettingsData(space: string): Promise<SpaceSettingsData> {
   const viewer = await requireSpace(space, 'read');
+  if (viewer.workspaceId === 'fleet') {
+    return {
+      workspaceId: viewer.workspaceId,
+      workspaceName: viewer.workspace.name,
+      spaceId: viewer.spaceId,
+      spaceName: viewer.space.name,
+      namespace: viewer.namespace,
+      viewerUserId: viewer.userId,
+      viewerRole: viewer.role,
+      permissions: {
+        canWrite: Boolean(viewer.permissions.canWrite),
+        canApprove: Boolean(viewer.permissions.canApprove),
+        canManageMembers: false,
+        canExport: Boolean(viewer.permissions.canExport),
+        canImport: Boolean(viewer.permissions.canImport),
+        canShareSnapshot: false,
+        canTransfer: false,
+      },
+      quota: { activeSpaces: 1, maxSpaces: 1, hasQuota: false },
+      members: [],
+      invitations: [],
+      auditHistory: [],
+      claims: [],
+      importReceipt: null,
+      activeKeyCount: 0,
+    };
+  }
   const redis = customerRedis(process.env);
   const { w } = await readWorkspace(redis, viewer.workspaceId);
   const now = Date.now();

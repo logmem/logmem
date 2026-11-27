@@ -14,6 +14,11 @@ import {
   listWorkspaces,
   listSpaces
 } from '../../../../src/http/workspaces.mjs';
+import {
+  FLEET_WORKSPACE_ID,
+  listFleetAdminWorkspace,
+  resolveFleetAdminAccess
+} from '../../../../src/http/fleet-admin.mjs';
 
 const FORBIDDEN_OPTIONS = [
   'redis',
@@ -117,6 +122,19 @@ export async function resolveDashboardViewer(options = {}, deps = {}) {
   // Authoritative server storage: accepts NO caller credential
   const redis = deps.redis || customerRedis(env);
 
+  // 2b. Fleet Admin mount: Clerk-authenticated deploy admins can access allowed Fleet spaces
+  if (workspaceId === FLEET_WORKSPACE_ID) {
+    const fleetCtx = await resolveFleetAdminAccess(
+      { userId, spaceId, action },
+      { redis, env, fleetRedis: deps.fleetRedis },
+    );
+    const { fleetRedis, ...pub } = fleetCtx;
+    return {
+      ...pub,
+      redis: action === 'read' ? readOnly(fleetRedis) : fleetRedis,
+    };
+  }
+
   // 3. Authorize membership and space role
   const authOpts = { userId, workspaceId, spaceId, action };
   const context = await authorizeSpace(authOpts, { redis });
@@ -209,5 +227,7 @@ export async function listViewerWorkspaces(userId, deps = {}) {
     const spaces = await listSpaces({ userId, workspaceId: w.id }, { redis });
     result.push({ ...w, spaces });
   }
+  const fleet = await listFleetAdminWorkspace(userId, { redis, env }).catch(() => null);
+  if (fleet) result.push(fleet);
   return result;
 }
