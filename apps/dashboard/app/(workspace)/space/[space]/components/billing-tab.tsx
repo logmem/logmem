@@ -161,8 +161,25 @@ export function BillingTab({
 
   if (!ws || !plan || !usage || !billing) {
     return (
-      <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-5 text-xs text-[var(--text-muted)]">
-        No workspace billing record found for this account yet.
+      <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="font-heading text-sm font-semibold text-[var(--text)]">
+            Fleet Admin Space
+          </h2>
+          <p className="text-xs text-[var(--text-muted)]">
+            This is a deploy-level Fleet Admin space. Manage customer workspace subscriptions, plans, and limits in the Admin Billing Console.
+          </p>
+        </div>
+        {data.isDeployAdmin ? (
+          <Link
+            href="/admin/billing"
+            className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--brand)] bg-[var(--brand-subtle)] px-3.5 text-xs font-semibold text-[var(--brand)] hover:opacity-90 ${FOCUS}`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Admin Billing Console</span>
+            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        ) : null}
       </section>
     );
   }

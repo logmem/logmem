@@ -216,7 +216,7 @@ export async function getUserBillingOverview({ userId, workspaceId = null, deps 
   const redis = deps.redis || customerRedis(deps.env);
   const now = deps.now || Date.now;
 
-  if (workspaceId === "fleet-admin") {
+  if (workspaceId === "fleet" || workspaceId === "fleet-admin") {
     return {
       ok: true,
       data: {
