@@ -216,6 +216,21 @@ export async function getUserBillingOverview({ userId, workspaceId = null, deps 
   const redis = deps.redis || customerRedis(deps.env);
   const now = deps.now || Date.now;
 
+  if (workspaceId === "fleet-admin") {
+    return {
+      ok: true,
+      data: {
+        workspace: null,
+        plan: null,
+        billing: null,
+        usage: null,
+        catalog: getPlanCatalog(),
+        auditHistory: [],
+        isDeployAdmin: await isDeployAdmin(userId, redis),
+      },
+    };
+  }
+
   const workspaces = await listWorkspaces({ userId }, { redis });
   if (!workspaces.length) {
     return {

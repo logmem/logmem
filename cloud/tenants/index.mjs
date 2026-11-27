@@ -20,7 +20,7 @@
 // (createKey / rotateKey) and never logged. Errors are generic and never echo input.
 
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import plansJson from "../plans.json" with { type: "json" };
 import { registerEvalScript } from "../../src/lib/lua-scripts.mjs";
 
 // Defence in depth on top of the t- namespace (BACKPLANE.md §1, PR #28 review M1).
@@ -115,8 +115,7 @@ function checkPlans(doc) {
 /** Read cloud/plans.json (cached after first load; restart to pick up edits). */
 export function loadPlans() {
   if (!plansCache) {
-    const text = readFileSync(new URL("../plans.json", import.meta.url), "utf8");
-    plansCache = deepFreeze(checkPlans(JSON.parse(text)));
+    plansCache = deepFreeze(checkPlans(structuredClone(plansJson)));
   }
   return plansCache;
 }

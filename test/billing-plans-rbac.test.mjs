@@ -79,6 +79,12 @@ test("user view: owner sees full billing & usage, member sees read-only without 
   assert.equal(memberRes.data.workspace.canManageBilling, false);
   assert.equal(memberRes.data.billing.email, null);
 
+  // Fleet-admin virtual workspace returns clean empty workspace state without throwing 404
+  const fleetRes = await getUserBillingOverview({ userId: BILLING_ADMIN, workspaceId: "fleet-admin", deps: { redis } });
+  assert.equal(fleetRes.ok, true);
+  assert.equal(fleetRes.data.workspace, null);
+  assert.equal(fleetRes.data.isDeployAdmin, true);
+
   await assert.rejects(
     updateUserBillingSettings(
       { userId: MEMBER, workspaceId: workspace.id, action: "update_contact", billingEmail: "x@acme.io" },
