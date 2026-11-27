@@ -13,6 +13,7 @@ import {
 import { ImportBanner } from '../components/import-banner';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const panel = 'rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)]';
 

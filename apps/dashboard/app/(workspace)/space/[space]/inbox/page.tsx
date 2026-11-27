@@ -3,6 +3,7 @@ import { getInboxData } from '../../../../../lib/server/inbox';
 import { InboxView } from '../components/inbox-view';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export default async function InboxPage({ params }: { params: Promise<{ space: string }> }) {
   const { space } = await params;

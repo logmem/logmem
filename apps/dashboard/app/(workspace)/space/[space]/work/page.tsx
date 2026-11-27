@@ -4,6 +4,7 @@ import { PageHeader, StatePanel } from '../../../../../components/ui';
 import { WorkView } from '../components/work-view';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export default async function WorkPage({ params }: { params: Promise<{ space: string }> }) {
   const { space } = await params;

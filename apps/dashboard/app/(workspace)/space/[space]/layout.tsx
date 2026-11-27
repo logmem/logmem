@@ -2,6 +2,7 @@ import { NavRail, type SwitcherSpace } from './components/nav-rail';
 import { listMySpaces, requireSpace, validSpaceId } from '../../../../lib/server/auth';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export default async function WorkspaceSpaceLayout({
   children,
