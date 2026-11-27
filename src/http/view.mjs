@@ -113,7 +113,7 @@ export async function pendingDecisions(store, r, space, { secret } = {}) {
       return false;
     }
   };
-  const open = (await inBatches(trails, 25, async (t) => {
+  const open = (await inBatches(trails, 40, async (t) => {
     try {
       const raw = await r("GET", lmDecisionKey(space, t));
       if (raw == null) return t;
@@ -123,12 +123,20 @@ export async function pendingDecisions(store, r, space, { secret } = {}) {
       throw e; // A failed claim read is unknown, never a settled request.
     }
   })).filter(Boolean);
-  const rows = (await inBatches(open, 10, async (t) => {
+  const askerLogs = new Map();
+  const getAskerLog = (asker) => {
+    if (!askerLogs.has(asker)) {
+      askerLogs.set(asker, store.readLog("agent", asker, { reverse: true, limit: 500 }));
+    }
+    return askerLogs.get(asker);
+  };
+  const rows = (await inBatches(open, 40, async (t) => {
     try {
       const f = await findAsk(store, t, { secret });
       if (!f) return [];
       const where = f.ask.where || `agent:${f.asker}`;
-      const later = (await store.readLog("agent", f.asker, { sinceMs: f.ask.ts, limit: 200 })).filter((e) => e.origin === t);
+      const log = await getAskerLog(f.asker);
+      const later = log.filter((e) => e.ts >= f.ask.ts && e.origin === t);
       return [slim(f.ask, where), ...later.map((e) => slim(e, `agent:${f.asker}`))];
     } catch (e) {
       if (e instanceof DecisionError) return []; // Conflicting asks remain unanswerable.
@@ -140,36 +148,48 @@ export async function pendingDecisions(store, r, space, { secret } = {}) {
 
 /** What one person needs to do: open tasks for them and open decisions, each with its job and plan. */
 export async function needsView(store, r, space, { secret, person = "human:admin" } = {}) {
-  const tasks = (await listBlockers(store)).filter((b) => b.to === person || person === "human:admin");
+  const [rawBlockers, rawDecisions, rep] = await Promise.all([
+    listBlockers(store),
+    pendingDecisions(store, r, space, { secret }),
+    readReport(r, space),
+  ]);
+  const tasks = rawBlockers.filter((b) => b.to === person || person === "human:admin");
   // An ask addressed to a named person belongs in that person's inbox only (only they can answer it).
-  const decisions = (await pendingDecisions(store, r, space, { secret })).filter((a) => !a.to || a.to === person);
+  const decisions = rawDecisions.filter((a) => !a.to || a.to === person);
+
+  // Batch-load job plans & suggestion states in parallel instead of sequential per-item REST round-trips
+  const uniqueJobs = [...new Set([
+    ...tasks.map((b) => jobOf(b.where)),
+    ...decisions.map((a) => jobOf(a.where)),
+    ...rep.suggestions.map((sgg) => sgg.job),
+  ].filter(Boolean))];
   const jobs = new Map();
-  const planOf = async (job) => {
-    if (!job) return null;
-    if (!jobs.has(job)) jobs.set(job, (await store.getWho("job", job))?.plan ?? null);
-    return jobs.get(job);
-  };
+  await inBatches(uniqueJobs, 40, async (job) => {
+    jobs.set(job, (await store.getWho("job", job).catch(() => null))?.plan ?? null);
+  });
+  const planOf = (job) => (job ? jobs.get(job) ?? null : null);
+
   const items = [];
   for (const b of tasks) {
     const job = jobOf(b.where);
-    items.push({ type: "task", trail: b.trail, job, plan: await planOf(job), summary: b.summary, by: b.by, to: b.to, due: b.walkthrough?.due ?? null, created_at: b.created_at ?? null, steps: (b.walkthrough?.steps || []).length, steps_done: (b.steps_done || []).length, task: b });
+    items.push({ type: "task", trail: b.trail, job, plan: planOf(job), summary: b.summary, by: b.by, to: b.to, due: b.walkthrough?.due ?? null, created_at: b.created_at ?? null, steps: (b.walkthrough?.steps || []).length, steps_done: (b.steps_done || []).length, task: b });
   }
   for (const a of decisions) {
     const job = jobOf(a.where);
-    items.push({ type: "decision", trail: a.trail, job, plan: await planOf(job), summary: a.summary, by: a.by, due: null, created_at: a.ts, ask: a });
+    items.push({ type: "decision", trail: a.trail, job, plan: planOf(job), summary: a.summary, by: a.by, due: null, created_at: a.ts, ask: a });
   }
   // The reconciler's "looks done?" suggestions, rechecked against the job now.
-  const rep = await readReport(r, space);
-  for (const sgg of rep.suggestions) {
+  const suggestionItems = (await inBatches(rep.suggestions, 25, async (sgg) => {
     const n = (await store.getNow("job", sgg.job).catch(() => null)) || {};
-    if (!["open", "active", "blocked"].includes(n.stage || "open")) continue;
+    if (!["open", "active", "blocked"].includes(n.stage || "open")) return null;
     // Same rule as the reconciler: "still open" hides it until the job gets a newer entry.
     if (n.reconcile_dismissed) {
       const top = (await store.readLog("job", sgg.job, { reverse: true, limit: 1 }).catch(() => []))[0];
-      if (top && top.trail === n.reconcile_dismissed.trail) continue;
+      if (top && top.trail === n.reconcile_dismissed.trail) return null;
     }
-    items.push({ type: "suggestion", trail: `suggest:${sgg.job}`, job: sgg.job, plan: await planOf(sgg.job), summary: sgg.title || sgg.job, evidence: sgg.evidence, signal: sgg.signal, owner: sgg.owner || null, due: null, created_at: rep.at ?? 0 });
-  }
+    return { type: "suggestion", trail: `suggest:${sgg.job}`, job: sgg.job, plan: planOf(sgg.job), summary: sgg.title || sgg.job, evidence: sgg.evidence, signal: sgg.signal, owner: sgg.owner || null, due: null, created_at: rep.at ?? 0 };
+  })).filter(Boolean);
+  items.push(...suggestionItems);
   // Soonest due first; no due date sorts after, oldest first.
   items.sort((x, y) => (x.due && y.due ? String(x.due).localeCompare(String(y.due)) : x.due ? -1 : y.due ? 1 : (x.created_at || 0) - (y.created_at || 0)));
   return { person, count: items.length, items, stale: rep.stale.map((x) => x.job), reconciled_at: rep.at ?? null };
@@ -189,7 +209,7 @@ async function readReport(r, space) {
 export async function homeView(store, r, space, { secret, person, now = Date.now() } = {}) {
   const errors = [];
   const ids = await store.list("job");
-  const jobs = (await inBatches(ids, 25, async (id) => {
+  const jobs = (await inBatches(ids, 40, async (id) => {
     try {
       const [who, n] = await Promise.all([store.getWho("job", id), store.getNow("job", id)]);
       return who ? { id, who, now: n || {} } : null;
@@ -200,6 +220,10 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
   })).filter(Boolean);
   const registered = await listPlans(store);
   const names = [...new Set([...registered, ...jobs.map((j) => j.who.plan).filter(Boolean)])];
+  const planRecs = new Map();
+  await inBatches(names.filter((n) => registered.includes(n)), 25, async (name) => {
+    planRecs.set(name, await getPlan(store, name));
+  });
   const plans = [];
   for (const name of names) {
     const mine = jobs.filter((j) => j.who.plan === name);
@@ -208,7 +232,7 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
     const next = mine
       .filter((j) => j.who.milestone === true && j.now.stage !== "done")
       .sort((a, b) => String(a.who.date || "").localeCompare(String(b.who.date || "")))[0];
-    const rec = registered.includes(name) ? await getPlan(store, name) : null;
+    const rec = planRecs.get(name) || null;
     plans.push({
       id: name, title: rec?.title || name, lane: rec?.lane || null, jobs: work.length, done,
       parked: work.filter((j) => j.now.stage === "blocked" && j.now.blocked_on?.parked === true).length,
@@ -230,26 +254,29 @@ export async function homeView(store, r, space, { secret, person, now = Date.now
     // No reason first (it needs a person to ask), then the longest blocked.
     .sort((a, b) => (!!a.blocked_on - !!b.blocked_on) || (a.since || 0) - (b.since || 0));
   const agentIds = await store.list("agent");
-  const agents = (await inBatches(agentIds, 25, async (id) => {
-    try {
-      const [n, last] = await Promise.all([store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 })]);
-      return { id, doing: n?.doing ?? null, job: n?.job ?? null, blocked: n?.blocked ?? null, next: n?.next ?? null, seen: seen(last[0]?.ts, now) };
-    } catch {
-      errors.push({ source: `agent:${id}`, message: "Could not read this agent." });
-      return null;
-    }
-  })).filter(Boolean);
+  const [agentsRaw, needs, updates] = await Promise.all([
+    inBatches(agentIds, 40, async (id) => {
+      try {
+        const [n, last] = await Promise.all([store.getNow("agent", id), store.readLog("agent", id, { reverse: true, limit: 1 })]);
+        return { id, doing: n?.doing ?? null, job: n?.job ?? null, blocked: n?.blocked ?? null, next: n?.next ?? null, seen: seen(last[0]?.ts, now) };
+      } catch {
+        errors.push({ source: `agent:${id}`, message: "Could not read this agent." });
+        return null;
+      }
+    }),
+    needsView(store, r, space, { secret, person }),
+    inBatches(jobs.slice(0, 100), 40, async (j) => {
+      try {
+        return (await store.readLog("job", j.id, { reverse: true, limit: 3 })).map(e => slim(e, `job:${j.id}`));
+      } catch {
+        errors.push({ source: `job:${j.id}:log`, message: "Could not read recent updates." });
+        return [];
+      }
+    }),
+  ]);
+  const agents = agentsRaw.filter(Boolean);
   const order = { active: 0, idle: 1, offline: 2, unknown: 3 };
   agents.sort((a, b) => (order[a.seen.state] ?? 9) - (order[b.seen.state] ?? 9) || a.id.localeCompare(b.id));
-  const needs = await needsView(store, r, space, { secret, person });
-  const updates = await inBatches(jobs.slice(0, 100), 20, async (j) => {
-    try {
-      return (await store.readLog("job", j.id, { reverse: true, limit: 3 })).map(e => slim(e, `job:${j.id}`));
-    } catch {
-      errors.push({ source: `job:${j.id}:log`, message: "Could not read recent updates." });
-      return [];
-    }
-  });
   const recent = updates.flat().filter(e => {
     if (!Number.isFinite(e.ts) || e.ts > now) {
       errors.push({ source: e.where, message: "An update has an invalid or future timestamp." });
@@ -442,8 +469,8 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
     allItems.push(...legacy.flat());
   }
 
-  for (const id of itemIds || []) {
-    const item = await getCoordItem(store, space, id);
+  const coordItems = await inBatches(itemIds || [], 25, (id) => getCoordItem(store, space, id));
+  for (const item of coordItems) {
     if (!item) continue;
 
     // Check future timestamps: ts > now + 60000 (flags such rows and sorts them out of current view)
@@ -465,7 +492,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   // Check jobs for missing stages (data errors)
   try {
     const jobIds = await store.list("job");
-    await inBatches(jobIds, 8, async (jid) => {
+    await inBatches(jobIds, 40, async (jid) => {
       const jnow = await store.getNow("job", jid);
       if (!jnow || !jnow.stage) {
         dataErrors.push({
@@ -528,7 +555,7 @@ export async function auditView(store, redis, space, params = {}, now = Date.now
   try {
     const targetDate = params.date || getLocalSlotDate(nowTs);
     const agentList = await store.list("agent");
-    slots = await inBatches(agentList, 8, a => getAgentSlotsView(store, space, a, targetDate, nowTs));
+    slots = await inBatches(agentList, 24, a => getAgentSlotsView(store, space, a, targetDate, nowTs));
   } catch (_) {
     sourceStatus.receipts = "error";
   }

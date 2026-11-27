@@ -6,6 +6,7 @@ import { AgentsTableView } from '../components/agents-table-view';
 import { ImportBanner } from '../components/import-banner';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export default async function AgentsPage({ params }: { params: Promise<{ space: string }> }) {
   const { space } = await params;
