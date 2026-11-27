@@ -15,6 +15,8 @@ import {
   UserPlus,
 } from 'lucide-react';
 import type { SpaceSettingsData } from '../../../../../lib/server/portability';
+import type { BillingOverviewData } from '../../../../../lib/server/billing';
+import { BillingTab } from './billing-tab';
 import {
   BUNDLE_MODES,
   RBAC_CHEATSHEET,
@@ -66,7 +68,13 @@ function formatWhen(ts: number): string {
   return `${Math.floor(sec / 86400)}d ago`;
 }
 
-export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
+export function SpaceSettingsView({
+  initial,
+  billing,
+}: {
+  initial: SpaceSettingsData;
+  billing: BillingOverviewData;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canManage = initial.permissions.canManageMembers;
@@ -75,13 +83,15 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
   const isOwner = initial.viewerRole === 'owner';
   const paramTab = searchParams?.get('tab');
   const defaultTab =
-    paramTab === 'export' && canExport
-      ? 'export'
-      : paramTab === 'import' && canImport
-        ? 'import'
-        : 'members';
+    paramTab === 'billing'
+      ? 'billing'
+      : paramTab === 'export' && canExport
+        ? 'export'
+        : paramTab === 'import' && canImport
+          ? 'import'
+          : 'members';
 
-  const [tab, setTab] = useState<'members' | 'export' | 'import'>(defaultTab);
+  const [tab, setTab] = useState<'members' | 'billing' | 'export' | 'import'>(defaultTab);
   const [members, setMembers] = useState(initial.members);
   const [invitations, setInvitations] = useState(initial.invitations);
   const [auditHistory, setAuditHistory] = useState(initial.auditHistory);
@@ -135,7 +145,7 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
   const [importError, setImportError] = useState('');
   const [importDone, setImportDone] = useState<any>(null);
 
-  function selectTab(next: 'members' | 'export' | 'import') {
+  function selectTab(next: 'members' | 'billing' | 'export' | 'import') {
     if (next === 'export' && !canExport) return;
     if (next === 'import' && !canImport) return;
     setTab(next);
@@ -513,6 +523,19 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
         >
           Members &amp; RBAC
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'billing'}
+          onClick={() => selectTab('billing')}
+          className={`min-h-[40px] rounded-[var(--radius-sm)] border px-3.5 text-xs font-semibold transition-colors ${FOCUS} ${
+            tab === 'billing'
+              ? 'border-[var(--border-strong)] bg-[var(--surface)] text-[var(--brand)]'
+              : 'border-transparent text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text)]'
+          }`}
+        >
+          Plan &amp; Billing
+        </button>
         {canExport ? (
           <button
             type="button"
@@ -544,6 +567,8 @@ export function SpaceSettingsView({ initial }: { initial: SpaceSettingsData }) {
           </button>
         ) : null}
       </div>
+
+      {tab === 'billing' ? <BillingTab space={initial.spaceId} initial={billing} /> : null}
 
       {tab === 'members' ? (
         <div className="space-y-4">

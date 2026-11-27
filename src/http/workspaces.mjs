@@ -99,11 +99,17 @@ export function membership(w,u) {
 }
 export function planSpaces(w, depsLimits) {
   if (typeof depsLimits?.spaces === 'number') return depsLimits.spaces;
+  if (w?.limitOverrides && Object.prototype.hasOwnProperty.call(w.limitOverrides, 'spaces')) {
+    const ov = w.limitOverrides.spaces;
+    if (ov === null) return Number.MAX_SAFE_INTEGER;
+    if (typeof ov === 'number' && Number.isFinite(ov) && ov >= 0) return ov;
+  }
   const plan = w?.plan;
   // Deliberate legacy amnesty: workspaces created prior to explicit plan attribute keep 10 spaces.
   if (!plan) return 10;
   try {
     const p = planFor(plan);
+    if (p.spaces === null) return Number.MAX_SAFE_INTEGER;
     return typeof p.spaces === 'number' ? p.spaces : 1;
   } catch {
     return 1;
