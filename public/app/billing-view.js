@@ -1,6 +1,6 @@
 // billing-view.js — Vanilla User View (#/account/billing) & Admin View (#/admin-billing)
 // for Subscription, Billing & Plan Limits. All data escaped by lit-html.
-import { html, nothing } from 'lit-html';
+import { html, nothing } from '/vendor/lit-html-3.2.1/lit-html.js';
 import { renderView, renderBare } from './shell.js';
 import { getJSON, postJSON, state, toast } from './core.js';
 
