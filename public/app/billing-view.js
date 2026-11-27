@@ -24,39 +24,49 @@ function meterRow(label, used, limit, stateTag) {
   `;
 }
 
+const billingCache = new Map();
+
 export function billingPanel(ctx) {
-  let loading = !ctx._billingLoaded;
-  let data = ctx._billingData || null;
-  let err = ctx._billingErr || '';
+  const cacheKey = ctx.workspaceId || '_default';
+  let entry = billingCache.get(cacheKey);
+  if (!entry) {
+    entry = { loaded: false, loading: false, data: null, err: '' };
+    billingCache.set(cacheKey, entry);
+  }
   let saving = false;
 
   const load = async () => {
-    if (ctx._billingLoading) return;
-    ctx._billingLoading = true;
+    if (entry.loading) return;
+    entry.loading = true;
     try {
       const q = ctx.workspaceId ? `?workspaceId=${encodeURIComponent(ctx.workspaceId)}` : '';
       const res = await getJSON('/api/billing' + q);
       if (res.__status !== 200 || !res.ok) throw new Error(res.message || res.error || 'Could not load billing');
-      ctx._billingData = res.data;
-      ctx._billingErr = '';
+      entry.data = res.data;
+      entry.err = '';
     } catch (e) {
-      ctx._billingErr = e.message || 'Could not load billing';
+      entry.err = e.message || 'Could not load billing';
     } finally {
-      ctx._billingLoaded = true;
-      ctx._billingLoading = false;
+      entry.loaded = true;
+      entry.loading = false;
       ctx.redraw();
     }
   };
 
-  if (loading) {
+  if (!entry.loaded) {
     load();
     return html`<section class="lm-panel lmx-account-form"><p class="subtle">Loading plan &amp; billing…</p></section>`;
   }
-  if (err) {
-    return html`<section class="lm-panel lmx-account-form"><p role="alert" class="lm-alert lm-alert--danger">${err}</p><button class="lm-btn" @click=${() => { ctx._billingLoaded = false; ctx.redraw(); }}>Retry</button></section>`;
+  if (entry.err) {
+    return html`<section class="lm-panel lmx-account-form"><p role="alert" class="lm-alert lm-alert--danger">${entry.err}</p><button class="lm-btn" @click=${() => { entry.loaded = false; ctx.redraw(); }}>Retry</button></section>`;
   }
+  const data = entry.data;
   if (!data?.workspace || !data?.plan) {
-    return html`<section class="lm-panel lmx-account-form"><p class="subtle">No workspace billing record found.</p></section>`;
+    return html`<section class="lm-panel lmx-account-form">
+      <h2>Fleet Admin Space</h2>
+      <p class="subtle">Manage customer workspace subscriptions, plans, and limits in the Admin Billing Console.</p>
+      ${data?.isDeployAdmin ? html`<a class="lm-btn lm-btn--secondary" href="#/admin-billing">Open Admin Billing</a>` : nothing}
+    </section>`;
   }
 
   const { workspace: ws, plan, billing, usage, catalog, isDeployAdmin } = data;
@@ -74,7 +84,7 @@ export function billingPanel(ctx) {
         billingEmail: email,
         requestId: crypto.randomUUID(),
       });
-      ctx._billingData = res.data;
+      entry.data = res.data;
       toast('Billing email updated.');
       ctx.redraw();
     } catch (ex) {
@@ -92,7 +102,7 @@ export function billingPanel(ctx) {
         requestedPlan: planId,
         requestId: crypto.randomUUID(),
       });
-      ctx._billingData = res.data;
+      entry.data = res.data;
       toast(`Upgrade request (${planId}) sent to admin.`);
       ctx.redraw();
     } catch (ex) {
