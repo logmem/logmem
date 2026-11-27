@@ -285,7 +285,10 @@ export function reopenState(b, j) {
  * to RECONCILER; `store` is its store. Returns what changed.
  */
 export async function applyPlan(lm, store, plan, { now = Date.now() } = {}) {
-  const call = async (name, args) => (await lm.callTool(name, args)).structuredContent;
+  const call = async (name, args) => (await lm.callTool(name, {
+    ...args,
+    ...(Object.hasOwn(args, "targetSpace") ? {} : { targetSpace: store.space }),
+  })).structuredContent;
   const done = [], reopened = [], failed = [];
   const finishAudit = async (job) => {
     let guard = await store.nowFieldsRaw("job", job, ["auto_closed"]);

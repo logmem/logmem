@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { lanesView, homeView } from "../src/http/view.mjs";
 import { mockRes, mockReq } from "./oauth-helpers.mjs";

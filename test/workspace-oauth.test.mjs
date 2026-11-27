@@ -27,8 +27,8 @@ test('workspace keys resolve as managed MCP credentials and cannot write a sibli
  const auth=await resolveAuth({headers:{authorization:`Bearer ${k.key}`}}, {}, {VERCEL_ENV:'production',LOGMEM_CUSTOMER_REDIS_URI:'rediss://test:pass@203.0.113.9:6380'}, {lookupWorkspaceAgentKey:key=>lookupWorkspaceAgentKey(key,deps)});
  assert.equal(auth.source,'managed');assert.equal(auth.space,s.namespace);assert.equal(auth.issuedBy,userId);
  const lm=await buildManaged({redis,auth,sessionId:'test-session'});
- const start=await lm.callTool('logmem_start',{agent:'codex'});assert.equal(start.structuredContent.ok,true);
- const result=await lm.callTool('logmem_update',{job:'test-job',summary:'Created in selected space'});assert.equal(result.structuredContent.ok,true);
+ const start=await lm.callTool('logmem_start',{agent:'codex',targetSpace:s.namespace});assert.equal(start.structuredContent.ok,true);
+ const result=await lm.callTool('logmem_update',{job:'test-job',summary:'Created in selected space',targetSpace:s.namespace});assert.equal(result.structuredContent.ok,true);
  assert.equal(await redis('EXISTS',`lm:t-${w.id}:job:test-job:log`),0);
 });
 test('OAuth consent lists authorized workspace spaces and issues the selected immutable grant',async()=>{

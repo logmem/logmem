@@ -96,10 +96,15 @@ export function acmiKeyToLm(key, space) {
   let rest = parts.slice(1);
   if (rest[0] === space) rest = rest.slice(1);
   if (rest.length < 3) return null;
-  const [ns, id, ...slotParts] = rest;
-  const acmiSlot = slotParts.join(":");
-  const slot = Object.entries(SLOTS).find(([, d]) => d.acmi === acmiSlot)?.[0];
-  if (!slot) return null;
+  const [ns] = rest;
+  const slotMatch = Object.entries(SLOTS).find(([, d]) => {
+    const suffix = String(d.acmi || "").split(":");
+    return suffix.length > 0 && rest.length > suffix.length + 1 && rest.slice(-suffix.length).join(":") === d.acmi;
+  });
+  if (!slotMatch) return null;
+  const [slot] = slotMatch;
+  const id = rest.slice(1, -String(SLOTS[slot].acmi).split(":").length).join(":");
+  if (!id) return null;
   return `lm:${space}:${nsFromAcmi(ns)}:${id}:${slot}`;
 }
 

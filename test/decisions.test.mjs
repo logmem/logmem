@@ -6,7 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem, INSTRUCTIONS } from "../src/server.mjs";
+import { INSTRUCTIONS } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { writeDecision, DecisionError, levenshtein, closeMatches, HUMAN_ONLY, LIMITS } from "../src/core/tools.mjs";
 import { decide } from "../api/decide.mjs";

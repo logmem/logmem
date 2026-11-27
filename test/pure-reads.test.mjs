@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { buildInstance, dispatch } from "../api/mcp.mjs";
 
 const WRITES = new Set(["SET", "DEL", "HSET", "HDEL", "HINCRBY", "ZADD", "ZREM", "ZREMRANGEBYSCORE", "ZREMRANGEBYRANK", "SADD", "SREM", "EXPIRE", "PEXPIRE", "LPUSH", "RPUSH", "LPOP", "RPOP", "LTRIM", "INCR", "INCRBY", "GETDEL", "RENAME", "EVAL", "EVALSHA", "XADD", "MULTI", "EXEC"]);
@@ -81,7 +81,10 @@ async function httpCall(name, args) {
   const redis = spyRedis();
   const auth = { space: "acme", source: "oauth", pinned: true, agent: null };
   const lmFactory = async () => buildInstance({ redis, kind: "memory", auth, sessionId: "chatgpt.s5", env: { LOGMEM_AGENT: "chatgpt" } });
-  const r = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, { lmFactory, toolDefs: () => [] });
+  const arguments_ = args && typeof args === "object" && !Array.isArray(args)
+    ? { ...args, ...(Object.hasOwn(args, "targetSpace") ? {} : { targetSpace: auth.space }) }
+    : args;
+  const r = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: arguments_ } }, { lmFactory, toolDefs: () => [] });
   return { r: r.result, redis };
 }
 

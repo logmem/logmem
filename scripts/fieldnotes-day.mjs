@@ -16,7 +16,10 @@ export async function runDay(redis, { space = "fieldnotes", mirror, log = () => 
   const job = `issue-14-${run}`;
   const steps = [];
   const call = async (who, tool, args, label) => {
-    const r = (await A[who].callTool(tool, args)).structuredContent;
+    const r = (await A[who].callTool(tool, {
+      ...args,
+      ...(Object.hasOwn(args, "targetSpace") ? {} : { targetSpace: space }),
+    })).structuredContent;
     steps.push({ step: label, agent: who, tool, ok: r.ok, ...(r.mirror ? { mirror: r.mirror } : {}) });
     log(`${r.ok ? "ok  " : "FAIL"} ${label} (${who} ${tool})`);
     if (!r.ok) throw new Error(`${label}: ${r.error}`);
@@ -45,7 +48,7 @@ export async function runDay(redis, { space = "fieldnotes", mirror, log = () => 
   await call("quill", "logmem_recap", { notes: "Issue 14 scheduled, 2 links fixed.", next: ["subject-line test for issue 15"] }, "17:30 End of shift");
   await call("atlas", "logmem_note", { where: "channel:field-notes", kind: "huddle", summary: "Week wrap: 1 job done, 1 stuck (bank export), 1 decision made." }, "Fri Weekly huddle");
 
-  const open = (await A.atlas.callTool("logmem_open", { job })).structuredContent;
+  const open = (await A.atlas.callTool("logmem_open", { job, targetSpace: space })).structuredContent;
   const kinds = open.log.map((e) => e.kind).reverse();
   const expected = ["assigned", "progress", "handoff", "accepted", "progress", "approval", "decided", "done"];
   const ok = JSON.stringify(kinds) === JSON.stringify(expected) && open.now.stage === "done" && open.now.owner === "agent:quill";

@@ -8,7 +8,8 @@ import { createRedis, redis as instanceRedis, READ_COMMANDS, redisTimeoutMs } fr
 import { withTimeout, nativeTimeoutMs, evictIfDead } from "../src/lib/redis-native.mjs";
 import { resilientBackendFromEnv, BackendRequiredError, requireBackendFromEnv } from "../src/lib/backend.mjs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem, versionString, SERVER_INFO } from "../src/server.mjs";
+import { versionString, SERVER_INFO } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { healthCheck, createHandler } from "../api/health.mjs";
 import { requestRecord, logRequest } from "../src/http/log.mjs";
 import { readFileSync } from "node:fs";

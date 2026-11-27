@@ -98,8 +98,11 @@ async function managedAuth(tenant, space = tenantSpace(tenant)) {
 
 /** One tools/call, the way api/mcp.mjs serves a managed session. */
 async function tool(redis, auth, name, args, sessionId = `muse.${auth.tenant}`) {
+  const arguments_ = args && typeof args === "object" && !Array.isArray(args)
+    ? { ...args, ...(Object.hasOwn(args, "targetSpace") ? {} : { targetSpace: auth.space }) }
+    : args;
   const reply = await dispatch(
-    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: arguments_ } },
     {
       toolDefs: () => [],
       lmFactory: () => buildManaged({ redis, auth, sessionId: scopedSessionId(sessionId, auth) }),
@@ -449,7 +452,7 @@ describe("two managed tenants cannot see or change each other's data", { concurr
         };
         await assert.rejects(() => buildManaged({ redis: customer, auth, sessionId: "muse.bad" }), /paused/, bad);
         const reply = await dispatch(
-          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "shouldnotland" } } },
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "shouldnotland", targetSpace: auth.space } } },
           { toolDefs: () => [], lmFactory: () => buildManaged({ redis: customer, auth, sessionId: "muse.bad.rpc" }) },
         );
         assert.equal(reply.result.isError, true, bad);
@@ -468,14 +471,14 @@ describe("two managed tenants cannot see or change each other's data", { concurr
       let clock = 1_700_000_000_000;
       const now = () => clock;
       const lm = await buildManaged({ redis: customer, auth, sessionId: "muse.cache", now });
-      const note = await lm.callTool("logmem_note", { where: "channel:ideas", summary: "whileactive" });
+      const note = await lm.callTool("logmem_note", { where: "channel:ideas", summary: "whileactive", targetSpace: auth.space });
       assert.equal(note.structuredContent.ok, true, JSON.stringify(note.structuredContent));
       await setStatus(customer, id, "suspended");
       clock += 60_001;
       const before = keysOf(customer);
       await assert.rejects(() => buildManaged({ redis: customer, auth, sessionId: "muse.after", now }), /paused/);
       const reply = await dispatch(
-        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "aftersuspend" } } },
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "aftersuspend", targetSpace: auth.space } } },
         { toolDefs: () => [], lmFactory: () => buildManaged({ redis: customer, auth, sessionId: "muse.after.rpc", now }) },
       );
       assert.equal(reply.result.isError, true);
@@ -493,7 +496,7 @@ describe("two managed tenants cannot see or change each other's data", { concurr
       await createTenant(customer, { id, name: "Leak", plan: "free" });
       const auth = await managedAuth(id);
       const first = await buildManaged({ redis: customer, auth, sessionId: "muse.cached" });
-      const opened = await first.callTool("logmem_note", { where: "channel:ideas", summary: "beforepause" });
+      const opened = await first.callTool("logmem_note", { where: "channel:ideas", summary: "beforepause", targetSpace: auth.space });
       assert.equal(opened.structuredContent.ok, true, JSON.stringify(opened.structuredContent));
       await setStatus(customer, id, "suspended");
       let served = "paused";
@@ -504,7 +507,7 @@ describe("two managed tenants cannot see or change each other's data", { concurr
         served = e.message;
       }
       const reply = await dispatch(
-        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "writtenwhilesuspended" } } },
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "writtenwhilesuspended", targetSpace: auth.space } } },
         { toolDefs: () => [], lmFactory: () => buildManaged({ redis: customer, auth, sessionId: "muse.still.rpc" }) },
       );
       const landed = valuesOf(customer).includes("writtenwhilesuspended");
@@ -585,7 +588,7 @@ async function expectNoWrite(customer, tenant) {
   const before = keysOf(customer);
   await assert.rejects(() => buildManaged({ redis: customer, auth, sessionId: `muse.${tenant}` }), /paused/, tenant);
   const reply = await dispatch(
-    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "shouldnotland" } } },
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "logmem_note", arguments: { where: "channel:ideas", summary: "shouldnotland", targetSpace: auth.space } } },
     { toolDefs: () => [], lmFactory: () => buildManaged({ redis: customer, auth, sessionId: `muse.${tenant}.rpc` }) },
   );
   assert.equal(reply.result.isError, true, tenant);

@@ -7,7 +7,7 @@ import { oauthRedis, mockRes, mockReq } from "./oauth-helpers.mjs";
 import { __setRedisForTests } from "../api/oauth/_lib/storage.mjs";
 import { createAgentKey, listAgentKeys, revokeAgentKey, lookupAgentKey, AgentKeyError } from "../src/http/agent-keys.mjs";
 import { resolveAuth } from "../src/http/auth.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { issueCookie } from "../src/http/admin-auth.mjs";
 import { createHandler } from "../api/agent-keys.mjs";
 import { insufficientScope } from "../api/mcp.mjs";

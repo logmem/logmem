@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { getBlocker, setStep, markDone, writeWalkthrough, WRITER_STEPS } from "../src/core/blockers.mjs";
 import { mockRes, mockReq } from "./oauth-helpers.mjs";

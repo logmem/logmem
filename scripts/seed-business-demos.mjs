@@ -138,7 +138,10 @@ export async function seedBusinessDemos(redis, { demos = BUSINESS_DEMOS } = {}) 
       ]),
     );
     const call = async (id, tool, args) => {
-      const r = (await clients[id].callTool(tool, args)).structuredContent;
+      const r = (await clients[id].callTool(tool, {
+        ...args,
+        ...(Object.hasOwn(args, "targetSpace") ? {} : { targetSpace: demo.id }),
+      })).structuredContent;
       if (!r?.ok)
         throw new Error(`${demo.id} ${tool}: ${r?.error || "no result"}`);
       return r;

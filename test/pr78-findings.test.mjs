@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { createStore, revKey } from "../src/core/store.mjs";
 import { lmDecisionKey } from "../src/core/keys.mjs";
 import { unblock } from "../src/http/work.mjs";

@@ -493,8 +493,13 @@ async function sinceDelta(store, agent, follows, log, boundary) {
   let assigned = 0;
   const jobs = [];
   for (const ref of refs) {
-    const [ns, id] = String(ref).split(":");
-    if (!ns || !id) continue;
+    let parsed;
+    try {
+      parsed = parseRef(ref);
+    } catch {
+      continue;
+    }
+    const { ns, id } = parsed;
     let entries = [];
     try {
       entries = await store.readLog(ns, id, { reverse: true, sinceMs: boundary.since, limit: 50 });
@@ -1810,7 +1815,7 @@ export const TOOLS = [
   {
     name: "logmem_connection",
     title: "Connection",
-    description: "Check the link to LogMem is up: backend, space, compatibility mode and the current shift. Read only.",
+    description: "Check the link to LogMem is up. Report backend, bound space, connection identity, tenant and workspace context, server identity and current shift. Read only.",
     params: params({}),
     annotations: READ,
     skipTouch: true,
@@ -1829,6 +1834,12 @@ export const TOOLS = [
         acmi_compat: ctx.store.compat,
         degraded: ctx.backend === "memory",
         surface: ctx.surface,
+        connection_id: ctx.connection.id,
+        connection_label: ctx.connection.label,
+        tenant_id: ctx.connection.tenantId,
+        workspace_id: ctx.connection.workspaceId,
+        space_id: ctx.connection.spaceId,
+        server_identity: ctx.connection.serverIdentity,
         shift: await ctx.shifts.current(),
       };
     },

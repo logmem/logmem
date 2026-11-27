@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem, INSTRUCTIONS } from "../src/server.mjs";
+import { INSTRUCTIONS } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { checkStyle, styleFor, STYLE_STANDARD } from "../src/core/style.mjs";
 
 const rules = (t) => checkStyle(t).map((w) => w.rule);

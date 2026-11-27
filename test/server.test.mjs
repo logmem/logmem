@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { writeDecision } from "../src/core/tools.mjs";
 
 // Test-only HMAC key for human decisions (writeDecision fails closed without one).

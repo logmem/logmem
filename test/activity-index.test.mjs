@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMemoryRedis } from "../src/lib/memory-redis.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { createStore } from "../src/core/store.mjs";
 import { buildView } from "../src/http/view.mjs";
 import { activityKey, trimActivity, activityPage } from "../src/core/activity.mjs";

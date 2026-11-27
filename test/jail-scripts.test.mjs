@@ -67,7 +67,7 @@ test("jail scripts: each jail-safe script touches only its KEYS (pins the safety
 });
 
 test("jail scripts: a managed user's Unblock works end to end through the jail", async () => {
-  const { createLogmem } = await import("../src/server.mjs");
+  const { createLogmem } = await import("./space-context.mjs");
   const { createStore } = await import("../src/core/store.mjs");
   const { unblock } = await import("../src/http/work.mjs");
   const base = createMemoryRedis();
@@ -82,7 +82,7 @@ test("jail scripts: a managed user's Unblock works end to end through the jail",
 });
 
 test("jail scripts: a managed user writes and follows a walkthrough through the jail", async () => {
-  const { createLogmem } = await import("../src/server.mjs");
+  const { createLogmem } = await import("./space-context.mjs");
   const { createStore } = await import("../src/core/store.mjs");
   const { writeWalkthrough, setStep, markDone, getBlocker } = await import("../src/core/blockers.mjs");
   const jail = createJail(createMemoryRedis(), T);

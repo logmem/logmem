@@ -143,6 +143,8 @@ export function createLogmem({
   live,
   space,
   spaces,
+  connection = {},
+  spaceGuardMode,
   compat = false,
   surface = "unknown",
   sessionId,
@@ -195,6 +197,20 @@ export function createLogmem({
   validateKeySegments(space);
   const allowed = spaces && spaces.length ? spaces : [space];
   if (!allowed.includes(space)) throw new Error(`space '${space}' is not in the allowed list`);
+  // Warn mode permits old writes that omit an assertion during migration. It still refuses invalid and mismatched spaces.
+  const requestedGuardMode = String(spaceGuardMode ?? process.env.LOGMEM_SPACE_GUARD_MODE ?? "strict").trim().toLowerCase();
+  const activeSpaceGuardMode = requestedGuardMode === "warn" ? "warn" : "strict";
+  const connectionContext = {
+    id: String(connection.id || sessionId || `proc-${process.pid}`).slice(0, 160),
+    label: String(connection.label || surface || "unknown").slice(0, 80),
+    tenantId: typeof connection.tenantId === "string" && connection.tenantId ? connection.tenantId : null,
+    workspaceId: typeof connection.workspaceId === "string" && connection.workspaceId ? connection.workspaceId : null,
+    spaceId: typeof connection.spaceId === "string" && connection.spaceId ? connection.spaceId : null,
+    serverIdentity: {
+      name: typeof connection.serverIdentity?.name === "string" ? connection.serverIdentity.name.slice(0, 80) : SERVER_INFO.name,
+      version: typeof connection.serverIdentity?.version === "string" ? connection.serverIdentity.version.slice(0, 40) : SERVER_INFO.version,
+    },
+  };
 
   const mirrorOn = !!mirrorCfg.enabled && (mirrorCfg.spaces || []).includes(space);
   const mirror = mirrorOn ? createMirror(redis, space, { now }) : null;
@@ -206,6 +222,8 @@ export function createLogmem({
     store,
     shifts,
     surface,
+    connection: connectionContext,
+    spaceGuardMode: activeSpaceGuardMode,
     get backend() { return live ? snapshot().kind : backend; },
     spaces: allowed,
     shift: null,
@@ -250,6 +268,30 @@ export function createLogmem({
     }
   }
 
+  function inspectSpaceAssertion(args) {
+    if (!args || typeof args !== "object" || Array.isArray(args)) return { reason: "invalid_arguments", requested: "<invalid>" };
+    const fields = ["targetSpace", "tenant"];
+    const supplied = [];
+    for (const field of fields) {
+      if (args[field] === undefined || args[field] === null) continue;
+      if (typeof args[field] !== "string" || !args[field].trim()) return { reason: "invalid_space", requested: "<invalid>" };
+      supplied.push(args[field].trim());
+    }
+    const unique = [...new Set(supplied)];
+    if (unique.some((value) => value !== store.space)) return {
+      reason: args.tenant !== undefined && args.tenant !== null && String(args.tenant).trim() !== store.space
+        ? "tenant_mismatch"
+        : "space_mismatch",
+      requested: unique.join(",").slice(0, 160),
+    };
+    return {
+      reason: null,
+      requested: unique.join(",").slice(0, 160),
+      targetProvided: (typeof args.targetSpace === "string" && !!args.targetSpace.trim())
+        || (typeof args.tenant === "string" && args.tenant.trim() === store.space),
+    };
+  }
+
   /**
    * `validate`: check args against the tool's zod schema first, as the MCP SDK
    * does on stdio (HTTP tools/call has no SDK in front of it). Unknown keys
@@ -280,6 +322,40 @@ export function createLogmem({
     }
     const isSyncReceipt = name === "logmem_sync" && args?.receipt === true;
     const readOnly = tool.annotations?.readOnlyHint === true || (name === "logmem_sync" && !isSyncReceipt);
+    const assertion = inspectSpaceAssertion(args);
+    const missingWriteTarget = !readOnly && !assertion.targetProvided;
+    const mustRefuse = !!assertion.reason || (missingWriteTarget && ctx.spaceGuardMode === "strict");
+    if (assertion.reason || missingWriteTarget) {
+      const mode = ctx.spaceGuardMode;
+      const outcome = mustRefuse ? "refused" : "warned";
+      const reason = assertion.reason || "target_space_missing";
+      logRequest({
+        route: "tool",
+        tool: name,
+        ok: !mustRefuse,
+        status: mustRefuse ? 403 : 200,
+        err: reason,
+        space_guard: {
+          mode,
+          outcome,
+          tool: name,
+          requested_space: assertion.requested || (missingWriteTarget ? "<missing>" : undefined),
+          bound_space: store.space,
+          connection_id: ctx.connection.id,
+          reason,
+        },
+      });
+      if (mustRefuse) {
+        return degradedMark(toResult({
+          ok: false,
+          error: assertion.reason === "tenant_mismatch"
+            ? `tenant must be bound to space '${store.space}'`
+            : assertion.reason ? "targetSpace must match this connection's bound space" : "targetSpace is required for writes",
+          code: assertion.reason ? "space_mismatch" : "target_space_required",
+          space: store.space,
+        }, tool), tool);
+      }
+    }
     const pure = pureReads && readOnly;
     // A pure read makes zero Redis writes (PR 91), so the usage meter skips it.
     ctx.pure = pure;

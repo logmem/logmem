@@ -14,7 +14,7 @@ and the JSON disagree, the JSON is what the server actually does, and the differ
 1. **One verb per tool, one word per verb.** `logmem_<word>`, lowercase, no underscores after the prefix.
 2. **Plain words in, plain words out.** Descriptions are written for the model *and* the person reading over its shoulder. No ACMI jargon in `logmem_*` descriptions.
 3. **Objects, not JSON strings.** `logmem_*` tools take real objects (`now`, `who`, `payload`, `details`). Only the `acmi_*` compat tools keep ACMI's JSON-string parameters.
-4. **The connection picks the space.** No `logmem_*` tool takes a `space` argument. Isolation is not a parameter.
+4. **The connection picks the space.** `targetSpace` asserts the connection's bound space. It cannot select another space. Writes require this assertion. Reads may omit it.
 5. **Reads never write.** Every tool marked `readOnlyHint: true` performs zero writes, apart from shift bookkeeping (§5).
 6. **Irreversible means ask.** Anything a human can't undo goes through `logmem_ask` first. `logmem_remove` always previews.
 7. **Only a person decides.** No agent tool can write kind `decided`. A person answers an ask on the Decisions page (`POST /api/decide`), which writes it as `human:<id>`.
@@ -24,6 +24,7 @@ and the JSON disagree, the JSON is what the server actually does, and the differ
 
 | Param | Means | Shape |
 |---|---|---|
+| `targetSpace` | assert the connection's bound space | exact space id; required for writes and optional for reads |
 | `agent` | an agent id | `quill` or `agent:quill` |
 | `to` | the **agent** receiving something (handoff only) | agent id |
 | `where` | **which log** to write to or read from | ref: `channel:<id>`, `job:<id>`, `agent:<id>`; a bare id = channel |

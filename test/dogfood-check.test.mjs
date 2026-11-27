@@ -5,7 +5,7 @@ import { createStore } from "../src/core/store.mjs";
 import { acmiKey } from "../src/core/keys.mjs";
 import { computeItemId, getCoordItem } from "../src/core/coord.mjs";
 import { interact } from "../src/http/interactions.mjs";
-import { createLogmem } from "../src/server.mjs";
+import { createLogmem } from "./space-context.mjs";
 import { runCheck, updateScorecard, gate, DAY_MS } from "../scripts/dogfood-check.mjs";
 
 const ON = { enabled: true, spaces: ["madez"] };

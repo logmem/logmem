@@ -50,6 +50,18 @@ function fallbackSession(req, auth) {
   return `${slug(req.headers["x-logmem-surface"] || "http")}.${createHash("sha256").update(basis).digest("hex").slice(0, 24)}`;
 }
 
+function connectionContext(auth, sessionId) {
+  const surface = surfaceFromSession(sessionId) || "http";
+  return {
+    id: auth.connectionId || auth.keyId || sessionId,
+    label: auth.label || surface || auth.source || "http",
+    tenantId: auth.tenant || null,
+    workspaceId: auth.workspaceId || null,
+    spaceId: auth.spaceId || null,
+    serverIdentity: { name: SERVER_INFO.name, version: SERVER_INFO.version },
+  };
+}
+
 function send(res, wantsSSE, reply, headers = {}) {
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
   if (reply === null) {
@@ -85,6 +97,7 @@ export async function buildManaged({ redis, auth, sessionId, now = Date.now }) {
     compat: false,
     surface: surfaceFromSession(sessionId) || "http",
     sessionId,
+    connection: connectionContext(auth, sessionId),
     defaultAgent: auth.agent,
     lockedAgent: auth.agent,
     mirror: { enabled: false, spaces: [] },
@@ -110,6 +123,7 @@ export function buildInstance({ redis, kind, auth, sessionId, env = process.env 
     compat: compatFromEnv(env),
     surface: surfaceFromSession(sessionId) || "http",
     sessionId,
+    connection: connectionContext(auth, sessionId),
     defaultAgent: auth.agent || env.LOGMEM_AGENT,
     lockedAgent: auth.agent || null,
     mirror: mirrorConfigFromEnv(env),
@@ -186,8 +200,28 @@ export default async function handler(req, res) {
     } catch (e) {
       return res.status(400).json({ error: e.message });
     }
-    const msg = req.method === "POST" ? req.body : null;
+    let msg = req.method === "POST" ? req.body : null;
     const auth = await resolveAuth(req, cfg);
+    const requestedSpace = req.headers["x-logmem-space"] || req.headers["X-LogMem-Space"];
+    const headerSpace = typeof requestedSpace === "string" && requestedSpace.trim() ? requestedSpace.trim() : null;
+    if (auth.backend && msg?.method === "tools/call") {
+      const params = msg.params && typeof msg.params === "object" ? msg.params : {};
+      const args = params.arguments;
+      if (args === undefined || args === null || (typeof args === "object" && !Array.isArray(args))) {
+        const targetSpace = headerSpace && headerSpace !== auth.space
+          ? headerSpace
+          : args?.targetSpace ?? headerSpace ?? auth.space;
+        if (typeof targetSpace === "string" && targetSpace.trim()) {
+          msg = {
+            ...msg,
+            params: {
+              ...params,
+              arguments: { ...(args || {}), targetSpace: targetSpace.trim() },
+            },
+          };
+        }
+      }
+    }
     const b = auth.backend && fromDescriptor(auth.backend);
     if (!b) {
       // Unauthenticated MCP still counts against the unauth bucket. Honor 429.
@@ -240,7 +274,8 @@ export default async function handler(req, res) {
 }
 
 async function workspaceRunner(redis, auth) {
-  const context = await resolveViewer({headers:{}}, {workspaceId:auth.workspaceId,spaceId:auth.spaceId,action:'manage-connections'}, {redis, session:async()=>({status:'signed-in',userId:auth.issuedBy})});
+  const action = Array.isArray(auth.scopes) && !auth.scopes.includes(SCOPE_WRITE) ? "read" : "write";
+  const context = await resolveViewer({headers:{}}, {workspaceId:auth.workspaceId,spaceId:auth.spaceId,action}, {redis, session:async()=>({status:'signed-in',userId:auth.issuedBy})});
   return async (...cmd) => {
     if(auth.connectionId) {
       const {w}=await readWorkspace(redis,auth.workspaceId),c=w.connections?.[auth.connectionId];

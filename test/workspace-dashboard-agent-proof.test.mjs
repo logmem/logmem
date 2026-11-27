@@ -21,9 +21,9 @@ test('managed dashboard and agent exchange records while another customer cannot
   assert.equal(auth.source, 'managed');
   assert.equal(auth.space, space.namespace);
   const agent = await buildManaged({ redis, auth, sessionId: 'shared-record-proof' });
-  assert.equal((await agent.callTool('logmem_start', { agent: 'proof-agent' })).structuredContent.ok, true);
-  assert.equal((await agent.callTool('logmem_bio', { who: { name: 'Proof agent', role: 'Shared record verification' } })).structuredContent.ok, true);
-  const note = await agent.callTool('logmem_note', { where: 'agent:proof-agent', summary: 'Agent result reaches the dashboard.' });
+  assert.equal((await agent.callTool('logmem_start', { agent: 'proof-agent', targetSpace: space.namespace })).structuredContent.ok, true);
+  assert.equal((await agent.callTool('logmem_bio', { who: { name: 'Proof agent', role: 'Shared record verification' }, targetSpace: space.namespace })).structuredContent.ok, true);
+  const note = await agent.callTool('logmem_note', { where: 'agent:proof-agent', summary: 'Agent result reaches the dashboard.', targetSpace: space.namespace });
   assert.equal(note.structuredContent.ok, true);
 
   const dashboard = createCustomerDashboard({ redis, session: async () => ({ status: 'signed-in', userId }) });
