@@ -19,6 +19,7 @@ import {
   createCoordItem,
   settleCoordItem,
   getCoordItem,
+  listCoordItemsForTrail,
   listOpenCoordItemsForAgent,
   COORD_DEADLINE_MS,
   coordOpenKey,
@@ -354,4 +355,199 @@ test("accept: a repaired decline settles as declined with its reason", async () 
   const item = await getCoordItem(store, "madez", dec.item_id);
   assert.equal(item.response, "declined");
   assert.equal(item.disposition, "Delivered already");
+});
+
+// A handoff stays owed to its recipient however long ago it was made. The
+// Brief used to read only the newest 200 entries and logmem_accept only the
+// newest 500, so an old handoff could be listed and yet be impossible to
+// accept ("no handoff with trail '...' was passed to <agent>"). Both reads
+// now cover the whole log.
+//
+// The handoff here is written straight to the agent's log, with no
+// coordination item, because that is the shape that broke: with no index row
+// there is nothing for the coord-index fallback to look up, so a windowed
+// read was the only thing that could find the handoff at all.
+test("accept: a handoff older than the old read windows is still in the Brief and still acceptable", async () => {
+  const { atlas, quill, clock: clk } = await createFixture();
+  const store = atlas.ctx.store;
+  const t0 = clk();
+
+  await store.append("agent", "quill", {
+    kind: "handoff",
+    summary: "Old open work",
+    trail: "old-open-trail",
+    to: "agent:quill",
+    by: "agent:atlas",
+    ts: t0,
+  });
+
+  // Push the handoff past both old read windows (200 for the Brief, 500 for
+  // the accept lookup) with later entries on Quill's own log.
+  for (let i = 0; i < 550; i++) {
+    await store.append("agent", "quill", {
+      kind: "memo",
+      summary: `filler ${i}`,
+      trail: `filler-${i}`,
+      by: "agent:quill",
+      ts: t0 + 100 + i,
+    });
+  }
+  const total = (await store.readLog("agent", "quill")).length;
+  assert.ok(total > 500, `the handoff is now ${total} entries back, past both old windows`);
+  // No index row exists for this trail, so the coord-index fallback has
+  // nothing to fall back to.
+  assert.deepEqual(await listCoordItemsForTrail(store, "madez", "old-open-trail"), []);
+
+  // The handoff must still be visible in the Brief.
+  const brief = await sc(quill, "logmem_brief", {});
+  const waiting = (brief.handoffs_to_me || []).find((h) => h.trail === "old-open-trail");
+  assert.ok(waiting, "a handoff older than the old read window stays in the Brief");
+  assert.equal((brief.do_next || []).some((d) => d.ref === "old-open-trail"), true, "and it is still offered as the next thing to do");
+
+  // And it must still be actionable.
+  const acc = await sc(quill, "logmem_accept", { trail: "old-open-trail" });
+  assert.equal(acc.ok, true, `logmem_accept finds a handoff older than 500 entries: ${acc.error || ""}`);
+  assert.equal(acc.origin, "old-open-trail");
+  const accepted = (await store.readLog("agent", "quill")).filter((e) => e.kind === "accepted" && e.origin === "old-open-trail");
+  assert.equal(accepted.length, 1, "the acceptance is written on the recipient's own log");
+
+  // Once accepted it leaves the Brief again.
+  const after = await sc(quill, "logmem_brief", {});
+  assert.equal((after.handoffs_to_me || []).some((h) => h.trail === "old-open-trail"), false, "the settled handoff drops out of the Brief");
+});
+
+// The same read window must not let one recipient take another recipient's
+// part, and must not stop a recipient taking their own part.
+test("accept: an old multi-recipient handoff settles only the caller's own part", async () => {
+  const { atlas, quill, clock: clk } = await createFixture();
+  const store = atlas.ctx.store;
+  const t0 = clk();
+
+  // One handoff, two recipients, a copy on each agent's own log. This is the
+  // shape that must still split: Atlas may take Atlas's part, never Quill's.
+  const entry = {
+    kind: "handoff",
+    summary: "Split the work",
+    trail: "old-split-trail",
+    to: ["agent:atlas", "agent:quill"],
+    by: "agent:grok",
+    ts: t0,
+  };
+  await store.append("agent", "atlas", entry);
+  await store.append("agent", "quill", entry);
+
+  for (let i = 0; i < 550; i++) {
+    await store.append("agent", "atlas", {
+      kind: "memo",
+      summary: `filler ${i}`,
+      trail: `filler-${i}`,
+      by: "agent:atlas",
+      ts: t0 + 100 + i,
+    });
+  }
+
+  // Atlas takes Atlas's part. The handoff is found however old it is.
+  const acc = await sc(atlas, "logmem_accept", { trail: "old-split-trail" });
+  assert.equal(acc.ok, true, `logmem_accept finds an old multi-recipient handoff: ${acc.error || ""}`);
+  assert.equal(
+    (await store.readLog("agent", "atlas")).some((e) => e.kind === "accepted" && e.origin === "old-split-trail"),
+    true,
+    "the acceptance lands on the accepting agent's own log",
+  );
+  assert.equal(
+    (await store.readLog("agent", "quill")).some((e) => e.kind === "accepted" && e.origin === "old-split-trail"),
+    false,
+    "the other recipient's part is not settled by this acceptance",
+  );
+
+  // Quill's part is still open and still Quill's to take.
+  const quillBrief = await sc(quill, "logmem_brief", {});
+  assert.equal((quillBrief.handoffs_to_me || []).some((h) => h.trail === "old-split-trail"), true, "Quill's part is still waiting");
+  const quillAcc = await sc(quill, "logmem_accept", { trail: "old-split-trail" });
+  assert.equal(quillAcc.ok, true, `Quill can still take her own part: ${quillAcc.error || ""}`);
+});
+
+// A handoff addressed only to somebody else is still refused, however old it
+// is: the unlimited read finds the copy on the caller's own log, and the
+// recipient check still turns it away.
+test("accept: an old handoff addressed to someone else is still refused", async () => {
+  const { atlas, quill, clock: clk } = await createFixture();
+  const store = atlas.ctx.store;
+  const t0 = clk();
+
+  // A copy on Atlas's own log and on the shared job, both addressed to Quill.
+  const entry = {
+    kind: "handoff",
+    summary: "Quill's work",
+    trail: "old-quills-trail",
+    to: "agent:quill",
+    by: "agent:grok",
+    ts: t0,
+  };
+  await store.append("agent", "atlas", entry);
+  await store.append("job", "quills-work", entry);
+
+  for (let i = 0; i < 550; i++) {
+    await store.append("agent", "atlas", {
+      kind: "memo",
+      summary: `filler ${i}`,
+      trail: `filler-${i}`,
+      by: "agent:atlas",
+      ts: t0 + 100 + i,
+    });
+  }
+
+  const acc = await sc(atlas, "logmem_accept", { trail: "old-quills-trail" });
+  assert.equal(acc.ok, false, "a handoff passed to Quill cannot be accepted by Atlas");
+  assert.match(acc.error, /was passed to atlas/);
+  assert.equal(
+    (await store.readLog("agent", "quill")).some((e) => e.kind === "accepted" && e.origin === "old-quills-trail"),
+    false,
+    "nothing is written to the addressed recipient's log",
+  );
+});
+
+// The coord-index fallback must keep working: when the handoff copy lives
+// only on the shared job log, the per-recipient coordination item points at
+// it, and that is how the accept path finds it.
+test("accept: a handoff that lives only on the shared job log is still found through the coordination item", async () => {
+  const { atlas, quill, clock: clk } = await createFixture();
+  const store = atlas.ctx.store;
+  const t0 = clk();
+
+  // The handoff is on the job log only. Quill's own log never saw it.
+  await store.append("job", "shared-job", {
+    kind: "handoff",
+    summary: "Work that lives on the job",
+    trail: "job-only-trail",
+    to: "agent:quill",
+    by: "agent:grok",
+    ts: t0,
+  });
+  await createCoordItem(store, {
+    space: "madez",
+    type: "handoff",
+    requestTrail: "job-only-trail",
+    from: "agent:grok",
+    to: "agent:quill",
+    where: "job:shared-job",
+    summary: "Work that lives on the job",
+    createdAt: t0,
+  });
+
+  // Push the job log past the old 500-entry window too.
+  for (let i = 0; i < 550; i++) {
+    await store.append("job", "shared-job", {
+      kind: "memo",
+      summary: `filler ${i}`,
+      trail: `filler-${i}`,
+      by: "agent:grok",
+      ts: t0 + 100 + i,
+    });
+  }
+
+  const acc = await sc(quill, "logmem_accept", { trail: "job-only-trail" });
+  assert.equal(acc.ok, true, `the coordination item points at the handoff on the job log: ${acc.error || ""}`);
+  assert.equal(acc.origin, "job-only-trail");
+  assert.equal((await getCoordItem(store, "madez", acc.item_id)).response, "answered");
 });
