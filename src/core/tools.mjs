@@ -564,6 +564,29 @@ function rankNext({ waiting, tasks, pending, answered, nowMs }) {
   return out.slice(0, 5);
 }
 
+/** Keep answered decisions in do_next only while their linked job remains open. */
+async function actionableAnswers(store, answered) {
+  const stages = new Map();
+  const actionable = [];
+  for (const decision of answered || []) {
+    if (actionable.length >= 2) break;
+    const job = jobOf(decision.where);
+    if (!job) {
+      actionable.push(decision);
+      continue;
+    }
+    if (!stages.has(job)) {
+      try {
+        stages.set(job, await store.getNow("job", job));
+      } catch {
+        stages.set(job, null);
+      }
+    }
+    if (stages.get(job)?.stage !== "done") actionable.push(decision);
+  }
+  return actionable;
+}
+
 /** The Brief of a new space. There is no history, so the first job is to fill the space from one project. */
 export const SEED_HINT = {
   needed: true,
@@ -683,7 +706,8 @@ async function brief(ctx, agent, opts = {}) {
   // A brief is a briefing, not a snapshot: say what changed, what is stale, and what to do first.
   const boundary = sinceLastShift(shifts, nowMs);
   const [delta, stale] = await Promise.all([sinceDelta(s, a, follows, log, boundary), staleNow(s, a, now)]);
-  const doNext = rankNext({ waiting, tasks, pending: asks.pending_asks, answered: asks.answered_asks, nowMs });
+  const answeredNext = await actionableAnswers(s, asks.answered_asks);
+  const doNext = rankNext({ waiting, tasks, pending: asks.pending_asks, answered: answeredNext, nowMs });
   const out = {
     agent: a,
     space: s.space,
