@@ -1,6 +1,7 @@
 import {customerSession,revokeCustomerSession,clerkFrontendForKey} from '../src/http/clerk.mjs';
 import {requestUrl,requireIntent,jsonBody,customerIdentity,customerError} from '../src/http/customer-http.mjs';
 import {listWorkspaces,listSpaces,ensureLegacyWorkspace,WorkspaceError} from '../src/http/workspaces.mjs';
+import {listFleetAdminWorkspace} from '../src/http/fleet-admin.mjs';
 import {issuerFor} from '../src/http/issuer.mjs';
 export const config={runtime:'nodejs',maxDuration:15};
 export function safeReturn(value='/app') {
@@ -42,6 +43,8 @@ export function createHandler(deps={}) {return async(req,res)=>{
   if(legacy)await ensureLegacyWorkspace({userId:s.userId,tenantId:legacy},{redis});
   const workspaces=await listWorkspaces({userId:s.userId},{redis}),spaces=[];
   for(const w of workspaces)spaces.push(...await listSpaces({userId:s.userId,workspaceId:w.id},{redis}));
+  const fleet=await listFleetAdminWorkspace(s.userId,{redis,env}).catch(()=>null);
+  if(fleet){workspaces.push(fleet);spaces.push(...fleet.spaces);}
   const chosen=spaces.find(x=>x.id===url.searchParams.get('spaceId')&&x.workspaceId===url.searchParams.get('workspaceId'))||spaces[0]||null;
   return res.status(200).json({user:{id:s.userId,email:s.email},workspaces,spaces,selected:chosen?{workspaceId:chosen.workspaceId,spaceId:chosen.id,namespace:chosen.namespace}:null,onboarding:workspaces.length===0,clerk:clerkBootstrap(env)});
  }catch(e){return customerError(res,e,'customer-session');}

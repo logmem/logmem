@@ -46,10 +46,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ space: 
 
   // Authorize via Clerk + server-side RBAC (redirects on auth error outside try/catch)
   const viewer = await requireSpace(space, rbacAction);
-  const redis = customerRedis(process.env);
+  const isFleet = viewer.workspaceId === 'fleet';
+  const redis = isFleet ? viewer.redis : customerRedis(process.env);
 
   try {
     if (action === 'audit-history') {
+      if (isFleet) return Response.json({ ok: true, history: [] }, { headers: { 'cache-control': 'no-store' } });
       const history = await listWorkspaceAudit(redis, viewer.workspaceId, {
         kinds: ['space-exported', 'space-imported'],
         spaceId: viewer.spaceId,
@@ -73,7 +75,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ space: 
         approved: body.approved === true,
       });
 
-      if (!dryRun && resExport.ok) {
+      if (!dryRun && resExport.ok && !isFleet) {
         await recordWorkspaceAudit(redis, viewer.workspaceId, {
           kind: 'space-exported',
           spaceId: viewer.spaceId,
@@ -120,7 +122,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ space: 
         recordReceipt: body.recordReceipt !== false,
         importedBy: viewer.person,
       });
-      if (applied.ok) {
+      if (applied.ok && !isFleet) {
         await recordWorkspaceAudit(redis, viewer.workspaceId, {
           kind: 'space-imported',
           spaceId: viewer.spaceId,
